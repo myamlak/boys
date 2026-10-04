@@ -636,7 +636,7 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 // answered by something else.
 //
 // THE FIFTEEN ARE THE ENTRIES' OWN CLASSES, READ OFF THE ENTRIES. Every host entry's policy
-// parameter defaults to a class of the table, DefaultPolicy<Precision, Shape>, and the fifteen below are exactly
+// parameter defaults to its own class's DefaultPolicy, and the fifteen below are exactly
 // the (precision, shape) pairs those defaults name: each lane's five shapes - single, fixed-N,
 // all-N, all-N-at-orders and all-orders (boys/boys.hpp and boys/boys_span.hpp are where the entries
 // are declared). A row for a class no entry names is a combination nothing asks for, and an entry
