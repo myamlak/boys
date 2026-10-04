@@ -23,3 +23,12 @@
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kRefinedReciprocal
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
+
+// Shipped: the device lane's own two names, which this control does not move either. They are
+// here so that this file fails where it is meant to - the seam test's "has chosen nothing"
+// assertion - and not on a name a replacement must carry (boys/boys_build_defaults.hpp). The
+// device lane resolves its form and its region-B exponential to these and never to the host's
+// above, so a file naming the host's five and not these is a build that has stated half its
+// defaults.
+#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal
+#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::kAccurate

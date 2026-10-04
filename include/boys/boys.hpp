@@ -647,6 +647,30 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
+
+// The device half of the interface, composed the same way: a class is a (device, precision, shape)
+// triple, so a table that carried the host's classes alone would leave every device class with no
+// default in this build - a hole rather than a fallback, and one the list below closes. The rows are
+// the four host choices above at each device lane's budget, beside the device lane's own two - the
+// division form its entries take and the region-B exponential its tables read - one per class of
+// each of the three device lanes: the three questions the device entries answer, which are the
+// classes the device half holds. The division cell and the exponential cell are the device's names
+// and not the host's because the two lanes' published figures are two sets, measured at two
+// arithmetics (boys/boys_build_defaults.hpp). A build that replaces the seam with a list of its own
+// writes these rows itself, or omits them and fails to compile for them - the same rule the host's
+// classes are held to.
+#define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW(kPrecision, kShape)                                    \
+    BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,      \
+                            LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,          \
+                            kDefaultFitGranularity, kDefaultDeviceDivisionForm,                     \
+                            kDefaultDeviceRegionBExp)
+#define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(X)                                                    \
+    X(kFp64Device, kSingle) X(kFp64Device, kAllOrders) X(kFp64Device, kAllN)                        \
+    X(kFp32Device, kSingle) X(kFp32Device, kAllOrders) X(kFp32Device, kAllN)                        \
+    X(kFp16Device, kSingle) X(kFp16Device, kAllOrders) X(kFp16Device, kAllN)
+BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW)
+#undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS
+#undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW
 #endif
 /// \endcond
 

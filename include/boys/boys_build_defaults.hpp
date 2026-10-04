@@ -1,9 +1,11 @@
 #pragma once
 
 /// \file
-/// The five choices a call site that names no policy resolves to, as the build
-/// that compiled it fixed them: the fit route, the evaluation scheme, the
-/// packing axis, the division form and the fit granularity.
+/// The choices a call site that names no policy resolves to, as the build that
+/// compiled it fixed them: the host lane's five - the fit route, the evaluation
+/// scheme, the packing axis, the division form and the fit granularity - beside
+/// the device lane's two, the division form its entries take and the region-B
+/// exponential its tables read.
 ///
 /// They are named here as macros rather than as constants of their own. The
 /// enumerations they choose between are declared in two headers,
@@ -21,25 +23,31 @@
 /// compiles. A build that has measured its own machine — the option probe
 /// (`boys/boys_probe.hpp`) is what measures one — may point the
 /// `BOYS_BUILD_DEFAULTS` CMake option (CONTRIBUTING.md) at a header carrying its
-/// own five, and the entries that name no policy then compile those choices.
+/// own seven, and the entries that name no policy then compile those choices.
 /// Nothing is paid for this at run time: a choice was a template argument
 /// before and is one still, so an unnamed call compiles to the call it compiled
 /// to before, at whatever values the build named.
 ///
-/// ONE SET OF FIVE IS ONE POINT, WHICH IS WHY THE TABLE IS HERE. No single
+/// ONE SET OF CHOICES IS ONE POINT, WHICH IS WHY THE TABLE IS HERE. No single
 /// combination is cheapest for every question, which is why the option probe
 /// keys its ranking by question shape and precision (`OptionProbeShape`,
-/// `OptionProbeCell`) rather than naming one winner. The five names below are
-/// one point: they are what a class the table carries no row for resolves to,
-/// and the table beside them is where a per-class answer lives, one row per
-/// (device, precision, shape) class. A build that replaces this file has chosen
-/// the five for the classes it names no row for and the rows for the classes it
-/// does; a caller whose mix is a third one names the policy at the call site.
+/// `OptionProbeCell`) rather than naming one winner. The names below are one
+/// point per lane: the host's five are what a host class the table carries no row
+/// for resolves to, the device's two are what a device class's same fallback
+/// carries, and the table beside them is where a per-class answer lives, one row
+/// per (device, precision, shape) class. A build that replaces this file has
+/// chosen the seven for the classes it names no row for and the rows for the
+/// classes it does; a caller whose mix is a third one names the policy at the
+/// call site.
 ///
 /// WHAT A REPLACEMENT CARRIES
 ///
-///  - the five names below. It is read INSTEAD of this file and not beside it,
-///    so one it omits is a compile error in the header that wanted it;
+///  - the seven names below: the host's five and the device lane's two. It is
+///    read INSTEAD of this file and not beside it, so one it omits is a compile
+///    error in the header that wanted it. A replacement that names the host's
+///    five and not the device's two is a build that has stated what its host
+///    resolves and not what its card resolves, which is why the two are read by
+///    the same file and not by the host's names;
 ///  - `BOYS_BUILD_DEFAULT_ROWS`, or not. A replacement that carries its own
 ///    probe output defines the list and the classes it names resolve to those
 ///    rows; one that carries no list is a build whose every class takes the
@@ -79,6 +87,27 @@
 /// How narrowly an unnamed call's fitted domain is cut.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
+/// The form an unnamed DEVICE call's divisions are performed in.
+///
+/// The device lane's own name, and not the host's above, because the two lanes'
+/// published figures are two sets: every device entry takes the form as an
+/// argument and runs every form, so this is what an unnamed device call runs and
+/// not a statement about which forms exist. The value here is the form every
+/// figure this repository publishes for that lane was measured at
+/// (`boys/boys_device_tables.hpp`), so a build that names nothing keeps the
+/// arithmetic its documents state, and one whose card measured another form
+/// states it here without moving the host's default.
+#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal
+
+/// The region-B exponential an unnamed DEVICE call evaluates.
+///
+/// The device lane's own name for the same reason, and the two lanes' values
+/// differ: this lane's published figures were measured at the library routine
+/// (`RegionBExp::kAccurate`) where the host's default is its own reduced-
+/// argument polynomial (`RegionBExp::kFast`, `boys/accuracy.hpp`). One name for
+/// both targets could only be wrong on one of them.
+#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP RegionBExp::kAccurate
+
 /// The classes this file sets a default for: **one row per class**, in the
 /// table's own format
 ///
@@ -88,10 +117,11 @@
 /// A class is a (device, precision, shape) triple - the device a call runs on,
 /// the precision lane an entry is built at, and the question that entry answers
 /// - and a row is the combination that class's entries compile when the call
-/// site names no policy. The five names above are the **fallback**, not the
-/// whole answer: a class this list carries no row for resolves to those five, at
-/// its own lane's budget, so a file carrying no row at all is the build this
-/// file was before the list existed.
+/// site names no policy. The names above are the **fallback**, not the whole
+/// answer: a host class this list carries no row for resolves to the host's five,
+/// at its own lane's budget, and a device class to the device's own two beside the
+/// four host choices its lane composes - so a file carrying no row at all is the
+/// build this file was before the list existed.
 ///
 /// **The precision cell is a LANE, not a format.** `boys::Precision` is the lane
 /// a call runs in - `kFp16` is the fp16 *and* bfloat16 entries, which are one
@@ -128,16 +158,23 @@
 /// with the seventh filled in by a value the row never chose, and `DefaultPolicy`
 /// would hand that class's callers an arithmetic nobody decided. The exponential
 /// cell below was the one this format left out, and both of its members are
-/// offered on every host entry.
+/// offered on every host entry. The device rows below carry the same cell, and
+/// theirs is the device lane's member rather than the host's: the two targets'
+/// figures were measured at two arithmetics, which is why that cell is a
+/// different name in the two halves of the list.
 ///
-/// **EVERY HOST CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one
+/// **EVERY CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one
 /// is a build error rather than a call answered by something else. The list
-/// below is one row per class the host's entries reach: five shapes on the double lane, three on
-/// the single-precision lane and two on the half lane, because a shape no entry carries has no
-/// default to state. A list missing one of them stops compiling rather than handing
-/// the missing class's callers a combination nobody chose.
-/// `tests/boys_default_policy_test.cpp` asks for each class by name, and the
-/// emission below is what writes them all.
+/// below carries both halves of the table: one row per class the host's entries reach - five
+/// shapes on the double lane, three on the single-precision lane and two on the half lane,
+/// because a shape no entry carries has no default to state - beside one row per class the
+/// device half holds, the three device lanes by the three questions a device entry answers. A
+/// list missing one of them stops compiling rather than handing the missing class's callers a
+/// combination nobody chose: `boys::DefaultPolicyFor` refuses the class it is asked for, and
+/// `tests/boys_build_defaults_test.cpp` asks for each of the nine device classes by name, so a
+/// dropped device row breaks that build rather than going quiet.
+/// `boys-option-probe --emit-defaults` and `boys-device-probe --emit-defaults` are what write
+/// them all.
 ///
 /// **Each row says whether it is a measurement or a choice, and the difference
 /// is in the comment above it.** A measured row is the option probe's own
@@ -149,7 +186,26 @@
 /// figure taken on one host, which is why the machine, the date and the run are
 /// here.
 ///
-/// The rows below the measured three name the five choices above, at their
+/// **The device rows are one card's run, and the figure beside each is that run's own.** The nine
+/// device rows are `boys-device-probe --emit-defaults` output from the run of 2026-10-04 on a
+/// Quadro T1000 (compute capability 7.5, 14 streaming multiprocessors, driver 596.86, built with
+/// toolkit 13.3.73 for architecture 75): 262144 arguments per call, 1048576 at the pair count, seed
+/// 47, five passes of two rounds, every one of the space's 324 member(s) measured and none in two
+/// states (the run's closure reads PASS, 324 of 324). Each figure is the winning entry's own
+/// count-independent device time per argument - the arithmetic's own, transfer and host submission
+/// excluded - in the units the lane's own table prints. A row is a figure taken on one card, which
+/// is why that card, that date and that run are here.
+///
+/// **That run is provisional, by its own canary.** The same run reports its "fastest run seen here
+/// is 2.7930 ms; the widest spread across the passes is 76.02%, beside the widest within-round
+/// paired spread of 200.00%", and its pass table reads "5 of 5 pass(es) ran with the canary's own
+/// runs wider than the 5.0% alarm" with the paired column at that column's own 200.00% ceiling on
+/// every pass. Several of the nine classes were therefore settled by plurality vote and not by a
+/// separated ordering. The rows state what that run measured on that card; they are not a
+/// statement of what the card is shown to do, and a re-run on a quiet machine is what retires
+/// this paragraph.
+///
+/// The host rows below the measured three name the five choices above, at their
 /// lane's budget, because the probe ranks two of the five host shapes at this
 /// revision - the all-orders ladder and the batch - so a class of a shape it
 /// does not rank has no measurement to carry. They are written out rather than
@@ -233,7 +289,50 @@
     /* the half lane is one lane for both half formats: `Precision::kFp16` is
        where the fp16 and bfloat16 entries live, so there is one row per shape
        and no second format to key. A format-specific default would need a
-       format key that `Precision` does not have. */
+       format key that `Precision` does not have. */\
+    /* measured: the fp64 single class, 'device-single-fp64-plain-reciprocal', 1.383 ns per argument, reached by vote */\
+    X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp64 all-orders class, 'device-all-orders-fp64-narrow-rat-horner-plain-reciprocal', 0.199 ns per argument, reached by ordered */\
+    X(kDevice, kFp64Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp64 all-n class, 'device-all-n-fp64', 0.107 ns per argument, reached by ordered */\
+    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp32 single class, 'device-single-fp32-plain-reciprocal', 0.143 ns per argument, reached by vote */\
+    X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp32 all-orders class, 'all-orders-fp32-uniform-horner-plain-reciprocal', 0.713 ns per argument, reached by chosen-among-equals */\
+    X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kOrders, FitGranularity::kUniform,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp32 all-n class, 'all-n-fp32-plain-reciprocal', 1.961 ns per argument, reached by refined */\
+    X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp16 single class, 'device-single-fp16', 0.178 ns per argument, reached by vote */\
+    X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp16 all-orders class, 'device-all-orders-fp16-plain-reciprocal', 0.349 ns per argument, reached by vote */\
+    X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+    /* measured: the fp16 all-n class, 'device-all-n-fp16', 0.266 ns per argument, reached by refined */\
+    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    /* A device row's cells are the winning entry's own axes, at the arithmetic the figure beside it
+       was measured at: the route, the scheme, the packing axis and the granularity are the body the
+       entry's kernels name, read from the lane's own option table (`boys/boys_cuda_options.hpp`),
+       the form cell is the form that figure was taken at, and the exponential cell is
+       `RegionBExp::kAccurate` - the device lane's member and not the host's, which is what the
+       device seam names (`BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP`) and what every device figure this
+       repository publishes was measured at. */
 
 /// Which of the two files this is: the committed one defines it, a replacement
 /// does not, and the seam test reads it to know which pins apply.
