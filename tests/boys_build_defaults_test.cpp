@@ -19,6 +19,15 @@
 // needed because they fail differently - the text one fires when a reader is
 // deleted, this one when a reader stops being reached.
 //
+// AND A THIRD READING, OF WHAT THE BUILD SAYS IT IS. The choices above are read
+// as values, and a build that replaced the seam could say none of them: nothing a
+// consumer could reach reported that the seam had been replaced, or by which file,
+// so a consumer whose regression baseline moved had no way to see that the seam is
+// why. The library reports the seam's identity now
+// (include/boys/version.hpp, BuildDefaultsSeamIdentity()), and the test at the end
+// of this file holds that report to the file the configure named - the one claim
+// here that a consumed library, and not a source tree, is the thing making.
+//
 // HOW THIS FAILS
 //
 // The five macros are expanded here as values, so each comparison below is
@@ -88,10 +97,20 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <fstream>
 #include <gtest/gtest.h>
+#include <iterator>
 #include <string>
 #include <type_traits>
 #include <vector>
+
+// Supplied at configure time: the seam file this build was configured with, which
+// the identity test at the end of this file hashes. A translation unit compiled by
+// hand, outside this build system, has no such file named and skips that check
+// rather than hashing a path that names nothing.
+#ifndef BOYS_DEFAULTS_SEAM_FILE
+#define BOYS_DEFAULTS_SEAM_FILE ""
+#endif
 
 namespace {
 
@@ -579,4 +598,246 @@ TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
                                      "resolve to its own class's default policy";
     EXPECT_EQ(allNF32Moved, 0u) << "the float all-n entry that names no policy does not resolve to "
                                    "its own class's default policy";
+}
+
+namespace {
+
+// --- sha256, for the identity check below -------------------------------------
+//
+// The claim the test at the end of this file makes is that the identity the
+// library reports is the sha256 of the seam file this build compiled, and the
+// only way to check a digest is to compute one: comparing that answer with
+// BOYS_BUILD_DEFAULTS_SEAM_SHA256 would be the check agreeing with the definition
+// it just read, which is green whatever file the digest was taken of. Nothing
+// else in this tree hashes anything, so the implementation is here, and the test
+// that uses it runs FIPS 180-4's two published vectors through it first: a broken
+// hash is then a failing assertion rather than a wrong expectation.
+
+inline std::uint32_t RotateRight(std::uint32_t value, int bits) {
+    return (value >> bits) | (value << (32 - bits));
+}
+
+// The round constants: the first 32 bits of the fractional parts of the cube
+// roots of the first 64 primes.
+constexpr std::uint32_t kSha256Round[64] = {
+    0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u, 0x923f82a4u,
+    0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u, 0x72be5d74u, 0x80deb1feu,
+    0x9bdc06a7u, 0xc19bf174u, 0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu, 0x2de92c6fu,
+    0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau, 0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u,
+    0xc6e00bf3u, 0xd5a79147u, 0x06ca6351u, 0x14292967u, 0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu,
+    0x53380d13u, 0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u, 0xa2bfe8a1u, 0xa81a664bu,
+    0xc24b8b70u, 0xc76c51a3u, 0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u, 0x19a4c116u,
+    0x1e376c08u, 0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
+    0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u, 0x90befffau, 0xa4506cebu, 0xbef9a3f7u,
+    0xc67178f2u};
+
+/// The sha256 of a byte string, as 64 lowercase hexadecimal digits.
+///
+/// \param message the bytes to hash, taken as they are and not as text: the
+///                callers hash a file, and a line-ending translation would put a
+///                Windows build and a unix one at different digests for the same
+///                file
+///
+/// \returns FIPS 180-4's digest of \p message
+std::string Sha256Hex(const std::string& message) {
+    // The initial hash value: the first 32 bits of the fractional parts of the
+    // square roots of the first eight primes.
+    std::uint32_t hash[8] = {0x6a09e667u,
+                             0xbb67ae85u,
+                             0x3c6ef372u,
+                             0xa54ff53au,
+                             0x510e527fu,
+                             0x9b05688cu,
+                             0x1f83d9abu,
+                             0x5be0cd19u};
+
+    // The padding: one 0x80 byte, zeroes to 56 modulo 64, then the length in bits
+    // as a big-endian 64-bit integer.
+    std::string padded = message;
+    const std::uint64_t bits = static_cast<std::uint64_t>(message.size()) * 8u;
+    padded.push_back(static_cast<char>(0x80u));
+
+    while (padded.size() % 64u != 56u) {
+        padded.push_back('\0');
+    }
+
+    for (int shift = 56; shift >= 0; shift -= 8) {
+        padded.push_back(static_cast<char>((bits >> shift) & 0xffu));
+    }
+
+    for (std::size_t offset = 0; offset < padded.size(); offset += 64u) {
+        std::uint32_t word[64] = {};
+
+        for (std::size_t i = 0; i < 16u; ++i) {
+            const std::size_t at = offset + i * 4u;
+            word[i] = (static_cast<std::uint32_t>(static_cast<std::uint8_t>(padded[at])) << 24) |
+                      (static_cast<std::uint32_t>(static_cast<std::uint8_t>(padded[at + 1u])) << 16) |
+                      (static_cast<std::uint32_t>(static_cast<std::uint8_t>(padded[at + 2u])) << 8) |
+                      static_cast<std::uint32_t>(static_cast<std::uint8_t>(padded[at + 3u]));
+        }
+
+        for (std::size_t i = 16u; i < 64u; ++i) {
+            const std::uint32_t s0 =
+                RotateRight(word[i - 15u], 7) ^ RotateRight(word[i - 15u], 18) ^ (word[i - 15u] >> 3);
+            const std::uint32_t s1 =
+                RotateRight(word[i - 2u], 17) ^ RotateRight(word[i - 2u], 19) ^ (word[i - 2u] >> 10);
+            word[i] = word[i - 16u] + s0 + word[i - 7u] + s1;
+        }
+
+        std::uint32_t a = hash[0];
+        std::uint32_t b = hash[1];
+        std::uint32_t c = hash[2];
+        std::uint32_t d = hash[3];
+        std::uint32_t e = hash[4];
+        std::uint32_t f = hash[5];
+        std::uint32_t g = hash[6];
+        std::uint32_t h = hash[7];
+
+        for (std::size_t i = 0; i < 64u; ++i) {
+            const std::uint32_t s1 = RotateRight(e, 6) ^ RotateRight(e, 11) ^ RotateRight(e, 25);
+            const std::uint32_t choose = (e & f) ^ ((~e) & g);
+            const std::uint32_t temp1 = h + s1 + choose + kSha256Round[i] + word[i];
+            const std::uint32_t s0 = RotateRight(a, 2) ^ RotateRight(a, 13) ^ RotateRight(a, 22);
+            const std::uint32_t majority = (a & b) ^ (a & c) ^ (b & c);
+            const std::uint32_t temp2 = s0 + majority;
+
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        hash[0] += a;
+        hash[1] += b;
+        hash[2] += c;
+        hash[3] += d;
+        hash[4] += e;
+        hash[5] += f;
+        hash[6] += g;
+        hash[7] += h;
+    }
+
+    const char* const digits = "0123456789abcdef";
+    std::string hex;
+    hex.reserve(64u);
+
+    for (const std::uint32_t part : hash) {
+        for (int shift = 28; shift >= 0; shift -= 4) {
+            hex.push_back(digits[(part >> shift) & 0xfu]);
+        }
+    }
+
+    return hex;
+}
+
+} // namespace
+
+// --- The seam's identity, held to the file it is the identity of --------------
+//
+// WHAT THIS IS FOR. A build input that changes delivered bits has to be able to
+// say which file it was: the seam is such an input - an unnamed call resolves
+// through the table the seam file carries, and the tests above this one measure
+// that a replaced seam delivers other bits - and until this revision nothing a
+// consumer could reach said whether the seam had been replaced, let alone by
+// what. A consumer whose regression baseline moved had no way to see that the
+// seam is why. The library reports the seam's identity now
+// (include/boys/version.hpp, BuildDefaultsSeamIdentity()), and this test is the
+// half that makes that report a claim rather than a decoration.
+//
+// WHAT IT COMPARES, AND WHY THE HASH ABOVE IS WRITTEN HERE. The identity is the
+// sha256 of the seam file, and the only way to check a digest is to compute one:
+// comparing the accessor against BOYS_BUILD_DEFAULTS_SEAM_SHA256 would be the
+// check agreeing with the definition it just read, which stays green whatever
+// file that digest was taken of. So this unit hashes the file the configure named
+// (BOYS_DEFAULTS_SEAM_FILE, CMakeLists.txt) itself and requires the library's
+// answer to be that. The two FIPS 180-4 vectors run first, so a broken hash fails
+// here rather than silently agreeing with a wrong expectation.
+//
+// WHERE EACH HALF RUNS. A default configure runs the shipped half: the seam is
+// the committed header, and the library has to say so, in the words the seam's own
+// guard lets this unit read beside it (BOYS_BUILD_DEFAULTS_SHIPPED is what the
+// committed file defines and a replacement does not). A configure with
+// BOYS_BUILD_DEFAULTS runs the other half - CI's `Build defaults (tuned fixture
+// built and tested)` step is one - and there the library must report the digest of
+// the file that configure named, which on that leg is the tuned fixture.
+//
+// WHAT IT CANNOT SEE, so that a pass here is read for what it is. It hashes the
+// source file the option named and not the copy the compiler reads: the copy is
+// configure_file(COPYONLY) of that file, so the two are the same bytes by
+// construction, and which of the two a translation unit reached is the seam
+// guard's business (boys_build_defaults.hpp). A build directory carried somewhere
+// without the sources it was configured from has no file to hash, and this test
+// skips there with a printed line rather than passing: the identity is then
+// unverified, and this file says so instead of implying otherwise.
+TEST(BuildDefaultsTest, TheReportedIdentityIsTheSeamThisBuildCompiled) {
+    // Before the implementation is used for anything: FIPS 180-4's published
+    // digests of the empty string and of "abc".
+    ASSERT_EQ(Sha256Hex(""), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    ASSERT_EQ(Sha256Hex("abc"),
+              "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+
+    const char* identity = boys::BuildDefaultsSeamIdentity();
+    std::printf("boys: defaults seam identity = %s\n", identity);
+    std::printf("boys: the configure named    = %s\n", BOYS_DEFAULTS_SEAM_FILE);
+
+    // The file, as bytes: opened binary and read whole, so the digest is of what
+    // the file holds and not of what a text-mode reader would translate it into.
+    std::string seam;
+    {
+        std::ifstream in(BOYS_DEFAULTS_SEAM_FILE, std::ios::binary);
+
+        if (!in) {
+            GTEST_SKIP() << "the seam file the configure named (" << BOYS_DEFAULTS_SEAM_FILE
+                         << ") is not readable here, so the identity the library reports could not "
+                            "be held to it - a skipped check, not a passing one";
+        }
+
+        seam.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+
+    ASSERT_FALSE(seam.empty()) << "the seam file the configure named is empty, which no seam is";
+
+#if defined(BOYS_BUILD_DEFAULTS_REPLACED)
+    const std::string digest = Sha256Hex(seam);
+    std::printf("boys: the seam file hashes to  = %s\n", digest.c_str());
+
+    EXPECT_EQ(std::string(identity), digest)
+        << "the identity this build reports is not the sha256 of the seam file the configure "
+           "named: a consumer comparing two builds by this string is comparing something other "
+           "than the seam";
+    EXPECT_EQ(std::string(identity).size(), 64u)
+        << "the reported identity is not 64 characters long, which is the form the accessor "
+           "documents for a digest";
+    EXPECT_EQ(std::string(identity).find_first_not_of("0123456789abcdef"), std::string::npos)
+        << "the reported identity is not lowercase hexadecimal, which is the form the accessor "
+           "documents for a digest";
+#else
+    EXPECT_STREQ(identity, "the committed header (the shipped choices)")
+        << "a build that replaced no seam reports an identity that does not name the shipped one, "
+           "so a consumer reading it cannot tell a shipped build from a build whose seam carried "
+           "a digest";
+
+    // The other half of the claim is the file's own: the committed seam defines
+    // BOYS_BUILD_DEFAULTS_SHIPPED and a replacement does not, so this unit can say
+    // which of the two seams it read. A unit in neither state read a seam that did
+    // not come through the option, and the shipped words are then not about the
+    // seam this unit resolved.
+#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+    constexpr bool kSeamSaysShipped = true;
+#else
+    constexpr bool kSeamSaysShipped = false;
+#endif
+    EXPECT_TRUE(kSeamSaysShipped)
+        << "the seam header this unit read defines no BOYS_BUILD_DEFAULTS_SHIPPED, so it is not "
+           "the committed file the reported identity names";
+
+    EXPECT_NE(seam.find("BOYS_BUILD_DEFAULTS_SHIPPED"), std::string::npos)
+        << "the file the configure named as the seam in force does not define "
+           "BOYS_BUILD_DEFAULTS_SHIPPED, so the shipped words the library reports do not describe "
+           "the file this build compiled";
+#endif
 }
