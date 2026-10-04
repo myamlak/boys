@@ -226,6 +226,21 @@ cannot agree with itself while disagreeing with the code. Run it after touching 
 the two sides from elsewhere, which is how a deleted declaration is shown to fail as a negative
 control.
 
+That check's unit is the shape, and a shape counts as placed when any one precision has an entry for
+it. The class is the unit a caller meets, and it is the cross of the two enumerations the library
+declares, so a second check walks that cross:
+
+```
+python3 tools/check_class_surface.py --check
+```
+
+It reads `Precision` and `Shape` from `include/boys/boys.hpp` and requires every cell of the cross to
+be served by an entry whose default policy names that class. A cell served at one precision and not
+at another is exactly what the shape-unit check cannot see: the shape is placed, and the class is
+absent. A class may instead be listed in the table's `absent` array with a reason, and the reason must
+be non-empty - an impossibility, stated - because the array being empty is this project's statement
+that the cross is served.
+
 CI runs the full platform matrix listed in the README on every push to `main` and every pull request.
 A pull request that breaks any leg fails. A maintainer run of the native toolchain gate is expected
 before merge.

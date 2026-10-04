@@ -806,6 +806,18 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_host_entry_bijection.py --check
+      # The bijection above has the shape as its unit, and a shape is served when
+      # any precision has an entry for it - so a class the library's enumerations
+      # imply and no header declares is not a shape that is missing, it is a shape
+      # that is present at another precision. This step walks the Precision-by-Shape
+      # cross the header declares and requires every cell to be served by an entry
+      # or to carry a stated reason in the table's `absent` list. A reason is
+      # admissible only for a proved impossibility, so the list being empty is the
+      # statement that the cross is served.
+      - name: Host (every class the enumerations imply)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_class_surface.py --check
       # The defaults table is the third hand-written list read against the entries
       # themselves, and until this step nothing read it: a row for a class no entry
       # reaches is a default a caller cannot ask for, and it is invisible - the
