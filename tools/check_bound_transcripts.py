@@ -85,8 +85,11 @@ What this check does not read, and why:
     says; a delivered figure written into a sentence is not, because a sentence carries no lane and
     no region for the run's side to be identified by, and the figures in one sentence belong to the
     document's own account rather than to a row of the gate's table;
-  * the pair of CUDA rows of the README's contract table whose cells are cross-references ("same
-    m-budgets as the CPU double lanes") and carry no figure at all;
+  * the CUDA fp32 `RegionBExp::kAccurate` row of the README's contract table, whose cell is a
+    cross-reference ("the same budgets as the CPU float lanes") and carries no figure at all. The
+    CUDA fp64 row was the pair's other member and states its figure now, held by the library tie
+    below - a row whose cell is a cross-reference with no figure in it is one no tie can read,
+    which is why the fp64 row's cell carries the figure rather than pointing at the CPU ones;
   * the half-ULP figures of the fp16/bf16 rows. The README's printed-run table names them as the
     numbers a run found (see UNCOVERED); the header and the README's contract table state that term
     as prose ("+ 1/2 ULP") with no number in it, and the gate composes it at run time from the
@@ -382,6 +385,14 @@ LIBRARY_TIES = (
     # check exists for, and before this entry was added the two figures of this
     # row were published by the library and held by nothing.
     LibraryTie("fp16-device", "CUDA fp16"),
+    # The device double lane's row states one figure, the double lane's 5.5e-14
+    # over the whole of x >= 0, and the README row it belongs to was a
+    # cross-reference - "the same budgets as the CPU double lanes" - carrying no
+    # figure at all, which is the one row shape this check cannot hold. So the
+    # library published a bound that no document cell stated and no tie could
+    # read, and the row states it now: this entry is what holds the two
+    # together. The header's table has no device row.
+    LibraryTie("fp64-device", "CUDA fp64"),
 )
 
 UNTIED = (

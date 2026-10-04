@@ -155,7 +155,7 @@ over part of the range than over the rest. Every figure below holds for **all** 
 | float single / batch | ≤ 1.5e-7, or ≤ 2.5e-7 in the plain-reciprocal form |
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
-| CUDA fp64 | the same budgets as the CPU double lanes |
+| CUDA fp64 | ≤ 5.5e-14 — the same budgets as the CPU double lanes, whose loosest cell this is: the CUDA surface's own double entries publish it over the whole of x ≥ 0 |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
