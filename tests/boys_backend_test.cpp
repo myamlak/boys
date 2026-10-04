@@ -322,14 +322,15 @@ constexpr bool kCoarsestFiveInForce =
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the shipped table composes. The committed list carries the ten
-// classes the host's entries reach; the five-composed table carries fifteen; this guard reads
-// all fifteen whichever is in force. A class this table does not name is no evidence that the
-// replacement chose nothing, so it answers true here.
-template <boys::Precision kLane, boys::Shape kShape>
+// carry fewer classes than the shipped table composes. The committed list carries nineteen
+// classes, the ten the host's entries reach beside the nine the device half holds; the
+// five-composed table carries twenty-four, the host's fifteen beside the device's nine; this
+// guard reads all twenty-four whichever is in force. A class this table does not name is no
+// evidence that the replacement chose nothing, so it answers true here.
+template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
 constexpr bool ClassIsTheShippedCombination() noexcept
 {
-    using Row = boys::detail::DefaultPolicyRow<boys::Device::kHost, kLane, kShape>;
+    using Row = boys::detail::DefaultPolicyRow<kDevice, kLane, kShape>;
 
     if constexpr (!Row::kCarried)
     {
@@ -364,7 +365,19 @@ constexpr bool kCoarsestClassTableInForce =
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kFixedN>() &&
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
     ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>();
+    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>() &&
+    // The device half, the same nine classes the seam's own list carries: the three device
+    // lanes by the three questions a device entry answers. A replacement that left these at
+    // the shipped combination has chosen nothing for them, which is what this reads.
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>();
 
 static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
               "the defaults header in force names all five shipped values and answers every class "

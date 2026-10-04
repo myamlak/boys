@@ -285,12 +285,14 @@ struct Coverage {
 /// The figure a class's default carries, through the name the library
 /// publishes for it.
 ///
-/// A host class reads \c DefaultGuarantee<Precision, Shape>(), which is the
-/// accessor the seam documents for "the bound a class's default policy carries".
-/// A device class has no such name yet - the same accessor reads a host class and
-/// says so (include/boys/boys.hpp, the device lane's rows are owed work) - so it
-/// reads the axis-taking accessor with the axes its own row resolves to, which
-/// is the figure the same table answers.
+/// Both sides of the interface read the one accessor:
+/// \c DefaultGuarantee<Precision, Shape, Device>() is the name the seam documents
+/// for "the bound a class's default policy carries", it reads the row the table
+/// carries for the class the caller names, and \c kDevice defaults to
+/// \c Device::kHost where a caller does not spell one. A device class reads it
+/// too, rather than assembling the figure here from the axes its own row resolves
+/// to: an assembled reading is this file's answer rather than the library's, and
+/// what the report is about is the library's.
 ///
 /// \tparam kDevice the class's device
 /// \tparam kPrecision the class's lane
@@ -298,17 +300,7 @@ struct Coverage {
 /// \returns the figure and whether this build carries the combination
 template <Device kDevice, Precision kPrecision, Shape kShape>
 AccuracyFigure ClassGuarantee() noexcept {
-    if constexpr (kDevice == Device::kHost)
-    {
-        return DefaultGuarantee<kPrecision, kShape>();
-    }
-    else
-    {
-        using Policy = DefaultPolicy<kPrecision, kShape, kDevice>;
-
-        return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
-                                      Policy::kGranularity, Policy::kDivision);
-    }
+    return DefaultGuarantee<kPrecision, kShape, kDevice>();
 }
 
 /// The arithmetic the library states a figure by: the lane's multiplicand plus
@@ -389,26 +381,25 @@ void PrintClass(Coverage& coverage) {
         ++coverage.compositionFailed;
     }
 
-    // The two named readings of one figure, held to each other where both exist:
-    // DefaultGuarantee is documented as the same figure, from the same table, as
-    // the axis-taking accessor asked with the policy's own axes.
-    if constexpr (kDevice == Device::kHost)
-    {
-        const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
-                                                             Policy::kRoute,
-                                                             Policy::kScheme,
-                                                             Policy::kPack,
-                                                             Policy::kGranularity,
-                                                             Policy::kDivision);
+    // The two named readings of one figure, held to each other: DefaultGuarantee is
+    // documented as the same figure, from the same table, as the axis-taking
+    // accessor asked with the policy's own axes, and the claim is over classes
+    // rather than over host classes - a device class reads the same accessor and
+    // is held to the same two readings.
+    const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
+                                                         Policy::kRoute,
+                                                         Policy::kScheme,
+                                                         Policy::kPack,
+                                                         Policy::kGranularity,
+                                                         Policy::kDivision);
 
-        if (!direct.available || direct.value != figure.value)
-        {
-            std::printf("    DefaultGuarantee and the axes the class resolves to disagree: "
-                        "%.17g against %.17g\n",
-                        figure.value,
-                        direct.value);
-            ++coverage.accessorsDisagree;
-        }
+    if (!direct.available || direct.value != figure.value)
+    {
+        std::printf("    DefaultGuarantee and the axes the class resolves to disagree: "
+                    "%.17g against %.17g\n",
+                    figure.value,
+                    direct.value);
+        ++coverage.accessorsDisagree;
     }
 }
 
@@ -507,7 +498,7 @@ void PrintHeader() {
 #else
     std::printf("table            no row list (BOYS_BUILD_DEFAULT_ROWS is undefined): the table is "
                 "composed from the five\n"
-                "                 names below, one row per host class, every cell this build's own "
+                "                 names below, one row per class, every cell this build's own "
                 "choice\n");
 #endif
 
@@ -659,7 +650,7 @@ int main() {
 
     if (coverage.accessorsDisagree != 0)
     {
-        std::printf("  FAILED: %zu host classes where DefaultGuarantee and the class's own axes "
+        std::printf("  FAILED: %zu classes where DefaultGuarantee and the class's own axes "
                     "disagree\n",
                     coverage.accessorsDisagree);
         ++failures;
@@ -668,7 +659,7 @@ int main() {
     if (failures == 0)
     {
         std::printf("  all %zu carried classes resolved: every reference figure is available, the "
-                    "printed\n  multiplicity composes to it to the bit, and a host class's "
+                    "printed\n  multiplicity composes to it to the bit, and a class's "
                     "DefaultGuarantee and its own\n  axes are one figure. The axes are the table's "
                     "own specializations; nothing was evaluated\n  and nothing was timed\n",
                     carried);

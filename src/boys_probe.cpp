@@ -5285,14 +5285,20 @@ constexpr const char* ShapeSpelling(Shape shape) noexcept {
 }
 
 /// One class of the seam's table, as the seam's own list names it.
+///
+/// A class is a (device, precision, shape) triple, so the device cell is part of the key and not
+/// a constant of the writer's: the list this is read from carries both halves of the interface,
+/// and a row written back with a device cell the list did not name would be a row for another
+/// class than the one read.
 struct SeamClass {
+    std::string device; ///< the seam's device cell, e.g. "kHost" or "kDevice"
     std::string precision; ///< the seam's precision cell, e.g. "kFp64"
     std::string shape; ///< the seam's shape cell, e.g. "kAllOrders"
 };
 
 #define BOYS_PROBE_SEAM_CLASS(device, precision, shape, route, scheme, budget, pack, granularity,  \
                               division, exp)                                                     \
-    {#precision, #shape},
+    {#device, #precision, #shape},
 
 /// The classes the seam in force carries, read from its own `BOYS_BUILD_DEFAULT_ROWS` list
 /// rather than written here: a class the seam adds is emitted without an edit here, and one
@@ -5336,7 +5342,11 @@ struct EmittedSeamRow {
     bool choiceAlone = false;
 
     /// Whether the cells written are the file's own five rather than a combination this run
-    /// measured: true of a class the run ranked no cell of.
+    /// measured: true of a class the run ranked no cell of. A class of the device half is one of
+    /// these by construction - this probe ranks the host's cells and no device cell - and its
+    /// row states the same five at its own lane's budget together with the device lane's own
+    /// two names, so the block that accounts for the rows names it with the host's fallbacks
+    /// rather than leaving it in a group of its own.
     bool fromFive = false;
 };
 
@@ -5449,42 +5459,55 @@ SeamFive FileFive() {
     return SeamFive{};
 }
 
-/// A lane the seam's own precision cell can name, with the budget the library states for it.
+/// A lane the seam's own precision cell can name, the device it runs on, and the budget
+/// the library states for it.
 ///
 /// The budget is resolved here, at compile time and beside the lane it belongs to, because the
 /// library states one per lane of the enumeration and has none for a value outside it: the
 /// table is keyed by the enumeration, so a row this file writes carries the same budget cell
 /// the library's own macro would write for that lane, and a lane no enumerator names has no
 /// budget to be written rather than the nearest one to it.
+///
+/// The device is stated besides it because a row is written for a class and a class is a
+/// (device, precision, shape) triple: the classes this run measures are the host's, so a
+/// class of the device half is not this run's to restate at the host's choices, and telling
+/// the two halves apart is a reading of the table rather than of a spelling.
 struct SeamLaneBudget {
     Precision lane;   ///< the precision lane, as the library's own enumeration names it
     BoysBudget budget; ///< the budget a class of that lane falls back to
+    Device device; ///< the device that lane runs on: the seam's first key
 };
 
 /// The seam lanes, in the order the library enumerates them.
 constexpr SeamLaneBudget kSeamLaneBudgets[] = {
-    {Precision::kFp64, detail::LaneFallbackBudget<Precision::kFp64>()},
-    {Precision::kFp32, detail::LaneFallbackBudget<Precision::kFp32>()},
-    {Precision::kFp16, detail::LaneFallbackBudget<Precision::kFp16>()},
-    {Precision::kFp32Device, detail::LaneFallbackBudget<Precision::kFp32Device>()},
-    {Precision::kFp64Device, detail::LaneFallbackBudget<Precision::kFp64Device>()},
-    {Precision::kFp16Device, detail::LaneFallbackBudget<Precision::kFp16Device>()},
+    {Precision::kFp64, detail::LaneFallbackBudget<Precision::kFp64>(), Device::kHost},
+    {Precision::kFp32, detail::LaneFallbackBudget<Precision::kFp32>(), Device::kHost},
+    {Precision::kFp16, detail::LaneFallbackBudget<Precision::kFp16>(), Device::kHost},
+    {Precision::kFp32Device, detail::LaneFallbackBudget<Precision::kFp32Device>(),
+     Device::kDevice},
+    {Precision::kFp64Device, detail::LaneFallbackBudget<Precision::kFp64Device>(),
+     Device::kDevice},
+    {Precision::kFp16Device, detail::LaneFallbackBudget<Precision::kFp16Device>(),
+     Device::kDevice},
 };
 
 /// The `X(...)` call as the seam writes it: the cells in the seam's own order, broken after
 /// the budget cell and continued under it, each line ending in the macro's backslash.
 ///
-/// The class's own two cells are written back as the seam spelled them rather than re-spelled
-/// from the enumerator they named: a class the probe reads and does not understand is still a
-/// class the file it replaces carries, and a row written from the seam's own tokens cannot
-/// disagree with the seam about which class it is for.
+/// The class's own three cells are written back as the seam spelled them rather than re-spelled
+/// from the enumerator they named - the device cell included, which is what keeps a device class
+/// a device class: a row written with the host's cell would be a row for another class, and the
+/// two would be two specializations of one template, which does not compile. A class the probe
+/// reads and does not understand is still a class the file it replaces carries, and a row
+/// written from the seam's own tokens cannot disagree with the seam about which class it is for.
 ///
 /// Every axis the policy carries has a cell here, the region-B exponential included. A cell
 /// the row format leaves out is a cell the seam's row macro takes and this writer must
 /// therefore write: the row it emits is read back by the seam's own macro, and a call short
 /// of one cell is an error where that macro expands rather than a row that resolves to the
 /// default of the axis nobody wrote.
-std::string SeamRowCall(const std::string& precisionToken,
+std::string SeamRowCall(const std::string& deviceToken,
+                        const std::string& precisionToken,
                         const std::string& shapeToken,
                         BoysBudget budget,
                         FitRoute route,
@@ -5493,12 +5516,12 @@ std::string SeamRowCall(const std::string& precisionToken,
                         FitGranularity granularity,
                         DivisionForm division,
                         RegionBExp exp) {
-    return Text("    X(kHost, %s, %s, %s, %s, %s,\\\n"
+    return Text("    X(%s, %s, %s, %s, %s, %s,\\\n"
                 "      %s, %s, %s,\\\n"
                 "      %s)\\\n",
-                precisionToken.c_str(), shapeToken.c_str(), RouteCell(route), SchemeCell(scheme),
-                BudgetCell(budget), PackCell(pack), GranularityCell(granularity),
-                DivisionCell(division), ExpCell(exp));
+                deviceToken.c_str(), precisionToken.c_str(), shapeToken.c_str(),
+                RouteCell(route), SchemeCell(scheme), BudgetCell(budget), PackCell(pack),
+                GranularityCell(granularity), DivisionCell(division), ExpCell(exp));
 }
 
 /// The rows this run's own rankings imply, one per class the seam in force carries, in the
@@ -5508,7 +5531,12 @@ std::string SeamRowCall(const std::string& precisionToken,
 /// the figure beside it; one whose class held a single entry carries the same combination
 /// under the marker a choice carries, because an entry that stood alone was not compared
 /// and the seam's own header asks for the two to be written differently. A class the run
-/// ranked no cell of carries the file's five at that lane's budget and says so.
+/// ranked no cell of carries the file's five at that lane's budget and says so - and a class
+/// of the device half is one this run ranks no cell of by construction, because the classes
+/// this run measures are the host's, so it carries those five beside the device lane's own
+/// division form and its own region-B exponential. A row keyed to a device class with the
+/// host's members under it is the one thing this writer may not produce: a build pointed at
+/// it would resolve an unnamed device call through the host's seam.
 std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
     const SeamFive five = FileFive();
     std::vector<EmittedSeamRow> rows;
@@ -5518,6 +5546,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         EmittedSeamRow row;
         bool laneFound = false;
         Precision lane = Precision::kFp64;
+        Device laneDevice = Device::kHost;
         BoysBudget budget = detail::LaneFallbackBudget<Precision::kFp64>();
         Shape shape = Shape::kAllOrders;
 
@@ -5527,6 +5556,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             {
                 lane = candidate.lane;
                 budget = candidate.budget;
+                laneDevice = candidate.device;
                 laneFound = true;
             }
         }
@@ -5546,6 +5576,25 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         }
 
         row.klass = Text("%s %s", LaneSpelling(lane), ShapeSpelling(shape));
+
+        // A class of the device half: a class this run has no cell of to write, because the
+        // classes this run measures are the host's. The row is the file's own point at the
+        // device lane's own names - the five above at this lane's budget beside
+        // `kDefaultDeviceDivisionForm` and `kDefaultDeviceRegionBExp`, which is what a device
+        // call that names no policy resolves to - and not the host's two, which would leave a
+        // build resolving an unnamed device call through the host's seam.
+        if (laneDevice == Device::kDevice)
+        {
+            row.fromFive = true;
+            row.marker = "    /* a choice, not a measurement: this run ranks no cell of a\n"
+                         "       class of the device half, so the row states the five above at this\n"
+                         "       lane's budget beside the device lane's own two names */\\\n";
+            row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
+                                    five.route, five.scheme, five.pack, five.granularity,
+                                    kDefaultDeviceDivisionForm, kDefaultDeviceRegionBExp);
+            rows.push_back(std::move(row));
+            continue;
+        }
 
         const SeamWinner winner = WinnerOf(report, klass.precision, klass.shape);
 
@@ -5580,9 +5629,10 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
                                   OptionProbeDefaultHowName(winner.how).c_str());
             }
 
-            row.cells = SeamRowCall(klass.precision, klass.shape, budget, written->route,
-                                    written->scheme, written->pack, written->granularity,
-                                    written->division, written->regionBExp);
+            row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
+                                    written->route, written->scheme, written->pack,
+                                    written->granularity, written->division,
+                                    written->regionBExp);
             rows.push_back(std::move(row));
             continue;
         }
@@ -5595,8 +5645,9 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         row.marker = "    /* a choice, not a measurement: this run ranked no cell of this\n"
                      "       class, so the row states the five above at this lane's budget and the\n"
                      "       library's own region-B exponential */\\\n";
-        row.cells = SeamRowCall(klass.precision, klass.shape, budget, five.route, five.scheme,
-                                five.pack, five.granularity, five.division, kDefaultHostRegionBExp);
+        row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget, five.route,
+                                five.scheme, five.pack, five.granularity, five.division,
+                                kDefaultHostRegionBExp);
         rows.push_back(std::move(row));
     }
 
@@ -5708,7 +5759,9 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
     if (fromFive > 0)
     {
         text += Text("  %zu class(es) carry the file's own five, because this run ranked no cell "
-                     "of\n  them — a class with no cell ranked has no figure of its own to carry:\n",
+                     "of\n  them — a class with no cell ranked has no figure of its own to carry, "
+                     "and a\n  class of the device half carries the five beside the device lane's "
+                     "own two names:\n",
                      fromFive);
 
         for (const EmittedSeamRow& row : rows)
@@ -5842,7 +5895,8 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += Text("/// measured%s: the classes it ranked carry the combination that won the\n",
                  takenAt.empty() ? "" : Text(" on this host, %s", takenAt.c_str()).c_str());
     text += "/// class (see the row list below), and the classes it ranked no cell of carry the five\n";
-    text += "/// below at their own lane's budget.\n";
+    text += "/// below at their own lane's budget - a class of the device half beside the device lane's\n";
+    text += "/// own two names, which are written below with the five.\n";
     text += "///\n";
     text += "/// A row is a measurement taken on one machine and not a choice of the library's, so\n";
     text += "/// this file belongs to the host that produced it: a report from a build pointed at it\n";
@@ -5857,8 +5911,9 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "/// round and compared through the ratio of two times inside the round they were taken\n";
     text += "/// in, so a clock common to the round cancels.\n";
     text += "///\n";
-    text += "/// WHAT A REPLACEMENT CARRIES, and this file is one: the five names below, this row\n";
-    text += "/// list, and no `BOYS_BUILD_DEFAULTS_SHIPPED`. A build pointed at it through the\n";
+    text += "/// WHAT A REPLACEMENT CARRIES, and this file is one: the seven names below - the host's\n";
+    text += "/// five and the device lane's two - this row list, and no\n";
+    text += "/// `BOYS_BUILD_DEFAULTS_SHIPPED`. A build pointed at it through the\n";
     text += "/// `BOYS_BUILD_DEFAULTS` CMake option defines `BOYS_BUILD_DEFAULTS_REPLACED` and reads\n";
     text += "/// it instead of the committed file.\n";
     text += "\n";
@@ -5874,12 +5929,24 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += Text("#define BOYS_BUILD_DEFAULT_PACK_AXIS %s\n\n", PackCell(five.pack));
     text += Text("#define BOYS_BUILD_DEFAULT_DIVISION_FORM %s\n\n", DivisionCell(five.division));
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_GRANULARITY %s\n\n", GranularityCell(five.granularity));
+    text += "/// The device lane's own two names, read from the seam this run replaced and written back\n";
+    text += "/// beside the host's five. A device class resolves its division form and its region-B\n";
+    text += "/// exponential to these and never to the host's members above: the two lanes' published\n";
+    text += "/// figures are two sets, so one name for both targets could only be wrong on one of them.\n";
+    text += "/// A replacement that leaves either name out does not compile - boys/accuracy.hpp reads\n";
+    text += "/// both, and the committed seam states them beside the host's five for the same reason.\n";
+    text += Text("#define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM %s\n\n",
+                 DivisionCell(kDefaultDeviceDivisionForm));
+    text += Text("#define BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP %s\n\n",
+                 ExpCell(kDefaultDeviceRegionBExp));
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
     text += "/// format. A measured row is one this run's rounds placed first in its class: the\n";
     text += "/// combination below is the winner's own, cell for cell, and every axis of the policy\n";
     text += "/// has a cell here — the region-B exponential included, so the row states the\n";
     text += "/// arithmetic the class's first place was measured at. A row marked a choice is one the\n";
-    text += "/// run did not rank, and it states the five above with the library's own exponential.\n";
+    text += "/// run did not rank, and it states the five above with the lane's own exponential: the\n";
+    text += "/// host's on a host class, and the device lane's beside its own division form on a class\n";
+    text += "/// of the device half.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
     for (const EmittedSeamRow& row : rows)
