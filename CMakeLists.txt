@@ -49,7 +49,7 @@ set(boysExamples
     07_option_probe
     08_shell_quartet_batch)
 option(BUILD_CUDA
-    "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
+    "Build the CUDA lane (needs the CUDA toolkit; CI compiles it and runs no kernel, so the device figures stay a local gate)"
     OFF)
 
 # Warnings in this tree's own code are build failures. ON by default: a gate
@@ -1148,8 +1148,8 @@ if (BUILD_CUDA)
         # that, so the suite is not failed for running on a host other lanes are
         # using, and a run that has genuinely stopped is ended.
         #
-        # No CI leg builds CUDA (BUILD_CUDA is OFF in every one), so this is a
-        # local-robustness bound and not a CI one.
+        # The linux-cuda leg compiles this lane and runs none of it - it has no
+        # device - so this is still a local-robustness bound and not a CI one.
         set_tests_properties(boys-cuda-probe-tests PROPERTIES TIMEOUT 14400)
 
         # The DEVICE GATE (tests/boys_cuda_accuracy_gate.cpp) measures every

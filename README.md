@@ -986,6 +986,7 @@ mistyped name cannot block every pull request.
 | `macos arm64` | `macos-latest` | absent | yes |
 | `macos x64` | `macos-15-intel` | present | yes |
 | `linux-x86 clang-tidy` | `ubuntu-latest` | n/a | yes |
+| `linux-cuda compile-only` | `ubuntu-latest` | n/a | no |
 <!-- platform-table:end -->
 
 ## Reproducibility

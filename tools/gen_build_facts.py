@@ -57,7 +57,7 @@ def ci_legs():
 def legs_that_probe():
     """The CI legs a build-facts step runs on: the legs whose steps pass `--leg`.
 
-    Only a leg that runs the probe can print a row, and ten of the twenty-one do
+    Only a leg that runs the probe can print a row, and ten of the twenty-two do
     not: option-plan runs the option list and no build, the clang-tidy leg builds
     no binary, and the eight option-matrix cells build the accuracy gate and the
     test suite, neither of which is the probe. The page tells a maintainer which

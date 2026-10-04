@@ -10,7 +10,7 @@ consumes, so the notices must travel with any redistribution.
 | GoogleTest | 1.17.0 (vendored) | test harness | BSD-3-Clause | `third_party/googletest/LICENSE` |
 | Google Benchmark | 1.9.5 (vendored, optional build flag) | scaling benchmarks | Apache-2.0 | `third_party/benchmark/LICENSE` |
 | mpmath (Python) | pinned in `requirements-boys.txt` | build-time-only regeneration of the coefficient tables and reference grid (`tools/gen_boys_coefficients.py`) | BSD-3-Clause | pip package metadata (not redistributed) |
-| CUDA toolkit | optional build flag | CUDA lane (kernel sources and host wrapper) | NVIDIA toolkit license | NVIDIA package (not redistributed; never CI-built) |
+| CUDA toolkit | optional build flag | CUDA lane (kernel sources and host wrapper) | NVIDIA toolkit license | NVIDIA package (not redistributed) |
 
 GoogleTest and Google Benchmark are **vendored**: their sources are
 committed in full under `third_party/`. They are not submodules — the
