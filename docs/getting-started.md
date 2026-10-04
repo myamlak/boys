@@ -311,7 +311,8 @@ machine load the rounds were taken under.
 
 Once you have a preference, name it at your call site — [the section
 above](#i-want-to-name-a-specific-evaluation) — or point `BOYS_BUILD_DEFAULTS` at a header carrying
-your own five choices for a whole build. Every call site that names nothing then compiles the choices
+your own choices for a whole build: the five a host class falls back to and the device lane's own
+two. Every call site that names nothing then compiles the choices
 your probe measured. `CONTRIBUTING.md` describes the second route.
 
 ---

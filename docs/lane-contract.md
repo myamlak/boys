@@ -1482,7 +1482,7 @@ and its card, and the probe is what a consumer runs where they deploy. The route
 carry the settings the library has always shipped and have not been ranked against a timing. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
-build replaces that file with its own five rather than editing the tree, which is what lets a
+build replaces that file with its own seven rather than editing the tree, which is what lets a
 consumer set them for the machine they deploy on without touching a library header
 (`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
 choices at no run-time cost. **One of the five a build cannot move**, and it refuses at compile time

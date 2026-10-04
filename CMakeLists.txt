@@ -200,17 +200,19 @@ else()
 endif()
 
 # --- What an unnamed call resolves to ----------------------------------------
-# The five choices a call site that names no policy gets — the fit route, the
+# The choices a call site that names no policy gets — the fit route, the
 # evaluation scheme, the packing axis, the division form and the fit granularity
-# — are compile-time values, read through include/boys/boys_build_defaults.hpp,
-# whose committed file carries the shipped choices. This option points a build
-# at a header carrying its own five, and the build then compiles those choices
-# into every entry that names none. Nothing is paid for this at run time and
-# nothing is dispatched: the choice was a template argument before and is one
-# still, so the compiler resolves exactly the call it resolved before, at the
-# values this build named.
+# on a host class, and the device lane's own division form and region-B
+# exponential beside them, because the two lanes' figures are two sets — are
+# compile-time values, read through include/boys/boys_build_defaults.hpp, whose
+# committed file carries the shipped choices. This option points a build at a
+# header carrying its own seven, and the build then compiles those choices into
+# every entry that names none. Nothing is paid for this at run time and nothing
+# is dispatched: the choice was a template argument before and is one still, so
+# the compiler resolves exactly the call it resolved before, at the values this
+# build named.
 #
-# What such a header carries is stated in that header's own comment: the five
+# What such a header carries is stated in that header's own comment: the seven
 # names, and the machine, the date and the option probe's own figures beside
 # them, because a choice made there is a measurement taken on one host and a
 # reader has to be able to tell a tuned build from a shipped one.
@@ -224,7 +226,8 @@ endif()
 # for at all, so it stays on the committed header and says so here.
 set(BOYS_BUILD_DEFAULTS "" CACHE FILEPATH
     "Header carrying this build's default fit route, scheme, packing axis, \
-division form and fit granularity; empty builds the shipped choices")
+division form and fit granularity, and the device lane's own division form and \
+region-B exponential; empty builds the shipped choices")
 
 if (BOYS_BUILD_DEFAULTS)
     if (NOT EXISTS "${BOYS_BUILD_DEFAULTS}")
@@ -265,7 +268,7 @@ if (BOYS_BUILD_DEFAULTS)
     target_compile_definitions(boys PUBLIC
         BOYS_BUILD_DEFAULTS_REPLACED=1
         BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
-    message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the five choices an "
+    message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the seven choices an "
         "unnamed call resolves to are that header's, and they are a measurement on the machine "
         "it was taken on. sha256 ${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
 elseif (CMAKE_CROSSCOMPILING)
