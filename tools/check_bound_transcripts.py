@@ -17,6 +17,13 @@ This script reads the figures off both sides and compares them. The sides are:
   * `README.md`, two tables of it: the contract table under "Accuracy contract", which resolves by
     region in its prose, and the table of the gate's own printed run, whose `Bound claimed` column
     is the gate's row identity and its bound;
+  * `docs/mainpage.md`, the landing page's contract table: the same rows in the same words as the
+    README's, one row per lane. It is a third document stating these figures - a consumer reads it
+    as the published API reference - and until this revision nothing read it, which is how its cells
+    came to drift: its CUDA fp64 row carried a cross-reference where the README carries the figure,
+    and the CUDA fp16 row the README carries was not in it at all. A table the ties are not read
+    against is a figure nothing holds, so every tie below is read against every document the file
+    names in `DOCUMENTS`, and a document added to that list is read by every tie from then on;
   * `src/boys.cpp`, whose `BoysLaneContracts()` rows are the library's own statement of one figure
     per lane plus an additive term - the side the documents are a promise to;
   * the gate's recorded run - the gate's own output, in a file - whose per-lane, per-region rows
@@ -46,12 +53,12 @@ not a promise about another, which is why the file this check reads is named and
 searched for.
 
 THE CORRESPONDENCE IS NOT ONE TO ONE, and this check does not pretend it is. The header's table has
-a cell per lane and region; the README's contract table has one cell per lane holding every figure
-that lane publishes, with the regions resolved in prose; and `BoysLaneContracts()` holds one figure
-per lane. So each tie below declares, for one gate constant, the header cell it must equal, the
-README contract row whose figures it must be one of, and - where the README's printed-run table has
-a row for the same lane and region - that cell. Where several constants come off one row (the double
-single lane's four regions off the README's one row), the row's figures are compared as a **set**:
+a cell per lane and region; a contract table has one cell per lane holding every figure that lane
+publishes, with the regions resolved in prose; and `BoysLaneContracts()` holds one figure per lane.
+So each tie below declares, for one gate constant, the header cell it must equal, the contract row
+of every document whose figures it must be one of, and - where the README's printed-run table has a
+row for the same lane and region - that cell. Where several constants come off one row (the double
+single lane's four regions off one contract row), the row's figures are compared as a **set**:
 the row states three figures and the gate four, and which of the row's figures belongs to which of
 its thresholds is the row's own prose. Reading that prose as a partition would be a mapping this
 check invented, so it compares the sets and says so here.
@@ -85,13 +92,14 @@ What this check does not read, and why:
     says; a delivered figure written into a sentence is not, because a sentence carries no lane and
     no region for the run's side to be identified by, and the figures in one sentence belong to the
     document's own account rather than to a row of the gate's table;
-  * the CUDA fp32 `RegionBExp::kAccurate` row of the README's contract table, whose cell is a
+  * the CUDA fp32 `RegionBExp::kAccurate` row of every contract table, whose cell is a
     cross-reference ("the same budgets as the CPU float lanes") and carries no figure at all. The
     CUDA fp64 row was the pair's other member and states its figure now, held by the library tie
     below - a row whose cell is a cross-reference with no figure in it is one no tie can read,
-    which is why the fp64 row's cell carries the figure rather than pointing at the CPU ones;
+    which is why the fp64 row's cell carries the figure rather than pointing at the CPU ones, in
+    each document that carries the row;
   * the half-ULP figures of the fp16/bf16 rows. The README's printed-run table names them as the
-    numbers a run found (see UNCOVERED); the header and the README's contract table state that term
+    numbers a run found (see UNCOVERED); the header and the contract tables state that term
     as prose ("+ 1/2 ULP") with no number in it, and the gate composes it at run time from the
     format's quantum at the returned value rather than from a constant;
   * the ULP figure 8 in the sweep below, which is a literal any file may carry for its own reasons.
@@ -101,16 +109,29 @@ What this check does not read, and why:
     state a lane's figure beside figures of their own (a route's measured bar, a rung's budget, an
     example's run), and holding the gate to them would need a mapping from those cells to the lane's
     that this check does not have. A page that drifts from the gate is a gap this tool does not
-    close, and this list is where that is said rather than left to be assumed.
+    close, and this list is where that is said rather than left to be assumed. `docs/mainpage.md` is
+    not one of those pages any more: the contract table it carries is a row per lane stating the
+    lane's figure and nothing else, so it is read as the README's is, and this bullet covers the
+    pages whose lane figure sits beside figures of the page's own;
+  * the route table of both `README.md` and `docs/mainpage.md` - the one whose `bound` column
+    restates a lane's bound beside the two multiply-add routes' delivered figures. Its cells mix two
+    kinds of fact: the `bound` column's `3e-14` and `1.5e-07` are a lane's tied figures written
+    again, and the delivered columns are a run's output. Holding a cell of it needs a mapping from
+    the table's own lane words (`double, single`) and its interval prose
+    (`1.0855 <= x < 11.8998`) onto the gate's claim labels and its regions, which this check does
+    not have, so no tie reads the row and its `bound` column is a restatement nothing holds. That is
+    a gap in this check's coverage and it is named here rather than left to be assumed: a figure
+    that moved in one of those cells and not in the contract table would leave this check passing.
 
 Usage:
     python tools/check_bound_transcripts.py --check
     python tools/check_bound_transcripts.py --check --readme /tmp/README.md
+    python tools/check_bound_transcripts.py --check --mainpage /tmp/mainpage.md
     python tools/check_bound_transcripts.py --check --run build/gate.log
 
-`--gate`, `--header`, `--readme`, `--library` and `--run` read a side from another file, which is
-how a shifted figure is shown to fail: copy the file, edit the copy, point the flag at it. No
-document and no source is written by this script.
+`--gate`, `--header`, `--readme`, `--mainpage`, `--library` and `--run` read a side from another
+file, which is how a shifted figure is shown to fail: copy the file, edit the copy, point the flag
+at it. No document and no source is written by this script.
 
 Exit status is 0 when every tied figure agrees, and 1 when one does not, when a constant holding a
 documented figure is declared nowhere, when a figure-bearing row is held by no tie, when the
@@ -130,6 +151,17 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 HEADER = REPO / "include" / "boys" / "boys.hpp"
 README = REPO / "README.md"
 LIBRARY = REPO / "src" / "boys.cpp"
+# The landing page's contract table. It is the README's table a second time -
+# the same rows, in the same words, one row per lane - and it is a published
+# statement of every figure below: a reader of the API reference sees it and not
+# the README. It went unread, and drifted, which is why the ties are read
+# against every document in DOCUMENTS rather than against one of them.
+MAINPAGE = REPO / "docs" / "mainpage.md"
+# Every document carrying a contract table the ties are read against. A document
+# is added here, not wired into a tie: the figures are the same fact in each of
+# them, so a tie holds the same row label in all of them, and a document the
+# list does not carry is a published figure this check does not hold.
+DOCUMENTS = (README, MAINPAGE)
 # The gate's own recorded run: what it printed, kept as a file. Its rows are the
 # side the README's printed-run table is a transcription of, and the only side
 # that carries a delivered figure. The tree does not carry one yet, and the
@@ -254,6 +286,19 @@ class Table:
 
 
 @dataclass(frozen=True)
+class Contract:
+    """One document's contract table, read: where its figures are, and the table itself.
+
+    Every document in `DOCUMENTS` carries one, and the ties read each of them -
+    a figure tied to a constant is stated by all of them, so one table read is
+    one document's cells held and the others' left to drift.
+    """
+
+    table: Table
+    bound: int  # the column index of the `Error bound` cell
+
+
+@dataclass(frozen=True)
 class RunRow:
     """One row of the gate's printed table, as the gate printed it."""
 
@@ -289,7 +334,7 @@ class Tie:
     constant: str
     header: str  # the header table's row label
     columns: tuple[str, ...]  # the header table's columns, by REGIONS key
-    readme: str  # the README contract table's row label
+    document: str  # the contract table's row label, read in every document that carries one
     unit: str = "absolute"
     regions: tuple[tuple[str, str], ...] = ()  # (lane, region) in the README's run table
 
@@ -299,7 +344,7 @@ class LibraryTie:
     """One `BoysLaneContracts()` row, and the document rows that state its figures."""
 
     row: str  # the lane name the library's row carries
-    readme: str
+    document: str  # the contract table's row label, read in every document that carries one
     header: str | None = None
 
 
@@ -315,7 +360,7 @@ class Untied:
 class Uncovered:
     """A figure-bearing row of a document this check does not hold, and why."""
 
-    table: str  # "header" | "readme-contract" | "readme-run"
+    table: str  # "header" | "<document path>:contract" | "readme-run"
     label: str
     region: str
     reason: str
@@ -326,9 +371,11 @@ class Uncovered:
 #
 # Each is one figure that is the same fact on both sides, and the ground for
 # saying so is the identity both sides already carry: a lane and a region in the
-# header's own words, a lane row in the README's, and the gate's own claim label
-# for the printed-run rows - `AddClaim("double single", "A", kBoundSingleA)` is
-# the row the README prints as `double single | A`.
+# header's own words, a lane row in a document's contract table - the same label
+# in every document of DOCUMENTS, which is what lets one tie hold them all - and
+# the gate's own claim label for the printed-run rows -
+# `AddClaim("double single", "A", kBoundSingleA)` is the row the README prints as
+# `double single | A`.
 # ---------------------------------------------------------------------------
 TIES = (
     Tie("kBoundSingleA", "double single", ("A",), "double single",
@@ -391,7 +438,10 @@ LIBRARY_TIES = (
     # figure at all, which is the one row shape this check cannot hold. So the
     # library published a bound that no document cell stated and no tie could
     # read, and the row states it now: this entry is what holds the two
-    # together. The header's table has no device row.
+    # together. docs/mainpage.md's copy of that row was the same cross-reference
+    # and is corrected with it - one lane, one figure, two documents stating it,
+    # and the tie is read against both, which is what the second document in
+    # DOCUMENTS is for. The header's table has no device row.
     LibraryTie("fp64-device", "CUDA fp64"),
 )
 
@@ -1033,6 +1083,9 @@ def main() -> int:
     parser.add_argument("--gate", default=str(GATE), help="the accuracy gate's translation unit")
     parser.add_argument("--header", default=str(HEADER), help="the public header")
     parser.add_argument("--readme", default=str(README), help="the README")
+    parser.add_argument(
+        "--mainpage", default=str(MAINPAGE), help="the landing page, whose table states the same rows"
+    )
     parser.add_argument("--library", default=str(LIBRARY), help="the lane rows' translation unit")
     parser.add_argument(
         "--run",
@@ -1043,7 +1096,7 @@ def main() -> int:
 
     gate_path, header_path = pathlib.Path(args.gate), pathlib.Path(args.header)
     readme_path, library_path = pathlib.Path(args.readme), pathlib.Path(args.library)
-    run_path = pathlib.Path(args.run)
+    mainpage_path, run_path = pathlib.Path(args.mainpage), pathlib.Path(args.run)
 
     findings: list[str] = []
     lines: list[str] = []
@@ -1055,9 +1108,19 @@ def main() -> int:
         region_column = {key: column_of(header, label) for key, label in REGIONS.items()}
 
         readme_tables = read_tables(readme_path)
-        contract = find_table(readme_tables, readme_path, "Lane", 2)
         run = find_table(readme_tables, readme_path, "Lane", 4)
-        contract_bound = column_of(contract, "Error bound")
+        # One contract table per document of DOCUMENTS, each read from the file
+        # its own flag names, so a copy of one can be pointed at with an edited
+        # figure showing the tie failing. They are read the same way and held by
+        # the same ties: a lane's figure is one fact, and a cell of any document
+        # stating it is a cell the ties have to reach. A document the list does
+        # not carry is a published figure this check would not hold.
+        by_flag = {README: readme_path, MAINPAGE: mainpage_path}
+        contracts: list[Contract] = []
+        for document in DOCUMENTS:
+            path = by_flag[document]
+            table = find_table(read_tables(path), path, "Lane", 2)
+            contracts.append(Contract(table, column_of(table, "Error bound")))
         run_region = column_of(run, "Region")
         run_bound = column_of(run, "Bound claimed")
         run_delivered = column_of(run, "Worst delivered")
@@ -1092,7 +1155,10 @@ def main() -> int:
 
         for table, name, columns in (
             (header, "the header's contract table", tuple(region_column.values())),
-            (contract, "the README's contract table", (contract_bound,)),
+            *(
+                (contract.table, f"{contract.table.source}'s contract table", (contract.bound,))
+                for contract in contracts
+            ),
             (run, "the README's printed-run table", (run_bound,)),
         ):
             lines.append(
@@ -1156,9 +1222,10 @@ def main() -> int:
                         f"`{tie.header}` row states {found.text} ({found.unit}) in its "
                         f"{REGIONS[key]} cell at {found.where}"
                     )
-            contract_row = row_of(contract, tie.readme)
-            tied.add((contract.source, contract_row.line))
-            expected.setdefault((contract.source, contract_row.line), set()).add(wanted)
+            for contract in contracts:
+                contract_row = row_of(contract.table, tie.document)
+                tied.add((contract.table.source, contract_row.line))
+                expected.setdefault((contract.table.source, contract_row.line), set()).add(wanted)
             for lane, region in tie.regions:
                 run_row = region_row(run, run_region, lane, region)
                 tied.add((run.source, run_row.line))
@@ -1255,31 +1322,34 @@ def main() -> int:
                 )
             bound, additive, plain = lanes[tie.row]
             figures = [bound] + ([additive] if additive is not None else [])
-            # The README's contract row is the one cell that states every figure
-            # a lane publishes, so it carries the plain form's own figure too.
-            # The header's table has a cell per region and states the base there,
-            # so only the README row is held to the third figure - holding the
+            # A contract row is the one cell that states every figure a lane
+            # publishes, so it carries the plain form's own figure too. The
+            # header's table has a cell per region and states the base there, so
+            # only the contract rows are held to the third figure - holding the
             # header to it would need one figure per cell where it states one.
-            readme_figures = figures + ([plain] if plain is not None else [])
+            contract_figures = figures + ([plain] if plain is not None else [])
             where = bound.where.rsplit(" ", 1)[0]
-            contract_row = row_of(contract, tie.readme)
-            tied.add((contract.source, contract_row.line))
-            # A figure a library row states is tied to the README's row the same
-            # way a gate constant's is, so the set sweep below reads both. The
-            # plain form's figure is the one figure on this side that no constant
-            # of the gate transcribes: the row states the term, the document
-            # states the figure, and the sum is the tie.
-            for figure in readme_figures:
-                expected.setdefault((contract.source, contract_row.line), set()).add(figure.key)
-            found = keys(row_figures(contract, contract_row, (contract_bound,)))
-            if found != keys(readme_figures):
-                findings.append(
-                    f"the library's `{tie.row}` row carries "
-                    f"{', '.join(pretty(figure.key) for figure in readme_figures)} at {where}, and the "
-                    f"README row `{ascii_safe(tie.readme)}` at {contract.source}:"
-                    f"{contract_row.line} states "
-                    f"{', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
-                )
+            for contract in contracts:
+                contract_row = row_of(contract.table, tie.document)
+                tied.add((contract.table.source, contract_row.line))
+                # A figure a library row states is tied to a contract row the
+                # same way a gate constant's is, so the set sweep below reads
+                # both. The plain form's figure is the one figure on this side
+                # that no constant of the gate transcribes: the row states the
+                # term, the document states the figure, and the sum is the tie.
+                for figure in contract_figures:
+                    expected.setdefault((contract.table.source, contract_row.line), set()).add(
+                        figure.key
+                    )
+                found = keys(row_figures(contract.table, contract_row, (contract.bound,)))
+                if found != keys(contract_figures):
+                    findings.append(
+                        f"the library's `{tie.row}` row carries "
+                        f"{', '.join(pretty(figure.key) for figure in contract_figures)} at {where}, "
+                        f"and the contract row `{ascii_safe(tie.document)}` at "
+                        f"{contract.table.source}:{contract_row.line} states "
+                        f"{', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
+                    )
             if tie.header is not None:
                 header_row = row_of(header, tie.header)
                 tied.add((header.source, header_row.line))
@@ -1292,29 +1362,34 @@ def main() -> int:
                         f"states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
                     )
 
-        # The README's contract rows, as sets: a row states every figure its lane
-        # publishes, and the figures tied to the row - the gate's constants and
-        # the library's own row - are all of them. This runs after both tie
-        # tables for that reason.
-        for (source, line), wanted in expected.items():
-            row = next(row for row in contract.rows if row.line == line)
-            found = keys(row_figures(contract, row, (contract_bound,)))
-            where = f"{source}:{line} (`{ascii_safe(row.label)}`)"
-            missing = wanted - found
-            extra = found - wanted
-            if missing:
-                findings.append(
-                    f"the figures tied to {where} state "
-                    f"{', '.join(sorted(pretty(key) for key in missing))}, and the row does not: "
-                    f"it states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
-                )
-            if extra:
-                findings.append(
-                    f"{where} states {', '.join(sorted(pretty(key) for key in extra))}, and "
-                    f"neither a constant of the gate nor a row of BoysLaneContracts() tied to it "
-                    f"carries it: the row would be publishing a figure nothing in the library "
-                    f"states"
-                )
+        # The contract rows of every document, as sets: a row states every figure
+        # its lane publishes, and the figures tied to the row - the gate's
+        # constants and the library's own row - are all of them. This runs after
+        # both tie tables for that reason, and over each document's table, so a
+        # row of one that states a figure the other does not is a finding rather
+        # than a row the sweep never reached.
+        for contract in contracts:
+            for row in contract.table.rows:
+                wanted = expected.get((contract.table.source, row.line))
+                if wanted is None:
+                    continue
+                found = keys(row_figures(contract.table, row, (contract.bound,)))
+                where = f"{contract.table.source}:{row.line} (`{ascii_safe(row.label)}`)"
+                missing = wanted - found
+                extra = found - wanted
+                if missing:
+                    findings.append(
+                        f"the figures tied to {where} state "
+                        f"{', '.join(sorted(pretty(key) for key in missing))}, and the row does not: "
+                        f"it states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
+                    )
+                if extra:
+                    findings.append(
+                        f"{where} states {', '.join(sorted(pretty(key) for key in extra))}, and "
+                        f"neither a constant of the gate nor a row of BoysLaneContracts() tied to it "
+                        f"carries it: the row would be publishing a figure nothing in the library "
+                        f"states"
+                    )
 
         # The withdrawn bound: the header must not claim it outside region A.
         withdrawn = declared_gate(gate, UNTIED[0].constant)
@@ -1354,11 +1429,14 @@ def main() -> int:
                     f"exists for, so it has to be tied or named"
                 )
 
-        coverage = (
+        coverage = [
             ("header", header, tuple(region_column.values())),
-            ("readme-contract", contract, (contract_bound,)),
+            *(
+                (f"{contract.table.source}:contract", contract.table, (contract.bound,))
+                for contract in contracts
+            ),
             ("readme-run", run, (run_bound,)),
-        )
+        ]
         read = 0
         for name, table, columns in coverage:
             for row in table.rows:
@@ -1389,7 +1467,18 @@ def main() -> int:
             elif uncovered.table == "header":
                 row_of(header, uncovered.label)
             else:
-                row_of(contract, uncovered.label)
+                # A contract row: the name says which document's table it is in.
+                source = uncovered.table.removesuffix(":contract")
+                contract = next(
+                    (contract for contract in contracts if contract.table.source == source), None
+                )
+                if contract is None:
+                    raise CheckError(
+                        f"the uncovered list names a row of `{uncovered.table}`, and no document "
+                        f"whose contract table this check reads is named that: "
+                        f"{', '.join(contract.table.source for contract in contracts)}"
+                    )
+                row_of(contract.table, uncovered.label)
 
         if read == 0:
             raise CheckError(
@@ -1408,6 +1497,7 @@ def main() -> int:
     for line in lines:
         print(ascii_safe(line), file=out)
 
+    documents = ", ".join(contract.table.source for contract in contracts)
     print(
         f"\nties confirmed: {len(TIES)} constants, {len(LIBRARY_TIES)} library rows and the "
         f"{len(run.rows)} rows of the README's printed run",
@@ -1415,7 +1505,7 @@ def main() -> int:
     )
     for tie in TIES:
         figure = declared_gate(gate, tie.constant)
-        places = [f"the README's `{tie.readme}` (as a set)"]
+        places = [f"the contract row `{tie.document}` in {documents} (as a set)"]
         places.extend(f"`{lane} | {region}` in the README's printed run" for lane, region in tie.regions)
         print(
             f"  {tie.constant:<22} {pretty(figure.key):<14} = the header's `{tie.header}` "
@@ -1431,11 +1521,11 @@ def main() -> int:
     for tie in LIBRARY_TIES:
         bound, additive, plain = lanes[tie.row]
         figures = [bound] + ([additive] if additive is not None else [])
-        readme_figures = figures + ([plain] if plain is not None else [])
+        contract_figures = figures + ([plain] if plain is not None else [])
         print(
             f"  BoysLaneContracts() {tie.row:<12} "
-            f"{', '.join(pretty(figure.key) for figure in readme_figures):<22} = the README's "
-            f"`{tie.readme}` (as a set)"
+            f"{', '.join(pretty(figure.key) for figure in contract_figures):<22} = the contract row "
+            f"`{tie.document}` in {documents} (as a set)"
             + (f" = the header's `{tie.header}` (as a set)" if tie.header else ""),
             file=out,
         )
@@ -1484,7 +1574,7 @@ def main() -> int:
     print(
         f"\nverdict: clean - {len(TIES)} transcribed constants, {len(LIBRARY_TIES)} library rows "
         f"and the {len(run.rows)} rows of the README's printed run agree with the figures "
-        f"README.md and include/boys/boys.hpp state, over the ties above. {read} figures were read "
+        f"{documents} and include/boys/boys.hpp state, over the ties above. {read} figures were read "
         f"from the documents' tables, {len(gate)} numeric-literal constants from the gate, "
         f"{len(lanes)} lane rows from the library, and {len(recorded.rows)} printed rows from the "
         f"gate's recorded run at {display(run_path)} (revision {ascii_safe(recorded.revision)})",
