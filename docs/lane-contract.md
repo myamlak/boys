@@ -1202,10 +1202,12 @@ lane hands over.
 **The path that does not carry it.** None. The **device lane** carries it too: `DivisionForm` is a
 trailing parameter of every launched entry, `DeviceOptionAxis::kDivision` crosses each entry of the
 device option space with all three forms (`boys_cuda_options.hpp`), and the device probe reports, in
-every row it prints, the form that row was measured at. What the device lane does not carry is a
-*figure* per form — its bounds are published per lane and region, so a device row is read at the
-default form and no device figure is claimed for the other two. A caller who names a form on the
-card is served that form's arithmetic there as here.
+every row it prints, the form that row was measured at. What a device lane publishes is one figure
+per form where the forms deliver different figures — the float and double device lanes' rows state
+one figure each, which all three forms deliver inside, and the half lane's row states the plain
+reciprocal's own term beside its base (1e-7 + 1e-7 = 2e-7), because at a subnormal result that form's
+rounding leaves the base. A caller who names a form on the card is served that form's arithmetic
+there as here.
 
 **The float lane's plain reciprocal carries its own figure.** The all-orders entries' region-A
 downward ladder divides by the step's constant rather than by the argument, and that step reads the
@@ -1268,7 +1270,7 @@ the bound is here.
 | half, fp16 and bfloat16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
 | double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
-| half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16Device` |
+| half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
 
 The device's three lanes are three rows and not one: each is its own precision of the CUDA surface
 (`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
