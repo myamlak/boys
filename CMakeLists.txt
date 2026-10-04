@@ -245,10 +245,29 @@ if (BOYS_BUILD_DEFAULTS)
     # that reaches the committed header instead of the replacement says which
     # build it is in and refuses to compile, rather than resolving one default
     # while the library's own instantiations resolve another.
-    target_compile_definitions(boys PUBLIC BOYS_BUILD_DEFAULTS_REPLACED=1)
+    #
+    # The seam's identity travels with the replacement: the sha256 of the file the
+    # option named. A build input that changes delivered bits has to be able to say
+    # which file it was, or a consumer whose regression baseline moved has no way
+    # to see that the seam is why. The path above is this configure's and dies with
+    # its build directory; a digest is content and travels, which is what makes two
+    # builds of one seam comparable across machines
+    # (include/boys/version.hpp, BuildDefaultsSeamIdentity()).
+    #
+    # Hashed here and not at build time because a configure-time fact is what this
+    # file's other build facts are, and because the copy above makes the file a
+    # dependency of the build system: editing it reconfigures, so the digest cannot
+    # go stale behind an edit. Read from the path resolved the way configure_file
+    # resolves it - relative to this source directory - so a configure run from
+    # another working directory hashes the file it copied and not a stranger.
+    get_filename_component(BOYS_BUILD_DEFAULTS_FILE "${BOYS_BUILD_DEFAULTS}" ABSOLUTE)
+    file(SHA256 "${BOYS_BUILD_DEFAULTS_FILE}" BOYS_BUILD_DEFAULTS_SEAM_SHA256)
+    target_compile_definitions(boys PUBLIC
+        BOYS_BUILD_DEFAULTS_REPLACED=1
+        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
     message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the five choices an "
         "unnamed call resolves to are that header's, and they are a measurement on the machine "
-        "it was taken on.")
+        "it was taken on. sha256 ${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
 elseif (CMAKE_CROSSCOMPILING)
     message(STATUS "boys: build defaults = the committed header (the shipped choices); this is "
         "a cross-compiling configure, which cannot measure the machine it compiles for.")
@@ -936,10 +955,22 @@ int main() {
     # there is one (the boys target copies the replacement before include/).
     set(BOYS_DEFAULTS_HEADER_PATH "${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_build_defaults.hpp")
     set(BOYS_DEFAULTS_HEADER_COPY "")
+    # The file itself, as a path a test can open at run time. It is the same file
+    # the sha256 definition was taken of and the same one configure_file copied,
+    # carried absolute because ctest runs from a build directory the option's own
+    # path is not relative to (CI passes tests/build_defaults_tuned.hpp relative
+    # to the source root). The defaults test reads it to hash it: the identity the
+    # library reports is the seam file's sha256, and only an independent reading
+    # of that file can hold the library to it
+    # (tests/boys_build_defaults_test.cpp).
+    set(BOYS_DEFAULTS_SEAM_FILE "${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_build_defaults.hpp")
     if (BOYS_BUILD_DEFAULTS)
         set(BOYS_DEFAULTS_HEADER_PATH "${BOYS_BUILD_DEFAULTS}")
         set(BOYS_DEFAULTS_HEADER_COPY "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp")
+        set(BOYS_DEFAULTS_SEAM_FILE "${BOYS_BUILD_DEFAULTS_FILE}")
     endif()
+    target_compile_definitions(boys-tests PRIVATE
+        BOYS_DEFAULTS_SEAM_FILE="${BOYS_DEFAULTS_SEAM_FILE}")
 
     add_executable(boys-defaults tests/boys_defaults.cpp)
     target_link_libraries(boys-defaults PRIVATE boys)
@@ -1069,8 +1100,18 @@ if (BUILD_CUDA)
         # (boys_cuda_options.hpp), so a build that replaces the defaults header
         # replaces it on both sides of the device boundary: the host and the
         # device lane then name one default and not two.
+        #
+        # The seam's identity travels with it, and it is the same digest the boys
+        # target carries: the device lane reads the file the option named exactly
+        # as the host does, so a build whose two lanes reported different seams
+        # would be a build that had two. PUBLIC for the reason the definition
+        # above is PUBLIC - a consumer's own .cu reaches the headers either way,
+        # and boys_cuda.hpp includes boys.hpp, so both lanes are answered by the
+        # one accessor (include/boys/version.hpp, BuildDefaultsSeamIdentity()).
         target_include_directories(boys-cuda BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
-        target_compile_definitions(boys-cuda PUBLIC BOYS_BUILD_DEFAULTS_REPLACED=1)
+        target_compile_definitions(boys-cuda PUBLIC
+            BOYS_BUILD_DEFAULTS_REPLACED=1
+            BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
     endif()
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
     # The multiply-add route is one build fact with two lanes behind it, and
