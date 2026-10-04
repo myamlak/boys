@@ -28,6 +28,9 @@
 
 #endif
 
+// The packed arithmetic backends this TU's kernels are written against.
+#include "boys_backend_simd.hpp"
+
 #if BOYS_SIMD_X86
 
 #include <immintrin.h>
@@ -87,15 +90,27 @@ __m256d StepMulSub(__m256d a, __m256d b, __m256d c) noexcept {
     }
 }
 
+// The float lane's routed step is the packed backend's arithmetic, named rather
+// than respelled: Avx2Fp32 is this tier's 8-wide single-precision backend, and
+// its MulAdd is the same two instructions this step used to write out. Naming it
+// is what makes the lane a call that evaluates through the arithmetic the library
+// reports for it (boys_simd.cpp, AppendPackedBackends) rather than a second
+// spelling that agrees with the report by inspection: the entries that carry the
+// orders axis - BoysAllOrdersF32 at PackAxis::kOrders and the batch entry that
+// hands it each argument - run this step. The route stays a template parameter,
+// and the backend carries it the same way, so a caller's route still selects the
+// instruction.
+//
+// The subtraction stays this lane's own: `a * b - c` is a step of a summation,
+// one rounding at the fused route, where the backend's MulSub is outside the
+// route and two roundings on every build (see the note above). The double lane's
+// multiply-add keeps its own spelling for the reason this one no longer can: the
+// double backend already answers a consumer call through the across-arguments
+// lane's region-A body (boys_simd.cpp, BoysRegionASimd, reached by the batch
+// entry's grouped run), so its report and its arithmetic are joined there.
 template <backend::MulAddRoute kMulAddRoute>
 __m256 StepMulAdd(__m256 a, __m256 b, __m256 c) noexcept {
-    if constexpr (kMulAddRoute == backend::MulAddRoute::kFused)
-    {
-        return _mm256_fmadd_ps(a, b, c);
-    } else
-    {
-        return _mm256_add_ps(_mm256_mul_ps(a, b), c);
-    }
+    return backend::Avx2Fp32<kMulAddRoute>::MulAdd(a, b, c);
 }
 
 template <backend::MulAddRoute kMulAddRoute>
