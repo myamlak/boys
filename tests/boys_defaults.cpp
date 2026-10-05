@@ -611,8 +611,8 @@ void WalkClasses(Coverage& coverage) {
 void PrintHeader() {
     std::printf("defaults header  %s\n", BOYS_DEFAULTS_HEADER_PATH);
 
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
-    std::printf("                 the committed file (BOYS_BUILD_DEFAULTS_SHIPPED): the shipped "
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
+    std::printf("                 the committed file (BOYS_BUILD_DEFAULTS_COMMITTED): the committed "
                 "choices every bound in this repository\n"
                 "                 was measured with\n");
 #elif defined(BOYS_BUILD_DEFAULTS_REPLACED)
@@ -627,7 +627,7 @@ void PrintHeader() {
         std::printf("                 read as %s\n", BOYS_DEFAULTS_HEADER_COPY);
     }
 #else
-    std::printf("                 neither state: a seam file defines BOYS_BUILD_DEFAULTS_SHIPPED or "
+    std::printf("                 neither state: a seam file defines BOYS_BUILD_DEFAULTS_COMMITTED or "
                 "the build defines\n"
                 "                 BOYS_BUILD_DEFAULTS_REPLACED, and this unit saw neither, so this "
                 "report cannot say\n"

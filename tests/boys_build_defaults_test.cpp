@@ -48,13 +48,13 @@
 //
 // WHAT IT CANNOT SEE, so that "this file passes" is read for what it is:
 //
-//   - a replacement naming the SHIPPED value is, by value, indistinguishable
+//   - a replacement naming the COMMITTED value is, by value, indistinguishable
 //     from a macro nothing expands. The comparisons are equalities and they hold
 //     in the committed configuration by construction, so this file has teeth
 //     only in a build whose seam moves a choice - which is what
 //     tests/build_defaults_tuned.hpp is for: it moves a choice on every axis a
 //     build can move, except the fit route, which tests/boys_backend_test.cpp
-//     pins at the shipped value for a header defining its fixture guard. The
+//     pins at the committed value for a header defining its fixture guard. The
 //     configure that points BOYS_BUILD_DEFAULTS at that file is where this check
 //     fails when a reader is broken, and it is not only a local one: the
 //     `Build defaults (tuned fixture built and tested)` step of
@@ -69,7 +69,7 @@
 //     revision: the batched bodies that refused it now hand a policy naming the
 //     grid to the path that reads it, and the accuracy gate's entry book measures
 //     their six cells (tests/boys_accuracy_gate.cpp). The tuned fixture leaves the
-//     packing axis at the shipped value and quotes that refusal; the uniform
+//     packing axis at the committed value and quotes that refusal; the uniform
 //     member is named by tests/build_defaults_uniform.hpp, whose row table carries
 //     it on the two host lanes' ten classes, so what a build whose class row names
 //     it compiles to is measured there rather than unmeasured here.
@@ -209,10 +209,10 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate ||
               "polynomial");
 
 // The value the committed header names, and only there: the device rows beside it are figures
-// taken at the library routine, so the shipped configuration's own device exponential is that
+// taken at the library routine, so the committed configuration's own device exponential is that
 // routine. A replacement states its own value and this pin is about what this repository
 // publishes, not about what a consumer's card measured.
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
 static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate,
               "the committed header's device region-B exponential is not the one the device rows "
               "beside it were measured at: boys/boys_build_defaults.hpp states RegionBExp::kAccurate");
@@ -319,11 +319,11 @@ using DeviceFp16AllN = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::S
                                            boys::Device::kDevice>;
 
 // Which of the two the file in force is: the committed header defines
-// BOYS_BUILD_DEFAULTS_SHIPPED, a replacement does not, and the CMake option puts
+// BOYS_BUILD_DEFAULTS_COMMITTED, a replacement does not, and the CMake option puts
 // BOYS_BUILD_DEFAULTS_REPLACED on the command line of every unit of a build that
 // used it (include/boys/boys_build_defaults.hpp states the contract).
 constexpr const char* SeamInForce() {
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
     return "the committed header (the shipped choices)";
 #elif defined(BOYS_BUILD_DEFAULTS_REPLACED)
     return "a replacement header (BOYS_BUILD_DEFAULTS)";
@@ -902,9 +902,9 @@ std::string Sha256Hex(const std::string& message) {
 // answer to be that. The two FIPS 180-4 vectors run first, so a broken hash fails
 // here rather than silently agreeing with a wrong expectation.
 //
-// WHERE EACH HALF RUNS. A default configure runs the shipped half: the seam is
+// WHERE EACH HALF RUNS. A default configure runs the committed half: the seam is
 // the committed header, and the library has to say so, in the words the seam's own
-// guard lets this unit read beside it (BOYS_BUILD_DEFAULTS_SHIPPED is what the
+// guard lets this unit read beside it (BOYS_BUILD_DEFAULTS_COMMITTED is what the
 // committed file defines and a replacement does not). A configure with
 // BOYS_BUILD_DEFAULTS runs the other half - CI's `Build defaults (tuned fixture
 // built and tested)` step is one - and there the library must report the digest of
@@ -962,27 +962,27 @@ TEST(BuildDefaultsTest, TheReportedIdentityIsTheSeamThisBuildCompiled) {
            "documents for a digest";
 #else
     EXPECT_STREQ(identity, "the committed header (the shipped choices)")
-        << "a build that replaced no seam reports an identity that does not name the shipped one, "
-           "so a consumer reading it cannot tell a shipped build from a build whose seam carried "
+        << "a build that replaced no seam reports an identity that does not name the committed one, "
+           "so a consumer reading it cannot tell a committed build from a build whose seam carried "
            "a digest";
 
     // The other half of the claim is the file's own: the committed seam defines
-    // BOYS_BUILD_DEFAULTS_SHIPPED and a replacement does not, so this unit can say
+    // BOYS_BUILD_DEFAULTS_COMMITTED and a replacement does not, so this unit can say
     // which of the two seams it read. A unit in neither state read a seam that did
-    // not come through the option, and the shipped words are then not about the
+    // not come through the option, and the committed words are then not about the
     // seam this unit resolved.
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
-    constexpr bool kSeamSaysShipped = true;
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
+    constexpr bool kSeamIsCommitted = true;
 #else
-    constexpr bool kSeamSaysShipped = false;
+    constexpr bool kSeamIsCommitted = false;
 #endif
-    EXPECT_TRUE(kSeamSaysShipped)
-        << "the seam header this unit read defines no BOYS_BUILD_DEFAULTS_SHIPPED, so it is not "
+    EXPECT_TRUE(kSeamIsCommitted)
+        << "the seam header this unit read defines no BOYS_BUILD_DEFAULTS_COMMITTED, so it is not "
            "the committed file the reported identity names";
 
-    EXPECT_NE(seam.find("BOYS_BUILD_DEFAULTS_SHIPPED"), std::string::npos)
+    EXPECT_NE(seam.find("BOYS_BUILD_DEFAULTS_COMMITTED"), std::string::npos)
         << "the file the configure named as the seam in force does not define "
-           "BOYS_BUILD_DEFAULTS_SHIPPED, so the shipped words the library reports do not describe "
+           "BOYS_BUILD_DEFAULTS_COMMITTED, so the committed words the library reports do not describe "
            "the file this build compiled";
 #endif
 }

@@ -110,7 +110,7 @@ static_assert(Fp16Default::kBudget == boys::BoysBudget::kFp16);
 static_assert(!std::is_same_v<Fp16Default, Fp64Default>);
 static_assert(std::is_same_v<Bf16Default, Fp16Default>);
 
-// The other four axes are the shipped defaults on all four names.
+// The other four axes are the committed defaults on all four names.
 static_assert(Fp64Default::kRoute == boys::kDefaultFitRoute);
 static_assert(Fp64Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp64Default::kPack == boys::kDefaultPackAxis);

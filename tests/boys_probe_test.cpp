@@ -2527,7 +2527,7 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
 
     // The seven names a replacement must carry - the host's five and the device lane's two -
     // the list macro, and the marker it must not: the committed file defines
-    // BOYS_BUILD_DEFAULTS_SHIPPED and a replacement does not, so a build pointed at this file
+    // BOYS_BUILD_DEFAULTS_COMMITTED and a replacement does not, so a build pointed at this file
     // says which of the two it read.
     EXPECT_NE(text.find("#pragma once"), std::string::npos);
     EXPECT_NE(text.find("#define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::"), std::string::npos);
@@ -2551,7 +2551,7 @@ TEST(ProbeTest, TheEmittedSeamIsAReplacementForTheSeamItRead) {
 
     // The marker the committed file defines and a replacement must not: the file may name it
     // in the sentence that says which of the two it is, and must not define it.
-    EXPECT_EQ(text.find("#define BOYS_BUILD_DEFAULTS_SHIPPED"), std::string::npos);
+    EXPECT_EQ(text.find("#define BOYS_BUILD_DEFAULTS_COMMITTED"), std::string::npos);
 
     // The classes the seam carries, read from the seam's own list - the device cell included,
     // because a class is a (device, precision, shape) triple and the row the writer emits has to

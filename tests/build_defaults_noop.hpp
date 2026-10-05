@@ -1,5 +1,5 @@
 // The negative control for the build-defaults seam: a replacement header that
-// names the shipped five and has therefore chosen nothing.
+// names the committed five and has therefore chosen nothing.
 //
 // It is here so that the seam test's replaced-choices branch can be shown to
 // fail, and to fail on its own assertion rather than on something else: a build
@@ -15,7 +15,7 @@
 // being a build with a choice. It is the control for the seam test's "has chosen
 // nothing" assertion and for nothing else: the seam's macro check
 // (tests/boys_build_defaults_test.cpp) holds each value below to the constant
-// that owns it, which a header naming the shipped values satisfies by
+// that owns it, which a header naming the committed values satisfies by
 // construction - that check has teeth where a value is moved, which is what
 // tests/build_defaults_tuned.hpp is for.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
@@ -24,7 +24,7 @@
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kRefinedReciprocal
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
-// Shipped: the device lane's own two names, which this control does not move either. They are
+// Committed: the device lane's own two names, which this control does not move either. They are
 // here so that this file fails where it is meant to - the seam test's "has chosen nothing"
 // assertion - and not on a name a replacement must carry (boys/boys_build_defaults.hpp). The
 // device lane resolves its form and its region-B exponential to these and never to the host's

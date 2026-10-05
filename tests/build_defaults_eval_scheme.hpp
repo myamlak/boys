@@ -13,14 +13,14 @@
 // and certifies for every build, and none of it is a claim about any machine. A build
 // that has measured its own machine writes the host, the date and the option probe's own
 // figures beside its choices (include/boys/boys_build_defaults.hpp states the contract a
-// replacement satisfies, and this file satisfies it at the shipped values plus one).
+// replacement satisfies, and this file satisfies it at the committed values plus one).
 //
 // WHAT A FAILURE IN THIS CONFIGURE IS A FINDING ABOUT
 //
 // The evaluation scheme, and nothing else: the other four values below are the committed
-// file's own, so this build resolves exactly one choice differently from the shipped
+// file's own, so this build resolves exactly one choice differently from the committed
 // configuration. The tuned fixture moves this same axis, but beside the division form
-// and the fit granularity; here it is the only value that differs from the shipped
+// and the fit granularity; here it is the only value that differs from the committed
 // configuration, so a value that moves in this build moved for this reason.
 //
 // WHAT THE SCHEME IS, AND WHAT MOVING IT CAN AND CANNOT CHANGE
@@ -47,14 +47,14 @@
 // so the values move in their last places rather than by any amount a bound reads.
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kSplitClenshaw
 
-// Shipped: the committed file's own values, so that the scheme above is the single value
-// this build resolves differently from the shipped configuration.
+// Committed: the committed file's own values, so that the scheme above is the single value
+// this build resolves differently from the committed configuration.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kRefinedReciprocal
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above,
 // so the evaluation scheme above is the single value this build resolves differently.
 #define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal

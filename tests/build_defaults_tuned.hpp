@@ -1,6 +1,6 @@
 // The test's own override of the build defaults: the header the seam test's
 // second configure points BOYS_BUILD_DEFAULTS at, so that a build whose choices
-// are not the shipped ones is exercised by the suite rather than by reading
+// are not the committed ones is exercised by the suite rather than by reading
 // (include/boys/boys_build_defaults.hpp states the contract a replacement
 // satisfies).
 //
@@ -13,7 +13,7 @@
 //
 // WHAT IT MOVES, AND WHY A MOVED VALUE IS THE ONLY READING
 //
-// A replacement that names the shipped value and a macro that no header expands
+// A replacement that names the committed value and a macro that no header expands
 // are the same build: both resolve an entry that names no policy to the value the
 // library had already compiled. Three of these five sat exactly that way - named
 // in the seam file, documented, and expanded by nothing - and this fixture could
@@ -23,11 +23,11 @@
 // of the five values below to the constant that owns it and to the policy an
 // entry that names no policy resolves to, so a macro dropped from its reader
 // moves the resolved value and fails that check in this configure. An axis left
-// at the shipped value is an axis that check has no teeth on, which is why the two
+// at the committed value is an axis that check has no teeth on, which is why the two
 // it leaves for the library's own refusals, and the one it leaves for a pin, each
 // say so below.
 //
-// WHAT IT LEAVES AT THE SHIPPED VALUE, AND WHY
+// WHAT IT LEAVES AT THE COMMITTED VALUE, AND WHY
 //
 // One axis is unmovable: the packing axis, refused by the library in its own
 // words at the place a build naming it would fail. The uniform member of the fit
@@ -42,7 +42,7 @@
 
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 
-// Shipped, and the one axis a build can move that this fixture may not: the fit
+// Committed, and the one axis a build can move that this fixture may not: the fit
 // route's value is pinned where the seam test reads this file -
 // tests/boys_backend_test.cpp, `static_assert(boys::kDefaultFitRoute ==
 // boys::FitRoute::kChebyshev, "the fixture's fit route is not in force")` - so a
@@ -56,7 +56,7 @@
 // Horner's rule. Different rounding, so the values move in their last places.
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kSplitClenshaw
 
-// Shipped, and unmovable: the orders axis is not an axis on a shape that
+// Committed, and unmovable: the orders axis is not an axis on a shape that
 // produces one order, and the library refuses it in its own words where the
 // refusal is a static_assert - include/boys/boys_impl.hpp, in BoysSingleImpl:
 //
@@ -82,7 +82,7 @@
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kPlainReciprocal
 
 // Moved: the partition the certified lanes are defined by, in place of the
-// narrow partition the shipped header names. It is not the member the build
+// narrow partition the committed header names. It is not the member the build
 // cannot move: that is the packing axis, and CONTRIBUTING.md says so. The
 // granularity's uniform member was refused by the batched bodies until this
 // revision and those bodies now hand it to the path that reads the grid, so that
@@ -96,7 +96,7 @@
 // name it.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above,
 // so the three axes moved above are the values this build resolves differently and the device
 // half of it compiles what the committed file names.

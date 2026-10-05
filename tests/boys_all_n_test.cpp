@@ -640,11 +640,11 @@ std::vector<double> RunOrdersAxis(const std::vector<double>& xs, int nmax, bool 
 
 } // namespace
 
-// The default policy still names the shipped axis, so a call site that names no
+// The default policy still names the committed axis, so a call site that names no
 // axis compiles the entry it always did.
 static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved: a call site that names no axis must compile the "
-              "shipped path");
+              "committed path");
 static_assert(OrdersAxisPolicy<boys::EvalScheme::kSplitClenshaw>::kPack == boys::PackAxis::kOrders,
               "the policy does not name the orders axis");
 
@@ -734,13 +734,13 @@ TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
 }
 
 // The axis is reachable: naming it changes the values a caller receives in region A,
-// since the shipped entry reaches most region-A orders by a recursion from the batch
+// since the committed entry reaches most region-A orders by a recursion from the batch
 // seed where this axis evaluates each order's own fit. Both are inside the entry's
 // bound, so what moves is which certified value a caller gets.
 TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();
-    const std::vector<double> shipped = RunEntry(gGrid, false, true);
+    const std::vector<double> committed = RunEntry(gGrid, false, true);
     const std::vector<double> axes =
         RunOrdersAxis<boys::EvalScheme::kSplitClenshaw>(gGrid.xs, nmax, true);
     std::size_t differingInA = 0;
@@ -759,7 +759,7 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
         const std::size_t slot = static_cast<std::size_t>(row.n) * count + i;
         ++cellsInA;
 
-        if (!SameBits(axes[slot], shipped[slot]))
+        if (!SameBits(axes[slot], committed[slot]))
         {
             ++differingInA;
         }
@@ -781,7 +781,7 @@ TEST(BoysAllNTest, OrdersAxisChangesTheRegionAValuesAndStaysInsideTheBound) {
 
     EXPECT_GT(cellsInA, 0u);
     EXPECT_GT(differingInA, 0u)
-        << "the axis names a lane whose values are the shipped entry's: the option is not "
+        << "the axis names a lane whose values are the committed entry's: the option is not "
            "reachable";
     EXPECT_LE(worstInA, kGroupedBudget)
         << "worst delivered " << worstInA << " in region A, against its own bar";
@@ -822,7 +822,7 @@ TEST(BoysAllNTest, OrdersAxisTakesNoRegionGrouping) {
 
 // The route is carried on this entry too, by the same shape the orders axis takes: the
 // per-argument path, whose body is the all-orders entry's own. A plane call naming the
-// rational route returns that entry's planes bit for bit, and they differ from the shipped
+// rational route returns that entry's planes bit for bit, and they differ from the committed
 // ones over the intervals its rows cover: the carriage is a measurement, not a sentence.
 TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
     const int nmax = boys::kMaxBoysOrder;
@@ -831,15 +831,15 @@ TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
     boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
         nmax, gGrid.xs.data(), got.data(), count);
     std::size_t differingFromEntry = 0;
-    std::size_t differingFromShipped = 0;
+    std::size_t differingFromCommitted = 0;
 
     for (std::size_t i = 0; i < count; ++i)
     {
         std::array<double, 33> rational{};
-        std::array<double, 33> shipped{};
+        std::array<double, 33> committed{};
         boys::BoysAllOrders<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
             nmax, gGrid.xs[i], rational.data());
-        boys::BoysAllOrders<boys::EvalPolicy<>>(nmax, gGrid.xs[i], shipped.data());
+        boys::BoysAllOrders<boys::EvalPolicy<>>(nmax, gGrid.xs[i], committed.data());
 
         for (int l = 0; l <= nmax; ++l)
         {
@@ -851,17 +851,17 @@ TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
                 ++differingFromEntry;
             }
 
-            if (!SameBits(rational[n], shipped[n]))
+            if (!SameBits(rational[n], committed[n]))
             {
-                ++differingFromShipped;
+                ++differingFromCommitted;
             }
         }
     }
 
     EXPECT_EQ(differingFromEntry, 0u)
         << "the plane entry's route carriage is not the per-argument all-orders body";
-    EXPECT_GT(differingFromShipped, 0u)
-        << "the rational route returns the shipped values: the carriage is not reachable";
+    EXPECT_GT(differingFromCommitted, 0u)
+        << "the rational route returns the committed values: the carriage is not reachable";
 }
 
 TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
@@ -883,7 +883,7 @@ TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
 
     // Which arithmetic this entry's unnamed call compiles: the class's own row, which is
     // the seam's five exactly where the row spells them. The five-composed table (the
-    // shipped header, and every fixture that names no rows) spells them for every class,
+    // committed header, and every fixture that names no rows) spells them for every class,
     // and a replacement that carries its own row list need not.
     constexpr bool kRowIsTheSeamFive =
         AllNPolicy::kRoute == boys::kDefaultFitRoute &&

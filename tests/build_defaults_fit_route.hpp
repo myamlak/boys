@@ -12,19 +12,19 @@
 // and certifies for every build, and none of it is a claim about any machine. A build
 // that has measured its own machine writes the host, the date and the option probe's own
 // figures beside its choices (include/boys/boys_build_defaults.hpp states the contract a
-// replacement satisfies, and this file satisfies it at the shipped values plus one).
+// replacement satisfies, and this file satisfies it at the committed values plus one).
 //
 // WHAT A FAILURE IN THIS CONFIGURE IS A FINDING ABOUT
 //
 // The fit route, and nothing else: the other four values below are the committed file's
-// own, so this build resolves exactly one choice differently from the shipped
+// own, so this build resolves exactly one choice differently from the committed
 // configuration. Something the suite reports here is the rational route's, where the
 // same report from the tuned fixture could belong to either of the other axes it
 // crosses as easily.
 //
 // WHY THE ROUTE NEEDS A FILE OF ITS OWN
 //
-// tests/build_defaults_tuned.hpp leaves this axis at the shipped value and says a
+// tests/build_defaults_tuned.hpp leaves this axis at the committed value and says a
 // fixture naming kRationalMinimax fails
 // tests/boys_backend_test.cpp's pin -
 //
@@ -40,9 +40,9 @@
 //    five values to the tuned fixture's, so a one-axis replacement carrying that name
 //    would fail four of the five assertions instead of compiling the build this file
 //    exists to make;
-//  - not BOYS_BUILD_DEFAULTS_SHIPPED, which is how the committed header says that it,
+//  - not BOYS_BUILD_DEFAULTS_COMMITTED, which is how the committed header says that it,
 //    and not a replacement, is in force. A file carrying it would have the seam test,
-//    the backend test and the consumer check read this build as the shipped
+//    the backend test and the consumer check read this build as the committed
 //    configuration and report the wrong one.
 //
 // What the pin refuses is therefore a fixture that moves an axis and claims the tuned
@@ -59,14 +59,14 @@
 // place of the Chebyshev fits every committed bound in this repository was measured at.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kRationalMinimax
 
-// Shipped: the committed file's own values, so that the route above is the single value
-// this build resolves differently from the shipped configuration.
+// Committed: the committed file's own values, so that the route above is the single value
+// this build resolves differently from the committed configuration.
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kHorner
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kRefinedReciprocal
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above,
 // so the fit route above is the single value this build resolves differently.
 #define BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM DivisionForm::kRefinedReciprocal

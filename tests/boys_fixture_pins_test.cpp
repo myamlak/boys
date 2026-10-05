@@ -16,7 +16,7 @@
 //
 // Every assertion below compares a library constant against an enumerator written out here, and
 // not against the seam macro the constant is supposed to read: a macro dropped from its reader
-// leaves the constant holding the shipped literal, so a comparison against the macro would still
+// leaves the constant holding the committed literal, so a comparison against the macro would still
 // hold while this one falls over. The teeth are therefore on the axis the fixture moves - the fit
 // route in the first block, the scheme in the second, the division form in the third and the fit
 // granularity in the fourth - and a configure whose moved axis resolves anything but the value
@@ -39,7 +39,7 @@
 // fixture was not delivered - the header named but not copied - carries no identity, reads no
 // block here and resolves the committed values, and this file cannot see that configure's intent.
 // The assertion that catches it is the replaced-choices one in tests/boys_backend_test.cpp, which
-// refuses a header naming all five shipped values.
+// refuses a header naming all five committed values.
 //
 // WHERE IT IS BUILT
 //
@@ -76,8 +76,8 @@ constexpr const char* kFixtureInForce =
     "the uniform-row fixture (tests/build_defaults_uniform.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_TEST_ROWS)
     "the row-list fixture (tests/build_defaults_rows.hpp)";
-#elif defined(BOYS_BUILD_DEFAULTS_SHIPPED)
-    "none: the committed header, and the shipped choices";
+#elif defined(BOYS_BUILD_DEFAULTS_COMMITTED)
+    "none: the committed header, and the committed choices";
 #else
     "none: a replacement header that is not one of the five fixtures";
 #endif

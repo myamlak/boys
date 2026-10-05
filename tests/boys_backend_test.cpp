@@ -260,7 +260,7 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 // build replaces it. The names an unnamed call resolves to are the BUILD's, which is what
 // boys/boys_build_defaults.hpp exists for: a build that has measured its own machine
 // replaces that header with its own set (the CMake option is BOYS_BUILD_DEFAULTS,
-// CONTRIBUTING.md). The pins below are the shipped names where the shipped header is in
+// CONTRIBUTING.md). The pins below are the committed names where the committed header is in
 // force - the configuration every bound in this repository was measured at - and what has
 // to hold instead where it is not.
 //
@@ -269,13 +269,13 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 // partition, were literals in backend.hpp until they were wired to the same seam. The guard
 // below reads all five, so a replacement that resolved none of them is refused rather than
 // passing on two of five. The pins below cover all five only where the tuned fixture is in
-// force: the shipped configure pins the route and the scheme and leaves the packing axis,
+// force: the committed configure pins the route and the scheme and leaves the packing axis,
 // the division form and the partition unpinned, which is how three macros came to be
 // documented, replaced and read by nothing.
 static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
 
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
 static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
               "the default fit route moved");
 static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kHorner,
@@ -288,13 +288,13 @@ static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
 #else
 // A replacement is read instead of the committed file rather than beside it, so the names
-// it carries are this build's. A replacement naming the shipped set, and a seam that
+// it carries are this build's. A replacement naming the committed set, and a seam that
 // stopped delivering the file, both come out as the committed values.
 //
 // THE FIVE ARE ONE POINT, AND THE CLASS TABLE IS THE REST OF THE ANSWER. A replacement may
 // carry BOYS_BUILD_DEFAULT_ROWS, and where it does the table is expanded from those rows
 // INSTEAD of from the five (boys/boys.hpp expands one branch or the other, never both), so a
-// replacement whose five are the shipped five and whose rows move a class has chosen
+// replacement whose five are the committed five and whose rows move a class has chosen
 // something: the class policy. A guard reading only the five refuses exactly the file the
 // option probe writes - the emitted file carries the build's own five as the point a class
 // with no row resolves to, and its rows are the run's winners - which is the shape this
@@ -307,40 +307,40 @@ constexpr bool kCoarsestFiveInForce =
     boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
     boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 
-// Whether the class table answers this class with the combination the shipped build composes
-// from the shipped five.
+// Whether the class table answers this class with the combination the committed build composes
+// from the committed five.
 //
 // EVERY AXIS THE COMBINATION CARRIES IS COMPARED, the region-B exponential included. The
 // exponential is an axis of EvalPolicy like the five the seam names, so a row that moved it
-// and nothing else is a row that moved the arithmetic this build runs - and the shipped
+// and nothing else is a row that moved the arithmetic this build runs - and the committed
 // member is kFast, the value EvalPolicy's own default carries, so a guard reading the five
-// alone would answer "the shipped combination" for a class the replacement had moved the
+// alone would answer "the committed combination" for a class the replacement had moved the
 // exponential of, which is the reading that lets a build which chose something be refused for
 // having chosen nothing. That is the same shape as the row the guard's own row list could not
 // name while the row format carried six cells.
 //
 // THE EXPONENTIAL IS ONE MEMBER PER HALF, and the comparison is against the member each half's
-// shipped tables read: kFast for a host class, kAccurate for a device class - the arithmetic
+// committed tables read: kFast for a host class, kAccurate for a device class - the arithmetic
 // every figure published for that lane was measured at, which the committed seam names in
 // BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP. A device row compared against this build's own
-// kDefaultDeviceRegionBExp instead would answer "the shipped combination" for a row a
+// kDefaultDeviceRegionBExp instead would answer "the committed combination" for a row a
 // replacement had moved that name to, which is the reading the paragraph above refuses, and a
 // device row compared against the host's member - one name for both halves - answers "not the
-// shipped combination" for every device class there is, which is a guard that cannot refuse a
-// device class at all. The division cell needs no such split: the two halves' shipped forms are
+// committed combination" for every device class there is, which is a guard that cannot refuse a
+// device class at all. The division cell needs no such split: the two halves' committed forms are
 // one member.
 //
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the shipped table composes. The shipped table carries
+// carry fewer classes than the committed table composes. The committed table carries
 // twenty-four classes in both of its shapes: the committed list's fifteen host rows beside
 // the device half's nine, and the same fifteen and nine that the five names compose into.
 // This guard names all twenty-four and reads them whichever is in force; one a replacement
 // does not carry answers true below. A class this table does not name is no evidence that
 // the replacement chose nothing, so it answers true here.
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
-constexpr bool ClassIsTheShippedCombination() noexcept
+constexpr bool ClassIsTheCommittedCombination() noexcept
 {
     using Row = boys::detail::DefaultPolicyRow<kDevice, kLane, kShape>;
 
@@ -352,7 +352,7 @@ constexpr bool ClassIsTheShippedCombination() noexcept
     {
         using Policy = typename Row::Type;
 
-        constexpr boys::RegionBExp kShippedRegionBExp =
+        constexpr boys::RegionBExp kCommittedRegionBExp =
             kDevice == boys::Device::kHost ? boys::kDefaultHostRegionBExp
                                            : boys::RegionBExp::kAccurate;
 
@@ -362,51 +362,51 @@ constexpr bool ClassIsTheShippedCombination() noexcept
                Policy::kPack == boys::PackAxis::kArguments &&
                Policy::kGranularity == boys::FitGranularity::kNarrow &&
                Policy::kDivision == boys::DivisionForm::kRefinedReciprocal &&
-               Policy::kRegionBExp == kShippedRegionBExp;
+               Policy::kRegionBExp == kCommittedRegionBExp;
     }
 }
 
 constexpr bool kCoarsestClassTableInForce =
-    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kSingle>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kFixedN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64, boys::Shape::kAllOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kSingle>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kFixedN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllNAtOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32, boys::Shape::kAllOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kSingle>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kFixedN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64, boys::Shape::kSingle>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64, boys::Shape::kFixedN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64, boys::Shape::kAllN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64, boys::Shape::kAllOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32, boys::Shape::kSingle>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32, boys::Shape::kFixedN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32, boys::Shape::kAllN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32, boys::Shape::kAllOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kSingle>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kFixedN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>() &&
     // The device half, the same nine classes the seam's own list carries: the three device
     // lanes by the three questions a device entry answers. A replacement that left these at
-    // the shipped combination has chosen nothing for them, which is what this reads.
-    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp64Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp32Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
-    ClassIsTheShippedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>();
+    // the committed combination has chosen nothing for them, which is what this reads.
+    ClassIsTheCommittedCombination<boys::Precision::kFp64Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp64Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp32Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>();
 
 static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
-              "the defaults header in force names all five shipped values and answers every class "
-              "with the shipped combination, so this build has chosen nothing: point "
+              "the defaults header in force names all five committed values and answers every class "
+              "with the committed combination, so this build has chosen nothing: point "
               "BOYS_BUILD_DEFAULTS at a header that moves at least one of the seven or that carries "
-              "a row moving a class, or unset it to build the shipped configuration");
+              "a row moving a class, or unset it to build the committed configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
 // The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure
 // that delivered a header claiming this name fails here rather than passing. The name is
 // the tuned fixture's own and only its build defines it: a single-axis fixture
 // (tests/build_defaults_fit_route.hpp and the three beside it) defines neither this guard
-// nor BOYS_BUILD_DEFAULTS_SHIPPED, so no pin here reaches the one axis such a fixture
+// nor BOYS_BUILD_DEFAULTS_COMMITTED, so no pin here reaches the one axis such a fixture
 // moves, and the five values below are the tuned fixture's.
 // One assertion per axis, whichever value the fixture sets it to. Pinning only
 // the axes it happens to move is how the seam's three dead macros went unnoticed:
@@ -425,86 +425,173 @@ static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest,
 #endif
 #endif
 
-// The unnamed call is the build's policy, and its values are the shipped policy's only
-// where the shipped header is in force. The comparison is made through the entry a caller
-// writes - BoysAllOrders with no template argument against the same entry called at the
-// shipped policy explicitly - so what is measured is what a call site gets rather than
-// what a constant holds.
+// Address identity: two function addresses compare equal in a constant expression only
+// when the two names are one instantiation, and two instantiations of one entry share a
+// function-pointer type. The assertion in the test below is therefore a claim about the
+// entry's declaration - that its policy parameter defaults to its own class's row - and
+// not about two calls that happen to agree today.
+//
+// Only the yes direction is a constant expression: comparing two distinct function
+// addresses is not one under the sanitizer configuration this suite is also built in. The
+// no direction is the value comparison in the test's body, which is where two policies
+// that differ are told apart.
+template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
+
+// The unnamed call is the build's policy, and the build's policy for a call is its
+// CLASS'S ROW: the table boys/boys_build_defaults.hpp carries, read through
+// DefaultPolicy<Precision, Shape> - the name an entry's policy parameter defaults to
+// (boys/boys.hpp). That is the intent stated here, at the entry a caller writes, and it
+// is a statement about the build's table rather than about any line of this file.
+//
+// THE SEAM HAS TWO LEVELS, AND THIS TEST READS THE ONE THAT CARRIES THE ANSWER. The five
+// names at the top of the seam file are the point a class the table carries no row for
+// resolves to; the row list beside them is where a per-class answer lives, and the header
+// that expands the table reads one branch or the other, never both. This test used to
+// compare the unnamed call against a policy spelled out HERE at the five and to require
+// that nothing differ. That held while the committed file's rows were those five and it is
+// false by design now that the committed rows name what the host option probe measured:
+// the values it reported as moved are the seam answering classes it now carries a row for,
+// which is the point of the row list and not a defect in it. What the old assertion
+// measured had become "differs from the fallback five" - a property the seam no longer
+// has, and one no build should be held to, because a build that has measured its own
+// machine is supposed to differ from the fallback five.
+//
+// So the comparison is made against the row this build's table carries for the class this
+// entry belongs to, read from the table and never spelled here, and it holds in both
+// states of the seam: with the committed file, whatever rows it carries, and with any
+// replacement of it. Two things are asserted, and the second is what gives the first its
+// teeth:
+//
+//   - the unnamed call and the class's row policy's call return the same bits, over a
+//     sweep of arguments and orders that spans the domain's regions and the ladder's two
+//     ends. Address identity makes that hold by construction for today's entry - the two
+//     names are one instantiation - and that IS the claim: a revision that moved the
+//     entry's default argument off its class's alias answers a caller from a policy the
+//     build's table does not name for that class;
+//   - the unnamed call's values are the seam's own five's values exactly where that row
+//     spells them, and not otherwise. That direction is the one a class row breaks without
+//     the first assertion noticing: where the table has moved the class, an entry
+//     answering from the seam's point agrees with the five where it must not, and this
+//     equality fires. It fires on the other side too, on a row naming a cell this class's
+//     entry does not carry - the cell is one the table states and the build does not
+//     honour, so the values are the five's while the row is not.
+//
+// WHAT IT DOES NOT CHECK, so that a green run is read for what it is: one entry, the double
+// lane's all-orders ladder, so it says nothing about another class's row
+// (tests/boys_build_defaults_test.cpp walks the rest of the surface entry by entry); and
+// nothing about a library object file compiled from another seam than this translation
+// unit, which is a disagreement about which symbol a name resolves to rather than about a
+// value, and shows up at link time rather than here.
+//
+// Nor does it check that these values can show every cell a row names. A cell the class's
+// entry reads can still leave the values where they were - the packing axis is invisible to
+// this sweep where the grid answers both the row and the five, measured on this tree at 0 of
+// the 540 values differing - and such a row is read below as one the build did not follow,
+// which is the one way this equality is wrong about a row that is honest. No replacement this
+// project builds reaches that state: a five naming the grid is refused by the accuracy gate's
+// ChebyshevFit (tests/build_defaults_uniform.hpp says so of the configure it first tried),
+// and the member is exercised through a row instead.
 TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     using boys::BoysAllOrders;
-    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                     boys::EvalScheme::kHorner,
-                                     boys::BoysBudget::kFloat,
-                                     boys::PackAxis::kArguments,
-                                     boys::FitGranularity::kNarrow,
-                                     boys::DivisionForm::kRefinedReciprocal>;
+
+    // The class this entry belongs to, as the policy the build's table resolves it to.
+    // Named through the library's own alias rather than spelled out: this is the name the
+    // entry's policy parameter defaults to, so the comparison below is a claim about the
+    // build's table and not about this line.
+    using Class = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+
+    // The point the seam's own five compose: the fallback a class the table carries no row
+    // for resolves to, and the type the library names EvalPolicy<>. Not what an entry
+    // resolves to in general - an entry resolves to its class's row, which is this
+    // combination only where that row spells it.
+    using Fallback = boys::EvalPolicy<>;
+
+    static_assert(SameCall<&BoysAllOrders<>, &BoysAllOrders<Class>>,
+                  "an entry that names no policy does not name its own class's row: the class is "
+                  "the one the build's table carries for (kFp64, all-orders), and the unnamed "
+                  "call is not that policy's call");
+
+    // Which of the two the table answers this class with, read off the class's own policy so
+    // that it is the build's answer and not this line's. Every axis is read, the region-B
+    // exponential included: that is the axis a row can move while spelling the seam's five,
+    // and a flag reading five axes and stopping would call such a row the seam's own
+    // combination and then require the two calls to agree where the build's table says they
+    // must not.
+    constexpr bool kClassRowIsTheSeamFive =
+        Class::kRoute == Fallback::kRoute && Class::kScheme == Fallback::kScheme &&
+        Class::kBudget == Fallback::kBudget && Class::kPack == Fallback::kPack &&
+        Class::kGranularity == Fallback::kGranularity && Class::kDivision == Fallback::kDivision &&
+        Class::kRegionBExp == Fallback::kRegionBExp;
 
     // Arguments across the domain's regions, at orders that span the ladder: 0 is the seed
     // every higher order is reached from, and kMaxBoysOrder the widest call the entries serve.
     constexpr int kOrders[] = {0, 1, 4, 12, boys::kMaxBoysOrder};
     constexpr double kArguments[] = {0.0, 1e-12, 1e-3, 0.5, 1.0, 3.0, 11.9, 12.0, 60.0, 120.0};
 
-    std::size_t moved = 0;
+    std::size_t classMoved = 0;
+    std::size_t fallbackMoved = 0;
     std::size_t cells = 0;
 
     for (const int nmax : kOrders) {
         for (const double x : kArguments) {
-            std::array<double, boys::kMaxBoysOrder + 1> built{};
-            std::array<double, boys::kMaxBoysOrder + 1> shipped{};
+            std::array<double, boys::kMaxBoysOrder + 1> unnamed{};
+            std::array<double, boys::kMaxBoysOrder + 1> classDefault{};
+            std::array<double, boys::kMaxBoysOrder + 1> fallback{};
 
-            BoysAllOrders(nmax, x, built.data());
-            BoysAllOrders<Shipped>(nmax, x, shipped.data());
+            BoysAllOrders(nmax, x, unnamed.data());
+            BoysAllOrders<Class>(nmax, x, classDefault.data());
+            BoysAllOrders<Fallback>(nmax, x, fallback.data());
 
             for (int order = 0; order <= nmax; ++order) {
+                const std::size_t sorder = static_cast<std::size_t>(order);
                 ++cells;
 
-                if (std::bit_cast<std::uint64_t>(built[order]) !=
-                    std::bit_cast<std::uint64_t>(shipped[order])) {
-                    ++moved;
+                if (std::bit_cast<std::uint64_t>(unnamed[sorder]) !=
+                    std::bit_cast<std::uint64_t>(classDefault[sorder])) {
+                    ++classMoved;
+                }
+
+                if (std::bit_cast<std::uint64_t>(unnamed[sorder]) !=
+                    std::bit_cast<std::uint64_t>(fallback[sorder])) {
+                    ++fallbackMoved;
                 }
             }
         }
     }
 
-    std::printf("boys: this build's default policy is %s the shipped policy type; the unnamed "
-                "call and the shipped policy's call differ in %zu of %zu values\n",
-                std::is_same_v<boys::DefaultPolicyFp64, Shipped> ? "the same as" : "different from",
-                moved,
-                cells);
+    std::printf("boys: the fp64 all-orders class resolves to (route %d, %s, budget %d, %s, %s, "
+                "%s, %s); that row %s the seam's five, and the unnamed call differs from the "
+                "class's row's call in %zu of %zu values and from the seam's five's call in %zu "
+                "of them\n",
+                static_cast<int>(Class::kRoute),
+                boys::EvalSchemeName(Class::kScheme),
+                static_cast<int>(Class::kBudget),
+                boys::PackAxisName(Class::kPack),
+                boys::GranularityName(Class::kGranularity),
+                boys::DivisionFormName(Class::kDivision),
+                boys::RegionBExpName(Class::kRegionBExp),
+                kClassRowIsTheSeamFive ? "is" : "is not",
+                classMoved,
+                cells,
+                fallbackMoved);
 
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
-    // One call under this header, so a value that differs here is a translation
-    // unit and a library instantiation that did not resolve the same defaults.
-    EXPECT_EQ(moved, 0u) << "the committed defaults header is in force, so an unnamed call is the "
-                            "shipped policy's call and no value may differ";
-#elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
-    // The fixture moves the scheme, so the values are not the shipped ones and the
-    // assertion says an unnamed call follows the build's header.
-    EXPECT_GT(moved, 0u) << "the fixture moves the scheme, so an unnamed call cannot hand back "
-                            "the shipped policy's values";
-#elif defined(BOYS_BUILD_DEFAULTS_TEST_ROWS)
-    // The row-list fixture's five ARE the shipped five, so a value that differs here is the
-    // class's row answering where the five would have - which is the whole difference
-    // between a build whose table carries rows and one whose five are the only answer, and
-    // the assertion this branch exists for. Its row for the class this entry belongs to
-    // moves the scheme to the split Clenshaw recurrence, the move the tuned fixture makes
-    // above and for the same reason: different rounding, so the values move in their last
-    // places.
-    EXPECT_GT(moved, 0u) << "the row-list fixture moves the scheme of the class this entry "
-                            "belongs to, so an unnamed call cannot hand back the shipped policy's "
-                            "values: the row the build's table carries for the class is not being "
-                            "read";
-#elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_UNIFORM_ROW)
-    // The uniform-row fixture's five ARE the shipped five and its class rows move the fit
-    // granularity cell to the grid, so a value that differs here is the class's row answering
-    // where the five would have - the grid's own table, which the entry reads before any
-    // route or region test - and the all-orders ladder this comparison is made through is one
-    // of the rows that move.
-    EXPECT_GT(moved, 0u) << "the uniform-row fixture names the grid on the class row this entry "
-                            "resolves to, so an unnamed call cannot hand back the shipped policy's "
-                            "narrow-partition values: the row the build's table carries for the "
-                            "class is not being read";
-#endif
+    EXPECT_EQ(classMoved, 0u)
+        << "an unnamed call to BoysAllOrders and a call at the policy the build's table carries "
+           "for its class differ in "
+        << classMoved << " of " << cells
+        << " values: the entry's default argument is not its own class's row, so a caller that "
+           "names no policy is answered by a policy the build's table does not name for that "
+           "class";
+
+    EXPECT_EQ(fallbackMoved == 0u, kClassRowIsTheSeamFive)
+        << "the unnamed call and the seam's five's call differ in " << fallbackMoved
+        << " value(s) while the build's table row for the class "
+        << (kClassRowIsTheSeamFive ? "spells" : "does not spell")
+        << " those five: an entry resolving through the seam's point where the table has moved "
+           "the class agrees where it must not; one resolving through a row that spells the point "
+           "differs where it must not; and a row naming a cell this class's entry does not carry "
+           "is a cell the table states and the build does not honour, which reads here as the two "
+           "calls agreeing";
 }
 
 // Naming the narrow partition is answered from its own tables; combinations with no

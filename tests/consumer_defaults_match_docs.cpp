@@ -216,11 +216,11 @@ int main() {
     }
 
     // Which of the two configurations this build is in, and therefore which of the two
-    // readings the rows below make: the committed header defines BOYS_BUILD_DEFAULTS_SHIPPED
+    // readings the rows below make: the committed header defines BOYS_BUILD_DEFAULTS_COMMITTED
     // and a replacement does not, and the CMake option puts BOYS_BUILD_DEFAULTS_REPLACED on
     // the command line of every unit of a build that used it (boys_build_defaults.hpp).
     const bool tableApplies =
-#if defined(BOYS_BUILD_DEFAULTS_SHIPPED)
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
         true;
 #else
         false;

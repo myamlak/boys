@@ -12,12 +12,12 @@
 // and certifies for every build, and none of it is a claim about any machine. A build
 // that has measured its own machine writes the host, the date and the option probe's own
 // figures beside its choices (include/boys/boys_build_defaults.hpp states the contract a
-// replacement satisfies, and this file satisfies it at the shipped values plus one).
+// replacement satisfies, and this file satisfies it at the committed values plus one).
 //
 // WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
 //
 // The replaced-build branch of tests/boys_backend_test.cpp reads all five axes this file
-// names, so it refuses a replacement only when every one of them is the shipped value:
+// names, so it refuses a replacement only when every one of them is the committed value:
 //
 //   constexpr bool kCoarsestDefaultsInForce =
 //       boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
@@ -26,8 +26,8 @@
 //       boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
 //       boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 //   static_assert(!kCoarsestDefaultsInForce, "the defaults header in force names all five
-//   shipped values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
-//   that moves at least one axis, or unset it to build the shipped configuration");
+//   committed values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
+//   that moves at least one axis, or unset it to build the committed configuration");
 //
 // Four of those five comparisons hold for the values this file names and the fifth does not:
 // kPlainReciprocal is not the committed file's kRefinedReciprocal, which is the axis this
@@ -56,14 +56,14 @@
 // form's quotient recovered from the product's error.
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kPlainReciprocal
 
-// Shipped: the committed file's own values, so that the division form above is the
-// single value this build resolves differently from the shipped configuration.
+// Committed: the committed file's own values, so that the division form above is the
+// single value this build resolves differently from the committed configuration.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kHorner
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above,
 // which is why the host's division form above is not the value the device half of this build
 // carries: this configure moves one axis on one side of the device boundary.

@@ -1,6 +1,6 @@
 // The positive control for the build-defaults seam's replaced-choices guard
-// (tests/boys_backend_test.cpp, the static_assert under BOYS_BUILD_DEFAULTS_SHIPPED):
-// a replacement header whose five names are the shipped five and whose row list moves a
+// (tests/boys_backend_test.cpp, the static_assert under BOYS_BUILD_DEFAULTS_COMMITTED):
+// a replacement header whose five names are the committed five and whose row list moves a
 // class. It has chosen something - the class policy - and it must compile and pass its
 // suite.
 //
@@ -116,7 +116,7 @@
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
       DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device class
+// Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above.
 // The device rows above name both as cells, one row per class, so these two are the fallback
 // for a device class this list carries no row for and not the rows themselves.

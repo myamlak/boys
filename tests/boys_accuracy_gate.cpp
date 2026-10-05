@@ -1856,7 +1856,7 @@ int main(int argc, char** argv) {
     // which names no division form at its call site, so each divides in the form
     // its own class's default carries - the row this build's seam gives that
     // class, or the five where it gives none. Read off `kDefaultDivisionForm`
-    // alone the figure is the shipped build's, and a seam that carries a row for
+    // alone the figure is the committed build's, and a seam that carries a row for
     // one of these classes in another form would have that class's entry judged
     // against an arithmetic it does not run.
     const double floatSingleFigure =

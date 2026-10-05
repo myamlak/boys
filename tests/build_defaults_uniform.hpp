@@ -61,7 +61,7 @@
 // route-selector identity (CheckFloatPolicies) - and a fixture that moved only the first
 // would leave the second unreachable from CI, which is the shape the defect survived in.
 // Every other cell of every row below is the committed file's own, transcribed rather
-// than re-derived, so the only axis this build moves off the shipped configuration is the
+// than re-derived, so the only axis this build moves off the committed configuration is the
 // granularity, and a failure under this configure belongs to that axis and to nothing
 // else. The rows are written in the committed header's own words, their provenance
 // comments included: the values are that file's and the measurements beside them are the
@@ -70,7 +70,7 @@
 // A FIRST DRAFT OF THIS FILE TRANSCRIBED THE ROWS OF tests/build_defaults_rows.hpp
 // INSTEAD, and that is worth recording here because it is the mistake this shape invites:
 // that fixture's rows are NOT the committed ones. Its device rows carry the committed
-// five where the shipped table carries each device class's measured cells - the split
+// five where the committed table carries each device class's measured cells - the split
 // Clenshaw scheme, the coarsest partition and the plain reciprocal among them - and its
 // host list omits ten rows the committed table carries: the half lane's fixed-N, all-N
 // and all-N-at-orders shapes and the bf16 lane's five. A build against that draft
@@ -86,17 +86,17 @@
 // WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
 //
 // The replaced-build branch of tests/boys_backend_test.cpp asks two questions of a
-// replacement: whether its five host names are the shipped five, and whether every class
-// its row table carries resolves to the combination the shipped build composes from them.
+// replacement: whether its five host names are the committed five, and whether every class
+// its row table carries resolves to the combination the committed build composes from them.
 // It refuses a replacement only when both answers are yes, so this file passes the guard
-// on the second question alone: its five ARE the shipped five, and the class table is not
-// the shipped one - the row below moves a cell. The guard exists for exactly that shape,
+// on the second question alone: its five ARE the committed five, and the class table is not
+// the committed one - the row below moves a cell. The guard exists for exactly that shape,
 // which is the shape the option probe writes (`boys-option-probe --emit-defaults`).
 //
-// WHY THE FIVE ARE THE SHIPPED ONES AND THE TABLE IS NOT
+// WHY THE FIVE ARE THE COMMITTED ONES AND THE TABLE IS NOT
 //
 // A class the table carries no row for resolves to the five, so a file whose five are the
-// shipped ones and whose rows move a class is the configuration the probe emits: the seam
+// committed ones and whose rows move a class is the configuration the probe emits: the seam
 // stays the point a rowless class falls back to, and the classes the run measured resolve
 // to their own rows. Writing the move into the five instead would move every class at
 // once, which is a different build - and, as above, one this repo's own gate does not
@@ -115,7 +115,7 @@
 // different class on a different axis.
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_UNIFORM_ROW 1
 
-// Shipped: the committed file's own five. Every class the table below carries no row for
+// Committed: the committed file's own five. Every class the table below carries no row for
 // resolves to these, and the ten rows this file moves are below and not here.
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev
 #define BOYS_BUILD_DEFAULT_EVAL_SCHEME EvalScheme::kHorner
@@ -207,7 +207,7 @@
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
       DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
     /* no probe run has ranked these four shapes on this lane: the row carries the
-       shipped five at the half budget, as the fp16 class's unranked shapes do */\
+       committed five at the half budget, as the fp16 class's unranked shapes do */\
     X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kFast)\
@@ -264,7 +264,7 @@
        device seam names (`BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP`) and what every device figure this
        repository publishes was measured at. */
 
-// Shipped: the device lane's own two names, which this fixture does not move. A device
+// Committed: the device lane's own two names, which this fixture does not move. A device
 // class resolves its form and its region-B exponential to these and never to the host's
 // five above, so the cell this table moves is the granularity of ten host rows and no
 // cell any device row carries.
