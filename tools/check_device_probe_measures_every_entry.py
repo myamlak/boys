@@ -65,6 +65,9 @@ ROW = re.compile(
 # is read, and it is kept as its own text: an arm the seam's guard covers and an arm under some
 # other condition are two different facts, and only the first is the one the seam's rows answer for.
 ARM = re.compile(r"case\s+ProbeEntry::(\w+)\s*:")
+
+# A switch body over the entry, so the arms inside it can be told from another body's.
+SWITCH = re.compile(r"switch\s*\(\s*entry\s*\)")
 SEAM_GUARD = "BoysFp16"
 GUARD_OPEN = re.compile(r"^\s*#\s*(if|ifdef|ifndef)\b(.*)")
 GUARD_ELSE = re.compile(r"^\s*#\s*else\b")
@@ -74,12 +77,22 @@ FUNCTION = re.compile(r"^(?:template\s*<[^>]*>\s*)?(?:int|void|bool)\s+(\w+)\s*\
 
 
 class Arm:
-    """One `case ProbeEntry::...` label, with the function and the guard it sits under."""
+    """One `case ProbeEntry::...` label, with the function and the guard it sits under.
 
-    def __init__(self, entry: str, function: str, guard: str | None) -> None:
+    `switch` names the switch BODY the arm sits in, and it is not the same thing as `function`: one
+    function may hold more than one switch over the entry - `LaunchInKernel` holds two - and an
+    entry armed in one of them and not the other reaches the other's `default` on the runs that take
+    it, so it is offered with no figure there. An earlier version of this check keyed arms by the
+    function alone, which unioned those bodies and would have passed an entry that half the runs
+    cannot reach. A lane found that by reading the switch, not by a failure.
+    """
+
+    def __init__(self, entry: str, function: str, guard: str | None,
+                 switch: str = "") -> None:
         self.entry = entry
         self.function = function
         self.guard = guard
+        self.switch = switch
 
     @property
     def guarded(self) -> bool:
@@ -130,8 +143,9 @@ def arms_of(path: pathlib.Path) -> list[Arm]:
     found: list[Arm] = []
     guards: list[str] = []
     function = ""
+    switch = ""
 
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
         opened = GUARD_OPEN.match(line)
 
         if opened is not None:
@@ -151,8 +165,13 @@ def arms_of(path: pathlib.Path) -> list[Arm]:
         if named is not None:
             function = named.group(1)
 
+        # A switch body over the entry is its own identity, named by the line it opens on: an arm
+        # belongs to the body it sits in, and the bodies are not interchangeable.
+        if SWITCH.search(line):
+            switch = f"{function}@{number}"
+
         for match in ARM.finditer(line):
-            found.append(Arm(match.group(1), function, guards[-1] if guards else None))
+            found.append(Arm(match.group(1), function, guards[-1] if guards else None, switch))
 
     return found
 
@@ -231,8 +250,32 @@ def main() -> int:
     # device-callable one by running the caller's kernel with the entry in it, so the two families
     # have two switches and an arm in the wrong one is no figure either.
     launched_arms = {arm.entry for arm in arms if arm.function == "LaunchLaunched"}
-    kernel_arms = {arm.entry for arm in arms if arm.function == "LaunchInKernel"}
     everywhere = {arm.entry for arm in arms}
+
+    # A device-callable entry is armed when EVERY switch body over the entry carries it, not when
+    # any one does: the runs that take a body it is missing from reach that body's `default` and
+    # offer the row with no figure there. The bodies are read apart for that reason.
+    kernel_switches = sorted({arm.switch for arm in arms if arm.function == "LaunchInKernel"})
+    kernel_arms = set(callable_)
+
+    for body in kernel_switches:
+        armed_in_body = {arm.entry for arm in arms if arm.switch == body}
+        unarmed_in_body = sorted(callable_ - armed_in_body)
+
+        if unarmed_in_body:
+            kernel_arms -= set(unarmed_in_body)
+            failures += len(unarmed_in_body)
+            print(
+                f"\ncheck_device_probe_measures_every_entry: {len(unarmed_in_body)} device-callable "
+                f"entr(ies) are armed in one switch over the entry and not in another "
+                f"({body}), so the runs that take that body reach its default:",
+                file=sys.stderr,
+            )
+
+            for entry in unarmed_in_body:
+                name, _ = by_entry.get(entry, (entry, ""))
+                print(f"  {entry} ('{name}') reaches that body's default and is offered "
+                      f"with no figure there", file=sys.stderr)
 
     for label, wanted, carried in (
         ("launched", launched, launched_arms),
