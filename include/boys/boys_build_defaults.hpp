@@ -108,10 +108,13 @@
 /// argument. A row is a property of the machine it was measured on, so a build on
 /// another host has its own winners and the probe is what finds them.
 ///
-/// **The device rows are a choice and not a measurement: the device probe has not
-/// been run.** Each states the seven fallback names above at its own lane's
-/// budget, so a device class resolves to a combination this file already names
-/// rather than to one nothing chose.
+/// **The device rows are a choice and not a measurement: no device run stands.**
+/// Each states the seven fallback names above at its own lane's budget, so a
+/// device class resolves to a combination this file already names rather than to
+/// one nothing chose. The one device run there has been - a Quadro T1000, on
+/// 2026-10-04 - found every pass wider than its own canary's alarm and was
+/// withdrawn rather than published, so what replaces this paragraph is a run on a
+/// quiet card once the device surface stops moving.
 ///
 /// A row's marker says which of the two it is: a measurement, with the figure the
 /// class's winner took and how it was reached; or a choice, where the run ranked
@@ -203,8 +206,8 @@
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
-    /* a choice, not a measurement: the device probe has not been run, so each of
-       these nine rows states the fallback names above at its own lane's budget */\
+    /* a choice, not a measurement: no device run stands, so each of these nine
+       rows states the fallback names above at its own lane's budget */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate)\

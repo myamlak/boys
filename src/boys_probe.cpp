@@ -7363,8 +7363,7 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
         if (row.deviceHalf && !deviceRowsStated)
         {
             deviceRowsStated = true;
-            text += Text("    /* a choice, not a measurement: the device probe has not been run, "
-                         "so each of\n"
+            text += Text("    /* a choice, not a measurement: no device run stands, so each of\n"
                          "       these %zu rows states the fallback names above at its own lane's "
                          "budget */\\\n",
                          deviceRows);
