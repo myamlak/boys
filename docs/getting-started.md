@@ -50,12 +50,12 @@ boys::BoysAllN(6, batch, grid, 4);            // grid[k * 4 + i] = F_k(x[i])
 boys::BoysSingle(3, 1.25);                    // F_3(1.25)
 ```
 
-    F_3(1.25)  = 0.055476132923077535
+    F_3(1.25)  = 0.055476132923077584
     F_0(3.5)   = 0.46984703520162352
-    F_3(3.5)   = 0.011831383583716678
+    F_3(3.5)   = 0.01183138358371668
     F_6(3.5)   = 0.0040954447623731674
-    F_2(0.25)  = 0.1675331909073505
-    F_2(4)     = 0.017525782161993068
+    F_2(0.25)  = 0.16753319090735061
+    F_2(4)     = 0.017525782161993072
     F_2(30)    = 0.00013483513281636802
     F_0(30)    = 0.1618021593796416
     F_6(30)    = 3.6049670926598394e-08
@@ -77,7 +77,7 @@ catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
 const double f = boys::BoysSingle(n, x);
 ```
 
-    F_3(1.25) = 0.055476132923077535
+    F_3(1.25) = 0.055476132923077584
     guaranteed error <= 5.5e-14  (from throughout, every region)
     BoysAllOrders agrees to 0
 
@@ -108,11 +108,14 @@ boys::BoysAllOrders(nmax, x, ladder);         // ladder[k] = F_k(x)
     0   0.46984703520162352
     1   0.062807093111329287
     2   0.02260341370166705
-    3   0.011831383583716678
+    3   0.01183138358371668
     4   0.0075174716662426075
     5   0.0053514087962664245
     6   0.0040954447623731674
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
+
+The heading is the program's own: it names the top order the call asked for and the argument, and
+each row below it is one order, from 0 up to that top order.
 
 The entry writes `nmax + 1` doubles. The example declares the full `kMaxBoysOrder + 1`, so the same
 buffer serves any later call without a second array.
@@ -131,10 +134,10 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
 ```
 
     n = 2, stride 2
-    x = 0.25    out[ 0] = 0.1675331909073505
-    x = 1       out[ 2] = 0.10026879814501725
-    x = 4       out[ 4] = 0.017525782161993068
-    x = 12.5    out[ 6] = 0.0012030139279729953
+    x = 0.25    out[ 0] = 0.16753319090735061
+    x = 1       out[ 2] = 0.10026879814501737
+    x = 4       out[ 4] = 0.017525782161993072
+    x = 12.5    out[ 6] = 0.0012030139279729909
     x = 30      out[ 8] = 0.00013483513281636802
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
@@ -156,11 +159,11 @@ boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top 
 ```
 
     five arguments, each at its own top order
-      F_3(0.5) = 0.097222024416930064
-      F_6(2) = 0.014008835839082863
-      F_2(7.5) = 0.0042700136194305542
-      F_8(0.125) = 0.052602850434881922
-      F_4(20) = 8.1278555493588482e-06
+      F_3(0.5) = 0.097222024416930161
+      F_6(2) = 0.014008835839082766
+      F_2(7.5) = 0.004270013619430555
+      F_8(0.125) = 0.05260285043488188
+      F_4(20) = 8.1278555493588296e-06
     values the per-argument call produces: 28
     values the padded call produces:        45
     produced for nothing:                   17
@@ -197,26 +200,27 @@ values below are the program's own ladder, at the one argument and the one top o
 itself at the top of the file.
 
 ```cpp
-using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                 boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
-                                 boys::FitGranularity::kCoarsest,
-                                 boys::DivisionForm::kExactDivision>;
+using Named = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                               boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
+                               boys::FitGranularity::kCoarsest,
+                               boys::DivisionForm::kExactDivision>;
 
-boys::BoysAllOrders<Shipped>(nmax, x, named_ladder);
+boys::BoysAllOrders<Named>(nmax, x, named_ladder);
 ```
 
     k   default policy            named policy
     0   0.54629197178514799      0.54629197178514799
     1   0.092841394632249843     0.092841394632249843
-    2   0.039287837054570153     0.039287837054570153
-    3   0.022870837329790391     0.022870837329790391
-    4   0.015602172536926787     0.015602172536926787
-    worst disagreement: 0 (guaranteed error <= 5.5e-14)
+    2   0.039287837054570146     0.039287837054570153
+    3   0.022870837329790384     0.022870837329790391
+    4   0.015602172536926782     0.015602172536926787
+    worst disagreement: 6.9e-18 (guaranteed error <= 5.5e-14)
 
-The two agree here to the last bit, and that is expected rather than a coincidence: the settings
-select how the same approximation is summed, not what is approximated. The places to change it are
-the ones where they do **not** agree. Finding those on your machine is what
-[the option probe](#i-want-to-know-which-option-is-fastest-on-this-machine) is for.
+The two agree here to within 6.9e-18, far inside the 5.5e-14 guarantee, and that is expected rather
+than a coincidence: the settings select how the same approximation is summed, not what is
+approximated, so they part company only in the last bits — three of the five lines above differ
+there. The places to change it are the ones where they do **not** agree. Finding those on your
+machine is what [the option probe](#i-want-to-know-which-option-is-fastest-on-this-machine) is for.
 
 The six settings the call above writes, in the order they are written: which stored fit serves the
 interval, how its coefficients are summed, an internal precision budget, whether vector lanes hold
@@ -383,3 +387,6 @@ what instantiates the version you asked for, in your translation unit.
   needs, and which lanes that leaves.
 - [The API reference](mainpage.md) — every entry, every type, and the vocabulary this library uses,
   defined.
+- [Build facts](build-facts.md) — what a build of this library is, read out of the build: the
+  instruction sets it targets, whether a bare `a * b + c` in it is one rounding, and which arithmetic
+  backends it carries.

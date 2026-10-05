@@ -82,12 +82,12 @@ or, against a tree you have already built:
     ./try
 
 ```
-F_3(1.25)  = 0.055476132923077535
+F_3(1.25)  = 0.055476132923077584
 F_0(3.5)   = 0.46984703520162352
-F_3(3.5)   = 0.011831383583716678
+F_3(3.5)   = 0.01183138358371668
 F_6(3.5)   = 0.0040954447623731674
-F_2(0.25)  = 0.1675331909073505
-F_2(4)     = 0.017525782161993068
+F_2(0.25)  = 0.16753319090735061
+F_2(4)     = 0.017525782161993072
 F_2(30)    = 0.00013483513281636802
 F_0(30)    = 0.1618021593796416
 F_6(30)    = 3.6049670926598394e-08
@@ -718,7 +718,7 @@ library call per recurrence step, and this option removes it. Where the compiler
 `-DBOYS_WERROR=OFF` drops `-WX` for a consumer whose compiler warning noise this tree has not been
 made clean for. `-DBOYS_BUILD_DEFAULTS=<header>` compiles the choices an entry that names no
 policy resolves to — the host's five and the device lane's own division form and region-B
-exponential — from a header of your own instead of the shipped ones; the choices are compile-time
+exponential — from a header of your own instead of the committed ones; the choices are compile-time
 values, so an unnamed call costs what it costs either way. CONTRIBUTING.md states what such a
 header carries and what the option does not do.
 

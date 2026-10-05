@@ -17,15 +17,15 @@ int main()
     const int nmax = 4;
     const double x = 2.5;
 
-    using Shipped = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                     boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
-                                     boys::FitGranularity::kCoarsest,
-                                     boys::DivisionForm::kExactDivision>;
+    using Named = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                   boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
+                                   boys::FitGranularity::kCoarsest,
+                                   boys::DivisionForm::kExactDivision>;
 
     std::array<double, boys::kMaxBoysOrder + 1> default_ladder{};
     std::array<double, boys::kMaxBoysOrder + 1> named_ladder{};
     boys::BoysAllOrders(nmax, x, default_ladder);
-    boys::BoysAllOrders<Shipped>(nmax, x, named_ladder);
+    boys::BoysAllOrders<Named>(nmax, x, named_ladder);
 
     std::printf("k   default policy            named policy\n");
     double worst = 0.0;
