@@ -89,8 +89,13 @@ using Fp32AllN = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>
 using Fp32AllOrders = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
 using Fp16Single = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>;
 using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
-using Bf16Single = Fp16Single;  // the two half formats are one lane at one budget
-using Bf16AllOrders = Fp16AllOrders;
+// The two half formats are one engine at one budget and two classes: the seam keys a class
+// by the format a return carries, so the bf16 class's own row is not the fp16 class's, and
+// this name is that row rather than the fp16 one. A bf16 entry that names no policy
+// resolves through it (`Precision::kBf16`), which is why the row below compares
+// `BoysAllOrdersBf16<>` against the bf16 class and not against the fp16 class.
+using Bf16Single = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kSingle>;
+using Bf16AllOrders = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kAllOrders>;
 
 // Each shortcut name denotes the type it is defined as: `EvalPolicy<>` for the double and
 // float lanes; for the half lanes the same axes under the fp16 engine budget. That is a

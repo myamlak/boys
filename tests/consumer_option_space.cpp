@@ -80,7 +80,9 @@ constexpr std::array<PackAxis, 2> kAxes = {PackAxis::kArguments, PackAxis::kOrde
 
 /// The precision classes this file sweeps: one per name the library publishes a figure for, with
 /// the lane whose book each class's cells are counted in and the named entry its combinations are
-/// written with. The two half formats are one lane and two classes.
+/// written with. The two half formats are one engine at one budget and two lanes: each class asks
+/// the figure for its own lane, so a figure that moved on one class's row would be counted here
+/// against that row rather than against the other class's.
 struct ClassInfo {
     const char* name;  ///< the name the census prints
     const char* entry; ///< the named entry the class's combinations are written with
@@ -91,7 +93,7 @@ constexpr std::array<ClassInfo, 4> kClasses = {{
     {"fp64", "BoysAllOrders<>", boys::Precision::kFp64},
     {"fp32", "BoysAllOrdersF32<>", boys::Precision::kFp32},
     {"fp16", "BoysAllOrdersF16<>", boys::Precision::kFp16},
-    {"bf16", "BoysAllOrdersBf16<>", boys::Precision::kFp16},
+    {"bf16", "BoysAllOrdersBf16<>", boys::Precision::kBf16},
 }};
 
 // --- the committed reference grid -------------------------------------------

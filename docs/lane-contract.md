@@ -1247,11 +1247,13 @@ fits. A caller evaluating there should expect that, and should not read the 5.5e
 
 The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an
 interval partition and a packing axis, and the library offers the product of
-all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 6 lanes — 144 combinations.** Each of
+all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 7 lanes — 168 combinations.** Each of
 them is a cell the accuracy gate counts: certified and published, refused with the library's own
-reason and owed, or a device cell this host cannot run. The six lanes are the host's double, single
-and half lanes and the device's own `kFp64Device`, `kFp32Device` and `kFp16Device`, which are the
-three precisions the CUDA surface's entries are built at; a device class of the default-policy table
+reason and owed, or a device cell this host cannot run. The seven lanes are the host's double, single,
+half and bfloat16 lanes and the device's own `kFp64Device`, `kFp32Device` and `kFp16Device`, which are
+the three precisions the CUDA surface's entries are built at; `BoysLaneContracts()` publishes one row
+per lane and the count above is that list's seven rows by the twenty-four combinations the four axes
+offer, and no row of it is folded into another. A device class of the default-policy table
 is one of those three by a question.
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
@@ -1267,10 +1269,17 @@ the bound is here.
 |---|---|---|---|
 | double | 5.5e-14 | — | `Precision::kFp64` |
 | float | 1.5e-7 | — | `Precision::kFp32` |
-| half, fp16 and bfloat16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
+| half, fp16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; the format's digit is 2^-11 | `Precision::kFp16` |
+| half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-9, the coarser of the two | `Precision::kBf16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
 | double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
 | half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
+
+The host's two half lanes are two rows and not one, as the device's three are three: the seam keys a
+class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and the
+two rows state one base at two formats' digits — `DefaultPolicy<Precision::kBf16, Shape>` resolves the
+bfloat16 class and not the fp16 one. What the two rows do not do is impose a lane on a class: a
+bf16 entry that names no policy is answered by the bf16 row.
 
 The device's three lanes are three rows and not one: each is its own precision of the CUDA surface
 (`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
@@ -1279,7 +1288,7 @@ for the half ones, which is tighter than the host half lane's 1.5e-7 + ½ ULP be
 half lane is not the host's.
 
 A combination carries **`base + additive`** — the same arithmetic the README's
-contract table states lane by lane. `BoysLaneContracts()` returns those six rows, so a program
+contract table states lane by lane. `BoysLaneContracts()` returns those seven rows, so a program
 reads the figures the tables are written from rather than transcribing them, and the accuracy gate
 reads the same rows to judge a combination against.
 
@@ -1438,17 +1447,19 @@ the second names a lane no row of this library describes. Both are refusals and 
 which is what they have in common — the sentence is what tells a caller which of the two it is
 holding.
 
-Checked over the whole cross, the two accessors and this entry agree: **144 combinations of this
-build are carried or refused with a reason, and 0 of the carried ones disagreed** — every carried combination asked at
+Checked over the whole cross, the two accessors and this entry agree: **the recorded run's 144
+combinations are carried or refused with a reason, and 0 of the carried ones disagreed** — every carried combination asked at
 the figure its lane publishes answers inside it, asked at half of that figure answers outside it,
 and every lane publishes a figure to halve. The owed book reads zero above, so no combination is
 left to answer with no verdict and no figure; a member a later revision has not derived would be
 asked the same question and would answer with the accessor's own reason.
-Those counts are the accuracy gate's own tolerance block, run on this tree;
+Those counts are the accuracy gate's own tolerance block, and the block this page quotes is the one
+the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, revision e987074, whose
+build's lane table had six rows where this revision's `BoysLaneContracts()` publishes seven.
 `boys-consumer-umbrella`'s accuracy section prints the same comparison, and its four requests above
 are its own.
 
-Run on this tree, the gate's own lines for the tolerance question are:
+The gate's own lines for the tolerance question, as that recorded run has them:
 
     the tolerance query: 144 carried row(s) asked at the figure each row is judged by and
                   answered inside it, 144 of them asked at half of that figure and answered
@@ -1456,7 +1467,11 @@ Run on this tree, the gate's own lines for the tolerance question are:
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-The 144 rows are every member of the option space, and the block
+This revision's option space is one lane larger than that run's: seven lanes by the twenty-four
+combinations the four axes offer is **168 combinations**, the bf16 lane's twenty-four added to the
+recorded run's 144, and no run of this revision is quoted on this page — the block above is the
+comparison as the six-lane revision took it, and a green block here would be a claim of this tree's
+gate rather than of the run the file records. The 144 rows are every member of that revision's option space, and the block
 asks all of them: the members the device lane holds and a host-only build cannot run answer from the
 accessor's own tables like the rest, because the query reads a table rather than a measurement. None is refused
 at this revision; a member a later revision has not derived would be asked the same question and
@@ -1465,9 +1480,11 @@ would answer with no verdict, no figure and the accessor's own sentence rather t
 ## The default policy, per precision and per device
 
 A caller that has chosen a precision and nothing else writes one name. Every precision the library
-offers has one, each entry of that precision runs it when the call site names no policy — for the half
-lanes as a fixed policy, since those entries take no policy argument at all — and this section states
-what each name selects and the bound it carries.
+offers has one, and an entry that names no policy at the call site is answered by
+`DefaultPolicy<Precision, Shape>`: the class's own row in
+`include/boys/boys_build_defaults.hpp`, which the four `DefaultPolicy*` names below coincide with on a
+class whose row is the five and not otherwise. This section states what each name
+selects and the bound it carries.
 
 **Two of these axes have been measured and two have not, and the table says which is which — with one
 correction this page owes its reader.** The scheme and the partition were set from the option probe's
@@ -1533,15 +1550,21 @@ rather than against this table.
 and the budget is the axis that differs: their region-A and region-B degrees are cut for a 1e-7
 budget where the float lane's are cut for 1.5e-7, so the two budgets
 select different arithmetic. One default for every precision would be the float
-lane's budget imposed on the half lanes. `DefaultPolicyFp16` and `DefaultPolicyBf16` are one policy
-type — one lane at one budget — named twice so that a document can cite the format its reader uses.
+lane's budget imposed on the half lanes. The four names are one per lane and not one per budget:
+`DefaultPolicyFp16` and `DefaultPolicyBf16` are one policy type — one engine at one budget, a policy
+carrying no format cell — named twice so that a document can cite the format its reader uses. Neither
+name is a class's default. The two half formats are two classes, each with its own row in the seam
+(`DefaultPolicy<Precision::kBf16, Shape>` for the bfloat16 one), and the bf16 class's all-orders row
+is not the fp16 class's: the two entries that row answers part on the route, which is what the check
+below measures and prints.
 
-**The half lanes' entries take no policy argument.** `BoysSingleF16`, `BoysAllOrdersF16`,
-`BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16` and `BoysAllOrdersBf16` take
-no policy at the call site: the budget is the whole
-of what their default adds to the float lane's, so they run `DefaultPolicyFp16` and
-`DefaultPolicyBf16` as a policy they carry rather than one a call site passes. The name is what a
-document cites and what the check below holds them to.
+**The half lanes' entries take a policy, and their default is their own class's row.** `BoysSingleF16`,
+`BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16` and `BoysAllNAtOrdersF16` take a `Policy` template
+parameter defaulting to `DefaultPolicy<Precision::kFp16, Shape::…>` at their shape, and
+`BoysSingleBf16` and `BoysAllOrdersBf16` the same at `Precision::kBf16`. So an entry runs its class's
+row when the call site names no policy, and a caller who wants the half lane's own five writes
+`DefaultPolicyFp16` or `DefaultPolicyBf16`. The check below holds the entries to the class rows —
+that is the pair whose arithmetic a caller gets — and the two lane names are what this page cites.
 
 **The device lane's default is one name**: `boys::kDefaultRegionBExp`, which is
 `RegionBExp::kAccurate` — the library

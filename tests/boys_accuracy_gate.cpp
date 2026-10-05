@@ -1582,6 +1582,203 @@ private:
 
 } // namespace
 
+namespace {
+
+// The combination block's evaluation grid: two region-B members and three division
+// forms per cell, so six readings per (point, order, class). These are at namespace
+// scope because the block's cross reads them inside a template lambda nested in
+// another one, where a variable of the enclosing function becomes a captured
+// reference and stops being usable as a constant expression (MSVC C2131).
+constexpr std::size_t kCombMemberSlots = 2;
+constexpr std::size_t kCombFormsPerMember = 3;
+constexpr std::size_t kCombEvalReadings = kCombMemberSlots * kCombFormsPerMember;
+
+/// One class's ladder at one argument: F_0(x)..F_nmax(x) in `out`, produced by the entry
+/// that answers for the class (kFamily, kShape) and widened to double.
+///
+/// The combination block's rows are keyed by the lane because the accessor is: the figure
+/// BoysAccuracyGuaranteed answers is the lane's. The classes are not keyed that way - each
+/// entry answers for the shape its own default policy names - so a row measured through one
+/// class's entry is a statement about that class and about no other, and the block measures
+/// every class through its own. This is the one place a class's entry is called, so the
+/// entry a class's cells came from is the entry named in its `if constexpr` branch, and the
+/// name the class book prints is the name called here.
+///
+/// \tparam kFamily 0 the double lane, 1 the float lane, 2 the fp16 lane, 3 the bf16 lane:
+///                 the four host families, one per host lane of BoysLaneContracts(). The
+///                 entry, the value type it is handed and returns, and the reference column
+///                 its cells are judged against all follow from it.
+/// \tparam kShape  the class's shape; the five shapes of the library's own enumeration.
+/// \tparam P       the policy, whose packing axis is the row's. A one-order shape's entry
+///                 refuses PackAxis::kOrders where it is named, so the caller instantiates
+///                 that pair only at the axis the shape carries.
+template <int kFamily, boys::Shape kShape, boys::EvalPolicyLike P>
+void GateClassLadder(int nmax, double x, double* out) noexcept
+{
+    if constexpr (kFamily == 0)
+    {
+        if constexpr (kShape == boys::Shape::kSingle)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                out[n] = boys::BoysSingle<P>(n, x);
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kFixedN)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                double v = 0.0;
+                boys::BoysFixedN<P>(n, &x, &v, 1, 1);
+                out[n] = v;
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kAllN)
+        {
+            boys::BoysAllN<P>(nmax, &x, out, 1);
+        }
+        else if constexpr (kShape == boys::Shape::kAllNAtOrders)
+        {
+            boys::BoysAllNAtOrders<P>(&nmax, &x, out, 1);
+        }
+        else
+        {
+            boys::BoysAllOrders<P>(nmax, x, out);
+        }
+    }
+    else if constexpr (kFamily == 1)
+    {
+        const float xf = static_cast<float>(x);
+
+        if constexpr (kShape == boys::Shape::kSingle)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                out[n] = static_cast<double>(boys::BoysSingleF32<P>(n, xf));
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kFixedN)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                float v = 0.0f;
+                boys::BoysFixedNF32<P>(n, &xf, &v, 1, 1);
+                out[n] = static_cast<double>(v);
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kAllN)
+        {
+            std::array<float, 33> buf{};
+            boys::BoysAllNF32<P>(nmax, &xf, buf.data(), 1);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                out[n] = static_cast<double>(buf[static_cast<std::size_t>(n)]);
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kAllNAtOrders)
+        {
+            std::array<float, 33> buf{};
+            boys::BoysAllNAtOrdersF32<P>(&nmax, &xf, buf.data(), 1);
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                out[n] = static_cast<double>(buf[static_cast<std::size_t>(n)]);
+            }
+        }
+        else
+        {
+            std::array<float, 33> buf{};
+            boys::BoysAllOrdersF32<P>(nmax, xf, buf.data());
+
+            for (int n = 0; n <= nmax; ++n)
+            {
+                out[n] = static_cast<double>(buf[static_cast<std::size_t>(n)]);
+            }
+        }
+    }
+    else if constexpr (kFamily == 2)
+    {
+        const boys::F16 xh = boys::F16(static_cast<float>(x));
+        std::array<boys::F16, 33> buf{};
+
+        if constexpr (kShape == boys::Shape::kSingle)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                buf[static_cast<std::size_t>(n)] = boys::BoysSingleF16<P>(n, xh);
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kFixedN)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::F16 v = boys::F16(0.0f);
+                boys::BoysFixedNF16<P>(n, &xh, &v, 1, 1);
+                buf[static_cast<std::size_t>(n)] = v;
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kAllN)
+        {
+            boys::BoysAllNF16<P>(nmax, &xh, buf.data(), 1);
+        }
+        else if constexpr (kShape == boys::Shape::kAllNAtOrders)
+        {
+            boys::BoysAllNAtOrdersF16<P>(&nmax, &xh, buf.data(), 1);
+        }
+        else
+        {
+            boys::BoysAllOrdersF16<P>(nmax, xh, buf.data());
+        }
+
+        for (int n = 0; n <= nmax; ++n)
+        {
+            out[n] = static_cast<double>(static_cast<float>(buf[static_cast<std::size_t>(n)]));
+        }
+    }
+    else
+    {
+        const boys::Bf16 xh = boys::Bf16(static_cast<float>(x));
+        std::array<boys::Bf16, 33> buf{};
+
+        if constexpr (kShape == boys::Shape::kSingle)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                buf[static_cast<std::size_t>(n)] = boys::BoysSingleBf16<P>(n, xh);
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kFixedN)
+        {
+            for (int n = 0; n <= nmax; ++n)
+            {
+                boys::Bf16 v = boys::Bf16(0.0f);
+                boys::BoysFixedNBf16<P>(n, &xh, &v, 1, 1);
+                buf[static_cast<std::size_t>(n)] = v;
+            }
+        }
+        else if constexpr (kShape == boys::Shape::kAllN)
+        {
+            boys::BoysAllNBf16<P>(nmax, &xh, buf.data(), 1);
+        }
+        else if constexpr (kShape == boys::Shape::kAllNAtOrders)
+        {
+            boys::BoysAllNAtOrdersBf16<P>(&nmax, &xh, buf.data(), 1);
+        }
+        else
+        {
+            boys::BoysAllOrdersBf16<P>(nmax, xh, buf.data());
+        }
+
+        for (int n = 0; n <= nmax; ++n)
+        {
+            out[n] = static_cast<double>(static_cast<float>(buf[static_cast<std::size_t>(n)]));
+        }
+    }
+}
+
+} // namespace
+
 int main(int argc, char** argv) {
     std::string reference = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
     bool perOrder = false;
@@ -10548,123 +10745,368 @@ int main(int argc, char** argv) {
                    : std::ldexp(1.0, exponent - 11);
     };
 
-    // The double lane: one reading per (route, scheme, axis, partition), each of
-    // them at every division form the axis carries. The three policies are
-    // written out for the reason the entries are: the form is a template
-    // argument of the engine, so a form the sweep names is an instantiation,
-    // and only three of them exist.
-    const auto combDoubleSweep = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme,
-                                     boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
-        using PExact = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
-                                        boys::DivisionForm::kExactDivision>;
-        using PPlain = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
-                                        boys::DivisionForm::kPlainReciprocal>;
-        using PRefined = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis, kGran,
-                                          boys::DivisionForm::kRefinedReciprocal>;
-        const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-        const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
-        const double lanePlainAdd =
-            combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
+    // ---- the host lanes' cross: every class, every member -------------------
+    //
+    // One row per (lane, route, scheme, axis, partition), as before - the row book
+    // is keyed by the lane because the accessor is: BoysAccuracyGuaranteed takes no
+    // Shape, so the figure it answers belongs to the lane. What the accessor cannot
+    // say, this cross measures. A figure read off a lane is a claim about five
+    // classes of that lane, and the entries of the library are per class: each
+    // entry's own default policy is the library's statement of the class it answers
+    // for (DefaultPolicy<Precision::kFp64, Shape::kAllOrders> and so on). So every
+    // combination of every row is read through the entry of every class its lane
+    // carries, and the class book printed below names, per class, the entry that
+    // produced that class's cells - the record of which shape a figure came from.
+    //
+    // The five shapes are boys::Shape's own enumerators, in the library's order:
+    //
+    //   Shape::kSingle         one order at one argument    boys::BoysSingle<...>
+    //                          F32/F16/Bf16 variants        boys::BoysSingleF32<...>
+    //                          and so on for every shape:  boys::BoysFixedN<...>
+    //   Shape::kFixedN         one order over an array      boys::BoysFixedNF32<...>
+    //   Shape::kAllN           0..nmax over an array        boys::BoysAllN<...>
+    //   Shape::kAllNAtOrders   0..n[i] over an array        boys::BoysAllNAtOrders<...>
+    //   Shape::kAllOrders      0..nmax at one argument      boys::BoysAllOrders<...>
+    //
+    // and the entry of each is called in one place, GateClassLadder, at every point
+    // of the committed grid, at every division form and at both region-B members.
+    //
+    // Two of the five carry the arguments axis only: Shape::kSingle and
+    // Shape::kFixedN evaluate exactly one order, so PackAxis::kOrders has no
+    // meaning for them and their entry refuses it where it is named - a
+    // static_assert at the call site rather than a run-time refusal. The
+    // orders-axis rows are therefore read through the three shapes that carry that
+    // axis, and the two that do not are counted, in the class book, as refused with
+    // that reason on them: a combination a shape does not carry is a combination
+    // the library does not carry, and leaving it out of the book would read as a
+    // cell that passed.
+    //
+    // The region-B member is the axis the earlier block did not cross at all. Every
+    // cell here is read at both members the library carries - BoysRegionBExps() is
+    // the table and this block reads it, and its size is held against the two
+    // policies instantiated below - and each reading is judged at the figure the
+    // accessor answers for that member: the lane's base, plus the term its row
+    // states under the member the row names (LaneContractInfo::additiveMember)
+    // where that is the member read, plus the plain reciprocal's own term at the
+    // plain form. On the four host lanes the term beside the base is 0.0 under
+    // either member, so the two members answer one figure and the delivered value
+    // the row prints is the worst over both; the member book printed below counts
+    // the cells each member was read at and how many of them the two delivered
+    // differently, so a reader asking whether the exponential changes an answer
+    // reads a count rather than an assurance.
+    //
+    // The two half families are judged with the format's own digit: the figure a
+    // half lane's row states beside its base carries half of the last representable
+    // digit of the value returned, and that digit is the format's width - binary16
+    // keeps 10 explicit mantissa bits, bfloat16 keeps 7 - so the term is derived
+    // here from the width and the value's exponent rather than read off a sentence,
+    // and the class book prints the width it was derived from beside each half
+    // class's figure.
+    //
+    // The evaluation count is the old sweep's times the classes and the members:
+    // each point of the grid is evaluated (5 classes x 3 forms x 2 members) per row
+    // instead of (1 class x 3 forms x 1 member), and the arithmetic printed among
+    // the books below carries that factor as the measured cells of each book rather
+    // than as a sentence here.
 
-        CombAccum a;
-        std::array<std::array<double, 33>, kCombForms> out{};
+    // The member book: per lane, the cells this cross read at each region-B member,
+    // how many of them the two delivered differently, and each member's own worst.
+    struct CombMemberBook {
+        std::size_t cells[2] = {0, 0};
+        std::size_t compared = 0;
+        std::size_t differed = 0;
+        double worst[2] = {0.0, 0.0};
+    };
 
-        a.bound = laneBound + laneAdd;
-        a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
-            laneBound + lanePlainAdd + laneAdd;
+    std::vector<CombMemberBook> combMemberBook(static_cast<std::size_t>(combLaneCount));
 
-        for (std::size_t i = 0; i < count; ++i)
+    // The class book's accumulation: per (lane, shape), every cell this cross read
+    // through that class's own entry, and the count of combinations it measured
+    // there. The cells are counted through the entries named in GateClassLadder, so
+    // a class whose entry this cross does not name is a class with no cells here
+    // and the book prints it as such rather than borrowing another class's figure.
+    std::vector<std::array<CombAccum, 5>> combClassCells(static_cast<std::size_t>(combLaneCount));
+    std::vector<std::array<std::size_t, 5>> combClassCombos(static_cast<std::size_t>(combLaneCount));
+
+    // The region-B members, off the table the library publishes. The two policies
+    // the cross instantiates are named here and the table's own size is checked
+    // against them, so a member added to the library is a sentence in the class
+    // book rather than a cell that quietly went unmeasured.
+    const std::span<const boys::RegionBExpInfo> combMemberRows = boys::BoysRegionBExps();
+    const std::size_t combMembers = combMemberRows.size();
+
+    const auto combMemberIndexOf = [&](boys::RegionBExp member) {
+        for (std::size_t m = 0; m < combMemberRows.size(); ++m)
         {
-            boys::BoysAllOrders<PExact>(nmax, ref.x[i], out[0].data());
-            boys::BoysAllOrders<PPlain>(nmax, ref.x[i], out[1].data());
-            boys::BoysAllOrders<PRefined>(nmax, ref.x[i], out[2].data());
-
-            for (int n = 0; n <= nmax; ++n)
+            if (combMemberRows[m].exp == member)
             {
-                const std::size_t sn = static_cast<std::size_t>(n);
-                const double got[kCombForms] = {out[0][sn], out[1][sn], out[2][sn]};
-
-                a.addAtForms(n, ref.x[i], got, kCombForms, ref.v[ref.Index(n, i)]);
+                return m;
             }
         }
 
-        combMeasured.push_back({lane,
-                                static_cast<int>(kRoute),
-                                static_cast<int>(kScheme),
-                                static_cast<int>(kGran),
-                                static_cast<int>(kAxis),
-                                a.cells,
-                                a.below,
-                                a.over,
-                                a.worst,
-                                a.bound,
-                                a.judgedTo,
-                                a.judgedPlain,
-                                a.judgedValue,
-                                a.worstN,
-                                a.worstX,
-                                a.worstForm,
-                                a.forms,
-                                a.moved,
-                                a.compared,
-                                {a.movedByForm[0], a.movedByForm[1],
-                                 a.movedByForm[2]},
-                                {a.formWorst[0], a.formWorst[1], a.formWorst[2]},
-                                {a.formWorstN[0], a.formWorstN[1], a.formWorstN[2]},
-                                {a.formWorstX[0], a.formWorstX[1], a.formWorstX[2]},
-                                a.formBar[kPlainFormIndex]});
+        return combMemberRows.size();
     };
 
-    const auto combSingleLane =
-        [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme,
-            boys::PackAxis kAxis, boys::FitGranularity kGran>(int lane) {
-            using PExact = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
-                                            boys::DivisionForm::kExactDivision>;
-            using PPlain = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
-                                            boys::DivisionForm::kPlainReciprocal>;
-            using PRefined = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
-                                              boys::DivisionForm::kRefinedReciprocal>;
-            const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-            const double lanePlainAdd =
-                combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
+    const std::size_t combIdxAccurate = combMemberIndexOf(boys::RegionBExp::kAccurate);
+    const std::size_t combIdxFast = combMemberIndexOf(boys::RegionBExp::kFast);
+
+    // The class space: what each (lane, shape) is measured against, off the same
+    // tables the row book is built from. It is the lane's whole space for every
+    // shape - not the one-order shapes' with the orders half already taken out -
+    // so that the combinations those shapes cannot carry are counted as refused
+    // with the library's reason on them rather than by shrinking the space until
+    // the arithmetic closes. A space computed to fit what was measured would say
+    // nothing about what was not.
+    std::vector<std::array<std::size_t, 5>> combClassSpace(static_cast<std::size_t>(combLaneCount));
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        for (std::size_t s = 0; s < 5; ++s)
+        {
+            combClassSpace[static_cast<std::size_t>(lane)][s] =
+                combRoutes[static_cast<std::size_t>(lane)].size() * combSchemes * combAxes *
+                combPartitions * combForms * combMembers;
+        }
+    }
+
+    // Half of the last representable digit of a value in a format that keeps
+    // kMantissaBits explicit mantissa bits, at the value's own exponent. The digit
+    // is 2^(exponent - kMantissaBits) and the figure a half lane states beside its
+    // base is half of it.
+    const auto combHalfDigit = [](double value, int kMantissaBits) {
+        const int exponent = std::ilogb(value);
+
+        return exponent == FP_ILOGB0 || exponent == FP_ILOGBNAN || exponent < -1074
+                   ? 0.0
+                   : std::ldexp(1.0, exponent - 1 - kMantissaBits);
+    };
+
+    // The mantissa widths the two half formats keep, beside the families they belong
+    // to: binary16 has 10 explicit mantissa bits after its leading one, bfloat16 has
+    // 7 (kBf16MantissaBits, at the head of this file). Both are the format's
+    // definition and not a figure off a lane's row.
+
+    // One family's cross: the four host lanes, one family each. kFamily indexes the
+    // entry family of GateClassLadder and the reference column its cells are judged
+    // against; the lane, the budget and the column all follow from it.
+    const auto combHostCross =
+        [&]<int kFamily, boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
+            boys::FitGranularity kGran>() {
+            constexpr int kLane = kFamily == 0   ? static_cast<int>(boys::Precision::kFp64)
+                                  : kFamily == 1 ? static_cast<int>(boys::Precision::kFp32)
+                                  : kFamily == 2 ? static_cast<int>(boys::Precision::kFp16)
+                                                 : static_cast<int>(boys::Precision::kBf16);
+            constexpr boys::BoysBudget kBudget =
+                kFamily < 2 ? boys::BoysBudget::kFloat : boys::BoysBudget::kFp16;
+
+            using PExactA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kExactDivision,
+                                            boys::RegionBExp::kAccurate>;
+            using PPlainA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kPlainReciprocal,
+                                            boys::RegionBExp::kAccurate>;
+            using PRefinedA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                              boys::DivisionForm::kRefinedReciprocal,
+                                              boys::RegionBExp::kAccurate>;
+            using PExactF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kExactDivision,
+                                            boys::RegionBExp::kFast>;
+            using PPlainF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                            boys::DivisionForm::kPlainReciprocal,
+                                            boys::RegionBExp::kFast>;
+            using PRefinedF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+                                              boys::DivisionForm::kRefinedReciprocal,
+                                              boys::RegionBExp::kFast>;
+
+            const boys::LaneContractInfo& laneRow = combLaneRows[static_cast<std::size_t>(kLane)];
+            const double laneBound = laneRow.bound;
+            const double laneAdd = laneRow.additive;
+            const double lanePlainAdd = laneRow.plainAdditive;
+
+            // The figure this lane answers at each member: the row's term beside the
+            // base is the member's own, so a reading at the other member is judged
+            // without it (LaneContractInfo::additiveMember).
+            const double memberAdd[kCombMemberSlots] = {
+                static_cast<int>(combIdxAccurate) == static_cast<int>(laneRow.additiveMember)
+                    ? laneAdd
+                    : 0.0,
+                static_cast<int>(combIdxFast) == static_cast<int>(laneRow.additiveMember)
+                    ? laneAdd
+                    : 0.0};
 
             CombAccum a;
-            std::array<std::array<float, 33>, kCombForms> out{};
-
-            a.bound = laneBound;
-            a.formBar[static_cast<std::size_t>(
-                boys::DivisionForm::kPlainReciprocal)] = laneBound + lanePlainAdd;
-            a.ceiling = static_cast<double>(lane == combHalfLane) * a.bound;
-
-            for (std::size_t i = 0; i < count; ++i)
+            a.bound = laneBound + laneAdd;
+            a.formBar[kPlainFormIndex] = laneBound + lanePlainAdd + laneAdd;
+            if constexpr (kFamily >= 2)
             {
-                const float xf = static_cast<float>(ref.xf[i]);
-
-                boys::BoysAllOrdersF32<PExact>(nmax, xf, out[0].data());
-                boys::BoysAllOrdersF32<PPlain>(nmax, xf, out[1].data());
-                boys::BoysAllOrdersF32<PRefined>(nmax, xf, out[2].data());
-
-                for (int n = 0; n <= nmax; ++n)
-                {
-                    const std::size_t sn = static_cast<std::size_t>(n);
-                    const double got[kCombForms] = {static_cast<double>(out[0][sn]),
-                                                    static_cast<double>(out[1][sn]),
-                                                    static_cast<double>(out[2][sn])};
-                    const double ulp[kCombForms] = {
-                        a.ceiling > 0.0 ? halfUlp(got[0]) : 0.0,
-                        a.ceiling > 0.0 ? halfUlp(got[1]) : 0.0,
-                        a.ceiling > 0.0 ? halfUlp(got[2]) : 0.0};
-
-                    a.addAtForms(n,
-                                 static_cast<double>(xf),
-                                 got,
-                                 kCombForms,
-                                 ref.vf[ref.Index(n, i)],
-                                 ulp);
-                }
+                // The half formats' floor: at or below the magnitude the lane states
+                // as its base the format itself is the limit and the lane claims
+                // nothing, which is the rule the half lane's cells were already
+                // judged under. Both half families carry it.
+                a.ceiling = laneBound;
             }
 
-            combMeasured.push_back({lane,
+            for (std::size_t s = 0; s < 5; ++s)
+            {
+                CombAccum& classCells = combClassCells[static_cast<std::size_t>(kLane)][s];
+                classCells.bound = a.bound;
+                classCells.formBar[kPlainFormIndex] = a.formBar[kPlainFormIndex];
+                classCells.ceiling = a.ceiling;
+            }
+
+            // The column of arguments this family's entries are handed and the
+            // column of correctly-rounded values their cells are judged against.
+            // The grid carries one pair per family (tests/boys_gate_reference.hpp);
+            // the half pairs are the half-rounded ones, so a half cell is judged
+            // against the value the format can hold rather than against the double
+            // value behind it.
+            const double* argCol = ref.x.data();
+            const double* wantCol = ref.v.data();
+
+            if constexpr (kFamily == 1)
+            {
+                argCol = ref.xf.data();
+                wantCol = ref.vf.data();
+            }
+            else if constexpr (kFamily == 2)
+            {
+                argCol = ref.x16.data();
+                wantCol = ref.v16.data();
+            }
+            else if constexpr (kFamily == 3)
+            {
+                argCol = ref.xb.data();
+                wantCol = ref.vb.data();
+            }
+
+            // One class's cells: the ladder of that class's own entry at every point
+            // of the grid, at the three forms and both members, judged at the
+            // figure this lane answers for the member read.
+            const auto oneClass = [&]<boys::Shape kShape>() {
+                constexpr std::size_t kShapeIndex =
+                    kShape == boys::Shape::kSingle         ? 0
+                    : kShape == boys::Shape::kFixedN       ? 1
+                    : kShape == boys::Shape::kAllN         ? 2
+                    : kShape == boys::Shape::kAllNAtOrders ? 3
+                                                           : 4;
+
+                CombAccum& classCells =
+                    combClassCells[static_cast<std::size_t>(kLane)][kShapeIndex];
+                std::array<std::array<double, 33>, kCombEvalReadings> got{};
+
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    const double xd = argCol[i];
+
+                    GateClassLadder<kFamily, kShape, PExactA>(nmax, xd, got[0].data());
+                    GateClassLadder<kFamily, kShape, PPlainA>(nmax, xd, got[1].data());
+                    GateClassLadder<kFamily, kShape, PRefinedA>(nmax, xd, got[2].data());
+                    GateClassLadder<kFamily, kShape, PExactF>(nmax, xd, got[3].data());
+                    GateClassLadder<kFamily, kShape, PPlainF>(nmax, xd, got[4].data());
+                    GateClassLadder<kFamily, kShape, PRefinedF>(nmax, xd, got[5].data());
+
+                    for (int n = 0; n <= nmax; ++n)
+                    {
+                        const std::size_t sn = static_cast<std::size_t>(n);
+                        const double want = wantCol[ref.Index(n, i)];
+                        const double gotA[kCombFormsPerMember] = {got[0][sn], got[1][sn], got[2][sn]};
+                        const double gotB[kCombFormsPerMember] = {got[3][sn], got[4][sn], got[5][sn]};
+                        double ulpA[kCombFormsPerMember] = {0.0, 0.0, 0.0};
+                        double ulpB[kCombFormsPerMember] = {0.0, 0.0, 0.0};
+
+                        if constexpr (kFamily >= 2)
+                        {
+                            // The format's own width: binary16 keeps 10 explicit
+                            // mantissa bits after the leading one, bfloat16 keeps 7.
+                            constexpr int kWidth = kFamily == 2 ? kF16MantissaBits : kBf16MantissaBits;
+
+                            for (std::size_t f = 0; f < kCombFormsPerMember; ++f)
+                            {
+                                ulpA[f] = combHalfDigit(gotA[f], kWidth);
+                                ulpB[f] = combHalfDigit(gotB[f], kWidth);
+                            }
+                        }
+
+                        // Each member at the figure the accessor answers for it:
+                        // the lane's base plus the term its row states under that
+                        // member where the member read is the one the row names,
+                        // plus the plain reciprocal's own term at the plain form.
+                        // The row's own figure - the one the cell prints and the
+                        // arithmetic above counts - is restored after the loop.
+                        for (std::size_t m = 0; m < kCombMemberSlots; ++m)
+                        {
+                            const double* const gotM = m == 0 ? gotA : gotB;
+                            const double* const ulpM = m == 0 ? ulpA : ulpB;
+                            const double base = laneBound + memberAdd[m];
+                            const double plainBar = laneBound + lanePlainAdd + memberAdd[m];
+
+                            a.bound = base;
+                            a.formBar[kPlainFormIndex] = plainBar;
+                            classCells.bound = base;
+                            classCells.formBar[kPlainFormIndex] = plainBar;
+
+                            a.addAtForms(n, xd, gotM, kCombFormsPerMember, want, ulpM);
+                            classCells.addAtForms(n, xd, gotM, kCombFormsPerMember, want, ulpM);
+                        }
+
+                        CombMemberBook& memberBook = combMemberBook[static_cast<std::size_t>(kLane)];
+
+                        for (std::size_t f = 0; f < kCombFormsPerMember; ++f)
+                        {
+                            if (combIdxAccurate < 2 && combIdxFast < 2)
+                            {
+                                ++memberBook.cells[combIdxAccurate];
+                                ++memberBook.cells[combIdxFast];
+                                ++memberBook.compared;
+
+                                if (gotA[f] != gotB[f])
+                                {
+                                    ++memberBook.differed;
+                                }
+
+                                const double errA = std::abs(gotA[f] - want);
+                                const double errB = std::abs(gotB[f] - want);
+
+                                if (errA > memberBook.worst[combIdxAccurate])
+                                {
+                                    memberBook.worst[combIdxAccurate] = errA;
+                                }
+
+                                if (errB > memberBook.worst[combIdxFast])
+                                {
+                                    memberBook.worst[combIdxFast] = errB;
+                                }
+                            }
+                        }
+                    }
+                }
+            };
+
+            const std::size_t measuredCombos = combForms * combMembers;
+
+            if constexpr (kAxis == boys::PackAxis::kArguments)
+            {
+                oneClass.template operator()<boys::Shape::kSingle>();
+                oneClass.template operator()<boys::Shape::kFixedN>();
+                combClassCombos[static_cast<std::size_t>(kLane)][0] += measuredCombos;
+                combClassCombos[static_cast<std::size_t>(kLane)][1] += measuredCombos;
+            }
+
+            oneClass.template operator()<boys::Shape::kAllN>();
+            oneClass.template operator()<boys::Shape::kAllNAtOrders>();
+            oneClass.template operator()<boys::Shape::kAllOrders>();
+            combClassCombos[static_cast<std::size_t>(kLane)][2] += measuredCombos;
+            combClassCombos[static_cast<std::size_t>(kLane)][3] += measuredCombos;
+            combClassCombos[static_cast<std::size_t>(kLane)][4] += measuredCombos;
+
+            // The row's own figure, restored after the per-member judgements above:
+            // the lane's base plus the term its row states under the member that row
+            // names, which is the figure the accessor answers for the combination
+            // this row stands for and the figure the row prints.
+            a.bound = laneBound + laneAdd;
+            a.formBar[kPlainFormIndex] = laneBound + lanePlainAdd + laneAdd;
+
+            combMeasured.push_back({kLane,
                                     static_cast<int>(kRoute),
                                     static_cast<int>(kScheme),
                                     static_cast<int>(kGran),
@@ -10683,334 +11125,412 @@ int main(int argc, char** argv) {
                                     a.forms,
                                     a.moved,
                                     a.compared,
-                                    {a.movedByForm[0], a.movedByForm[1],
-                                     a.movedByForm[2]},
+                                    {a.movedByForm[0], a.movedByForm[1], a.movedByForm[2]},
                                     {a.formWorst[0], a.formWorst[1], a.formWorst[2]},
                                     {a.formWorstN[0], a.formWorstN[1], a.formWorstN[2]},
                                     {a.formWorstX[0], a.formWorstX[1], a.formWorstX[2]},
                                     a.formBar[kPlainFormIndex]});
         };
 
-    const int kLaneDouble = static_cast<int>(boys::Precision::kFp64);
+    const int kFamilyFp64 = 0;
+    const int kFamilyFp32 = 1;
+    const int kFamilyFp16 = 2;
+    const int kFamilyBf16 = 3;
+
+    // The float lane's index, the lane a budget of BoysBudget::kFloat belongs to
+    // beside the half lane's: read by the partition-carriage arms below, which are
+    // keyed by budget rather than by family.
     const int kLaneSingle = static_cast<int>(boys::Precision::kFp32);
 
-    // The double lane: both routes, both schemes, both axes and both partitions.
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kCoarsest>(kLaneDouble);
-    // The narrow partition of the Chebyshev route carries both axes: the
-    // partition's pieces are cut per order, and the entry reads the
-    // effective-degree table for it.
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kNarrow>(kLaneDouble);
+    // The four host families: both routes, both schemes, both axes and both
+    // partitions, each family's own entry at each class of its own lane.
 
-    // The uniform partition on the Chebyshev route: both schemes and both axes,
-    // which is what the partition's own row states it serves. This partition's
-    // degree is the reference reading rather than a cut of it - the criterion
-    // that would cut the row reaches the full degree - and the rows below are
-    // therefore read the way the shipped and narrow partitions' rows are:
-    // through the entry the partition's own row names.
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kCoarsest>();
 
-    // The uniform partition on the rational route: both schemes and both axes,
-    // which is what the partition's row states it serves. The member's pairs are
-    // stored one per interval and are admissible by the same reading the
-    // Chebyshev member's degree is - there is no per-order effective-degree
-    // table to cut - and the entries select the reference body for this
-    // partition, so a cell of this route is the route's own arithmetic rather
-    // than a cut of it. Both schemes on both axes are named separately for the
-    // reason the single lanes' rows state: the cell the cross looks for is the
-    // whole tuple, and a row recorded for a cell nothing called is the failure
-    // this block exists to find.
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kArguments,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax,
-                                        boys::EvalScheme::kSplitClenshaw,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
-    combDoubleSweep.template operator()<boys::FitRoute::kRationalMinimax, boys::EvalScheme::kHorner,
-                                        boys::PackAxis::kOrders,
-                                        boys::FitGranularity::kUniform>(kLaneDouble);
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kNarrow>();
 
-    // The single and half lanes: both routes, both schemes, both axes and all
-    // three partitions, on both engine budgets - the whole of the cross these
-    // two lanes claim, each cell named through the entry its own row carries.
-    // The uniform grid's cells are named below rather than here, and the rows
-    // there state their reason.
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                            boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                            boys::FitRoute::kRationalMinimax,
-                                            boys::EvalScheme::kSplitClenshaw,
-                                            boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                            boys::FitRoute::kRationalMinimax,
-                                            boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                            boys::FitRoute::kRationalMinimax,
-                                            boys::EvalScheme::kSplitClenshaw,
-                                            boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kCoarsest>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                            boys::FitRoute::kRationalMinimax,
-                                            boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                            boys::FitGranularity::kNarrow>(combHalfLane);
-
-    // The uniform grid on the single and half lanes. It is the one partition of
-    // the three these lanes read that the rows above leave unread on them -
-    // every call above is on the shipped partition or on the narrow one - and
-    // it is what the accessor has begun to offer: both lanes' carriage rule
-    // serves the grid's Chebyshev member on both axes (CarriesSingle,
-    // src/boys.cpp, whose only refusal on this partition is the rational member
-    // neither lane's grid has been fitted with). So the cells this block was
-    // leaving unmeasured are the two schemes times the two axes, on each of the
-    // two lanes; each is read here through the entry the shipped and narrow
-    // partitions' rows are read through, over the same committed grid and
-    // against the same per-lane figure.
-    //
-    // A cell here is one reading of one body and not a reading of a body built
-    // for it. The grid's table is stored at a degree per interval: the single-
-    // precision entries select the reference body for this partition
-    // (BoysAllOrdersF32Impl, boys_impl.hpp, the branch that serves this
-    // partition uncut), and the double lane's rows above are read the same way.
-    // Each (scheme, axis) pair on this partition is named as its own row rather
-    // than one row standing for the partition, because the cell the cross looks
-    // for is the whole tuple: a count that came out right because a row was
-    // recorded for a cell nothing called is the failure this block exists to
-    // find, and it would be invisible in the number it produced.
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16, boys::FitRoute::kChebyshev,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-
-    // The grid on the rational route, on those same two lanes. The member is a
-    // fit of this lane's own - one numerator/denominator pair per interval of
-    // this lane's grid, stored in this lane's width and certified in its
-    // arithmetic (kFlatRatCoeffsF32, tools/gen_boys_coefficients.py) - and the
-    // entries read it through the route dispatch in UniformOrderAtF32, so the
-    // cells below are the same shape of reading as the Chebyshev grid's above:
-    // one body, on both schemes and both axes. Read at the lane's own per-value
-    // figure, which is what the route is certified against, and against the
-    // committed reference grid.
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFloat,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(kLaneSingle);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner,
-                                       boys::PackAxis::kArguments,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kSplitClenshaw,
-                                       boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
-    combSingleLane.template operator()<boys::BoysBudget::kFp16,
-                                       boys::FitRoute::kRationalMinimax,
-                                       boys::EvalScheme::kHorner, boys::PackAxis::kOrders,
-                                       boys::FitGranularity::kUniform>(combHalfLane);
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kChebyshev,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kSplitClenshaw,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kArguments,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp64, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp32, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyFp16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
+    combHostCross.template operator()<kFamilyBf16, boys::FitRoute::kRationalMinimax,
+                                      boys::EvalScheme::kHorner,
+                                      boys::PackAxis::kOrders,
+                                      boys::FitGranularity::kUniform>();
 
     // Which of the three device lanes an arm of this build measured here, and
     // the sentence a member of a lane is counted apart with where none did.
@@ -12493,6 +13013,213 @@ int main(int argc, char** argv) {
                 combToleranceHalfUnasked,
                 combToleranceRefused,
                 combToleranceDisagreeing);
+
+    // ---- the class book: every combination, and the class that produced it ----
+    //
+    // A figure read off BoysAccuracyGuaranteed is a lane's: the accessor takes no
+    // Shape. Every class of that lane answers with an entry of its own, and the
+    // cross above read every combination of every row through the entry the class's
+    // own shape names - boys::BoysSingle<Policy>, boys::BoysFixedN<Policy>,
+    // boys::BoysAllN<Policy>, boys::BoysAllNAtOrders<Policy> and
+    // boys::BoysAllOrders<Policy> for the double lane; boys::BoysSingleF32<Policy>,
+    // boys::BoysFixedNF32<Policy>, boys::BoysAllNF32<Policy>,
+    // boys::BoysAllNAtOrdersF32<Policy>, boys::BoysAllOrdersF32<Policy> for the
+    // float lane; boys::BoysSingleF16<Policy>, boys::BoysFixedNF16<Policy>,
+    // boys::BoysAllNF16<Policy>, boys::BoysAllNAtOrdersF16<Policy>,
+    // boys::BoysAllOrdersF16<Policy> for the half lane; and
+    // boys::BoysSingleBf16<Policy>, boys::BoysFixedNBf16<Policy>,
+    // boys::BoysAllNBf16<Policy>, boys::BoysAllNAtOrdersBf16<Policy>,
+    // boys::BoysAllOrdersBf16<Policy> for the bfloat lane. This book is where that
+    // attribution is recorded: per class, the combinations the lane's space holds
+    // for it, the combinations this run measured through that class's own entry,
+    // the cells they were read at, the worst value delivered and the entry's name.
+    // A class with no cell is printed as such and not passed over: a class
+    // borrowing another class's figure is what this book exists to make impossible
+    // to read.
+    //
+    // The space is the lane's whole space for every shape, so the combinations a
+    // one-order shape cannot carry are printed as refused with the library's own
+    // reason on them - the entry refuses PackAxis::kOrders where it is named, a
+    // static_assert at the call site, so those combinations are ones the library
+    // does not carry rather than ones this run skipped.
+    {
+        // The entry each class is measured through, in the library's own spelling:
+        // the name a caller writes at the call site the cross makes.
+        const char* const classEntry[4][5] = {
+            {"boys::BoysSingle<Policy>", "boys::BoysFixedN<Policy>", "boys::BoysAllN<Policy>",
+             "boys::BoysAllNAtOrders<Policy>", "boys::BoysAllOrders<Policy>"},
+            {"boys::BoysSingleF32<Policy>", "boys::BoysFixedNF32<Policy>",
+             "boys::BoysAllNF32<Policy>", "boys::BoysAllNAtOrdersF32<Policy>",
+             "boys::BoysAllOrdersF32<Policy>"},
+            {"boys::BoysSingleF16<Policy>", "boys::BoysFixedNF16<Policy>",
+             "boys::BoysAllNF16<Policy>", "boys::BoysAllNAtOrdersF16<Policy>",
+             "boys::BoysAllOrdersF16<Policy>"},
+            {"boys::BoysSingleBf16<Policy>", "boys::BoysFixedNBf16<Policy>",
+             "boys::BoysAllNBf16<Policy>", "boys::BoysAllNAtOrdersBf16<Policy>",
+             "boys::BoysAllOrdersBf16<Policy>"}};
+
+        const char* const classShapeName[5] = {"Single", "FixedN", "AllN", "AllNAtOrders",
+                                               "AllOrders"};
+        const int classLaneOf[4] = {static_cast<int>(boys::Precision::kFp64),
+                                    static_cast<int>(boys::Precision::kFp32),
+                                    static_cast<int>(boys::Precision::kFp16),
+                                    static_cast<int>(boys::Precision::kBf16)};
+
+        std::printf("\n  the class book: every combination of every host row, measured through "
+                    "the entry of\n  the class its own shape names. The accessor takes no Shape "
+                    "- the figure it answers is\n  the lane's, so nothing in the accessor says "
+                    "which class a figure came from, and this\n  is the book that does: the "
+                    "entry named beside a class produced every cell counted\n  on that class's "
+                    "row. A combination is counted here once per class that carries it, so\n  "
+                    "these totals are the lane's space read out per class and are not the lane "
+                    "totals\n  of the row book above\n");
+        std::printf("    %-26s %9s %9s %9s %12s  %-11s  %s\n", "class", "carried", "measured",
+                    "refused", "cell(s)", "worst", "the entry that produced them");
+
+        std::size_t classMeasured = 0;
+        std::size_t classRefused = 0;
+        std::size_t classCarried = 0;
+        std::size_t classCellCount = 0;
+        std::size_t classOver = 0;
+        std::size_t classRowsMeasured = 0;
+        const std::size_t classRowsTotal = 4u * 5u;
+
+        for (int family = 0; family < 4; ++family)
+        {
+            const std::size_t lane = static_cast<std::size_t>(classLaneOf[family]);
+
+            for (std::size_t s = 0; s < 5; ++s)
+            {
+                const std::size_t space = combClassSpace[lane][s];
+                const std::size_t measured = combClassCombos[lane][s];
+                const std::size_t refused = space - measured;
+                const CombAccum& cells = combClassCells[lane][s];
+
+                classMeasured += measured;
+                classRefused += refused;
+                classCarried += space;
+                classCellCount += cells.cells;
+                classOver += cells.over;
+
+                if (cells.cells > 0)
+                {
+                    ++classRowsMeasured;
+                }
+
+                std::printf("    %-26s %9zu %9zu %9zu %12zu  %-11.6g  %s\n",
+                            Fmt("Host %s %s", combLaneRows[lane].name, classShapeName[s]).c_str(),
+                            space,
+                            measured,
+                            refused,
+                            cells.cells,
+                            cells.worst,
+                            classEntry[family][s]);
+            }
+        }
+
+        std::printf("    %-26s %9zu %9zu %9zu %12zu\n",
+                    "total",
+                    classCarried,
+                    classMeasured,
+                    classRefused,
+                    classCellCount);
+        std::printf("  %zu of %zu host class(es) measured a cell through an entry of their own "
+                    "shape;\n  %zu combination(s) are refused, every one of them an axis the "
+                    "shape does not carry:\n  PackAxis::kOrders at Shape::kSingle and "
+                    "Shape::kFixedN, whose entries refuse it where\n  they are named, so the "
+                    "combination is one the library does not carry rather than one\n  this run "
+                    "skipped. %zu cell(s) of these classes were judged outside the figure the\n"
+                    "  lane answers, which is what a class of this book is for\n",
+                    classRowsMeasured,
+                    classRowsTotal,
+                    classRefused,
+                    classOver);
+
+        // The device lanes' classes: three each - Shape::kSingle, Shape::kAllN and
+        // Shape::kAllOrders, the shapes the device surface's entries answer for -
+        // and the arms below measure Shape::kAllOrders of each through its own
+        // entry. What this record does not carry for them is stated here rather
+        // than left to a reader's inference.
+        std::printf("  the device lanes: three class(es) each - Shape::kSingle, Shape::kAllN "
+                    "and\n  Shape::kAllOrders - and the arms below measure Shape::kAllOrders of "
+                    "each through\n  its own entry, the boys::BoysCuda::AllOrdersF32<...>,\n"
+                    "  boys::BoysCuda::AllOrdersF64<...> and boys::BoysCuda::AllOrdersF16<...> "
+                    "the arms\n  name beside the route- and packing-selected names. Two classes "
+                    "of each device\n  lane carry combinations this run measures no cell of: "
+                    "Shape::kSingle and\n  Shape::kAllN. Their entries exist - "
+                    "boys::BoysCuda::SingleF32<...> and\n  boys::BoysCuda::AllNF32<...> and the "
+                    "other lanes' beside them - and the arm that\n  would measure them through "
+                    "them is not built in this gate: a work item on this\n  gate, not a limit of "
+                    "the library. The member axis is not crossed on the device\n  lanes either, "
+                    "for the same reason: the two region-B members of a device lane\n  are two "
+                    "entries of the surface rather than two policies of one entry, so\n  reading "
+                    "the second needs the arm this gate does not have. Every device cell\n  this "
+                    "run does carry is counted in the row book above and judged against the\n"
+                    "  figure its own lane publishes.\n");
+    }
+
+    // ---- the member book: the region-B axis, both of its members ---------------
+    //
+    // Every cell of the cross above was read at both members BoysRegionBExps()
+    // answers - the sweep instantiates a policy per member - and this is where the
+    // two readings are reported apart. On the host lanes the term a row states
+    // beside its base belongs to the member the row names, so the two members
+    // answer one figure and the row's delivered value above is the worst over
+    // both. What a reader asking whether the exponential changes an answer here is
+    // owed is the count: how many cells each member was read at, and how many of
+    // those the two delivered differently at the same order, argument, class and
+    // form.
+    {
+        std::printf("\n  the region-B member: every host cell of the cross above was read at "
+                    "each of the %zu\n  member(s) BoysRegionBExps() answers, each reading judged "
+                    "against the figure the\n  row's own lane answers for that member - the term "
+                    "a row states beside its base is\n  that member's own, so a call naming the "
+                    "other is not owed it. The device arms' cells\n  are not in this table: they "
+                    "are read at the member their entry names, which is stated\n  under the "
+                    "class book above. The compared column is how many host values the two\n  "
+                    "members were asked for at the same order, argument, class and form, and\n  "
+                    "the differed column how many of those the two delivered differently\n",
+                    combMembers);
+
+        if (combMembers != kCombMemberSlots)
+        {
+            std::printf("    the table answers %zu member(s) and this sweep instantiates %zu: the "
+                        "members\n    past the %zu are carried by this library and measured by "
+                        "no cell of this cross -\n    a gap in this gate, stated here rather than "
+                        "left as a smaller number\n",
+                        combMembers,
+                        kCombMemberSlots,
+                        kCombMemberSlots);
+        }
+
+        std::printf("    %-26s %-14s %12s %11s\n", "lane", "member", "cell(s)", "worst");
+
+        for (int lane = 0; lane < combLaneCount; ++lane)
+        {
+            const CombMemberBook& memberCells = combMemberBook[static_cast<std::size_t>(lane)];
+
+            if (memberCells.cells[0] == 0 && memberCells.cells[1] == 0)
+            {
+                continue;
+            }
+
+            for (std::size_t m = 0; m < combMemberRows.size() && m < kCombMemberSlots; ++m)
+            {
+                std::printf("    %-26s %-14s %12zu %11.6g\n",
+                            combLaneRows[static_cast<std::size_t>(lane)].name,
+                            combMemberRows[m].name,
+                            memberCells.cells[m],
+                            memberCells.worst[m]);
+            }
+
+            std::printf("    %-26s the two members were compared at %zu value(s), and delivered "
+                        "%zu of\n    %-26s them differently\n",
+                        combLaneRows[static_cast<std::size_t>(lane)].name,
+                        memberCells.compared,
+                        memberCells.differed,
+                        "");
+        }
+    }
 
     // The division form, on the cells the cross measured. Every cell above was
     // read at each form the axis carries, and this is where the sweep says what

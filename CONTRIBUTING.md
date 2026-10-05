@@ -206,11 +206,34 @@ python3 tools/check_device_entry_bijection.py --check
 ```
 
 A row naming a member the class does not declare is an option the library advertises and cannot
-deliver; a member no row names is an entry no report describes and no book counts. They already
+deliver; a member no row names and no rule books - the one rule being the policy-dispatch spelling, a
+`<X>WithPolicy` member whose `<X>` a row already books and whose declaration takes an `EvalPolicyLike`
+policy - is an entry no report describes and no book counts. They already
 disagreed once, in the first direction, and four mechanisms consumed the description without one of
 them asking whether the entry existed. Run it after touching the enumeration or the class. The same
 command runs as a CI step. `--options` and `--header` read the two sides from elsewhere, which is how
 a deleted member is shown to fail as a negative control.
+
+The enumeration being one row per entry is what lets the device probe account for the library's
+space rather than for a list of its own: the probe takes its rows from `BoysDeviceOptions()` at run
+time. Being accounted for is not being measured, though, because a figure needs an arm in the
+probe's own dispatch, and the arms are a hand-written switch in `src/boys_cuda_probe_kernels.cu`. So
+a second check walks the enumeration, the option table and the arms together:
+
+```
+python3 tools/check_device_probe_measures_every_entry.py --check
+```
+
+A row the space counts and no arm reaches is an entry a caller can name, that the closing report
+owes an answer for, and that the run reaches through the switch's default and offers with no figure;
+an arm naming an entry the enumeration does not declare is a switch arm for an option that does not
+exist. A row's own group decides which switch has to carry its arm - a launched row by launching the
+library's kernel, a device-callable one by running the caller's kernel with the entry in it - and an
+arm behind the fp16 seam's guard is read against the rows whose own build cell is the seam's
+constant, so a build with the seam closed loses exactly the arms whose rows it also refuses. Run it
+after touching the enumeration, the option table or the probe's dispatch. The same command runs as a
+CI step. `--options`, `--library` and `--kernel` read the three sides from elsewhere, which is how a
+deleted arm is shown to fail as a negative control.
 
 The host surface has the same exposure, and the same check:
 

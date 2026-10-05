@@ -289,14 +289,16 @@ held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3
 
 The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an interval
 partition and a packing axis, and the library offers the product of all five:
-2 routes × 2 schemes × 3 partitions × 2 axes, in 6 lanes — **144 combinations**, and every one of
+2 routes × 2 schemes × 3 partitions × 2 axes, in 7 lanes — **168 combinations**, and every one of
 them is a cell the gate below counts: certified and published, refused with the library's own reason
 and owed, or a device cell this host cannot run. None delivers outside the bound its lane publishes
 (the gate command below prints the three counts on the build it runs in).
 
-The six lanes are the host's double, single and half lanes and the device's own `kFp64Device`,
-`kFp32Device` and `kFp16Device`, which are the three precisions the CUDA surface's entries are built
-at. A device lane's entries are not the host lane's beside it, which is why the default-policy table
+The seven lanes are the host's double, single, half and bfloat16 lanes and the device's own
+`kFp64Device`, `kFp32Device` and `kFp16Device`, which are the three precisions the CUDA surface's
+entries are built at. `BoysLaneContracts()` is the library's own list of them, one row per
+`Precision` member in enumerator order, and the count above is that list's size. A device lane's
+entries are not the host lane's beside it, which is why the default-policy table
 keys a device class by the device lane: that table is keyed `(device, precision, shape)`, and the
 device classes it holds are the nine of those three lanes by the three questions the device option
 probe ranks.
@@ -310,8 +312,8 @@ number.
 
 **Choosing a combination is a name.** The four structural axes —
 route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
-the call site writes once and the compiler resolves where it is written: 6 lanes × 24 axis
-combinations, **144 combinations, each reachable as a name**. Naming one costs nothing at the call —
+the call site writes once and the compiler resolves where it is written: 7 lanes × 24 axis
+combinations, **168 combinations, each reachable as a name**. Naming one costs nothing at the call —
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those axes are not call arguments. All of them are named and all of them are evaluated by
 `tests/consumer_option_space.cpp`, which prints the counts per precision.

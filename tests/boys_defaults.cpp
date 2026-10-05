@@ -26,7 +26,10 @@
 //
 // THE CLASSES ARE WALKED, NOT LISTED. This program asks the table about every
 // class the three enumerations name - Device, Precision and Shape - and prints
-// the ones the table carries. A class it does not carry is reported as that, and
+// the ones the table carries. The lane axis is the enumeration's members unioned
+// with the lanes the seam's rows themselves name, so a class the seam carries is
+// a class this walk reaches without either list being edited to agree with the
+// other (MakeLaneWalk below). A class it does not carry is reported as that, and
 // is not printed as a policy, because there is no policy to print: asking for
 // the default of such a class is a compile error (the assertion in
 // DefaultPolicyFor, include/boys/boys.hpp), which is the seam's contract rather
@@ -164,9 +167,21 @@ constexpr const char* BudgetName(BoysBudget budget) noexcept {
 // to the enumeration and left out of the list is the one case neither catches,
 // which is why the report prints how many classes it scanned and what the table
 // answered rather than only the classes it found.
+//
+// THE LANE LIST IS NOT THE WALK. The members below are the enumerator's own
+// record, and the walk's lanes are those unioned with the lanes the seam's rows
+// name (MakeLaneWalk below). A lane added to the enumeration and named by the
+// seam's rows is therefore walked without this list being touched - the failure
+// this file was repaired for on 2026-10-04, when `Precision::kBf16` was appended
+// and the five bf16 rows arrived while this list still ended at kFp16Device: the
+// seam names a class, the walk reaches it, and no reader has to know both lists.
+// The list below is still the half no seam can supply - the lanes of a build
+// whose rows name none of them - and main() holds it to the library's own lane
+// table, so a member added to the enumeration and left out of BOTH is a run-time
+// refusal rather than a class this report quietly omits.
 #define BOYS_DEFAULTS_DEVICES(X) X(kHost) X(kDevice)
-#define BOYS_DEFAULTS_PRECISIONS(X)                        \
-    X(kFp64) X(kFp32) X(kFp16) X(kFp32Device) X(kFp64Device) X(kFp16Device)
+#define BOYS_DEFAULTS_PRECISIONS(X)                                                               \
+    X(kFp64) X(kFp32) X(kFp16) X(kBf16) X(kFp32Device) X(kFp64Device) X(kFp16Device)
 #define BOYS_DEFAULTS_SHAPES(X) X(kSingle) X(kAllOrders) X(kFixedN) X(kAllN) X(kAllNAtOrders)
 
 /// One enumerator of \c Device that \c DeviceName spells no name for.
@@ -190,8 +205,106 @@ constexpr std::array<Device, 2> kDevices{BOYS_DEFAULTS_DEVICES(BOYS_DEFAULTS_DEV
 #undef BOYS_DEFAULTS_DEVICE_ENTRY
 
 #define BOYS_DEFAULTS_PRECISION_ENTRY(Enumerator) Precision::Enumerator,
-constexpr std::array<Precision, 6> kPrecisions{BOYS_DEFAULTS_PRECISIONS(BOYS_DEFAULTS_PRECISION_ENTRY)};
+constexpr std::array<Precision, 7> kEnumerationLanes{
+    BOYS_DEFAULTS_PRECISIONS(BOYS_DEFAULTS_PRECISION_ENTRY)};
 #undef BOYS_DEFAULTS_PRECISION_ENTRY
+
+// --- the lanes the seam's own rows name -------------------------------------
+
+/// How many rows this build's seam carries, and one lane per row.
+///
+/// The count is the row list's own arity, so a row added to the seam moves it
+/// with the list rather than leaving a number written here to drift from it.
+#if defined(BOYS_BUILD_DEFAULT_ROWS)
+#define BOYS_DEFAULTS_ROW_COUNTS(kDevice, kPrecision, kShape, ...) +1
+constexpr std::size_t kSeamRowCount = 0 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_ROW_COUNTS);
+#undef BOYS_DEFAULTS_ROW_COUNTS
+
+#define BOYS_DEFAULTS_ROW_LANE(kDevice, kPrecision, kShape, ...) Precision::kPrecision,
+constexpr std::array<Precision, kSeamRowCount> kSeamLanes{
+    BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_ROW_LANE)};
+#undef BOYS_DEFAULTS_ROW_LANE
+#else
+/// A build whose seam carries no row list has no cells to read lanes from.
+constexpr std::size_t kSeamRowCount = 0;
+#endif
+
+/// The lanes this report crosses: one slot per lane of the enumeration plus one
+/// per row of the seam, which is the most the union below can hold.
+constexpr std::size_t kLaneSlots = kEnumerationLanes.size() + kSeamRowCount;
+
+/// One lane the walk carries, and how many it carries.
+struct LaneWalk {
+    std::array<Precision, kLaneSlots> members{};
+    std::size_t count = 0;
+};
+
+/// Appends a lane to a walk unless the walk already carries it.
+///
+/// \param walk the walk so far
+/// \param lane the lane this row names
+constexpr void CarryLane(LaneWalk& walk, Precision lane) noexcept {
+    for (std::size_t slot = 0; slot < walk.count; ++slot)
+    {
+        if (walk.members[slot] == lane)
+        {
+            return;
+        }
+    }
+
+    walk.members[walk.count] = lane;
+    ++walk.count;
+}
+
+/// The lanes the walk crosses: the enumeration's own members first, then every
+/// lane the seam's rows name, deduplicated and in the library's own enumerator
+/// order - the order \c BoysLaneContracts() reports its rows in, so the class
+/// table and the lane table below it read lane by lane.
+///
+/// A seam class is walked by this union and not by a list a reader maintains
+/// beside it: the row names the lane, and that is what puts the lane in the
+/// walk. The enumeration's own record is the fallback for a build whose seam
+/// names no rows at all.
+constexpr LaneWalk MakeLaneWalk() noexcept {
+    LaneWalk walk{};
+
+    for (const Precision lane : kEnumerationLanes)
+    {
+        CarryLane(walk, lane);
+    }
+
+#if defined(BOYS_BUILD_DEFAULT_ROWS)
+    for (const Precision lane : kSeamLanes)
+    {
+        CarryLane(walk, lane);
+    }
+#endif
+
+    // The library's order, by insertion: one lane per row of BoysLaneContracts,
+    // so a report line and the lane table it is composed from read the same way.
+    for (std::size_t index = 1; index < walk.count; ++index)
+    {
+        const Precision lane = walk.members[index];
+        std::size_t slot = index;
+
+        while (slot > 0 &&
+               static_cast<unsigned>(walk.members[slot - 1]) > static_cast<unsigned>(lane))
+        {
+            walk.members[slot] = walk.members[slot - 1];
+            --slot;
+        }
+
+        walk.members[slot] = lane;
+    }
+
+    return walk;
+}
+
+constexpr LaneWalk kLaneWalk = MakeLaneWalk();
+
+/// The walk's lanes, as the three loops below read them: the union,
+/// deduplicated, in the library's own lane order.
+constexpr std::span<const Precision> kPrecisions{kLaneWalk.members.data(), kLaneWalk.count};
 
 #define BOYS_DEFAULTS_SHAPE_ENTRY(Enumerator) Shape::Enumerator,
 constexpr std::array<Shape, 5> kShapes{BOYS_DEFAULTS_SHAPES(BOYS_DEFAULTS_SHAPE_ENTRY)};
@@ -200,10 +313,14 @@ constexpr std::array<Shape, 5> kShapes{BOYS_DEFAULTS_SHAPES(BOYS_DEFAULTS_SHAPE_
 // A build whose seam file carries a row list names its classes there, and every
 // one of them is a class the walk above must reach: a row keyed by a member the
 // walk does not carry would be a row this report omits while a reader saw it in
-// the header - the failure this report exists to make impossible. A replacement
-// that names such a class fails the build here instead, and the line says which
-// list to extend. The block is compiled only where there is a list to check,
-// which is also why the walk's members are not asserted against themselves.
+// the header - the failure this report exists to make impossible. The lane cell
+// of a row is carried by construction, the walk's lanes being the seam's own
+// cells unioned with the enumeration's (MakeLaneWalk above); what the assertion
+// below is a tripwire for is the row's device and its shape, the two cells no
+// row list can put into the walk by naming them. A replacement that names such a
+// class fails the build here instead, and the line says which list to extend.
+// The block is compiled only where there is a list to check, which is also why
+// the walk's members are not asserted against themselves.
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
 /// Whether a class is one of the classes the walks above cross.
 constexpr bool ScannedClass(Device device, Precision precision, Shape shape) noexcept {
