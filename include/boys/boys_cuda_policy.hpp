@@ -183,6 +183,60 @@ struct PackingTag {};
 template <RegionBExp kExp>
 struct ExpTag {};
 
+/// The member of a pair of entries the policy's region-B exponential selects: the
+/// member the policy names, where the class carries both, and the class's own away
+/// from the pair.
+///
+/// A *pair* is two entries of one class that differ in nothing but the member of
+/// \c RegionBExp their region-B seed is evaluated in — the same tables, the same
+/// lane, the same pieces, the same recurrence — so a policy naming either member has
+/// a kernel and the two are the certified readings of one arithmetic rather than one
+/// reading and one fallback. The two callables are passed rather than a pair of
+/// entry pointers so that each arm of a cascade writes the two entries it chooses
+/// between where the arm is: a reader of an arm sees which pair it dispatches over,
+/// and a member that gains a counterpart later is added to its own arm and not to a
+/// table beside the cascade.
+///
+/// The choice is a value of the policy type, so nothing here survives compilation.
+template <RegionBExp kExp, typename Accurate, typename Fast>
+BoysStatus DevicePickExp(Accurate accurate, Fast fast) {
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return fast();
+    }
+    else
+    {
+        return accurate();
+    }
+}
+
+/// The double all-orders class's cascade over the route, the partition, the packing axis and the
+/// scheme, at whichever member of the region-B exponential the policy names. Declared here and
+/// defined with that class's own layer below, because its arms name the class's members.
+///
+/// \param n the class's own first argument, as its entries document it
+/// \param x the class's own second argument, as its entries document it
+/// \param out the class's own third argument, as its entries document it
+/// \param count the class's own fourth argument, as its entries document it
+/// \param stream the class's own fifth argument, as its entries document it
+///
+/// \returns the status of the entry the policy's combination reaches
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF64Cascade(
+    const int* n, const double* x, double* out, std::size_t count, void* stream);
+
+/// The float and half all-orders classes' cascades, declared here with the double one and
+/// defined with each class's own layer below, for the same reason.
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF32Cascade(
+    const int* n, const double* x, float* out, std::size_t count, void* stream);
+
+#if BoysFp16
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF16Cascade(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+#endif
+
 } // namespace detail
 
 // ---------------------------------------------------------------------------
@@ -375,19 +429,28 @@ BoysStatus BoysCuda::AllNF16WithPolicy(int nmax, const F16* x, F16* out, std::si
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllOrdersF64WithPolicy(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
-    if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate
+                  || Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return detail::AllOrdersF64Cascade<Policy>(n, x, out, count, stream);
+    }
+    else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: every all-orders ladder of this class seeds region B from the "
-                      "tables' own seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), and no entry of the class carries the second "
-                      "member as an instantiation. A policy naming RegionBExp::kFast on this "
-                      "class reaches no kernel; the fast exponential is a coordinate of the f32 "
-                      "single class alone (BoysCuda::SingleF32<RegionBExp::kFast>, "
-                      "boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
-    else if constexpr (Policy::kRoute == FitRoute::kChebyshev)
+}
+
+namespace detail {
+
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF64Cascade(
+    const int* n, const double* x, double* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
         if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
         {
@@ -395,12 +458,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64Orders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -417,12 +489,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64Mono(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64Mono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64MonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64OrdersMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64OrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64OrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -450,12 +531,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64Narrow(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64Narrow(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64NarrowOrders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowOrders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowOrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -472,13 +562,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64NarrowMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64NarrowOrdersMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowOrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowOrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -502,7 +600,23 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member,
+                // and the sentence is the library's own - the same one the option space cites
+                // for the cells it counts as impossible.
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry; the grid's own exponential is not a choice of "
+                              "arithmetic and neither member is read by it");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -566,12 +680,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64Rat(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64Rat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64RatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64OrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64OrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64OrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -595,12 +718,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
                 // the entry it is reached by; this arm is that statement.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64Rat(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64Rat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64RatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64OrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64OrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64OrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -628,13 +760,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64NarrowRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64NarrowOrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowOrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowOrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -653,13 +793,21 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
                 // once and the two scheme names select it.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF64NarrowRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF64NarrowOrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF64NarrowOrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF64NarrowOrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -683,7 +831,24 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member, on
+                // this route as on the other: "The grid reads no exponential at any argument:
+                // below the join every order is summed from its own stored block, and above it the
+                // call falls to the asymptote, whose seed is the reciprocal square root"
+                // (boys/boys_cuda_options.hpp).
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -747,21 +912,33 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
     }
 }
 
+} // namespace detail
+
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllOrdersF32WithPolicy(
     const int* n, const double* x, float* out, std::size_t count, void* stream) {
-    if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate
+                  || Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return detail::AllOrdersF32Cascade<Policy>(n, x, out, count, stream);
+    }
+    else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: every all-orders ladder of this class seeds region B from the "
-                      "tables' own seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), and no entry of the class carries the second "
-                      "member as an instantiation. A policy naming RegionBExp::kFast on this "
-                      "class reaches no kernel; the fast exponential is a coordinate of this "
-                      "lane's single class (BoysCuda::SingleF32<RegionBExp::kFast>)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
-    else if constexpr (Policy::kRoute == FitRoute::kChebyshev)
+}
+
+namespace detail {
+
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF32Cascade(
+    const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
         if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
         {
@@ -769,12 +946,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32Orders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -797,12 +983,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
                 // route's pairs: one stored form, one arithmetic, two names for it.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32Orders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -830,12 +1025,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32Narrow(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32Narrow(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32NarrowOrders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowOrders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowOrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -852,13 +1056,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32NarrowMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32NarrowOrdersMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowOrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowOrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -882,7 +1094,24 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member, on
+                // this route as on the other: "The grid reads no exponential at any argument: below
+                // the join every order is summed from its own stored block, and above it the call
+                // falls to the asymptote, whose seed is the reciprocal square root"
+                // (boys/boys_cuda_options.hpp).
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -944,12 +1173,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32Rat(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32Rat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32RatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32OrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32OrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32OrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -966,13 +1204,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32RatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32RatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32RatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32OrdersRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32OrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32OrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1000,13 +1246,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32NarrowRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32NarrowOrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowOrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowOrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1023,13 +1277,21 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF32NarrowRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF32NarrowOrdersRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF32NarrowOrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF32NarrowOrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1053,7 +1315,24 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member, on
+                // this route as on the other: "The grid reads no exponential at any argument: below
+                // the join every order is summed from its own stored block, and above it the call
+                // falls to the asymptote, whose seed is the reciprocal square root"
+                // (boys/boys_cuda_options.hpp).
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -1117,23 +1396,34 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
     }
 }
 
+} // namespace detail
+
 #if BoysFp16
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out, std::size_t count,
                                   void* stream) {
-    if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate
+                  || Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return detail::AllOrdersF16Cascade<Policy>(n, x, out, count, stream);
+    }
+    else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: every all-orders ladder of this class runs the float lane's "
-                      "bodies and seeds region B from the tables' own seed, which is the library "
-                      "routine's exponential (RegionBExp::kAccurate), and no entry of the class "
-                      "carries the second member as an instantiation. A policy naming "
-                      "RegionBExp::kFast on this class reaches no kernel; the fast exponential is "
-                      "a coordinate of the f32 single class alone "
-                      "(BoysCuda::SingleF32<RegionBExp::kFast>, boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
-    else if constexpr (Policy::kRoute == FitRoute::kChebyshev)
+}
+
+namespace detail {
+
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersF16Cascade(
+    const int* n, const double* x, F16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
         if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
         {
@@ -1141,12 +1431,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16Orders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1168,12 +1467,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
                 // the cut, and why the row's own entry is the one a Horner policy reaches.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16Orders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1201,12 +1509,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16Narrow(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16Narrow(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16NarrowOrders(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowOrders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowOrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1223,13 +1540,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16NarrowMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16NarrowOrdersMono(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowOrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowOrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1253,7 +1578,24 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member, on
+                // this route as on the other: "The grid reads no exponential at any argument: below
+                // the join every order is summed from its own stored block, and above it the call
+                // falls to the asymptote, whose seed is the reciprocal square root"
+                // (boys/boys_cuda_options.hpp).
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -1315,12 +1657,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16Rat(n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16Rat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16RatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16OrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16OrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16OrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1337,13 +1688,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16RatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16RatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16RatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16OrdersRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16OrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16OrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1371,13 +1730,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16NarrowRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16NarrowOrdersRat(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowOrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowOrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1394,13 +1761,21 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
             {
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
-                    return BoysCuda::AllOrdersF16NarrowRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
-                    return BoysCuda::AllOrdersF16NarrowOrdersRatHorner(
-                        n, x, out, count, stream, Policy::kDivision);
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersF16NarrowOrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersF16NarrowOrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
                 }
                 else
                 {
@@ -1424,7 +1799,24 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
         }
         else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
-            if constexpr (Policy::kPack == PackAxis::kOrders)
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                // The grid is the one partition of this class at which the axis has no member, on
+                // this route as on the other: "The grid reads no exponential at any argument: below
+                // the join every order is summed from its own stored block, and above it the call
+                // falls to the asymptote, whose seed is the reciprocal square root"
+                // (boys/boys_cuda_options.hpp).
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
             {
                 if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
                 {
@@ -1486,6 +1878,8 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
         return BoysStatus::kDeviceError;
     }
 }
+} // namespace detail
+
 #endif // BoysFp16
 
 } // namespace boys

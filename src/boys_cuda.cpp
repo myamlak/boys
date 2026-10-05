@@ -86,6 +86,42 @@ int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
     int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(
     int form, int nmax, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64Fast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64MonoFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersMonoFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowMonoFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64RatFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64OrdersRatFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowRatFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast(
+    int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchEachOrderF64(
+    int form, const int* n, const double* x, const int* offset, double* out, std::size_t count,
+    void* stream);
+int BoysCudaLaunchEachOrderF64Fast(
+    int form, const int* n, const double* x, const int* offset, double* out, std::size_t count,
+    void* stream);
+int BoysCudaLaunchEachOrderF32(
+    int form, const int* n, const double* x, const int* offset, float* out, std::size_t count,
+    void* stream);
+int BoysCudaLaunchEachOrderF32Fast(
+    int form, const int* n, const double* x, const int* offset, float* out, std::size_t count,
+    void* stream);
 int BoysCudaLaunchAllOrdersF32Mono(
     int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF32OrdersMono(
@@ -127,6 +163,12 @@ int BoysCudaLaunchAllOrdersF16Mono(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF16OrdersMono(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchEachOrderF16(
+    int form, const int* n, const void* x, const int* offset, void* out, std::size_t count,
+    void* stream);
+int BoysCudaLaunchEachOrderF16Fast(
+    int form, const int* n, const void* x, const int* offset, void* out, std::size_t count,
+    void* stream);
 #endif
 }
 
@@ -196,6 +238,34 @@ BoysStatus RunLaunch(Launcher launcher,
     }
 
     return FromLaunchCode(launcher(static_cast<int>(form), order, x, out, count, stream));
+}
+
+// The each-order shape's form of the same seam: one more argument than RunLaunch, because the
+// ladders land at the caller's offsets rather than at planes the launcher derives. The checks,
+// the empty-batch case and the launch-code reading are RunLaunch's, so a caller sees the same
+// answers from either shape.
+template <typename Launcher, typename Order, typename X, typename Value>
+BoysStatus RunLaunchOffset(Launcher launcher,
+                           Order order,
+                           X x,
+                           const int* offset,
+                           Value* out,
+                           std::size_t count,
+                           void* stream,
+                           DivisionForm form) {
+    const BoysStatus formStatus = CheckDivisionForm(form);
+
+    if (formStatus != BoysStatus::kSuccess)
+    {
+        return formStatus;
+    }
+
+    if (count == 0)
+    {
+        return BoysStatus::kSuccess;
+    }
+
+    return FromLaunchCode(launcher(static_cast<int>(form), order, x, offset, out, count, stream));
 }
 
 } // namespace
@@ -611,6 +681,184 @@ BoysStatus BoysCuda::AllNF64(
     return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream, form);
 }
 
+template <RegionBExp kExp>
+BoysStatus BoysCuda::EachOrderF64(const int* n,
+                                  const double* x,
+                                  const int* offset,
+                                  double* out,
+                                  std::size_t count,
+                                  void* stream,
+                                  DivisionForm form) {
+    // The each-order shape over the coarsest ladder AllOrdersF64 reads, at the region-B exponential
+    // the call names: the two readings differ only in that seed, as SingleF32's pair does.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF64Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF64, n, x, offset, out, count, stream, form);
+    }
+}
+
+template <RegionBExp kExp>
+BoysStatus BoysCuda::EachOrderF32(const int* n,
+                                  const double* x,
+                                  const int* offset,
+                                  float* out,
+                                  std::size_t count,
+                                  void* stream,
+                                  DivisionForm form) {
+    // The double entry above on the float lane, whose ladder reads the same coarsest pieces
+    // narrowed (AllOrdersF32's lane pair).
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF32Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF32, n, x, offset, out, count, stream, form);
+    }
+}
+
+// The double lane's ladders at the other region-B exponential. Each member is the one named beside
+// it over the same launcher's kernel instantiated at the fast member, so what a caller chooses here
+// is the seed the ladder is built from and never a second body.
+BoysStatus BoysCuda::AllOrdersF64Fast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Fast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64OrdersFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64MonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64MonoFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64OrdersMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMonoFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMonoFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMonoFast, n, x, out, count, stream, form);
+}
+
+// The route's pair at the other exponential. One member per partition and packing, as the accurate
+// rows have one per pair: the pair is stored in one form, so neither scheme name reaches a second
+// member here and both fast rows of a pair name the one below.
+BoysStatus BoysCuda::AllOrdersF64RatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64RatFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64OrdersRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRatFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRatFast, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast, n, x, out, count, stream, form);
+}
+
 #if BoysFp16
 BoysStatus BoysCuda::SingleF16(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
@@ -647,6 +895,32 @@ BoysStatus BoysCuda::AllNF16(
     }
 
     return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream, form);
+}
+
+template <RegionBExp kExp>
+BoysStatus BoysCuda::EachOrderF16(const int* n,
+                                  const F16* x,
+                                  const int* offset,
+                                  F16* out,
+                                  std::size_t count,
+                                  void* stream,
+                                  DivisionForm form) {
+    // The float each-order entry above in this lane's store, at the same two readings of the
+    // region-B exponential.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF16Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF16, n, x, offset, out, count, stream, form);
+    }
 }
 
 // The half lane's other bodies. Each of these is its float counterpart above at the same kernel
@@ -1388,6 +1662,15 @@ constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (Boy
 // seed contribution and the fp16 lane's half ULP are terms a report must state and cannot fold
 // into one figure.
 constexpr const char* kFormF64 = "5.5e-14";
+// The double lane reads the fast member at the lane's own figure, and the sentence that says so is
+// the library's: the device's double fast member is the host's arithmetic ported rather than
+// re-derived, because the members are named once and a device figure that differed from the host's
+// for one name would be a second bound for that name (boys_cuda_arithmetic.hpp, DeviceRegionBExp),
+// and the host's own documentation of that member is that the polynomial's 8.336e-11 relative sits
+// inside the ladder's requirement below the member's cut - "So no published figure moves on that
+// lane either" (boys/accuracy.hpp, kDefaultHostRegionBExp). The float lane's 8e-8 is that lane's
+// fast member's own contribution and is not a term the double lane's carries.
+constexpr const char* kFormF64Fast = "5.5e-14";
 constexpr const char* kFormF32 = "1.5e-7";
 constexpr const char* kFormF32Fast = "1.5e-7 + 8e-8";
 constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
@@ -1395,6 +1678,7 @@ constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 // The figures, with any term a returned value decides dropped, which is the
 // fp16 half ULP and nothing else: every other form is a number here.
 constexpr double kBoundF64 = 5.5e-14;
+constexpr double kBoundF64Fast = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;
 constexpr double kBoundF32Fast = 1.5e-7 + 8e-8;
 constexpr double kBoundF16 = 1e-7;
@@ -2686,6 +2970,355 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp,
      RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
      kFp16Refusal},
+    // The launched each-order rows, appended after the device-callable block for the reason the
+    // block above states. Each is the all-orders row of its own lane and reading at the same bound
+    // and over the same ladder body: the offset the sink indexes by is the kernel's and adds no
+    // arithmetic, so the figure a caller places these by is the all-orders row's.
+    {DeviceEntry::kEachOrderF64, "each-order-fp64", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kAccurate, BoysDeviceLane::kF64Batch, kBoundF64,
+     kFormF64, true, nullptr},
+    {DeviceEntry::kEachOrderF64Fast, "each-order-fp64-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kEachOrderF32, "each-order-fp32", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kEachOrderF32Fast, "each-order-fp32-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kEachOrderF16, "each-order-fp16", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kEachOrderF16Fast, "each-order-fp16-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+
+    // The double lane's ladders at the other region-B exponential, appended with the entries:
+    // each is the row of its own name above at the second member of the axis, over the same
+    // tables, so the partition, the route, the scheme and the packing the row above states are
+    // this row's and the figure is the lane's at that member (kFormF64Fast).
+    {DeviceEntry::kAllOrdersF64Fast, "all-orders-fp64-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64OrdersFast, "all-orders-fp64-orders-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowFast, "all-orders-fp64-narrow-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersFast, "all-orders-fp64-narrow-orders-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64MonoFast, "all-orders-fp64-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64OrdersMonoFast, "all-orders-fp64-orders-mono-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowMonoFast, "all-orders-fp64-narrow-mono-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersMonoFast, "all-orders-fp64-narrow-orders-mono-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64RatFast, "all-orders-fp64-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64RatHornerFast, "all-orders-fp64-rat-horner-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64OrdersRatFast, "all-orders-fp64-orders-rat-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64OrdersRatHornerFast, "all-orders-fp64-orders-rat-horner-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowRatFast, "all-orders-fp64-narrow-rat-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowRatHornerFast, "all-orders-fp64-narrow-rat-horner-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersRatFast, "all-orders-fp64-narrow-orders-rat-fast",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp, RegionBExp::kFast,
+     BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF64NarrowOrdersRatHornerFast,
+     "all-orders-fp64-narrow-orders-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    // The float and half lanes' ladders at the other region-B exponential, appended with
+    // their entries: the row of its own name above at the second member of the axis, over
+    // the same tables, so the partition, the route, the scheme and the packing the row above
+    // states are this row's. The half lane's rows carry that lane's figure, as its accurate
+    // rows do: the fast reading's own contribution is a term of the float lane's sentence
+    // and the half store's digit is three orders above it.
+    {DeviceEntry::kAllOrdersF32Fast, "all-orders-fp32-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32OrdersFast, "all-orders-fp32-orders-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowFast, "all-orders-fp32-narrow-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowOrdersFast, "all-orders-fp32-narrow-orders-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32MonoFast, "all-orders-fp32-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32OrdersMonoFast, "all-orders-fp32-orders-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowMonoFast, "all-orders-fp32-narrow-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowOrdersMonoFast, "all-orders-fp32-narrow-orders-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32RatFast, "all-orders-fp32-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32RatHornerFast, "all-orders-fp32-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32OrdersRatFast, "all-orders-fp32-orders-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32OrdersRatHornerFast, "all-orders-fp32-orders-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowRatFast, "all-orders-fp32-narrow-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowRatHornerFast, "all-orders-fp32-narrow-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowOrdersRatFast, "all-orders-fp32-narrow-orders-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF32NarrowOrdersRatHornerFast, "all-orders-fp32-narrow-orders-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllOrdersF16Fast, "all-orders-fp16-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersFast, "all-orders-fp16-orders-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowFast, "all-orders-fp16-narrow-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersFast, "all-orders-fp16-narrow-orders-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16MonoFast, "all-orders-fp16-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersMonoFast, "all-orders-fp16-orders-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowMonoFast, "all-orders-fp16-narrow-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersMonoFast, "all-orders-fp16-narrow-orders-mono-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16RatFast, "all-orders-fp16-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16RatHornerFast, "all-orders-fp16-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersRatFast, "all-orders-fp16-orders-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersRatHornerFast, "all-orders-fp16-orders-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowRatFast, "all-orders-fp16-narrow-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowRatHornerFast, "all-orders-fp16-narrow-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersRatFast, "all-orders-fp16-narrow-orders-rat-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16NarrowOrdersRatHornerFast, "all-orders-fp16-narrow-orders-rat-horner-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    // The single-order and all-N entries at the other region-B exponential, appended with theirs.
+    {DeviceEntry::kSingleF64Fast, "single-fp64-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Single, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllNF64Fast, "all-n-fp64-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kAllNF32Fast, "all-n-fp32-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
+     kFormF32Fast, true, nullptr},
+    {DeviceEntry::kAllNF16Fast, "all-n-fp16-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    // The double lane's single, all-N and each-order entries at the other region-B exponential,
+    // appended with their enumerators: each names the surface of its own name at that member.
+    {DeviceEntry::kDeviceSingleF64Fast, "device-single-fp64-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle, DeviceOptionAxis::kRegionBExp,
+     RegionBExp::kFast, BoysDeviceLane::kF64Single, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    {DeviceEntry::kDeviceAllNF64Fast, "device-all-n-fp64-fast", DeviceOptionGroup::kDeviceCallable,
+     DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
+     kFormF64Fast, true, nullptr},
+    {DeviceEntry::kDeviceEachOrderF64Fast, "device-each-order-fp64-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRegionBExp,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast, true, nullptr},
+    // The double lane's all-orders ladders at the other region-B exponential,
+    // appended with their enumerators.
+    {DeviceEntry::kDeviceAllOrdersF64Fast, "device-all-orders-fp64-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kNone,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64OrdersFast, "device-all-orders-fp64-orders-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPacking,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowFast, "device-all-orders-fp64-narrow-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPartition,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowOrdersFast, "device-all-orders-fp64-narrow-orders-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kPacking,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowMonoFast, "device-all-orders-fp64-narrow-mono-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kScheme,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast, "device-all-orders-fp64-narrow-orders-mono-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kScheme,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64RatFast, "device-all-orders-fp64-rat-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64RatHornerFast, "device-all-orders-fp64-rat-horner-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64OrdersRatFast, "device-all-orders-fp64-orders-rat-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64OrdersRatHornerFast, "device-all-orders-fp64-orders-rat-horner-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowRatFast, "device-all-orders-fp64-narrow-rat-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowRatHornerFast, "device-all-orders-fp64-narrow-rat-horner-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatFast, "device-all-orders-fp64-narrow-orders-rat-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
+    {DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast, "device-all-orders-fp64-narrow-orders-rat-horner-fast",
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
+     DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kRoute,
+     RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
+     true, nullptr},
 };
 
 // The report's contract, checked at compile time: one row per DeviceEntry, row i is entry i.

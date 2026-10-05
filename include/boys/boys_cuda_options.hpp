@@ -321,6 +321,126 @@ enum class DeviceEntry : int {
     kDeviceAllOrdersF16NarrowOrdersRatHornerFast, ///< BoysDeviceAllOrdersF16NarrowOrdersRatHorner at RegionBExp::kFast, in-kernel
     kDeviceAllNF16Fast, ///< BoysDeviceAllNF16 at RegionBExp::kFast, in-kernel
     kDeviceEachOrderF16Fast, ///< BoysDeviceEachOrderF16 at RegionBExp::kFast, in-kernel
+
+    /// The each-order shape, launched: the same ladder the all-orders rows write into padded
+    /// planes, written contiguously from the caller's own offset array. The shape's question is
+    /// the all-orders one — \c DeviceOptionQuestion::kAllOrders — and what it adds is the
+    /// layout: each argument's ladder stops at that argument's own top order, so a batch whose
+    /// orders differ spends what it asks for instead of a plane per order.
+    ///
+    /// These are the rows the shape had none of: every other entry of it is reached from a
+    /// caller's own kernel through a sink, and the launched route to the same ladder is
+    /// \c BoysCuda::EachOrderF64 and its siblings, over the same body the all-orders kernels
+    /// hand their lanes.
+    kEachOrderF64, ///< BoysCuda::EachOrderF64 at RegionBExp::kAccurate, launched
+    kEachOrderF64Fast, ///< BoysCuda::EachOrderF64 at RegionBExp::kFast, launched
+    kEachOrderF32, ///< BoysCuda::EachOrderF32 at RegionBExp::kAccurate, launched
+    kEachOrderF32Fast, ///< BoysCuda::EachOrderF32 at RegionBExp::kFast, launched
+    kEachOrderF16, ///< BoysCuda::EachOrderF16 at RegionBExp::kAccurate, launched
+    kEachOrderF16Fast, ///< BoysCuda::EachOrderF16 at RegionBExp::kFast, launched
+
+    /// The double lane's ladders at the region-B exponential the rows above carry at
+    /// \c RegionBExp::kAccurate.
+    ///
+    /// The axis is a coordinate of the option and not a second entry: each row below is the row of
+    /// its own name at the other member of \c RegionBExp, over the same lane, the same pieces, the
+    /// same seed lane and the same recurrence, with the region-B seed evaluated in that member's
+    /// arithmetic. The two members carry a figure each and nothing substitutes one for the other.
+    ///
+    /// The rational route's pair is one member for both scheme names at this exponential, exactly
+    /// as it is at the other (the rows above), so its two scheme rows below name one entry.
+    kAllOrdersF64Fast, ///< BoysCuda::AllOrdersF64Fast at RegionBExp::kFast, launched
+    kAllOrdersF64OrdersFast, ///< BoysCuda::AllOrdersF64OrdersFast at kFast, launched
+    kAllOrdersF64NarrowFast, ///< BoysCuda::AllOrdersF64NarrowFast at kFast, launched
+    kAllOrdersF64NarrowOrdersFast, ///< BoysCuda::AllOrdersF64NarrowOrdersFast at kFast, launched
+    kAllOrdersF64MonoFast, ///< BoysCuda::AllOrdersF64MonoFast at kFast, launched
+    kAllOrdersF64OrdersMonoFast, ///< BoysCuda::AllOrdersF64OrdersMonoFast at kFast, launched
+    kAllOrdersF64NarrowMonoFast, ///< BoysCuda::AllOrdersF64NarrowMonoFast at kFast, launched
+    kAllOrdersF64NarrowOrdersMonoFast, ///< BoysCuda::AllOrdersF64NarrowOrdersMonoFast at kFast
+    kAllOrdersF64RatFast, ///< BoysCuda::AllOrdersF64RatFast at kFast, launched
+    kAllOrdersF64RatHornerFast, ///< BoysCuda::AllOrdersF64RatFast at kFast, launched
+    kAllOrdersF64OrdersRatFast, ///< BoysCuda::AllOrdersF64OrdersRatFast at kFast, launched
+    kAllOrdersF64OrdersRatHornerFast, ///< BoysCuda::AllOrdersF64OrdersRatFast at kFast, launched
+    kAllOrdersF64NarrowRatFast, ///< BoysCuda::AllOrdersF64NarrowRatFast at kFast, launched
+    kAllOrdersF64NarrowRatHornerFast, ///< BoysCuda::AllOrdersF64NarrowRatFast at kFast, launched
+    kAllOrdersF64NarrowOrdersRatFast, ///< BoysCuda::AllOrdersF64NarrowOrdersRatFast at kFast
+    kAllOrdersF64NarrowOrdersRatHornerFast, ///< BoysCuda::AllOrdersF64NarrowOrdersRatFast at kFast
+
+
+    /// The float and half lanes' ladders at the region-B exponential the rows above carry at
+    /// \c RegionBExp::kAccurate, in the order of the f64 block above: the row of the same name
+    /// at the other member of the axis, over the same lane, the same pieces, the same seed lane
+    /// and the same recurrence, with the region-B seed evaluated in that member's arithmetic.
+    /// The half lane's rows are the float lane's in this lane's store, as every half row is.
+    kAllOrdersF32Fast, ///< BoysCuda::AllOrdersF32Fast at RegionBExp::kFast, launched
+    kAllOrdersF32OrdersFast, ///< BoysCuda::AllOrdersF32OrdersFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowFast, ///< BoysCuda::AllOrdersF32NarrowFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowOrdersFast, ///< BoysCuda::AllOrdersF32NarrowOrdersFast at RegionBExp::kFast, launched
+    kAllOrdersF32MonoFast, ///< BoysCuda::AllOrdersF32MonoFast at RegionBExp::kFast, launched
+    kAllOrdersF32OrdersMonoFast, ///< BoysCuda::AllOrdersF32OrdersMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowMonoFast, ///< BoysCuda::AllOrdersF32NarrowMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowOrdersMonoFast, ///< BoysCuda::AllOrdersF32NarrowOrdersMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF32RatFast, ///< BoysCuda::AllOrdersF32RatFast at RegionBExp::kFast, launched
+    kAllOrdersF32RatHornerFast, ///< BoysCuda::AllOrdersF32RatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF32OrdersRatFast, ///< BoysCuda::AllOrdersF32OrdersRatFast at RegionBExp::kFast, launched
+    kAllOrdersF32OrdersRatHornerFast, ///< BoysCuda::AllOrdersF32OrdersRatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowRatFast, ///< BoysCuda::AllOrdersF32NarrowRatFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowRatHornerFast, ///< BoysCuda::AllOrdersF32NarrowRatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowOrdersRatFast, ///< BoysCuda::AllOrdersF32NarrowOrdersRatFast at RegionBExp::kFast, launched
+    kAllOrdersF32NarrowOrdersRatHornerFast, ///< BoysCuda::AllOrdersF32NarrowOrdersRatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF16Fast, ///< BoysCuda::AllOrdersF16Fast at RegionBExp::kFast, launched
+    kAllOrdersF16OrdersFast, ///< BoysCuda::AllOrdersF16OrdersFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowFast, ///< BoysCuda::AllOrdersF16NarrowFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowOrdersFast, ///< BoysCuda::AllOrdersF16NarrowOrdersFast at RegionBExp::kFast, launched
+    kAllOrdersF16MonoFast, ///< BoysCuda::AllOrdersF16MonoFast at RegionBExp::kFast, launched
+    kAllOrdersF16OrdersMonoFast, ///< BoysCuda::AllOrdersF16OrdersMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowMonoFast, ///< BoysCuda::AllOrdersF16NarrowMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowOrdersMonoFast, ///< BoysCuda::AllOrdersF16NarrowOrdersMonoFast at RegionBExp::kFast, launched
+    kAllOrdersF16RatFast, ///< BoysCuda::AllOrdersF16RatFast at RegionBExp::kFast, launched
+    kAllOrdersF16RatHornerFast, ///< BoysCuda::AllOrdersF16RatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF16OrdersRatFast, ///< BoysCuda::AllOrdersF16OrdersRatFast at RegionBExp::kFast, launched
+    kAllOrdersF16OrdersRatHornerFast, ///< BoysCuda::AllOrdersF16OrdersRatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowRatFast, ///< BoysCuda::AllOrdersF16NarrowRatFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowRatHornerFast, ///< BoysCuda::AllOrdersF16NarrowRatHornerFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowOrdersRatFast, ///< BoysCuda::AllOrdersF16NarrowOrdersRatFast at RegionBExp::kFast, launched
+    kAllOrdersF16NarrowOrdersRatHornerFast, ///< BoysCuda::AllOrdersF16NarrowOrdersRatHornerFast at RegionBExp::kFast, launched
+
+    /// The single-order and all-N shapes at the second member of the region-B axis, on the lanes
+    /// whose classes carry it: the entry of the same name beside the row above at the other
+    /// exponential, over the same tables and the same seed lane. The half lane's all-N row is the
+    /// float lane's in this lane's store and carries that lane's figure.
+    kSingleF64Fast, ///< BoysCuda::SingleF64Fast at RegionBExp::kFast, launched
+    kAllNF64Fast, ///< BoysCuda::AllNF64Fast at RegionBExp::kFast, launched
+    kAllNF32Fast, ///< BoysCuda::AllNF32Fast at RegionBExp::kFast, launched
+    kAllNF16Fast, ///< BoysCuda::AllNF16Fast at RegionBExp::kFast, launched
+
+    /// The double lane's other shapes at the second member of the region-B axis, reachable from a
+    /// caller's own kernel: the entry of the same name beside the row above at the other
+    /// exponential, over the same tables and the same lane. Each surface takes that axis as a
+    /// template argument (boys_cuda_device.hpp), so the row books the surface it runs.
+    kDeviceSingleF64Fast, ///< BoysDeviceSingleF64 at RegionBExp::kFast, in-kernel
+    kDeviceAllNF64Fast, ///< BoysDeviceAllNF64 at RegionBExp::kFast, in-kernel
+    kDeviceEachOrderF64Fast, ///< BoysDeviceEachOrderF64 at RegionBExp::kFast, in-kernel
+
+    /// The double lane's all-orders ladders at the second member of the region-B axis,
+    /// reachable from a caller's own kernel: each is the row of the same name beside the
+    /// block above at the other exponential, over the same tables and the same device
+    /// functions, which take that axis as a template argument (boys_cuda_device.hpp).
+    kDeviceAllOrdersF64Fast, ///< BoysDeviceAllOrdersF64 at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64OrdersFast, ///< BoysDeviceAllOrdersF64Orders at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowFast, ///< BoysDeviceAllOrdersF64Narrow at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersFast, ///< BoysDeviceAllOrdersF64NarrowOrders at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowMonoFast, ///< BoysDeviceAllOrdersF64NarrowMono at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersMonoFast, ///< BoysDeviceAllOrdersF64NarrowOrdersMono at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64RatFast, ///< BoysDeviceAllOrdersF64Rat at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64RatHornerFast, ///< BoysDeviceAllOrdersF64RatHorner at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64OrdersRatFast, ///< BoysDeviceAllOrdersF64OrdersRat at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64OrdersRatHornerFast, ///< BoysDeviceAllOrdersF64OrdersRatHorner at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowRatFast, ///< BoysDeviceAllOrdersF64NarrowRat at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowRatHornerFast, ///< BoysDeviceAllOrdersF64NarrowRatHorner at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersRatFast, ///< BoysDeviceAllOrdersF64NarrowOrdersRat at RegionBExp::kFast, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersRatHornerFast, ///< BoysDeviceAllOrdersF64NarrowOrdersRatHorner at RegionBExp::kFast, in-kernel
+
     kCount, ///< rows this report defines; one past the last
 };
 
@@ -526,25 +646,45 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         // inside it, on both packing axes and in both lanes, reachable by a
         // launch and from a caller's own kernel.
         case DeviceEntry::kAllOrdersF64Narrow:
+        case DeviceEntry::kAllOrdersF64NarrowFast:
         case DeviceEntry::kAllOrdersF64NarrowOrders:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersFast:
         case DeviceEntry::kAllOrdersF64NarrowMono:
+        case DeviceEntry::kAllOrdersF64NarrowMonoFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersMonoFast:
         case DeviceEntry::kAllOrdersF64NarrowRat:
+        case DeviceEntry::kAllOrdersF64NarrowRatFast:
         case DeviceEntry::kAllOrdersF64NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF64NarrowRatHornerFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF32Narrow:
+        case DeviceEntry::kAllOrdersF32NarrowFast:
         case DeviceEntry::kAllOrdersF32NarrowMono:
+        case DeviceEntry::kAllOrdersF32NarrowMonoFast:
         case DeviceEntry::kAllOrdersF32NarrowRat:
+        case DeviceEntry::kAllOrdersF32NarrowRatFast:
         case DeviceEntry::kAllOrdersF32NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF32NarrowRatHornerFast:
         case DeviceEntry::kAllOrdersF32NarrowOrders:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersMonoFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF64Narrow:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowMono:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowMonoFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32Narrow:
         case DeviceEntry::kDeviceAllOrdersF32NarrowFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
@@ -556,19 +696,31 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the same cut: this lane's pieces are the float lane's, so each
         // of these reads the float lane's narrow partition.
         case DeviceEntry::kAllOrdersF16Narrow:
+        case DeviceEntry::kAllOrdersF16NarrowFast:
         case DeviceEntry::kAllOrdersF16NarrowMono:
+        case DeviceEntry::kAllOrdersF16NarrowMonoFast:
         case DeviceEntry::kAllOrdersF16NarrowRat:
+        case DeviceEntry::kAllOrdersF16NarrowRatFast:
         case DeviceEntry::kAllOrdersF16NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF16NarrowRatHornerFast:
         case DeviceEntry::kAllOrdersF16NarrowOrders:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersFast:
         case DeviceEntry::kAllOrdersF16NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersMonoFast:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatFast:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatHornerFast:
         // The narrow partition's pieces reachable from a caller's own kernel, on both packing
         // axes, in both bases and on both routes.
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrders:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersMono:
@@ -603,61 +755,90 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         // cut is the one it does, and the device-callable generics reach it through the
         // handle they were given (boys_cuda_device.hpp, TableLane64).
         case DeviceEntry::kSingleF64:
+        case DeviceEntry::kSingleF64Fast:
         case DeviceEntry::kSingleF32:
         case DeviceEntry::kSingleF32Fast:
         case DeviceEntry::kSingleF16:
         case DeviceEntry::kAllOrdersF64:
+        case DeviceEntry::kAllOrdersF64Fast:
         case DeviceEntry::kAllOrdersF32:
+        case DeviceEntry::kAllOrdersF32Fast:
         case DeviceEntry::kAllOrdersF16:
+        case DeviceEntry::kAllOrdersF16Fast:
         // The coarsest partition's own ladders: the level ladder, the per-order reading of
         // it and the rational route over the same pieces, on both packing axes. The
         // narrow and uniform rows of these same shapes are the cases above.
         case DeviceEntry::kAllOrdersF64Orders:
+        case DeviceEntry::kAllOrdersF64OrdersFast:
         case DeviceEntry::kAllOrdersF64Mono:
+        case DeviceEntry::kAllOrdersF64MonoFast:
         case DeviceEntry::kAllOrdersF64OrdersMono:
+        case DeviceEntry::kAllOrdersF64OrdersMonoFast:
         case DeviceEntry::kAllOrdersF64Rat:
+        case DeviceEntry::kAllOrdersF64RatFast:
         case DeviceEntry::kAllOrdersF64RatHorner:
+        case DeviceEntry::kAllOrdersF64RatHornerFast:
         case DeviceEntry::kAllOrdersF64OrdersRat:
+        case DeviceEntry::kAllOrdersF64OrdersRatFast:
         case DeviceEntry::kAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF64OrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF32Rat:
+        case DeviceEntry::kAllOrdersF32RatFast:
         case DeviceEntry::kAllOrdersF32RatHorner:
+        case DeviceEntry::kAllOrdersF32RatHornerFast:
         case DeviceEntry::kAllOrdersF32Orders:
+        case DeviceEntry::kAllOrdersF32OrdersFast:
         case DeviceEntry::kAllOrdersF32OrdersRat:
+        case DeviceEntry::kAllOrdersF32OrdersRatFast:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF32OrdersRatHornerFast:
         // The coarsest rows appended for the combinations the lane already had a kernel for: the
         // float and half lanes' monomial pair beside the double lane's above, and the half lane's
         // fast single, which reads the same cut the lane's other single rows do.
         case DeviceEntry::kAllOrdersF32Mono:
+        case DeviceEntry::kAllOrdersF32MonoFast:
         case DeviceEntry::kAllOrdersF32OrdersMono:
+        case DeviceEntry::kAllOrdersF32OrdersMonoFast:
         case DeviceEntry::kAllOrdersF16Mono:
+        case DeviceEntry::kAllOrdersF16MonoFast:
         case DeviceEntry::kAllOrdersF16OrdersMono:
+        case DeviceEntry::kAllOrdersF16OrdersMonoFast:
         case DeviceEntry::kSingleF16Fast:
         // The all-N and each-order shapes, whose one top order is the shape and not a
         // partition, and the device-callable entries that mirror the rows above.
         case DeviceEntry::kAllNF64:
+        case DeviceEntry::kAllNF64Fast:
         case DeviceEntry::kAllNF32:
+        case DeviceEntry::kAllNF32Fast:
         case DeviceEntry::kAllNF16:
+        case DeviceEntry::kAllNF16Fast:
         case DeviceEntry::kDeviceSingleF64:
+        case DeviceEntry::kDeviceSingleF64Fast:
         case DeviceEntry::kDeviceSingleF32:
         case DeviceEntry::kDeviceSingleF32Fast:
         case DeviceEntry::kDeviceSingleF16:
         case DeviceEntry::kDeviceAllOrdersF64:
+        case DeviceEntry::kDeviceAllOrdersF64Fast:
         case DeviceEntry::kDeviceAllOrdersF32:
         case DeviceEntry::kDeviceAllOrdersF32Fast:
         case DeviceEntry::kDeviceAllOrdersF16:
         case DeviceEntry::kDeviceAllOrdersF16Fast:
         case DeviceEntry::kDeviceAllNF64:
+        case DeviceEntry::kDeviceAllNF64Fast:
         case DeviceEntry::kDeviceAllNF32:
         case DeviceEntry::kDeviceAllNF32Fast:
         case DeviceEntry::kDeviceAllNF16:
         case DeviceEntry::kDeviceAllNF16Fast:
         case DeviceEntry::kDeviceEachOrderF64:
+        case DeviceEntry::kDeviceEachOrderF64Fast:
         case DeviceEntry::kDeviceEachOrderF32:
         case DeviceEntry::kDeviceEachOrderF32Fast:
         case DeviceEntry::kDeviceEachOrderF16:
         case DeviceEntry::kDeviceEachOrderF16Fast:
         case DeviceEntry::kDeviceAllOrdersF64Rat:
+        case DeviceEntry::kDeviceAllOrdersF64RatFast:
         case DeviceEntry::kDeviceAllOrdersF64RatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64RatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32Rat:
         case DeviceEntry::kDeviceAllOrdersF32RatFast:
         case DeviceEntry::kDeviceAllOrdersF32RatHorner:
@@ -665,15 +846,23 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the shipped cut: its coarsest ladder is the float lane's, read
         // whole or per order, in its Chebyshev and its rational family.
         case DeviceEntry::kAllOrdersF16Rat:
+        case DeviceEntry::kAllOrdersF16RatFast:
         case DeviceEntry::kAllOrdersF16RatHorner:
+        case DeviceEntry::kAllOrdersF16RatHornerFast:
         case DeviceEntry::kAllOrdersF16Orders:
+        case DeviceEntry::kAllOrdersF16OrdersFast:
         case DeviceEntry::kAllOrdersF16OrdersRat:
+        case DeviceEntry::kAllOrdersF16OrdersRatFast:
         case DeviceEntry::kAllOrdersF16OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF16OrdersRatHornerFast:
         // The shipped cut reachable from a caller's own kernel: the coarsest partition's own
         // ladders on its other packing axis, in every lane and on both routes.
         case DeviceEntry::kDeviceAllOrdersF64Orders:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersFast:
         case DeviceEntry::kDeviceAllOrdersF64OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatFast:
         case DeviceEntry::kDeviceAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32Orders:
         case DeviceEntry::kDeviceAllOrdersF32OrdersFast:
         case DeviceEntry::kDeviceAllOrdersF32OrdersRat:
@@ -691,6 +880,14 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF16OrdersRatHorner:
         case DeviceEntry::kDeviceAllOrdersF16OrdersRatHornerFast:
         case DeviceEntry::kDeviceSingleF16Fast:
+        // The launched each-order rows, whose ladder is the coarsest partition's ladder the
+        // all-orders rows of the arm above read.
+        case DeviceEntry::kEachOrderF64:
+        case DeviceEntry::kEachOrderF64Fast:
+        case DeviceEntry::kEachOrderF32:
+        case DeviceEntry::kEachOrderF32Fast:
+        case DeviceEntry::kEachOrderF16:
+        case DeviceEntry::kEachOrderF16Fast:
             return FitGranularity::kCoarsest;
 
         // The sentinel one past the last row this report defines, and not a row a call
@@ -914,10 +1111,12 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // handle's own lanes, TableLane64 and TableLane32
         // (include/boys/boys_cuda_device.hpp, BoysDeviceSingleF64 and its siblings).
         case DeviceEntry::kSingleF64:
+        case DeviceEntry::kSingleF64Fast:
         case DeviceEntry::kSingleF32:
         case DeviceEntry::kSingleF32Fast:
         case DeviceEntry::kSingleF16:
         case DeviceEntry::kDeviceSingleF64:
+        case DeviceEntry::kDeviceSingleF64Fast:
         case DeviceEntry::kDeviceSingleF32:
         case DeviceEntry::kDeviceSingleF32Fast:
         case DeviceEntry::kDeviceSingleF16:
@@ -938,35 +1137,48 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // family, and what differs between them is the partition the lane reads, which
         // DevicePartitionName states and this switch does not.
         case DeviceEntry::kAllOrdersF64:
+        case DeviceEntry::kAllOrdersF64Fast:
         case DeviceEntry::kAllOrdersF32:
+        case DeviceEntry::kAllOrdersF32Fast:
         case DeviceEntry::kAllOrdersF16:
+        case DeviceEntry::kAllOrdersF16Fast:
         case DeviceEntry::kAllNF64:
+        case DeviceEntry::kAllNF64Fast:
         case DeviceEntry::kAllNF32:
+        case DeviceEntry::kAllNF32Fast:
         case DeviceEntry::kAllNF16:
+        case DeviceEntry::kAllNF16Fast:
         case DeviceEntry::kAllOrdersF64Narrow:
+        case DeviceEntry::kAllOrdersF64NarrowFast:
         case DeviceEntry::kAllOrdersF32Narrow:
+        case DeviceEntry::kAllOrdersF32NarrowFast:
         case DeviceEntry::kDeviceAllOrdersF64:
+        case DeviceEntry::kDeviceAllOrdersF64Fast:
         case DeviceEntry::kDeviceAllOrdersF32:
         case DeviceEntry::kDeviceAllOrdersF32Fast:
         case DeviceEntry::kDeviceAllOrdersF16:
         case DeviceEntry::kDeviceAllOrdersF16Fast:
         case DeviceEntry::kDeviceAllNF64:
+        case DeviceEntry::kDeviceAllNF64Fast:
         case DeviceEntry::kDeviceAllNF32:
         case DeviceEntry::kDeviceAllNF32Fast:
         case DeviceEntry::kDeviceAllNF16:
         case DeviceEntry::kDeviceAllNF16Fast:
         case DeviceEntry::kDeviceEachOrderF64:
+        case DeviceEntry::kDeviceEachOrderF64Fast:
         case DeviceEntry::kDeviceEachOrderF32:
         case DeviceEntry::kDeviceEachOrderF32Fast:
         case DeviceEntry::kDeviceEachOrderF16:
         case DeviceEntry::kDeviceEachOrderF16Fast:
         case DeviceEntry::kDeviceAllOrdersF64Narrow:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowFast:
         case DeviceEntry::kDeviceAllOrdersF32Narrow:
         case DeviceEntry::kDeviceAllOrdersF32NarrowFast:
         // The half lane's row of the same pieces: this lane's own definition is that it runs the
         // float lane's bodies, and the float lane's narrow ladder is the body
         // BoysCuda::AllOrdersF16Narrow hands its lane.
         case DeviceEntry::kAllOrdersF16Narrow:
+        case DeviceEntry::kAllOrdersF16NarrowFast:
         // The half lane's narrow ladder from a caller's own kernel, which is the float lane's
         // body over this lane's store.
         case DeviceEntry::kDeviceAllOrdersF16Narrow:
@@ -977,19 +1189,27 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The same pieces and the same summation read the other way: each order's own
         // fit, through DeviceOrdersBody and DeviceOrdersBody32 over a Chebyshev lane.
         case DeviceEntry::kAllOrdersF64Orders:
+        case DeviceEntry::kAllOrdersF64OrdersFast:
         case DeviceEntry::kAllOrdersF64NarrowOrders:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersFast:
         case DeviceEntry::kAllOrdersF32Orders:
+        case DeviceEntry::kAllOrdersF32OrdersFast:
         case DeviceEntry::kAllOrdersF32NarrowOrders:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersFast:
         // The half lane's two rows of the reading: the float lane's per-order bodies in the fp16
         // store.
         case DeviceEntry::kAllOrdersF16Orders:
+        case DeviceEntry::kAllOrdersF16OrdersFast:
         case DeviceEntry::kAllOrdersF16NarrowOrders:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersFast:
         // The per-order reading of the same pieces from a caller's own kernel, on the coarsest
         // and the narrow partitions of both precision pairs: the launched rows above them read
         // the same bodies through DeviceOrdersBody and DeviceOrdersBody32, and the device
         // entries call those bodies directly over the handle's lanes.
         case DeviceEntry::kDeviceAllOrdersF64Orders:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersFast:
         case DeviceEntry::kDeviceAllOrdersF32Orders:
         case DeviceEntry::kDeviceAllOrdersF32OrdersFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrders:
@@ -1006,18 +1226,25 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // and the bodies above sum what they read by Horner
         // (boys_cuda_arithmetic.hpp, DevicePieceSum).
         case DeviceEntry::kAllOrdersF64Mono:
+        case DeviceEntry::kAllOrdersF64MonoFast:
         case DeviceEntry::kAllOrdersF64NarrowMono:
+        case DeviceEntry::kAllOrdersF64NarrowMonoFast:
         case DeviceEntry::kAllOrdersF32NarrowMono:
+        case DeviceEntry::kAllOrdersF32NarrowMonoFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowMono:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowMonoFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
         case DeviceEntry::kDeviceAllOrdersF32NarrowMonoFast:
         // The half lane's monomial row of the same pieces, read by the same bodies.
         case DeviceEntry::kAllOrdersF16NarrowMono:
+        case DeviceEntry::kAllOrdersF16NarrowMonoFast:
         // The coarsest partition's monomial rows, appended: the float and half lanes' rows of
         // the pieces the double lane's two rows above carry, over the same kernels' bodies with
         // those lanes' tables and stores around them.
         case DeviceEntry::kAllOrdersF32Mono:
+        case DeviceEntry::kAllOrdersF32MonoFast:
         case DeviceEntry::kAllOrdersF16Mono:
+        case DeviceEntry::kAllOrdersF16MonoFast:
         // The half lane's monomial narrow ladder from a caller's own kernel.
         case DeviceEntry::kDeviceAllOrdersF16NarrowMono:
         case DeviceEntry::kDeviceAllOrdersF16NarrowMonoFast:
@@ -1025,17 +1252,24 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
                     kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersMono:
+        case DeviceEntry::kAllOrdersF64OrdersMonoFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersMonoFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersMonoFast:
         // The half lane's row of it.
         case DeviceEntry::kAllOrdersF16NarrowOrdersMono:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersMonoFast:
         // The coarsest partition's rows of that reading, appended for the same reason as the
         // ladder rows above.
         case DeviceEntry::kAllOrdersF32OrdersMono:
+        case DeviceEntry::kAllOrdersF32OrdersMonoFast:
         case DeviceEntry::kAllOrdersF16OrdersMono:
+        case DeviceEntry::kAllOrdersF16OrdersMonoFast:
         // The monomial form of that reading, from a caller's own kernel, on the narrow
         // partition of both lanes.
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersMono:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersMonoFast:
         case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersMono:
@@ -1092,18 +1326,26 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // which is the whole of what separates those two rows (src/boys_cuda.cu,
         // BoysAllOrdersF64RatKernel and the launcher comment over its twins).
         case DeviceEntry::kAllOrdersF64Rat:
+        case DeviceEntry::kAllOrdersF64RatFast:
         case DeviceEntry::kAllOrdersF64NarrowRat:
+        case DeviceEntry::kAllOrdersF64NarrowRatFast:
         case DeviceEntry::kAllOrdersF32Rat:
+        case DeviceEntry::kAllOrdersF32RatFast:
         case DeviceEntry::kAllOrdersF32NarrowRat:
+        case DeviceEntry::kAllOrdersF32NarrowRatFast:
         case DeviceEntry::kDeviceAllOrdersF64Rat:
+        case DeviceEntry::kDeviceAllOrdersF64RatFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatFast:
         case DeviceEntry::kDeviceAllOrdersF32Rat:
         case DeviceEntry::kDeviceAllOrdersF32RatFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRat:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatFast:
         // The half lane's pair of that family, over the float lane's coarsest and narrow pieces.
         case DeviceEntry::kAllOrdersF16Rat:
+        case DeviceEntry::kAllOrdersF16RatFast:
         case DeviceEntry::kAllOrdersF16NarrowRat:
+        case DeviceEntry::kAllOrdersF16NarrowRatFast:
         // The half lane's pair of the route's ladders, from a caller's own kernel.
         case DeviceEntry::kDeviceAllOrdersF16Rat:
         case DeviceEntry::kDeviceAllOrdersF16RatFast:
@@ -1113,18 +1355,26 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
                     kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64RatHorner:
+        case DeviceEntry::kAllOrdersF64RatHornerFast:
         case DeviceEntry::kAllOrdersF64NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF64NarrowRatHornerFast:
         case DeviceEntry::kAllOrdersF32RatHorner:
+        case DeviceEntry::kAllOrdersF32RatHornerFast:
         case DeviceEntry::kAllOrdersF32NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF32NarrowRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF64RatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64RatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32RatHorner:
         case DeviceEntry::kDeviceAllOrdersF32RatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner:
         case DeviceEntry::kDeviceAllOrdersF32NarrowRatHornerFast:
         // The half lane's pair of the same names, reaching the same two kernels.
         case DeviceEntry::kAllOrdersF16RatHorner:
+        case DeviceEntry::kAllOrdersF16RatHornerFast:
         case DeviceEntry::kAllOrdersF16NarrowRatHorner:
+        case DeviceEntry::kAllOrdersF16NarrowRatHornerFast:
         // The same two names at the route's other scheme name, from a caller's own kernel.
         case DeviceEntry::kDeviceAllOrdersF16RatHorner:
         case DeviceEntry::kDeviceAllOrdersF16RatHornerFast:
@@ -1137,16 +1387,24 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // through the same bodies the Chebyshev rows of that axis use
         // (src/boys_cuda.cu, BoysAllOrdersF64OrdersRatKernel and its siblings).
         case DeviceEntry::kAllOrdersF64OrdersRat:
+        case DeviceEntry::kAllOrdersF64OrdersRatFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatFast:
         case DeviceEntry::kAllOrdersF32OrdersRat:
+        case DeviceEntry::kAllOrdersF32OrdersRatFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatFast:
         // The half lane's rows of the route on its orders reading.
         case DeviceEntry::kAllOrdersF16OrdersRat:
+        case DeviceEntry::kAllOrdersF16OrdersRatFast:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRat:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatFast:
         // The route's per-order reading, from a caller's own kernel, on both partitions of
         // every precision.
         case DeviceEntry::kDeviceAllOrdersF64OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatFast:
         case DeviceEntry::kDeviceAllOrdersF32OrdersRat:
         case DeviceEntry::kDeviceAllOrdersF32OrdersRatFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRat:
@@ -1159,15 +1417,23 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
                     kDefaultDeviceDivisionForm};
 
         case DeviceEntry::kAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF64OrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF32OrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatHornerFast:
         // The half lane's rows of the same, at the route's other scheme name.
         case DeviceEntry::kAllOrdersF16OrdersRatHorner:
+        case DeviceEntry::kAllOrdersF16OrdersRatHornerFast:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatHornerFast:
         // The same rows at the route's other scheme name, from a caller's own kernel.
         case DeviceEntry::kDeviceAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32OrdersRatHorner:
         case DeviceEntry::kDeviceAllOrdersF32OrdersRatHornerFast:
         case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
@@ -1209,6 +1475,21 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The same grid at the route's other scheme name, from a caller's own kernel.
         case DeviceEntry::kDeviceAllOrdersF16UniformRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
+                    kDefaultDeviceDivisionForm};
+
+        // The each-order shape, launched: the ladder of the all-orders rows above, written from the
+        // caller's own offsets rather than into planes. The lane and the body are the ones the row
+        // of that name in the arm above states - the coarsest ladder of this lane's Chebyshev
+        // pieces, read by the split Clenshaw recurrence - and the offset a sink indexes by is the
+        // kernel's and not the arithmetic's, so the two rows of a lane differ in nothing but the
+        // region-B exponential the kernel is instantiated at.
+        case DeviceEntry::kEachOrderF64:
+        case DeviceEntry::kEachOrderF64Fast:
+        case DeviceEntry::kEachOrderF32:
+        case DeviceEntry::kEachOrderF32Fast:
+        case DeviceEntry::kEachOrderF16:
+        case DeviceEntry::kEachOrderF16Fast:
+            return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
         // The sentinel one past the last row this report defines, and not a row a call
