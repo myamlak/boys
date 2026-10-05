@@ -791,9 +791,9 @@ jobs:
       # policy resolves to is a compile-time one, and a build that moves an axis is
       # the only reading for it. tests/build_defaults_tuned.hpp is that build's
       # header: it moves the evaluation scheme, the division form and the fit
-      # granularity off the shipped values, and tests/boys_backend_test.cpp pins
+      # granularity off the committed values, and tests/boys_backend_test.cpp pins
       # all five against it, so an axis whose reader stops being reached resolves
-      # the shipped value and fails this leg rather than passing quietly. The three
+      # the committed value and fails this leg rather than passing quietly. The three
       # axes that once sat in the seam file named, documented and expanded by
       # nothing are what this exists for: the fixture could not see them, because
       # it copied the library's own values for the four it did not move.

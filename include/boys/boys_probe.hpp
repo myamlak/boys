@@ -1174,7 +1174,7 @@ OptionProbeClosure OptionProbeSpaceClosure(const OptionProbeReport& report);
 ///
 /// The text is a valid `BOYS_BUILD_DEFAULTS` replacement: it carries the seven
 /// names - the host's five and the device lane's two - the row list, and no
-/// `BOYS_BUILD_DEFAULTS_SHIPPED`, so a build pointed at it defines
+/// `BOYS_BUILD_DEFAULTS_COMMITTED`, so a build pointed at it defines
 /// `BOYS_BUILD_DEFAULTS_REPLACED` and reads it instead of the committed file.
 ///
 /// \param report  a report, from RunOptionProbe

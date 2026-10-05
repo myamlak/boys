@@ -485,7 +485,7 @@ inline constexpr DivisionForm kDefaultDivisionForm = BOYS_BUILD_DEFAULT_DIVISION
 /// **One name per target, because the two targets' figures are two sets.** It is
 /// declared here beside the host's so that the policy table's device rows can
 /// name it where they are composed (`boys/boys.hpp`), and it is declared at all
-/// so that the device lane's form is a seam name of its own: the shipped value is
+/// so that the device lane's form is a seam name of its own: the committed value is
 /// the form every figure this repository publishes for that lane was measured at,
 /// which is what a build that names nothing keeps.
 inline constexpr DivisionForm kDefaultDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM;

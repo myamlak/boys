@@ -45,7 +45,7 @@ it reads one. The compile is the slow part, and a compile is not a probe.
 The driver is a consumer translation unit - it includes ``<boys/boys.hpp>`` and nothing else of the
 library - and the library is linked beside it from ``add_library(boys ...)`` in the revision's
 ``CMakeLists.txt``, read rather than written here. It compiles under the definition the target
-publishes to consumers, ``BoysFp16=1``, and under the shipped default choices: ``BOYS_BUILD_DEFAULTS``
+publishes to consumers, ``BoysFp16=1``, and under the committed default choices: ``BOYS_BUILD_DEFAULTS``
 is empty in a default configure, so the committed ``boys/boys_build_defaults.hpp`` is what a class's
 default policy resolves to, and the default axes are the macros of that file. A configure that names
 a ``BOYS_BUILD_DEFAULTS_DIR`` shadows that header with one of its own, which moves what
@@ -53,7 +53,7 @@ a ``BOYS_BUILD_DEFAULTS_DIR`` shadows that header with one of its own, which mov
 publishes a ``BOYS_SCALAR_CONTRACTS`` definition; at this revision the consumer test reads it and no
 figure path does, so it is named here as a seam this check does not carry rather than one that moved
 a number. A build carrying another default list reads its own figures through ``DefaultGuarantee``;
-this check reports the shipped choices' and says so, which is what it can do without a build
+this check reports the committed choices' and says so, which is what it can do without a build
 directory that another writer may hold.
 
 WHAT FAILS, AND WHY EACH ONE MUST:

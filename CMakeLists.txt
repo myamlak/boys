@@ -220,7 +220,7 @@ endif()
 # on a host class, and the device lane's own division form and region-B
 # exponential beside them, because the two lanes' figures are two sets — are
 # compile-time values, read through include/boys/boys_build_defaults.hpp, whose
-# committed file carries the shipped choices. This option points a build at a
+# committed file carries the committed choices. This option points a build at a
 # header carrying its own seven, and the build then compiles those choices into
 # every entry that names none. Nothing is paid for this at run time and nothing
 # is dispatched: the choice was a template argument before and is one still, so
@@ -230,7 +230,7 @@ endif()
 # What such a header carries is stated in that header's own comment: the seven
 # names, and the machine, the date and the option probe's own figures beside
 # them, because a choice made there is a measurement taken on one host and a
-# reader has to be able to tell a tuned build from a shipped one.
+# reader has to be able to tell a tuned build from the committed one.
 #
 # NOT IN THIS TREE: the step that WRITES such a header. Running boys-option-probe
 # at configure time, reading the ranking it reports and emitting the header with
@@ -242,7 +242,7 @@ endif()
 set(BOYS_BUILD_DEFAULTS "" CACHE FILEPATH
     "Header carrying this build's default fit route, scheme, packing axis, \
 division form and fit granularity, and the device lane's own division form and \
-region-B exponential; empty builds the shipped choices")
+region-B exponential; empty builds the committed choices")
 
 if (BOYS_BUILD_DEFAULTS)
     if (NOT EXISTS "${BOYS_BUILD_DEFAULTS}")
@@ -912,7 +912,7 @@ int main() {
         # rather than from a path spelled here - so the test reads this configuration's binaries on
         # whatever generator and platform is running it.
         #
-        # Scoped to a build whose defaults are the shipped ones. The quoted figures are what the
+        # Scoped to a build whose defaults are the committed ones. The quoted figures are what the
         # evaluation an unnamed call resolves to prints, so a build that replaced that resolution
         # through BOYS_BUILD_DEFAULTS prints other digits by construction - the tuned fixture moves
         # F_3(1.25) from the quoted 0.055476132923077535 to 0.055476132923077695 - and the claim is

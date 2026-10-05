@@ -1343,7 +1343,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 ///
 /// The seam it writes into is `boys/boys_build_defaults.hpp`: a replacement carries the seven
 /// names - the host's five and this lane's own two - a `BOYS_BUILD_DEFAULT_ROWS` list, and no
-/// `BOYS_BUILD_DEFAULTS_SHIPPED`, and a build pointed at it through the `BOYS_BUILD_DEFAULTS`
+/// `BOYS_BUILD_DEFAULTS_COMMITTED`, and a build pointed at it through the `BOYS_BUILD_DEFAULTS`
 /// CMake option reads it instead of the committed file. The device lane is the half of that table which no measurement had ever
 /// written a row for, and the reason is the surface: a row names the arithmetic its class
 /// compiles, and until every device option row stated the route, the scheme and the packing
@@ -1378,7 +1378,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// measure, or whose ranking could not determine an entry, gets no row at all and a reason in
 /// \c refused.
 ///
-/// **A class the table in force already carries is overlaid and not skipped.** The shipped
+/// **A class the table in force already carries is overlaid and not skipped.** Those
 /// rows are the base this run writes over: a class this run measured carries this run's row
 /// even where the table in force wrote one, and that class is listed in \c overridden with
 /// the row it replaced, so which rows the run changed is read off the emission and not
@@ -1396,7 +1396,7 @@ struct DeviceDefaultsEmission {
     std::vector<std::string> emitted;
 
     /// One line per row written over a row the table in force already carried: the class
-    /// and the entry, so the run's own edits to the shipped table are listed and not left
+    /// and the entry, so the run's own edits to the table in force are listed and not left
     /// to be found by reading two files against each other.
     std::vector<std::string> overridden;
 

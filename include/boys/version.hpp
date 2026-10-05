@@ -68,7 +68,7 @@ inline constexpr const char* VersionString() noexcept
 /// seam file edited after that is a configure that has to run again, which the
 /// copy the targets read is a dependency of. A unit compiled against an installed
 /// `include/` tree by hand, without the library target's definitions, carries no
-/// digest and reports the shipped identity — the words describe the unit that
+/// digest and reports the committed identity — the words describe the unit that
 /// reported them, and a build that replaced its seam is one that carries the
 /// digest the target defines.
 inline constexpr const char* kBuildDefaultsSeamIdentity =
