@@ -5083,7 +5083,7 @@ void BoysAllNAtOrdersF16(const int* n, const F16* x, F16* out, std::size_t count
 // is computed in half here beyond the store either, so the arithmetic is the
 // float lane's - which is what makes these this lane's entries rather than a
 // second engine - and the one term that differs between the two half formats is
-// the half digit of the store each makes: 2^-9 for a bfloat16 return against
+// the half digit of the store each makes: 2^-8 for a bfloat16 return against
 // 2^-11 for a binary16 one. A bf16 sibling needs nothing the fp16 entry
 // does not: the fp32 engine, the argument widened once on the way in and the
 // result rounded once on the way out, both through operations this format's type

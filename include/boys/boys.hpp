@@ -462,7 +462,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 /// \c BoysBudget::kFp16 budget between them. They are two members rather than
 /// one because the key is a class and the library carries two: the figure a
 /// half-typed return carries is the format's own half digit - 2^-11 for a
-/// binary16 store, 2^-9 for a bfloat16 one - and, measured, the two formats'
+/// binary16 store, 2^-8 for a bfloat16 one - and, measured, the two formats'
 /// winning combinations are not one combination, which the option probe states
 /// by keying a class per format where this enumeration keys a lane. A single
 /// member for both is one row where the seam's rule is one row per class, and
@@ -503,7 +503,7 @@ enum class Precision : std::uint8_t {
     kFp32Device, ///< single precision as the device lane runs it: the float lane, under the fast exponential's term
     kFp64Device, ///< the device's double lane: the double pieces, region A read by the seeded recurrence
     kFp16Device, ///< the device's half lane: the float lane's bodies, stored half and under the half budget
-    kBf16, ///< the bfloat16 half lane: the same engine and budget as kFp16, stored in this format, whose figure carries 2^-9
+    kBf16, ///< the bfloat16 half lane: the same engine and budget as kFp16, stored in this format, whose figure carries 2^-8
 };
 
 /// The device a call runs on: the first key of the default-policy table.
@@ -911,7 +911,7 @@ template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kA
           FitGranularity kGranularity, DivisionForm kForm, RegionBExp kExp>
 constexpr bool GuaranteeAxesAreEnumerators() noexcept
 {
-    return static_cast<std::size_t>(kPrecision) <= static_cast<std::size_t>(Precision::kFp16Device) &&
+    return static_cast<std::size_t>(kPrecision) <= static_cast<std::size_t>(Precision::kBf16) &&
            static_cast<std::size_t>(kRoute) <= static_cast<std::size_t>(FitRoute::kRationalMinimax) &&
            static_cast<std::size_t>(kScheme) <= static_cast<std::size_t>(EvalScheme::kHorner) &&
            static_cast<std::size_t>(kAxis) <= static_cast<std::size_t>(PackAxis::kOrders) &&
@@ -1795,13 +1795,18 @@ bool BoysAvx2Available() noexcept;
 /// lane's fits are carried at is a policy a call site can name. The budget is what
 /// the lane fixes - a property of the half lane rather than of a call - so a
 /// policy named here is read for its four other axes and the engine is the fp16
-/// one; naming none runs \c DefaultPolicyFp16, this lane's own default and the
-/// combination its figures are stated for.
+/// one; naming none runs \c DefaultPolicy<Precision::kFp16, Shape::kSingle>, this
+/// class's own row of the default-policy table - the fp16 class's and not the
+/// bf16 class's, because the half lane's two formats are two classes of this
+/// table's key and two rows of it - which is the combination this lane's figures
+/// are stated for. \c DefaultPolicyFp16 names the lane's five and is not a
+/// class's answer (boys/backend.hpp); the row is.
 ///
 /// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
-///         regions and the packing axis, selected together; \c DefaultPolicyFp16
-///         by default, which is the combination the lane's own figures are
+///         regions and the packing axis, selected together;
+///         \c DefaultPolicy<Precision::kFp16, Shape::kSingle> by default, this
+///         class's own row, which is the combination the lane's own figures are
 ///         stated for
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (fp16)
@@ -1920,7 +1925,7 @@ void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 /// single entry at that argument, stored once, so the bound is that entry's: the
 /// figure this lane's own row publishes — \c BoysLaneContracts at
 /// \c Precision::kBf16, 1.5e-7, plus that row's 1e-7 where the plain reciprocal
-/// is named — beside this format's own half digit, 2^-9 = 1.953125e-03, the
+/// is named — beside this format's own half digit, 2^-8 = 3.90625e-03, the
 /// largest a return can carry since |F_n(x)| <= 1. The fp16 entries carry the
 /// same figure with 2^-11 = 4.8828125e-04 in place of that term.
 ///

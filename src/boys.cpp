@@ -927,13 +927,13 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // combination (boys/boys_build_defaults.hpp writes each class's row).
         {Precision::kBf16, "bf16", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
          "the single-precision lane's own figure, plus half of the last representable digit of "
-         "the returned value, which in this format is 2^-9 = 1.953125e-03, and claimed only where "
+         "the returned value, which in this format is 2^-8 = 3.90625e-03, and claimed only where "
          "the value exceeds the sum. The half lane computes in that arithmetic and stores what it "
          "returns, so it cannot be more accurate than the lane whose arithmetic it runs: a bar "
          "below that figure is one no conforming host can keep, and a host whose rounding differs "
          "delivers the fit's own error through it. It is the fp16 lane's figure on this format's "
          "store and not the fp16 class's row: the two are two classes of one lane, each stating "
-         "its own format's half digit, and this format's is the coarser of the two - 2^-9 against "
+         "its own format's half digit, and this format's is the coarser of the two - 2^-8 against "
          "2^-11. The fp16 row beside this one states that term in words; this row names its "
          "number. "
          "Beside the base, and under the same division form: the fp16 and bf16 entries run the "

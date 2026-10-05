@@ -132,7 +132,7 @@
 /// the store, and the two rows are what lets each format's own winner be written
 /// where its class resolves. One row for both would be a default the other
 /// format reads: the figure a half-typed return carries is the format's own half
-/// digit - 2^-11 for a binary16 store, 2^-9 for a bfloat16 one - and the two
+/// digit - 2^-11 for a binary16 store, 2^-8 for a bfloat16 one - and the two
 /// classes' measured winners are not one combination.
 ///
 /// **The rung is not a key, because the rung is the caller's and not the library's.** A caller
