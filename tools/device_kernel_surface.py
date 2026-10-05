@@ -20,7 +20,17 @@ beside it:
   * the axis member sets - the library's own enumerations, `boys/accuracy.hpp` and
     `DevicePacking` in the options header;
   * the kernels' bodies - `src/boys_cuda.cu`, read for the tag-parameterised body each launched
-    kernel hands its lane to, which is what makes a missing row a bounded job or not.
+    kernel hands its lane to, which is what makes a missing row a bounded job or not;
+  * the half lane's two storage formats - `include/boys/f16.hpp`, whose aliases name the two
+    types a half row stores through, paired against the option table, which is the only place
+    a row's format is written down.
+
+The half lane carries two storage formats under one precision member, and the option table has
+no cell for either: a row of that lane spells its format in its own names, the entry enumerator
+in the identifier style `f16.hpp` gives and the printed name in the header's prose. So whether a
+combination of a format is served is decided by searching those names, and a format no row names
+is a format the table does not carry - found, not assumed. A tool that answered that question
+without looking would report the lane's owed work as nothing on the day it lands.
 
 The space per class is the product of the axes the shape admits over the members the library's own
 enumerations declare, and each applicability rule is printed with the sentence it is read from. The
@@ -73,8 +83,9 @@ KERNELS = "src/boys_cuda.cu"
 ENUMS = "include/boys/accuracy.hpp"
 PROBE = "include/boys/boys_probe.hpp"
 ENTRIES = "src/boys_cuda_probe_entries.hpp"
+HALF_TYPES = "include/boys/f16.hpp"
 
-SOURCES = (OPTIONS, LAUNCHED, INKERNEL, ROWS, KERNELS, ENUMS, PROBE, ENTRIES)
+SOURCES = (OPTIONS, LAUNCHED, INKERNEL, ROWS, KERNELS, ENUMS, PROBE, ENTRIES, HALF_TYPES)
 
 # The sentinels an enumeration may end with, on the headers' own words: "one past the last" and
 # the value a switch answers for an enumerator it has not been taught. Neither is a member.
@@ -525,6 +536,133 @@ def read_host_axes(probe: Source) -> list[str]:
     return axes
 
 
+def read_member_comments(text: str, enum: str) -> dict[str, str]:
+    """Each enumerator of `enum`, with the comment the header writes beside it."""
+    match = re.search(rf"enum class {enum}\s*:\s*[\w:]+\s*\{{(.*?)\n\}};", text, re.DOTALL)
+
+    if match is None:
+        raise SystemExit(f"device_kernel_surface: no enum class {enum} in the source read")
+
+    comments: dict[str, str] = {}
+
+    for line in match.group(1).splitlines():
+        found = re.match(r"\s*(k[A-Za-z0-9_]+)\s*(?:=[^,]*)?,", line)
+
+        if found is not None:
+            mark = line.find("///<", found.end())
+            comments[found.group(1)] = line[mark + 4:].strip() if mark >= 0 else ""
+
+    return comments
+
+
+class HalfFormat(NamedTuple):
+    """One storage format of the half lane, and the spellings a row of it carries.
+
+    A format is held as the two names a row of that lane writes it in, both of them the
+    library's own: the token `f16.hpp` gives the type the row stores through, and the word the
+    options header's own prose gives the same format. The option table carries no cell for
+    either, so these names are the whole of what a format is, to this tool.
+    """
+
+    label: str
+    precision: str
+    spellings: tuple[str, ...]
+
+    def named_by(self, row: Row) -> bool:
+        """Whether this row's own names spell this format.
+
+        A row's format reaches the table only through its names - the entry enumerator in
+        identifier style and the printed name in prose - so a row names its format or the
+        table does not carry the format at all. Both spellings are read, and they are read
+        case-sensitively: `F16` is a substring of no `Bf16` name and the two formats of the
+        lane must not be read into one another.
+        """
+        return any(spelling in row.entry or spelling in row.printed
+                   for spelling in self.spellings)
+
+    def rows_of(self, rows: list[Row]) -> list[Row]:
+        """The option table's rows that are rows of this format."""
+        return [row for row in rows if self.named_by(row)]
+
+
+def read_half_formats(half: Source, options: Source, rows: list[Row]) -> tuple[HalfFormat, ...]:
+    """The half lane's two formats, each with the spellings its rows carry it in.
+
+    Every name here is read from the library. The tokens are `f16.hpp`'s own aliases for the
+    two types a half row stores through, so a lane that renames them renames this search with
+    them. The labels are the format words the precision member's own comment writes, taken as
+    the words that carry the lane's `16`. A token and a word are the two spellings of one
+    format when the option table reads them off the same rows, which is what pairs them: the
+    rows of the format this build serves witness it whichever way round the two lists happen
+    to be written, and a format no row spells on either side is left over and takes the other
+    leftover. The two sides must leave as many leftovers as each other or the run fails, and
+    one format must be witnessed at all - a table spelling none of them cannot say which the
+    build serves, and pairing its tokens to its words would be an ordering and not a reading.
+
+    That is the whole of the sense in which this is derived: a lane that writes the rows the
+    header says it owes is credited without this tool having been taught the new name, and a
+    library this has drifted from fails the run with the reason instead of quietly counting a
+    lane's owed work as nothing.
+    """
+    aliases = [match.group(1) for match in
+               re.finditer(r"^using\s+(\w+)\s*=\s*std::\w+16_t\s*;", half.text, re.MULTILINE)]
+
+    if not aliases:
+        raise SystemExit(f"device_kernel_surface: {half.path} declares no half-format alias, so "
+                         f"the token a row of the half lane spells its format in cannot be read "
+                         f"from the library")
+
+    carrying = [(name, re.findall(r"\b[a-z]+16\b", comment))
+                for name, comment in read_member_comments(options.text,
+                                                          "DeviceOptionPrecision").items()]
+    carrying = [(name, words) for name, words in carrying if len(words) == len(aliases)]
+
+    if len(carrying) != 1:
+        raise SystemExit(f"device_kernel_surface: {len(carrying)} precision members name "
+                         f"{len(aliases)} formats in their own comment, and the member the half "
+                         f"lane's formats belong to is the one whose comment names them: "
+                         f"{[name for name, _ in carrying]}")
+
+    precision, labels = carrying[0]
+    by_token = {token: frozenset(row.entry for row in rows if token in row.entry)
+                for token in aliases}
+    by_word = {label: frozenset(row.entry for row in rows if label in row.printed)
+               for label in labels}
+
+    # A token and a word are the two spellings of one format when the rows they are read from
+    # are the same rows. That is the check that makes this a pairing and not an ordering: the
+    # rows of the format this build serves witness it whichever way round the two lists are
+    # written. What no row witnesses on either side is left over, and the leftovers take each
+    # other - which is the state a format the lane owes is in, and it stays a pairing only
+    # while the two sides have as many leftovers as each other.
+    pairs: list[tuple[str, str]] = []
+    words_left, tokens_left = list(labels), list(aliases)
+
+    for token in list(tokens_left):
+        for label in list(words_left):
+            if by_word[label] == by_token[token]:
+                pairs.append((label, token))
+                words_left.remove(label)
+                tokens_left.remove(token)
+                break
+
+    if len(words_left) != len(tokens_left):
+        raise SystemExit(f"device_kernel_surface: the half lane's format words {labels} and its "
+                         f"tokens {aliases} leave {len(words_left)} of the one and "
+                         f"{len(tokens_left)} of the other unpaired, so no pairing covers the "
+                         f"lane's formats")
+
+    pairs += list(zip(words_left, tokens_left))
+
+    if not any(by_token[token] for _, token in pairs):
+        raise SystemExit(f"device_kernel_surface: no row of the option table names any of the "
+                         f"half lane's formats {aliases}, so nothing witnesses which of them this "
+                         f"build serves and pairing a token to a name would be an ordering and "
+                         f"not a reading")
+
+    return tuple(HalfFormat(label, precision, (token, label)) for label, token in pairs)
+
+
 class Combination(NamedTuple):
     """One point of a class's axis space."""
 
@@ -614,9 +752,45 @@ def main() -> int:
     forms = enumerate_members(env, "DivisionForm")
     host_axes = read_host_axes(sources[PROBE])
 
-    # The half lane's two formats, from the precision enumeration's own comment: "the fp16 entries
-    # this build serves, and the bfloat16 ones it owes".
-    formats = {"kFp16": ("fp16", "bfloat16")}
+    # The half lane's two formats, and the search that decides which rows serve them. Both the
+    # formats and the rows that carry one are read from the library; nothing here is a list this
+    # tool keeps beside the table.
+    half_formats = read_half_formats(sources[HALF_TYPES], options, rows)
+    by_format = {fmt.label: fmt for fmt in half_formats}
+    formats = {fmt.precision: tuple(other.label for other in half_formats)
+               for fmt in half_formats}
+
+    def format_rows(label: str) -> int:
+        """How many rows of the option table carry this format.
+
+        A format no row carries is a format this table does not serve, and that count is the
+        whole of the reason a combination of it is missing - which is why it is counted rather
+        than declared.
+        """
+        if not label:
+            return len(rows)
+
+        fmt = by_format.get(label)
+
+        if fmt is None:
+            raise SystemExit(f"device_kernel_surface: {label!r} is a format of no precision "
+                             f"member this tool read, so no combination can carry it")
+
+        return len(fmt.rows_of(rows))
+
+    def owed_sentences(label: str) -> list[str]:
+        """The library's own sentences about a format this build does not serve.
+
+        The format this build does serve is named in them, read from the table, so a sentence
+        that has drifted fails the caller's quotation check rather than being printed beside a
+        verdict it no longer supports.
+        """
+        served = next((fmt.label for fmt in half_formats
+                       if fmt.rows_of(rows) and fmt.label != label), "")
+
+        return [f"This build serves that lane's {served} entries and not its {label} ones.",
+                f"Until that lands this member is served for {served} alone, which is unbuilt "
+                f"work and not a property of the lane"]
 
     print()
     print("THE DEVICE'S AXES, declared by DeviceOptionAxis and read from the types its members name")
@@ -659,6 +833,35 @@ def main() -> int:
             return 1
 
         print(f"  {sentence}:\n      {path}:{where}  \"{quote}\"")
+
+    print()
+    print("THE HALF LANE'S TWO FORMATS, and the search that decides which rows carry them")
+    print(f"  No cell of the option table states a row's storage format. A row of the half lane "
+          f"spells it in its own names, and the lane's rows spell it in both of them: the entry "
+          f"enumerator in the identifier style {HALF_TYPES} gives the type the row stores "
+          f"through, the printed name in the header's prose. A combination of a format is "
+          f"therefore served only by a row whose names spell that format, and the search for one "
+          f"is what this tool counts - an empty answer is a row set the table does not carry.")
+
+    for fmt in half_formats:
+        carrying = fmt.rows_of(rows)
+        spelled = ", ".join(repr(spelling) for spelling in fmt.spellings)
+        print(f"  {fmt.label:<10} {fmt.precision}  spelled {spelled}  rows of the table that "
+              f"name it: {len(carrying)}")
+
+        if not carrying:
+            print(f"  {'':<10} No row names this format, so none of its combinations is served "
+                  f"and every one of them is owed work. The header states that state itself:")
+
+            for sentence in owed_sentences(fmt.label):
+                where = quote_line(sources[OPTIONS].text, sentence)
+
+                if where == 0:
+                    print(f"device_kernel_surface: a format statement cites a sentence "
+                          f"{OPTIONS} no longer carries: {sentence!r}", file=sys.stderr)
+                    return 1
+
+                print(f"  {'':<10}   {OPTIONS}:{where}  \"{sentence}\"")
 
     shape_axes = {
         "kSingle": (("kRegionBExp", regions), ("kDivision", forms)),
@@ -713,10 +916,14 @@ def main() -> int:
                     classes[(precision, fmt, shape, group)] = space
 
     def implemented_by(combination: Combination) -> list[Row]:
-        """The class's rows that carry this combination's coordinates."""
-        if combination.format == "bfloat16":
-            return []
+        """The class's rows that carry this combination's coordinates.
 
+        A combination of a format is carried only by a row of that format, and a row's format is
+        read from the row's own names, the table having no cell for it. A format no row names is
+        therefore a format no row answers: this function finds that out by looking, so a lane
+        that writes the rows the header says it owes is credited here without this tool having
+        been taught the new name.
+        """
         found = []
 
         for row in rows:
@@ -726,6 +933,9 @@ def main() -> int:
                 continue
 
             if row.shape != combination.shape or row.group != combination.group:
+                continue
+
+            if combination.format and not by_format[combination.format].named_by(row):
                 continue
 
             values = {"kRegionBExp": row.region, "kPartition": entry.partition,
@@ -762,11 +972,13 @@ def main() -> int:
         """
         notes: list[tuple[str, str]] = []
 
-        if combination.format == "bfloat16":
-            notes.append(("This build serves that lane's fp16 entries and not its bfloat16 ones.",
-                          OPTIONS))
-            notes.append(("Until that lands this member is served for fp16 alone, which is unbuilt "
-                          "work and not a property of the lane", OPTIONS))
+        # A format the table carries no row of: the library's sentences about that format are the
+        # context of the defect. They are read only while the format is uncarried, so the note
+        # retires on the day the rows land rather than holding the lane to a sentence it has
+        # outgrown.
+        if combination.format and not format_rows(combination.format):
+            for sentence in owed_sentences(combination.format):
+                notes.append((sentence, OPTIONS))
 
         if combination.member("kRegionBExp") == "kFast":
             if combination.group == DEVICE_GROUP:
@@ -782,6 +994,14 @@ def main() -> int:
     defects: list[Combination] = []
     missing_by_class: collections.Counter = collections.Counter()
     implemented_count: dict[tuple[str, str, str, str], int] = {}
+
+    # Why a combination is missing, per class and overall, so the totals add up to the space
+    # rather than being three figures a reader has to take on trust. The three reasons are the
+    # three states above, except that a defect is split by whether the table carries a row of
+    # the combination's format at all: both are owed work, and only one of them is a row the
+    # lane could write today without first writing the format's entries.
+    reasons = collections.Counter()
+    reasons_by_class: dict[tuple[str, str, str, str], collections.Counter] = {}
 
     for key, space in classes.items():
         precision, fmt, shape, group = key
@@ -902,6 +1122,16 @@ def main() -> int:
             if verdict == "DEFECT":
                 defects.append(combination)
 
+            if verdict == "IMPOSSIBLE":
+                reason = "impossible"
+            elif combination.format and not format_rows(combination.format):
+                reason = "uncarried"
+            else:
+                reason = "owed"
+
+            reasons[reason] += 1
+            reasons_by_class.setdefault(key, collections.Counter())[reason] += 1
+
         implemented_count[key] = have
         label = f"{precision} x {fmt + ' x ' if fmt else ''}{shape} x {group}"
 
@@ -926,20 +1156,29 @@ def main() -> int:
 
                 print()
 
-    print("MISSING BY CLASS, the work item")
+    print("MISSING BY CLASS, the work item, every combination's state named")
     print(f"  {'lane':<8} {'format':<9} {'shape':<11} {'route':<15} {'have':>5} {'of':>5} "
-          f"{'missing':>8}")
+          f"{'missing':>8}   why")
 
     for key, space in classes.items():
         precision, fmt, shape, group = key
         have = implemented_count[key]
+        counted = reasons_by_class.get(key, collections.Counter())
+        why = ", ".join(f"{name} {counted[name]}"
+                        for name in ("impossible", "uncarried", "owed") if counted[name])
         print(f"  {precision:<8} {fmt or '-':<9} {shape:<11} {group:<15} {have:>5} {len(space):>5} "
-              f"{len(space) - have:>8}")
+              f"{len(space) - have:>8}   {why or 'served by its own rows'}")
 
     print()
-    print(f"TOTALS  classes {len(classes)}   combinations {totals['ok'] + totals['missing']}   "
-          f"implemented {totals['ok']}   missing {totals['missing']}   of those defects "
-          f"{len(defects)}")
+    served_ok = totals["ok"]
+    missing = reasons["impossible"] + reasons["uncarried"] + reasons["owed"]
+    print(f"TOTALS  classes {len(classes)}   combinations {served_ok + missing} = implemented "
+          f"{served_ok} + missing {missing}")
+    print(f"        missing {missing} = impossible {reasons['impossible']} + owed "
+          f"{reasons['owed']} + a format the option table carries no row of "
+          f"{reasons['uncarried']}")
+    print(f"        defects {len(defects)} = owed {reasons['owed']} + a format the option table "
+          f"carries no row of {reasons['uncarried']}")
 
     if not classes or totals["ok"] + totals["missing"] == 0:
         print("device_kernel_surface: the enumeration walked no combination, which is a failed run",
