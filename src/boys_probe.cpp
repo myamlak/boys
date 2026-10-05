@@ -6645,6 +6645,11 @@ struct EmittedSeamRow {
     /// two names, so the block that accounts for the rows names it with the host's fallbacks
     /// rather than leaving it in a group of its own.
     bool fromFive = false;
+
+    /// Whether the class is one of the device half: a class this run ranks no cell of by
+    /// construction, whose rows the file writes under one shared statement rather than one marker
+    /// each, so the writer has to know which rows that statement covers.
+    bool deviceHalf = false;
 };
 
 /// The row this run measured for one class of the seam's table, with what it was reached by.
@@ -6898,9 +6903,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
         if (laneDevice == Device::kDevice)
         {
             row.fromFive = true;
-            row.marker = "    /* a choice, not a measurement: this run ranks no cell of a\n"
-                         "       class of the device half, so the row states the five above at this\n"
-                         "       lane's budget beside the device lane's own two names */\\\n";
+            row.deviceHalf = true;
             row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
                                     five.route, five.scheme, five.pack, five.granularity,
                                     kDefaultDeviceDivisionForm, kDefaultDeviceRegionBExp);
@@ -6931,10 +6934,9 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             if (walkover)
             {
                 row.marker = "    /* a choice, not a measurement: one entry of this class was "
-                             "measured\n"
-                             "       and it is the last one standing, so this row is an answer and "
-                             "not the\n"
-                             "       winner of a comparison */\\\n";
+                             "measured and\n"
+                             "       stood alone, so this row is an answer and not the winner of a "
+                             "comparison */\\\n";
             }
             else
             {
@@ -6944,14 +6946,11 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
                 // axis run, and the sort it skips is the one the cell beside it paid,
                 // so a figure printed without the call it came from would read as the
                 // other call's.
-                row.marker = Text("    /* measured: m = 1, the %s class, %.2f ns per\n"
-                                  "       argument on this host; the entry was reached by %s%s */\\\n",
-                                  ShapeSpelling(shape), written->nsPerArgument,
+                row.marker = Text("    /* measured: %.2f ns per argument on this host, reached by "
+                                  "%s%s */\\\n",
+                                  written->nsPerArgument,
                                   OptionProbeDefaultHowName(winner.how).c_str(),
-                                  written->sorted
-                                      ? ", through the call that takes the arguments as already "
-                                        "sorted"
-                                      : "");
+                                  written->sorted ? " through the sorted-arguments call" : "");
             }
 
             row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
@@ -7311,19 +7310,17 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "///\n";
     text += "/// WHAT A REPLACEMENT CARRIES, and this file is one: the seven names below - the host's\n";
     text += "/// five and the device lane's two - this row list, and no\n";
-    text += "/// `BOYS_BUILD_DEFAULTS_SHIPPED`. A build pointed at it through the\n";
+    text += "/// `BOYS_BUILD_DEFAULTS_COMMITTED`. A build pointed at it through the\n";
     text += "/// `BOYS_BUILD_DEFAULTS` CMake option defines `BOYS_BUILD_DEFAULTS_REPLACED` and reads\n";
     text += "/// it instead of the committed file.\n";
     text += "\n";
     text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
     text += "/// values, which is what this build compiled before this file existed. Five are the\n";
     text += "/// host lane's and two are the device lane's own, and a class of the device lane\n";
-    text += "/// carries the device pair and not the host's. **They are the build's own choices and\n";
-    text += "/// not this run's winner**: the fallback has to be a combination\n";
-    text += "/// every class compiles, and a run's winner for one lane's batch shape is not - a class\n";
-    text += "/// whose entry evaluates one order refuses the orders axis, so this line would stop the\n";
-    text += "/// file compiling if it named one. The rows below are the measurements; these names are\n";
-    text += "/// the choices the file already carried.\n";
+    text += "/// carries the device pair and not the host's. They are the build's own choices and\n";
+    text += "/// not this run's winner - a class whose entry evaluates one order refuses the orders\n";
+    text += "/// axis, so a winner for that shape would stop the file compiling - and the rows\n";
+    text += "/// below are the measurements.\n";
 
     text += Text("#define BOYS_BUILD_DEFAULT_FIT_ROUTE %s\n\n", RouteCell(five.route));
     text += Text("#define BOYS_BUILD_DEFAULT_EVAL_SCHEME %s\n\n", SchemeCell(five.scheme));
@@ -7343,15 +7340,36 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
     text += "/// format. A measured row is one this run's rounds placed first in its class: the\n";
     text += "/// combination below is the winner's own, cell for cell, and every axis of the policy\n";
-    text += "/// has a cell here — the region-B exponential included, so the row states the\n";
+    text += "/// has a cell here - the region-B exponential included, so the row states the\n";
     text += "/// arithmetic the class's first place was measured at. A row marked a choice is one the\n";
     text += "/// run did not rank, and it states the five above with the lane's own exponential: the\n";
     text += "/// host's on a host class, and the device lane's beside its own division form on a class\n";
     text += "/// of the device half.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
+    // The device rows share one statement rather than carrying one marker each: they are all the
+    // same fallback, stated the same way for every lane and shape of that half, and the file says
+    // it once above the block they form.
+    std::size_t deviceRows = 0;
+    bool deviceRowsStated = false;
+
     for (const EmittedSeamRow& row : rows)
     {
+        deviceRows += row.deviceHalf ? 1 : 0;
+    }
+
+    for (const EmittedSeamRow& row : rows)
+    {
+        if (row.deviceHalf && !deviceRowsStated)
+        {
+            deviceRowsStated = true;
+            text += Text("    /* a choice, not a measurement: the device probe has not been run, "
+                         "so each of\n"
+                         "       these %zu rows states the fallback names above at its own lane's "
+                         "budget */\\\n",
+                         deviceRows);
+        }
+
         text += row.marker;
         text += row.cells;
     }
