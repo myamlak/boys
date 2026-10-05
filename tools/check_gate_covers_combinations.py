@@ -31,7 +31,13 @@ WHAT IS COMPARED, AND WHERE EACH SIDE COMES FROM
     the next ``// ---- `` marker), and each entry's own class is read from the
     ``DefaultPolicy<Precision::..., Shape::...>`` its declaration defaults to - the
     library's own statement of what question that entry answers. A class whose shape is
-    not one of those is not measured by this book, whatever its lane's row says.
+    not one of those is not measured by this book, whatever its lane's row says. The
+    entries are read per machine - the block's host entries and its device arms - and a
+    class is answered by the entries of its own machine: a device class is not measured
+    through a host entry, which is the other machine's, and a device lane's rows reach
+    Shape::kAllOrders alone where its class list also names kSingle and kAllN. Those two
+    classes are counted as measured through another class's entry, and the count beside them
+    is a count of cells an entry of another shape produced.
 
 THE THREE GRANULARITIES, AND WHERE THEY DO NOT MATCH
 
@@ -55,6 +61,37 @@ check has to cross are not the same, and saying so is half of what it prints:
     every form the library carries) and does not cross the region-B exponential at all.
     The accessor takes that member as an argument, so a member the run never named is a
     combination the library carries and the gate does not measure.
+
+WHICH REGION-B MEMBER A ROW WAS READ AT
+
+A member is not one kind of thing across the lanes, and reading it as one is how a row
+gets credited at a member nothing read:
+
+  * on a host lane the member is a policy argument of the call, the run's own member
+    sentence states which members its cells were read at, and the sentence's own scope word
+    and count are what this check reads. A sentence scoped to other cells than the host
+    lanes' sentence is not that statement, and this check reports the scope word rather
+    than reading the count off it;
+
+  * on a device lane the member is not an argument at all: the launched entries are
+    distinct functions, and the one statement of which member an entry runs is the device
+    option table (``BoysDeviceOptions()``, src/boys_cuda.cpp), reached through the
+    enumerator's own documentation of the C++ name it is
+    (include/boys/boys_cuda_options.hpp). So a device lane's cells are counted at the
+    members the entries the gate's block arms that lane with run. They are *not* counted at
+    the member the lane's contract row publishes its term beside the base under: that
+    member is where the term belongs and not where the entry is, and on fp32-device the two
+    differ - the row's 8e-8 term is under the fast member, 2.3e-07, and the launched
+    all-orders entry the arms name runs the accurate one, 1.5e-07. A credit read off the row
+    would name a member no arm read, which is the false credit this read exists to close.
+
+    Three reads can come back empty and each is a finding rather than a credit: an arm
+    naming an entry the table does not carry; an arm naming one the table carries at two
+    members while the arm's own spelling names neither - the bare name is the entry's
+    default, which this revision states as a build seam and not as a value, so the cell is
+    not credited at either member; and a machine the class list names that the block arms
+    with no entry at all. The member the table carries for a name is read once per name, and
+    a lane is credited only for the arms the block names for it.
 
 WHAT "THE LIBRARY CARRIES" MEANS, AND WHY IT IS READ RATHER THAN TAKEN
 
@@ -111,9 +148,13 @@ run, and 1 otherwise - when one is unmeasured, when the run names no revision, w
 revision cannot be resolved, when this check's own read came back empty, or when a read the
 counts rest on did not hold: a carriage rule that can refuse a tuple inside the enumerations,
 a partition row that leaves a route or an axis clear, an accessor whose answers could come
-from a guard this check has not read, or an include tree that could not be rebuilt for the
-compile control. A run that finds nothing exits 1: three tools in this tree reported success
-over a broken read in one night, so a silent zero must never read as a pass.
+from a guard this check has not read, a form or member statement the run does not carry or
+carries at another count than the library's, that member statement scoped to cells this check
+cannot tie to the host lanes, a device arm naming an entry the device option table does not
+carry, a machine whose classes the class list names and the block arms with no entry, or an
+include tree that could not be rebuilt for the compile control. A run that finds nothing
+exits 1: three tools in this tree reported success over a broken read in one night, so a
+silent zero must never read as a pass.
 """
 
 from __future__ import annotations
@@ -132,13 +173,20 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 # The headers a library fact is read from. `boys.hpp` is on this list for what it
 # declares - the Shape and Precision enumerations and every entry's own class - and the
 # other two for the axes they own; `boys_build_defaults.hpp` for the class list, and
-# `src/boys.cpp` for the tables and the figures the accessor answers from.
+# `src/boys.cpp` for the tables and the figures the accessor answers from. The last two
+# are the device surface, read for the one fact the device lanes need and no other table
+# carries: the region-B member each launched entry runs, which is the entry's own and not
+# a policy argument, so a lane's cells are read at it whatever the lane's row states
+# beside its base. The device-callable entries are rows of the same table; this check
+# reads them for the same reason and finds no arm of the block's naming one.
 LIBRARY = (
     "include/boys/boys.hpp",
     "include/boys/accuracy.hpp",
     "include/boys/backend.hpp",
     "include/boys/boys_build_defaults.hpp",
+    "include/boys/boys_cuda_options.hpp",
     "src/boys.cpp",
+    "src/boys_cuda.cpp",
 )
 
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
@@ -233,6 +281,24 @@ TABLE_ENUM = {
 ROUTE_ROW = re.compile(r"\{\s*FitRoute::(?P<member>k[A-Za-z0-9_]+)\s*,\s*"
                        r"\"(?P<name>[^\"]*)\"")
 
+# The device surface's own table, ``kDeviceOptions`` in src/boys_cuda.cpp: one row per
+# DeviceEntry, in the enumerator's order. It is where the member a launched entry runs is
+# stated, and that member is not a policy argument of the call - it is the entry.
+DEVICE_OPTION_TABLE = "kDeviceOptions[]"
+
+# The entry a device row is, and the region-B member it runs. Both fields are read from the
+# row's own text rather than by position, so a field added to DeviceOptionInfo moves no
+# reading here.
+DEVICE_OPTION_ENTRY = re.compile(r"DeviceEntry::(k[A-Za-z0-9_]+)")
+DEVICE_OPTION_MEMBER = re.compile(r"RegionBExp::(k[A-Za-z0-9_]+)")
+
+# The C++ entry a DeviceEntry enumerator is, which the library states in the enumerator's
+# own documentation: `kAllOrdersF32, ///< BoysCuda::AllOrdersF32, launched`. One entry may
+# be two enumerators - the f32 single entry is one name at two members, a row each - so a
+# name is read to a SET of members, and the caller treats a set of more than one as a name
+# whose member the spelling does not state rather than as a name reaching both.
+DEVICE_ENTRY_NAME = re.compile(r"\bBoysCuda::([A-Za-z0-9_]+)")
+
 # The carriage rules the accessor's answer rests on. Each is a function whose parameters are
 # the axes it can see, so a rule that does not take the division form or the region-B
 # exponential cannot refuse on either - which is the statement that makes every (form, exp)
@@ -280,6 +346,15 @@ CLASS_ROW = re.compile(r"^\s*X\(\s*(?P<device>k[A-Za-z0-9_]+)\s*,\s*"
 HOST_ENTRY = re.compile(r"boys::(Boys[A-Za-z0-9_]+)\s*<")
 DEVICE_ENTRY = re.compile(r"boys::BoysCuda::(AllOrders[A-Za-z0-9_]*|Single[A-Za-z0-9_]*)")
 
+# A device entry whose own region-B member is a template argument, as an arm spells it:
+# `boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>` is the fast row of a name the option
+# table also carries at the accurate one. The argument is what the arm read; the bare name
+# is the entry's default, which this revision states as a build seam rather than as a value,
+# so the spelled member is read here and the bare name is not guessed at.
+DEVICE_ENTRY_SPELLED = re.compile(
+    r"boys::BoysCuda::(?P<name>[A-Za-z0-9_]+)\s*<\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+    r"(?P<member>k[A-Za-z0-9_]+)\s*>")
+
 # The run's own arithmetic, printed under the combination table: the space read off the
 # tables a second way. Read so that this check's universe is held to the run's number as
 # well as to the tables.
@@ -318,6 +393,14 @@ MEMBER_COVERAGE = re.compile(r"the region-B member:\s*every\s*(?P<scope>[a-z]+)\
 MEMBER_DEVICE_EXCLUSION = re.compile(
     r"the device arms' cells\s*are not in this table:\s*they are read at the member their\s*"
     r"entry names", re.I)
+
+# The scope word such a sentence carries for the host lanes: the run's own word for the
+# cells its member table crosses. The word is read and not dropped - a sentence scoped to
+# another set of cells is a statement about those cells, and crediting the host lanes at
+# every member off it would be this check's reading of the sentence rather than the
+# sentence. A word this check cannot tie to the host lanes is reported, so a run that
+# scopes the statement differently is a finding and not a silent second reading of it.
+MEMBER_SCOPE_HOST = "host"
 
 # The packing-axis member a one-order shape cannot be instantiated at, named the way the
 # gate names it. The library spells the axis; this is the member, and it is read from the
@@ -369,7 +452,9 @@ class Library:
         self.accuracy = self.text["include/boys/accuracy.hpp"]
         self.backend = self.text["include/boys/backend.hpp"]
         self.defaults = self.text["include/boys/boys_build_defaults.hpp"]
+        self.options = self.text["include/boys/boys_cuda_options.hpp"]
         self.source = self.text["src/boys.cpp"]
+        self.device_source = self.text["src/boys_cuda.cpp"]
         self.all_text = "\n".join(self.text.values())
 
         # The name functions, which are where each axis member's spelling lives.
@@ -419,6 +504,37 @@ class Library:
             if triple not in seen:
                 seen.add(triple)
                 self.classes.append(triple)
+
+        # The member each device entry runs. On a device lane the member is not a policy
+        # argument of the call - the launched entries are distinct functions and the member
+        # is the entry - so the one statement of it is this table's own field, and a lane's
+        # cells are read at it whatever the lane's contract row states beside its base.
+        # Read here rather than taken from that row, because the two disagree on
+        # fp32-device: the row's term is under the fast member and the launched entry it
+        # arms runs the accurate one, so a credit read off the row names a member the arm
+        # never read.
+        self.device_row_members: dict[str, set[str]] = {}
+
+        for row in device_option_rows(self.device_source):
+            entry = DEVICE_OPTION_ENTRY.search(row)
+            member = DEVICE_OPTION_MEMBER.search(row)
+
+            if entry is not None and member is not None:
+                self.device_row_members.setdefault(entry.group(1), set()).add(member.group(1))
+
+        # The C++ entry each DeviceEntry enumerator is, read from the enumerator's own
+        # documentation, so a name a device arm spells is placed on the table rather than
+        # matched by transcription here.
+        self.device_entry_members: dict[str, set[str]] = {}
+
+        for member, doc in self.enum_members("DeviceEntry", self.options).items():
+            members = self.device_row_members.get(member)
+
+            if members is None:
+                continue
+
+            for name in DEVICE_ENTRY_NAME.findall(doc):
+                self.device_entry_members.setdefault(name, set()).update(members)
 
         # The Shape enumerators, with the documentation each carries: a shape whose doc
         # names one order is a shape with no ladder, and the orders axis is not an axis on
@@ -513,6 +629,34 @@ class Library:
                 best, longest = name, len(name)
 
         return best
+
+    def device_members_of(self, name: str) -> set[str] | None:
+        """The region-B members the entry a device arm names runs, or None where no row is it.
+
+        None is a read that failed rather than a lane that runs no member: the name is one
+        the option table does not carry, so nothing states what its cells are read at.
+        """
+        return self.device_entry_members.get(name)
+
+    def device_lane_of(self, name: str) -> str | None:
+        """The device lane an entry a device arm names belongs to, read from the name's own family.
+
+        The device surface spells a host entry's name without the library's prefix and with
+        the lane's precision in it (`AllOrdersF32NarrowRatHorner` beside `BoysAllOrdersF32`),
+        so the family's own precision names the lane - the member of it a device lane is.
+        The lane is required to be one this revision documents as a device lane, so a name
+        whose family resolves to a precision that has no device lane is not placed on one.
+        """
+        family = self.family_of_entry(name)
+
+        if family is None or family not in self.entry_class:
+            return None
+
+        lane = next((row for row in self.lanes
+                     if row["member"] == self.entry_class[family][0] + "Device" and row["device"]),
+                    None)
+
+        return lane["member"] if lane is not None else None
 
     def accessor_figure(self, lane: dict, form: str, exp: str) -> float:
         """The figure `BoysAccuracyGuaranteed` answers for a lane at a form and a member.
@@ -626,6 +770,54 @@ def condition_at(code: str, start: int) -> str:
                 return code[opening:i + 1]
 
     return ""
+
+
+def array_elements(body: str) -> list[str]:
+    """The elements of a brace-initialised array, split at the commas that separate them.
+
+    The body is the text BETWEEN the array's own braces, so an element's braces nest inside
+    it and a comma inside one of them separates two of that element's fields rather than two
+    elements. An array whose rows are wrapped over lines is read the same way as one written
+    a row to a line, which is what the device option table is.
+    """
+    elements: list[str] = []
+    depth = 0
+    current: list[str] = []
+
+    for char in body:
+        if char in "{[(":
+            depth += 1
+        elif char in "}])":
+            depth -= 1
+
+        if char == "," and depth == 0:
+            elements.append("".join(current))
+            current = []
+            continue
+
+        current.append(char)
+
+    elements.append("".join(current))
+    return [element for element in elements if element.strip()]
+
+
+def device_option_rows(source: str) -> list[str]:
+    """The rows of the device option table, each as its own text, or none where it is not found."""
+    code = cpp_code(source)
+    start = code.find(DEVICE_OPTION_TABLE)
+
+    if start < 0:
+        return []
+
+    end = block_end(code, start)
+
+    if end < 0:
+        return []
+
+    body = code[start:end]
+    opening = body.find("{")
+
+    return array_elements(body[opening + 1:-1]) if opening >= 0 else []
 
 
 def enum_guard(condition: str, tables: dict[str, str]) -> tuple[list[str], int]:
@@ -1323,7 +1515,122 @@ def main() -> int:
                         + ": the class those entries answer for cannot be read from the library, so "
                           "the classes this run measures cannot be stated")
 
-    measured_shapes = set().union(*cross_shapes.values()) if cross_shapes else set()
+    # The region-B member a device lane's cells were read at: the members the entries the
+    # block arms that lane with run. The member is the entry's own on a device lane - the
+    # launched entries are distinct functions and no policy argument moves it - so the one
+    # statement of it is the device option table, and the lane's contract row states
+    # something else: the member its term beside the base belongs to. The two are one member
+    # only while the entry the block arms runs the member that term is under, and on
+    # fp32-device they are not - the arms name the launched all-orders entry, which runs the
+    # accurate member, and the row's 8e-8 term is under the fast one.
+    #
+    # The member an arm's own spelling states, where it states one: a name the table carries
+    # twice is one class at two members, and the arm that reaches the second spells it.
+    spelled_members: dict[str, set[str]] = {}
+
+    for match in DEVICE_ENTRY_SPELLED.finditer(gate_text):
+        spelled_members.setdefault(match.group("name"), set()).add(match.group("member"))
+
+    device_members: dict[str, list[str]] = {}
+    unplaced_devices: list[str] = []
+    ambiguous_devices: list[str] = []
+    misspelled_devices: list[str] = []
+
+    for name in device_entries:
+        names = library.device_members_of(name)
+        lane = library.device_lane_of(name)
+
+        if names is None or lane is None:
+            unplaced_devices.append(name)
+            continue
+
+        spelled = spelled_members.get(name, set())
+        members = spelled & names if spelled else names
+
+        if spelled and not members:
+            misspelled_devices.append(f"{name} at {', '.join(sorted(spelled))}")
+            continue
+
+        # A name the table carries at more than one member is an entry that IS its member -
+        # the f32 single entry is one name at two rows - and an arm that names it reaches one
+        # of them, which the arm's own spelling states and its bare name does not: the bare
+        # name is the entry's default, and this revision states that default as a build seam
+        # rather than as a value. Crediting both would be a credit for a member a particular
+        # arm may never have run, which is the credit this whole read exists to close.
+        if len(members) > 1:
+            ambiguous_devices.append(f"{name} ({', '.join(sorted(names))})")
+            continue
+
+        for member in sorted(members):
+            if member not in device_members.setdefault(lane, []):
+                device_members[lane].append(member)
+
+    if unplaced_devices:
+        findings.append(
+            "the gate's combination block arms the device lanes with "
+            + ", ".join(sorted(unplaced_devices))
+            + ", and this revision's device option table carries no row for "
+            + ("that name" if len(unplaced_devices) == 1 else "those names")
+            + " under a precision this revision documents as a device lane: the member those "
+              "arms read is not stated by the library, so a lane with no placed arm of its own "
+              "is counted at the member its contract row publishes its term under, which is "
+              "where that term belongs and not where an entry is")
+
+    if misspelled_devices:
+        findings.append(
+            "the gate's combination block arms the device lanes with "
+            + ", ".join(sorted(misspelled_devices))
+            + ", and the device option table carries "
+            + ("that name" if len(misspelled_devices) == 1 else "those names")
+            + " at no such member: the member an arm like that reads is not one the library "
+              "states for the entry, so its cells are not credited at a member here")
+
+    if ambiguous_devices:
+        findings.append(
+            "the gate's combination block arms the device lanes with "
+            + ", ".join(sorted(ambiguous_devices))
+            + ", and the device option table carries "
+            + ("that name" if len(ambiguous_devices) == 1 else "those names")
+            + " at more than one member: which of them an arm read is the entry's default and "
+              "the arm's spelling of it, and a bare name states neither, so those arms are not "
+              "credited at either member here rather than at both")
+
+    for lane in library.lanes:
+        if lane["device"]:
+            device_members.setdefault(lane["member"], [lane["additiveMember"]])
+
+    print(f"\nthe region-B member each device lane's cells are read at, read from the entries the")
+    print(f"  block arms that lane with and from the device option table at {revision} "
+          f"(src/boys_cuda.cpp):")
+
+    for lane in library.lanes:
+        if not lane["device"]:
+            continue
+
+        armed = [name for name in device_entries if library.device_members_of(name) is not None
+                 and library.device_lane_of(name) == lane["member"]]
+        credited = device_members.get(lane["member"], [])
+        row_member = library.names.get(lane["additiveMember"], lane["additiveMember"])
+
+        # The figure the run's own rows for this lane record, held to the figures the
+        # accessor answers for the member credited and for the other one. A row records the
+        # figure it was judged by, and a lane judged at the other member's figure is a lane
+        # whose credited member is not the one its bound was measured against - a fact about
+        # the run and not about the credit, so it is printed beside the credit rather than
+        # counted as a gap.
+        figures = {float(row["bound"]) for row in run.rows if row["lane"] == lane["name"]}
+        at = {member: {library.accessor_figure(lane, form, member) for form in library.forms}
+              for member in library.exps}
+        matched = [member for member in library.exps if figures & at[member]]
+        judged = ""
+
+        if matched and all(member not in credited for member in matched):
+            judged = ("; the figure its rows record is the other member's, which is not the "
+                      "member they read")
+
+        print(f"    {lane['name']:<13} {len(armed):>3} entry(ies) -> "
+              + ", ".join(library.names.get(member, member) for member in credited)
+              + f"   (the lane's row publishes its term under {row_member}{judged})")
 
     # ------------------------------------------------------------------- the universe
     axis_sizes = {
@@ -1390,6 +1697,35 @@ def main() -> int:
         "axis": {library.names.get(member, member): member for member in library.axes},
     }
 
+    # Whether the run states that its host cells were read at every region-B member: its
+    # own sentence, with its own scope word and its own count, held to the members the
+    # library answers. Both halves are needed and either alone is not the statement.
+    host_members_read = (run.members_per_row == len(library.exps)
+                         and run.member_scope == MEMBER_SCOPE_HOST)
+
+    def members_credited(lane: dict) -> list[str]:
+        """The region-B members one lane's rows were read at.
+
+        A row is read at every region-B member its cells were read at, and which those are is
+        a fact about the lane rather than about the row. On a host lane it is every member
+        the run's own sentence covers the lane at, and the sentence is scoped: a run whose
+        member sentence is about other cells than the host lanes' covers the host lanes at
+        the one member their row's figure is composed under, which is where the lane's own
+        member table starts and not what the sentence says. On a device lane it is the
+        members the entries the block arms that lane with run, read from the device option
+        table. It is not the lane's `additiveMember`: the term a row publishes beside its
+        base belongs to the member that term is under, and the entrance a device lane's cells
+        go through is a function that runs one member of its own. The two are the same member
+        where the arms name the entry the term is under and different members where they do
+        not, so the credit is read where the entry is.
+        """
+        if lane["device"]:
+            return list(device_members.get(lane["member"], [lane["additiveMember"]]))
+
+        return list(library.exps) if host_members_read else [lane["additiveMember"]]
+
+    lane_credited = {lane["member"]: members_credited(lane) for lane in library.lanes}
+
     measured: dict[tuple[str, str, str, str, str, str, str], dict] = {}
     unrunnable: list[dict] = []
     unknown: list[str] = []
@@ -1422,25 +1758,12 @@ def main() -> int:
             unrunnable.append(row)
             continue
 
-        # A row is read at every division form the axis carries - the run's own words,
-        # read above and not assumed - and at every region-B member the run's own member
-        # sentence covers it at. On a host lane that is both members where the run says
-        # every host cell of its cross was read at each of them; on a device lane it is the
-        # one member the row's entry names, which is the sentence's own exclusion.
-        #
-        # The member a row's figure is composed under stays the lane's `additiveMember`: the
-        # term a row publishes beside its base is that member's own, and a reading at the
-        # other member is judged against the figure the lane answers for that member, which
-        # is what the run states it did.
-        members_read = [lane["additiveMember"]]
-
-        if (run.members_per_row is not None and not lane["device"]
-                and run.members_per_row == len(library.exps)):
-            members_read = list(library.exps)
-
+        # A row is read at every division form the axis carries - the run's own words, read
+        # above and not assumed - and at every region-B member its lane's cells were read at,
+        # which `members_credited` states once for the count below and for the gap after it.
         for form in (library.forms if run.forms_per_row is not None
                      else library.forms[:1]):
-            for exp in members_read:
+            for exp in lane_credited[lane["member"]]:
                 key = (lane["member"], members["route"], members["scheme"], members["axis"],
                        members["partition"], form, exp)
                 measured[key] = row
@@ -1477,6 +1800,14 @@ def main() -> int:
                         f"{run.members_per_row} region-B member(s) where BoysRegionBExps() answers "
                         f"{len(library.exps)}: the members this check counts a row at are not the "
                         f"members the run says it read")
+
+    if run.members_per_row is not None and run.member_scope != MEMBER_SCOPE_HOST:
+        findings.append(f"{args.run} scopes its region-B member sentence to `"
+                        f"{run.member_scope or 'no word this check could read'}` cells, and this "
+                        f"check reads that sentence for the host lanes - the ones the run's own "
+                        f"member table crosses. A sentence scoped to another set of cells is a "
+                        f"statement about those cells, so the host lanes are counted at one "
+                        f"member here rather than credited at every member off it")
 
     if run.members_per_row is not None and not run.member_device_exclusion:
         findings.append(f"{args.run} states its host cells were read at every region-B member and "
@@ -1573,14 +1904,39 @@ def main() -> int:
                  for form in library.forms
                  for exp in library.exps]
 
+        # Which entries a class's cells could have been measured through is the question its
+        # own machine answers: a device class's entry is a device entry, and the host
+        # entries' shapes are entries the device lane's rows never go through. The machine is
+        # the class row's own first cell, and the shapes are the ones the block arms THAT
+        # machine with - so a device class whose shape only a host entry answers for is a
+        # class the run never asked rather than one it measured.
+        machine = device[1:].lower()
+
         classes.append({
             "device": device,
+            "machine": machine,
             "precision": precision,
             "shape": shape,
             "lane": lane,
             "space": space,
-            "shape_measured": shape in measured_shapes,
+            "shapes": sorted(cross_shapes.get(machine, set())),
+            "shape_measured": shape in cross_shapes.get(machine, set()),
         })
+
+    # A machine the class list names and the block arms with no entry at all is a machine
+    # whose classes this check cannot attribute: every one of them would be printed as
+    # measured through another machine's entry, and which entry produced the cells counted
+    # beside it would be a fact nothing read.
+    unarmed = sorted({entry["machine"] for entry in classes
+                      if not cross_shapes.get(entry["machine"])})
+
+    if unarmed:
+        findings.append("the class list names classes of "
+                        + ", ".join(unarmed)
+                        + ", and the gate's combination block names no entry of "
+                        + ("that machine" if len(unarmed) == 1 else "those machines")
+                        + ": the entry the cells counted for those classes were measured through "
+                          "cannot be read from the block, so those classes are not attributed")
 
     class_total = sum(len(entry["space"]) for entry in classes)
     class_covered = sum(1 for entry in classes for key in entry["space"] if key in measured)
@@ -1602,10 +1958,11 @@ def main() -> int:
         if entry["shape_measured"]:
             through = "its own shape's entry"
             own += 1 if keys else 0
+        elif entry["shapes"]:
+            through = ("another class's entry: one of "
+                       + ", ".join(f"Shape::{shape}" for shape in entry["shapes"]))
         else:
-            through = ("an entry of " + ", ".join(f"Shape::{shape}"
-                                                  for shape in sorted(measured_shapes))
-                       + ", another class's")
+            through = "no entry of this machine's shapes"
 
         print(f"  {entry['device'][1:] + ' ' + entry['lane']['name'] + ' ' + entry['shape'][1:]:<32} "
               f"{len(entry['space']):>7} {len(keys):>9} {len(entry['space']) - len(keys):>13}  "
@@ -1661,9 +2018,9 @@ def main() -> int:
             print(f"    -> the {machine} entries answer for "
                   + ", ".join(f"Shape::{shape}" for shape in sorted(shapes)))
 
-        print(f"  so the combination book measures the class (device, lane, "
-              f"{', '.join('Shape::' + shape for shape in sorted(measured_shapes))}) of each lane "
-              f"it arms, and no other class of that lane")
+        print(f"  so the class a row of this book measures is the one of its lane whose shape the "
+              f"entries of its own machine answer for, and a class of that lane whose shape none "
+              f"of them answers for is measured by no row of this book")
 
     print(f"  the entry book: the run's other book, and the only one keyed by the entry a caller")
     print(f"  names rather than by the lane")
@@ -1720,16 +2077,19 @@ def main() -> int:
         for key in uncovered:
             lane_member, route, scheme, axis, partition, form, exp = key
             lane = next(row for row in library.lanes if row["member"] == lane_member)
-            axis_delta = [name for name, members in
-                          (("axis", set(library.axes)),)
-                          if axis not in members]
+            credited = lane_credited[lane["member"]]
             where = []
 
-            if exp != lane["additiveMember"]:
+            if exp not in credited:
                 where.append(f"exp={library.names.get(exp, exp)}")
 
+            # The figure the uncovered member's combination is judged by, against the figure
+            # the member this lane's cells WERE read at answers - which is the comparison the
+            # sentence below the group rests on, and the member it compares against is the
+            # credited one rather than the one the lane's row publishes its term under.
+            at = credited[0] if credited else lane["additiveMember"]
             same = (library.accessor_figure(lane, "kExactDivision", exp) ==
-                    library.accessor_figure(lane, "kExactDivision", lane["additiveMember"]))
+                    library.accessor_figure(lane, "kExactDivision", at))
 
             grouped.setdefault((lane["name"], tuple(where), same), []).append(key)
 
@@ -1763,11 +2123,17 @@ def main() -> int:
     print(f"  per class: the run's rows measure one entry per lane - "
           f"{', '.join(host_entries) if host_entries else 'none'}"
           + (f" beside the device AllOrders family" if device_entries else "")
-          + f". That is "
-          f"{', '.join('Shape::' + shape for shape in sorted(measured_shapes)) if measured_shapes else 'no shape'}"
-          f", so of {len(classes)} class(es) it covers {sum(1 for e in classes if e['shape_measured'])} "
-          f"and the other {sum(1 for e in classes if not e['shape_measured'])} are measured by no row "
-          f"of this book.")
+          + f". Which classes those entries answer for is read per machine, because an entry "
+            f"answers for a class of its own machine and of no other: the host entries answer for "
+          + (", ".join(f"Shape::{shape}" for shape in sorted(cross_shapes.get("host", ())))
+             if cross_shapes.get("host") else "no shape")
+          + f" and the device entries for "
+          + (", ".join(f"Shape::{shape}" for shape in sorted(cross_shapes.get("device", ())))
+             if cross_shapes.get("device") else "no shape")
+          + f", so of {len(classes)} class(es) the book covers "
+          f"{sum(1 for e in classes if e['shape_measured'])} and the other "
+          f"{sum(1 for e in classes if not e['shape_measured'])} are measured by no row of this "
+          f"book.")
 
     unmeasured_shapes = sorted({entry["shape"] for entry in classes if not entry["shape_measured"]})
 
@@ -1783,10 +2149,12 @@ def main() -> int:
     measured_member = ', '.join(sorted({row["additiveMember"] for row in library.lanes}))
 
     print(f"  per combination: the run measures the division form inside each row and does not cross")
-    print(f"    the region-B exponential at all. A row is judged at one member - on every lane the")
-    print(f"    member the lane's own row names ({measured_member}), which is the member its term")
-    print(f"    beside the base is under - and the other member's combination is carried by the")
-    print(f"    library and measured by nothing here.")
+    print(f"    the region-B exponential at all. On a host lane a row's cells are read at every member")
+    print(f"    the run's own sentence covers the lane at. On a device lane they are read at the member")
+    print(f"    the entries the block arms that lane with run - the table above - because the member is")
+    print(f"    the entry's there and no policy argument moves it. The member a lane's row publishes a")
+    print(f"    term beside the base under is {measured_member} on every lane, which is where that")
+    print(f"    term belongs and not where an entry is.")
 
     if distinguishing:
         print(f"    the two members answer different figures at one form on: " + "; ".join(distinguishing))
