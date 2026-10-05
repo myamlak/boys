@@ -33,11 +33,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <random>
+#include <span>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -834,5 +837,505 @@ TEST(BoysAccuracyTest, Bf16MeetsTheHalfBudget) {
 }
 
 #endif // BoysFp16
+
+// ---------------------------------------------------------------------------
+// The compile-time guarantee entry, held to the library's own tables.
+//
+// `BoysAccuracyGuaranteedStated` is the guarantee a *stated* seven-tuple carries:
+// the figure `BoysAccuracyGuaranteed` answers with, read from the same table at
+// the same seven axes, plus an assertion that every axis is a member of its own
+// enumeration (`detail::GuaranteeAxesAreEnumerators`). Nothing in this repository
+// instantiated it, and one bound in that assertion sat one member behind its
+// enumeration - `Precision` bounded at `kFp16Device` while the enumeration had
+// grown to `kBf16` - with every suite green: the entry was refused at compile time
+// for a tuple the run-time accessor served. The checks below hold the two sides
+// against each other, and they fail in both directions: a bound left behind by a
+// member appended to an enumeration is a compile error here, and a boundary this
+// file names that the library's own table does not carry is a failure at run time.
+//
+// The members of each axis are read from the library's own rows - BoysLaneContracts
+// for the lanes, BoysFitRoutes and BoysFitRoutesF32 for the fit routes,
+// BoysEvalSchemes, BoysPackAxes, BoysFitGranularities, BoysDivisionForms and
+// BoysRegionBExps for the rest. What this file names from an enumeration is its
+// last member and nothing else: that is the boundary the assertion is about, and
+// the two static_asserts per axis pin the assertion to it. A member appended to an
+// enumeration without a row in its table - or a row without a member - fails
+// `ExpectAxisIsTheEnumeration`; a bound left behind by such a member fails the
+// boundary asserts below and the whole cross with them.
+//
+// WHAT IT CATCHES, AND WHAT IT DOES NOT
+//
+// It catches drift between an axis's enumeration and (a) the assertion's bound and
+// (b) the row table the run-time accessor reads, and it catches a compile-time
+// answer that disagrees with the run-time one at any tuple of the cross.
+//
+// It does NOT catch a defect the two sides share. A figure both the stated entry and
+// the accessor read from one wrong row is one answer to this comparison, however wrong
+// it is; what is held against the arithmetic here is nothing at all.
+//
+// It does NOT catch a bound that is right for its enumeration and wrong for the
+// mathematics, and no check of this shape can: whether 1.5e-7 is the figure a lane
+// may promise is a question about the arithmetic, not about which members an
+// enumeration has. That question belongs to the accuracy gate
+// (tests/boys_accuracy_gate.cpp, which measures every lane's cells against the
+// committed high-precision grid) and to the bound instrument, and nothing here
+// answers it.
+// ---------------------------------------------------------------------------
+
+// The last member of each axis, named by the enumeration that carries it. Each is
+// the value the assertion's own bound is stated against - `Precision::kBf16` is
+// what `GuaranteeAxesAreEnumerators` bounds `Precision` at - so this is where the
+// boundary the entry is supposed to have is written down, and the rows the run-time
+// accessor reads are what hold it to the library's carried set.
+constexpr std::size_t kLastPrecision = static_cast<std::size_t>(boys::Precision::kBf16);
+constexpr std::size_t kLastRoute = static_cast<std::size_t>(boys::FitRoute::kRationalMinimax);
+constexpr std::size_t kLastScheme = static_cast<std::size_t>(boys::EvalScheme::kHorner);
+constexpr std::size_t kLastAxis = static_cast<std::size_t>(boys::PackAxis::kOrders);
+constexpr std::size_t kLastGranularity = static_cast<std::size_t>(boys::FitGranularity::kUniform);
+constexpr std::size_t kLastForm = static_cast<std::size_t>(boys::DivisionForm::kRefinedReciprocal);
+constexpr std::size_t kLastExp = static_cast<std::size_t>(boys::RegionBExp::kFast);
+
+// The first enumerator of each axis. The assertion is a conjunction of independent
+// per-axis comparisons, so holding the other six here isolates the one axis a check
+// is about; 0 is inside every one of the bounds by construction (each is a `<=`
+// against a value of at least 0), which is what makes the isolation exact.
+constexpr boys::Precision kFirstPrecision = static_cast<boys::Precision>(0);
+constexpr boys::FitRoute kFirstRoute = static_cast<boys::FitRoute>(0);
+constexpr boys::EvalScheme kFirstScheme = static_cast<boys::EvalScheme>(0);
+constexpr boys::PackAxis kFirstAxis = static_cast<boys::PackAxis>(0);
+constexpr boys::FitGranularity kFirstGranularity = static_cast<boys::FitGranularity>(0);
+constexpr boys::DivisionForm kFirstForm = static_cast<boys::DivisionForm>(0);
+constexpr boys::RegionBExp kFirstExp = static_cast<boys::RegionBExp>(0);
+
+// The assertion with one axis left free, the other six at their first enumerator.
+template <boys::Precision kPrecision>
+constexpr bool PrecisionIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kPrecision, kFirstRoute, kFirstScheme, kFirstAxis,
+                                                     kFirstGranularity, kFirstForm, kFirstExp>();
+}
+
+template <boys::FitRoute kRoute>
+constexpr bool RouteIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kRoute, kFirstScheme, kFirstAxis,
+                                                     kFirstGranularity, kFirstForm, kFirstExp>();
+}
+
+template <boys::EvalScheme kScheme>
+constexpr bool SchemeIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kFirstRoute, kScheme, kFirstAxis,
+                                                     kFirstGranularity, kFirstForm, kFirstExp>();
+}
+
+template <boys::PackAxis kAxis>
+constexpr bool AxisIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kFirstRoute, kFirstScheme, kAxis,
+                                                     kFirstGranularity, kFirstForm, kFirstExp>();
+}
+
+template <boys::FitGranularity kGranularity>
+constexpr bool GranularityIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kFirstRoute, kFirstScheme, kFirstAxis,
+                                                     kGranularity, kFirstForm, kFirstExp>();
+}
+
+template <boys::DivisionForm kForm>
+constexpr bool FormIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kFirstRoute, kFirstScheme, kFirstAxis,
+                                                     kFirstGranularity, kForm, kFirstExp>();
+}
+
+template <boys::RegionBExp kExp>
+constexpr bool ExpIsAnEnumerator() noexcept {
+    return boys::detail::GuaranteeAxesAreEnumerators<kFirstPrecision, kFirstRoute, kFirstScheme, kFirstAxis,
+                                                     kFirstGranularity, kFirstForm, kExp>();
+}
+
+// The boundary, at compile time and per axis: the last member of the enumeration is
+// taken and a value one past it is refused. The refusal half is the one that carries
+// the weight - an assertion that takes everything is not a bound but a deletion, and
+// it would look like a fix - and it is proven end to end, on the entry itself rather
+// than on this predicate, by the scratch translation units under .claude/tmp/
+// (guarstatee-refusal-*.cpp), which are compiled as a control and must fail.
+//
+// What these two asserts do not say is which enumeration the boundary is the last
+// member of: that is `ExpectAxisIsTheEnumeration` below, at run time, against the
+// rows the library itself carries.
+static_assert(PrecisionIsAnEnumerator<static_cast<boys::Precision>(kLastPrecision)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of Precision: its bound sits "
+              "behind the enumeration it bounds, which is the defect that stood at kFp16Device "
+              "while the enumeration had grown to kBf16");
+static_assert(!PrecisionIsAnEnumerator<static_cast<boys::Precision>(kLastPrecision + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a Precision one past the last member: a bound "
+              "that accepts everything bounds nothing");
+
+static_assert(RouteIsAnEnumerator<static_cast<boys::FitRoute>(kLastRoute)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of FitRoute: its bound sits "
+              "behind the enumeration it bounds");
+static_assert(!RouteIsAnEnumerator<static_cast<boys::FitRoute>(kLastRoute + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a FitRoute one past the last member: a bound "
+              "that accepts everything bounds nothing");
+
+static_assert(SchemeIsAnEnumerator<static_cast<boys::EvalScheme>(kLastScheme)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of EvalScheme: its bound sits "
+              "behind the enumeration it bounds");
+static_assert(!SchemeIsAnEnumerator<static_cast<boys::EvalScheme>(kLastScheme + 1)>(),
+              "GuaranteeAxesAreEnumerators takes an EvalScheme one past the last member: a bound "
+              "that accepts everything bounds nothing");
+
+static_assert(AxisIsAnEnumerator<static_cast<boys::PackAxis>(kLastAxis)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of PackAxis: its bound sits "
+              "behind the enumeration it bounds");
+static_assert(!AxisIsAnEnumerator<static_cast<boys::PackAxis>(kLastAxis + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a PackAxis one past the last member: a bound "
+              "that accepts everything bounds nothing");
+
+static_assert(GranularityIsAnEnumerator<static_cast<boys::FitGranularity>(kLastGranularity)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of FitGranularity: its bound "
+              "sits behind the enumeration it bounds");
+static_assert(!GranularityIsAnEnumerator<static_cast<boys::FitGranularity>(kLastGranularity + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a FitGranularity one past the last member: a "
+              "bound that accepts everything bounds nothing");
+
+static_assert(FormIsAnEnumerator<static_cast<boys::DivisionForm>(kLastForm)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of DivisionForm: its bound "
+              "sits behind the enumeration it bounds");
+static_assert(!FormIsAnEnumerator<static_cast<boys::DivisionForm>(kLastForm + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a DivisionForm one past the last member: a "
+              "bound that accepts everything bounds nothing");
+
+static_assert(ExpIsAnEnumerator<static_cast<boys::RegionBExp>(kLastExp)>(),
+              "GuaranteeAxesAreEnumerators refuses the last member of RegionBExp: its bound sits "
+              "behind the enumeration it bounds");
+static_assert(!ExpIsAnEnumerator<static_cast<boys::RegionBExp>(kLastExp + 1)>(),
+              "GuaranteeAxesAreEnumerators takes a RegionBExp one past the last member: a bound "
+              "that accepts everything bounds nothing");
+
+// The selector values the rows of one of the library's axis tables carry.
+template <typename Row, typename Selector>
+std::vector<unsigned> SelectorsOf(std::span<const Row> rows, Selector selector) {
+    std::vector<unsigned> values;
+    values.reserve(rows.size());
+
+    for (const Row& row : rows)
+    {
+        values.push_back(selector(row));
+    }
+
+    return values;
+}
+
+// The fit routes: both lanes' route tables name the axis, and the members are the
+// union of the two - the route is one enumeration over both.
+std::vector<unsigned> RouteSelectors() {
+    std::vector<unsigned> values = SelectorsOf(
+        boys::BoysFitRoutes(), [](const boys::FitRouteInfo& row) { return static_cast<unsigned>(row.route); });
+    const std::vector<unsigned> single = SelectorsOf(
+        boys::BoysFitRoutesF32(), [](const boys::FitRouteInfo& row) { return static_cast<unsigned>(row.route); });
+    values.insert(values.end(), single.begin(), single.end());
+
+    return values;
+}
+
+// The axis the library carries, held to the boundary this file names: one row per
+// enumerator, in enumerator order, and no member the enumeration does not have. This
+// is what makes the boundary above the library's own rather than this file's: a row
+// added for a member this file has not named, or a member named here that no row
+// carries, is a failure with the axis's name on it.
+void ExpectAxisIsTheEnumeration(const char* axis, std::vector<unsigned> values, std::size_t last) {
+    std::sort(values.begin(), values.end());
+    values.erase(std::unique(values.begin(), values.end()), values.end());
+
+    ASSERT_FALSE(values.empty()) << axis << ": the library's own table carries no row for this axis";
+
+    EXPECT_EQ(values.size(), last + 1)
+        << axis << ": the library's table carries " << values.size()
+        << " members and this file names a boundary at " << last + 1
+        << " - the table and the boundary have drifted apart";
+
+    const std::size_t common = std::min(values.size(), last + 1);
+
+    for (std::size_t i = 0; i < common; ++i)
+    {
+        EXPECT_EQ(values[i], i) << axis << ": member " << i << " of the library's table is "
+                                << values[i] << ", so the axis is not the enumerator set 0.." << last;
+    }
+}
+
+// The name the library gives a lane and a route, for a failure message; a value
+// outside the tables is answered "unknown", which the cross never names.
+const char* LaneName(boys::Precision precision) {
+    const std::size_t index = static_cast<std::size_t>(precision);
+    const std::span<const boys::LaneContractInfo> lanes = boys::BoysLaneContracts();
+
+    return index < lanes.size() ? lanes[index].name : "unknown";
+}
+
+const char* RouteName(boys::FitRoute route) {
+    for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+    {
+        if (row.route == route)
+        {
+            return row.name;
+        }
+    }
+
+    return "unknown";
+}
+
+// The seven axes of one cell, as a reader names them.
+std::string CellLabel(boys::Precision precision,
+                      boys::FitRoute route,
+                      boys::EvalScheme scheme,
+                      boys::PackAxis axis,
+                      boys::FitGranularity granularity,
+                      boys::DivisionForm form,
+                      boys::RegionBExp exp) {
+    char buffer[192];
+    std::snprintf(buffer,
+                  sizeof buffer,
+                  "precision=%s route=%s scheme=%s axis=%s granularity=%s form=%s exp=%s",
+                  LaneName(precision),
+                  RouteName(route),
+                  boys::EvalSchemeName(scheme),
+                  boys::PackAxisName(axis),
+                  boys::GranularityName(granularity),
+                  boys::DivisionFormName(form),
+                  boys::RegionBExpName(exp));
+
+    return buffer;
+}
+
+// The axes the library carries, one count per axis: what the cross below is the
+// product of.
+constexpr std::size_t kPrecisionCount = kLastPrecision + 1;
+constexpr std::size_t kRouteCount = kLastRoute + 1;
+constexpr std::size_t kSchemeCount = kLastScheme + 1;
+constexpr std::size_t kAxisCount = kLastAxis + 1;
+constexpr std::size_t kGranularityCount = kLastGranularity + 1;
+constexpr std::size_t kFormCount = kLastForm + 1;
+constexpr std::size_t kExpCount = kLastExp + 1;
+
+// Every combination of every axis: 7 lanes x 2 fit routes x 2 schemes x 2 packing
+// axes x 3 partitions x 3 division forms x 2 region-B exponentials = 1008 cells,
+// each one instantiated at compile time and each one held to the run-time accessor
+// at the same seven axes. The product is written as a product and printed by the
+// test, so the count is the compiler's arithmetic and the run's own, not this
+// file's.
+constexpr std::size_t kCombinationCount = kPrecisionCount * kRouteCount * kSchemeCount * kAxisCount *
+                                          kGranularityCount * kFormCount * kExpCount;
+
+// One axis's digit of a cell index, the last axis running fastest: the mixed radix
+// the product above is, decoded one axis at a time.
+template <std::size_t kAxis>
+constexpr std::size_t CellDigit(std::size_t cell) noexcept {
+    constexpr std::size_t kCounts[7] = {kPrecisionCount,
+                                        kRouteCount,
+                                        kSchemeCount,
+                                        kAxisCount,
+                                        kGranularityCount,
+                                        kFormCount,
+                                        kExpCount};
+    std::size_t remaining = cell;
+
+    for (std::size_t i = 6; i > kAxis; --i)
+    {
+        remaining /= kCounts[i];
+    }
+
+    return remaining % kCounts[kAxis];
+}
+
+// The seven axes of one cell, as values: what a message names a cell by.
+struct CellAxes {
+    boys::Precision precision{};
+    boys::FitRoute route{};
+    boys::EvalScheme scheme{};
+    boys::PackAxis axis{};
+    boys::FitGranularity granularity{};
+    boys::DivisionForm form{};
+    boys::RegionBExp exp{};
+};
+
+CellAxes AxesOf(std::size_t cell) {
+    CellAxes axes{};
+
+    axes.precision = static_cast<boys::Precision>(CellDigit<0>(cell));
+    axes.route = static_cast<boys::FitRoute>(CellDigit<1>(cell));
+    axes.scheme = static_cast<boys::EvalScheme>(CellDigit<2>(cell));
+    axes.axis = static_cast<boys::PackAxis>(CellDigit<3>(cell));
+    axes.granularity = static_cast<boys::FitGranularity>(CellDigit<4>(cell));
+    axes.form = static_cast<boys::DivisionForm>(CellDigit<5>(cell));
+    axes.exp = static_cast<boys::RegionBExp>(CellDigit<6>(cell));
+
+    return axes;
+}
+
+// One cell's two answers, as the compile-time entry and the run-time accessor gave
+// them. The struct is what one instantiation produces, so the cross is a vector of
+// these rather than one assertion site per cell: the comparison is a loop at the end,
+// and a cell that agrees costs a call and two figures.
+struct CellAnswers {
+    boys::AccuracyFigure stated{};
+    boys::AccuracyFigure answered{};
+};
+
+// One cell: the compile-time entry instantiated at the tuple, and the same tuple asked
+// of the run-time accessor. The two are the defect class this whole block is for, so
+// they are read back and compared rather than trusted: the assertion inside the stated
+// entry is the part a compiler settles, and the accessor's answer is what a caller gets.
+template <boys::Precision kPrecision,
+          boys::FitRoute kRoute,
+          boys::EvalScheme kScheme,
+          boys::PackAxis kAxis,
+          boys::FitGranularity kGranularity,
+          boys::DivisionForm kForm,
+          boys::RegionBExp kExp>
+CellAnswers AskBoth() {
+    return CellAnswers{
+        boys::BoysAccuracyGuaranteedStated<kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp>(),
+        boys::BoysAccuracyGuaranteed(kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp)};
+}
+
+template <std::size_t kCell>
+void AskOneCell(std::vector<CellAnswers>& answers) {
+    constexpr std::size_t kPrecision = CellDigit<0>(kCell);
+    constexpr std::size_t kRoute = CellDigit<1>(kCell);
+    constexpr std::size_t kScheme = CellDigit<2>(kCell);
+    constexpr std::size_t kAxis = CellDigit<3>(kCell);
+    constexpr std::size_t kGranularity = CellDigit<4>(kCell);
+    constexpr std::size_t kForm = CellDigit<5>(kCell);
+    constexpr std::size_t kExp = CellDigit<6>(kCell);
+
+    answers.push_back(AskBoth<static_cast<boys::Precision>(kPrecision),
+                              static_cast<boys::FitRoute>(kRoute),
+                              static_cast<boys::EvalScheme>(kScheme),
+                              static_cast<boys::PackAxis>(kAxis),
+                              static_cast<boys::FitGranularity>(kGranularity),
+                              static_cast<boys::DivisionForm>(kForm),
+                              static_cast<boys::RegionBExp>(kExp)>());
+}
+
+std::vector<CellAnswers> AskEveryCombination() {
+    std::vector<CellAnswers> answers;
+    answers.reserve(kCombinationCount);
+
+    [&answers]<std::size_t... kCells>(std::index_sequence<kCells...>)
+    { (AskOneCell<kCells>(answers), ...); }(std::make_index_sequence<kCombinationCount>{});
+
+    return answers;
+}
+
+// The two answers' disagreement, with all seven axes and both figures in it. Built
+// only where a cell disagrees, so the cells that agree pay nothing for it.
+std::string MismatchReport(std::size_t cell, const CellAnswers& answer) {
+    const CellAxes axes = AxesOf(cell);
+    char buffer[768];
+    std::snprintf(buffer,
+                  sizeof buffer,
+                  "%s: stated available=%d value=%.17g reading=%d source=\"%s\" reason=\"%s\" | "
+                  "accessor available=%d value=%.17g reading=%d source=\"%s\" reason=\"%s\"",
+                  CellLabel(axes.precision,
+                            axes.route,
+                            axes.scheme,
+                            axes.axis,
+                            axes.granularity,
+                            axes.form,
+                            axes.exp)
+                      .c_str(),
+                  answer.stated.available ? 1 : 0,
+                  answer.stated.value,
+                  static_cast<int>(answer.stated.reading),
+                  answer.stated.source,
+                  answer.stated.reason,
+                  answer.answered.available ? 1 : 0,
+                  answer.answered.value,
+                  static_cast<int>(answer.answered.reading),
+                  answer.answered.source,
+                  answer.answered.reason);
+
+    return buffer;
+}
+
+// Whether the two answers are one answer: the same availability, the same figure, the
+// same reading, and the same two sentences. The figures are read from one table by one
+// expression, so they are compared exactly rather than within a tolerance.
+bool AnswersAgree(const CellAnswers& answer) {
+    return answer.stated.available == answer.answered.available &&
+           answer.stated.value == answer.answered.value &&
+           answer.stated.reading == answer.answered.reading &&
+           std::strcmp(answer.stated.source, answer.answered.source) == 0 &&
+           std::strcmp(answer.stated.reason, answer.answered.reason) == 0;
+}
+
+// The boundary this file names, held to the rows the library itself carries. It fails
+// when a member is appended to an enumeration and given a row without this file's
+// boundary moving - the direction that would otherwise let the entry fall behind
+// silently - and when a row is added for a member the enumeration does not have.
+TEST(BoysAccuracyTest, TheGuaranteeEntrysBoundaryIsTheLastMemberOfEveryAxis) {
+    ExpectAxisIsTheEnumeration(
+        "Precision",
+        SelectorsOf(boys::BoysLaneContracts(),
+                    [](const boys::LaneContractInfo& row) { return static_cast<unsigned>(row.precision); }),
+        kLastPrecision);
+    ExpectAxisIsTheEnumeration("FitRoute", RouteSelectors(), kLastRoute);
+    ExpectAxisIsTheEnumeration(
+        "EvalScheme",
+        SelectorsOf(boys::BoysEvalSchemes(),
+                    [](const boys::EvalSchemeInfo& row) { return static_cast<unsigned>(row.scheme); }),
+        kLastScheme);
+    ExpectAxisIsTheEnumeration(
+        "PackAxis",
+        SelectorsOf(boys::BoysPackAxes(),
+                    [](const boys::PackAxisInfo& row) { return static_cast<unsigned>(row.axis); }),
+        kLastAxis);
+    ExpectAxisIsTheEnumeration(
+        "FitGranularity",
+        SelectorsOf(boys::BoysFitGranularities(),
+                    [](const boys::FitGranularityInfo& row) { return static_cast<unsigned>(row.granularity); }),
+        kLastGranularity);
+    ExpectAxisIsTheEnumeration(
+        "DivisionForm",
+        SelectorsOf(boys::BoysDivisionForms(),
+                    [](const boys::DivisionFormInfo& row) { return static_cast<unsigned>(row.form); }),
+        kLastForm);
+    ExpectAxisIsTheEnumeration(
+        "RegionBExp",
+        SelectorsOf(boys::BoysRegionBExps(),
+                    [](const boys::RegionBExpInfo& row) { return static_cast<unsigned>(row.exp); }),
+        kLastExp);
+}
+
+// Every cell of the cross, instantiated and answered. The compile-time entry is the
+// one the library never exercised: a cell whose stated tuple the assertion refuses is
+// a build error here, and a cell whose compile-time answer differs from the run-time
+// one is a failure with the seven axes named.
+TEST(BoysAccuracyTest, TheStatedGuaranteeIsTheAccessorsAnswerOnEveryCombination) {
+    const std::vector<CellAnswers> answers = AskEveryCombination();
+    ASSERT_EQ(answers.size(), kCombinationCount)
+        << "the cross did not visit every combination it says it does";
+
+    std::size_t carried = 0;
+    std::size_t mismatched = 0;
+
+    for (std::size_t cell = 0; cell < answers.size(); ++cell)
+    {
+        carried += answers[cell].stated.available ? 1u : 0u;
+
+        if (!AnswersAgree(answers[cell]))
+        {
+            ++mismatched;
+            ADD_FAILURE() << MismatchReport(cell, answers[cell]);
+        }
+    }
+
+    std::printf("stated guarantee: %zu combinations instantiated and held to "
+                "BoysAccuracyGuaranteed (%zu carried, %zu refused, %zu disagreeing)\n",
+                answers.size(),
+                carried,
+                answers.size() - carried,
+                mismatched);
+
+    EXPECT_EQ(mismatched, 0u);
+}
 
 } // namespace
