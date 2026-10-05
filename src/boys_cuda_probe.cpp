@@ -4706,16 +4706,15 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             // file's own would leave a reader comparing two files to find out what this run
             // changed.
             const char* const replaces =
-                carried ? "; this row replaces the one the table in force carries" : "";
+                carried ? "; replaces the row the table in force carries" : "";
 
             rows += walkover
                         ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
-                               "in\n"
-                               "       this class, so the row is an answer and not the winner of a\n"
-                               "       comparison%s */\\\n",
+                               "in this\n"
+                               "       class, so the row is an answer and not the winner of a "
+                               "comparison%s */\\\n",
                                winner.c_str(), replaces)
-                        : Text("    /* measured: the %s %s class, '%s', reached by %s%s */\\\n",
-                               PrecisionName(precision), QuestionName(question), winner.c_str(),
+                        : Text("    /* measured: '%s', reached by %s%s */\\\n", winner.c_str(),
                                DeviceProbeDefaultHowName(founder->ranking.defaultHow), replaces);
 
             rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
@@ -4762,16 +4761,14 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     std::string text;
     text += "#pragma once\n\n";
     text += "/// \\file\n";
-    text += "/// This build's default-policy seam, the device half, written by the device option\n";
-    text += "/// probe from the classes it measured: every device class this run ranked carries the\n";
-    text += "/// entry that won it, over the row the table in force wrote for that class where it\n";
-    text += "/// wrote one, and the classes that file carries and this run did not measure are\n";
-    text += "/// written back beside them, because a replacement is read INSTEAD of the committed\n";
-    text += "/// file and one that dropped them would leave their callers with no row at all.\n";
-    text += "///\n";
-    text += "/// The command is `boys-device-probe --emit-defaults <file>`, and the surface it\n";
-    text += "/// reports is `boys/boys_cuda_probe.hpp`. A row is a measurement taken on one card,\n";
-    text += "/// which is why the card, the run and the date are in the comments below.\n";
+    text += "/// The device half of this build's default-policy seam, written by `boys-device-probe\n";
+    text += "/// --emit-defaults <file>` from the classes this run measured. Each class it ranked\n";
+    text += "/// carries the entry that won it, over the row the table in force wrote for it where it\n";
+    text += "/// wrote one. A class that file carries and this run did not measure is written back\n";
+    text += "/// unchanged: a replacement is read INSTEAD of the committed file, so dropping it would\n";
+    text += "/// leave its callers with no row. A row is a measurement taken on one card, so the card,\n";
+    text += "/// the run and the date are named below; the probe that writes it is\n";
+    text += "/// `boys/boys_cuda_probe.hpp`.\n";
     text += "///\n";
 
     if (!takenAt.empty())
@@ -4780,41 +4777,33 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     }
 
     text += "/// **One row per class, and a class is a (device, precision, shape) triple.** The rows\n";
-    text += "/// below are the nine classes the device half of the table holds: the three device lanes\n";
-    text += "/// - `kFp64Device`, `kFp32Device` and `kFp16Device`, which are the three precisions this\n";
-    text += "/// lane's entries are built at - by the three questions the probe ranks. A table keyed by\n";
-    text += "/// the triple can hold the nine; one keyed with a single device precision cell holds one\n";
-    text += "/// of them per shape.\n";
+    text += "/// below are the nine classes of the device half: `kFp64Device`, `kFp32Device` and\n";
+    text += "/// `kFp16Device` - the three precisions this lane's entries are built at - by the three\n";
+    text += "/// questions the probe ranks. A table keyed by the triple holds the nine; one keyed by a\n";
+    text += "/// single device precision cell holds one of them per shape.\n";
     text += "///\n";
-    text += "/// **What a device row's cells are, and what they are not.** The route, the scheme and the\n";
-    text += "/// packing are the entry's own (`DeviceEntryAxesOf`, boys_cuda_options.hpp), read from the\n";
-    text += "/// lane and the body its kernels name, and the granularity is the partition it reads. The\n";
-    text += "/// packing cell is the entry's own reading of\n";
-    text += "/// region A in the axis the seam names `PackAxis`: the ladder - the top order's fit seeded\n";
-    text += "/// and every lower order\n";
-    text += "/// brought back down the recurrence, which is the per-argument reading - is\n";
-    text += "/// `PackAxis::kArguments`, and the per-order reading is `PackAxis::kOrders`. A single-\n";
-    text += "/// order class carries the arguments axis, because a call that produces one order has no\n";
-    text += "/// second order to pack. The budget is the budget the class's lane carries: the float\n";
-    text += "/// budget on the fp64 and fp32 lanes, the half budget on the fp16 one, whose degree\n";
-    text += "/// tables are not the float lane's. The division-form cell is the form the winning row was\n";
-    text += "/// measured at, in the axis the seam names `DivisionForm` and this lane\n";
-    text += "/// `DeviceOptionAxis::kDivision`: every entry of the space runs every form, so a row is an\n";
-    text += "/// (entry, form) pair and the cell names the form the figure beside it was measured at - the\n";
-    text += "/// form the winner's own row states, which is the build's default where that row won at the\n";
-    text += "/// default and that row's form where it did not. The region-B exponential cell is the\n";
-    text += "/// winning entry's own coordinate on\n";
-    text += "/// the axis the seam names `RegionBExp` (`DeviceOptionInfo::regionBExp`): the member the\n";
-    text += "/// entry's recurrence seeds with where the entry varies the axis, and the lane's own\n";
-    text += "/// default member where it varies none - a row of this space that offers the axis is the\n";
-    text += "/// one place the two rows of an entry differ in their arithmetic, so a row written from\n";
-    text += "/// the build's default would carry a figure measured at another member.\n";
+    text += "/// **What a device row's cells are.** The route, the scheme and the packing are the\n";
+    text += "/// entry's own (`DeviceEntryAxesOf`, boys_cuda_options.hpp), read from the lane and the\n";
+    text += "/// body its kernels name; the granularity is the partition it reads; the budget is the\n";
+    text += "/// lane's - the float budget on fp64 and fp32, the half budget on fp16, whose degree\n";
+    text += "/// tables are not the float lane's. The packing cell is the entry's own reading of region\n";
+    text += "/// A in the axis `PackAxis`: the ladder - the top order's fit seeded and every lower\n";
+    text += "/// order brought back down the recurrence, the per-argument reading - is\n";
+    text += "/// `PackAxis::kArguments`; the per-order reading is `PackAxis::kOrders`, and a\n";
+    text += "/// single-order class carries the arguments axis, because a call that produces one order\n";
+    text += "/// has no second order to pack. The division-form cell is the form the winning row was\n";
+    text += "/// measured at, and not the entry's `DeviceOptionInfo::division`: the axis is\n";
+    text += "/// `DeviceOptionAxis::kDivision` on this lane and `DivisionForm` in the seam. Every entry\n";
+    text += "/// runs every form, so a row is an (entry, form) pair. The region-B exponential is the\n";
+    text += "/// winning entry's own coordinate on `RegionBExp` (`DeviceOptionInfo::regionBExp`): the\n";
+    text += "/// member its recurrence seeds with where the entry varies the axis, the lane's own\n";
+    text += "/// default where it varies none. Either cell written from the build's default would put a\n";
+    text += "/// figure measured at another member under this row.\n";
     text += "///\n";
-    text += "/// **A row a probe named by there being no rival is a choice, not a measurement.** A\n";
-    text += "/// device class whose winner won an ordering carries the marker a measurement carries;\n";
-    text += "/// one whose winner was the last entry left standing carries the marker a choice\n";
-    text += "/// carries, and a class this run did not measure is left with the row the table in\n";
-    text += "/// force carries for it, written back by the list below.\n";
+    text += "/// **A row is a measurement only where an ordering placed an entry first.** A class whose\n";
+    text += "/// winner won an ordering carries the measurement marker; one whose winner was the last\n";
+    text += "/// entry standing carries the choice marker. A class this run did not measure keeps the\n";
+    text += "/// row the table in force carries, written back by the list below.\n";
     text += "\n";
     text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
     text += "/// values, which is what this build compiled before this file existed. Five are the\n";
@@ -4841,10 +4830,9 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
     text += "/// The classes this file sets a default for: **one row per class**, in the table's own\n";
-    text += "/// format. The rows first are the table in force's own, for the classes this run did\n";
-    text += "/// not measure and written back verbatim; the rows after them are this run's, one per\n";
-    text += "/// class it measured, over the row that table carried for the class where it carried\n";
-    text += "/// one.\n";
+    text += "/// format. First the table in force's own rows, for the classes this run did not measure\n";
+    text += "/// and written back verbatim; then this run's, one per class it measured, over the row\n";
+    text += "/// that table carried where it carried one.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
     for (const SeamRow& base : kTableRows)
