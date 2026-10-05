@@ -10,10 +10,12 @@ This page is the per-lane contract: for each lane, the bound it guarantees and t
 bound covers; then what each axis inside a lane changes; then what the default selects when a call
 names nothing; and, at the end, what is not claimed. The words it uses are defined on
 [the API reference's landing page](mainpage.md) — *lane*, *region*, *route*, *scheme*, *partition*,
-*band*, *cell* and *gate* among them. Three shorter pages sit beside this one:
+*band*, *cell* and *gate* among them. Four shorter pages sit beside this one:
 `docs/getting-started.md` in this tree if you have not called the library yet,
 [Choosing a lane](consumer-perspective.md) if you are deciding how much accuracy the calculation
-needs, and [Build facts](build-facts.md) for what a build of the library is.
+needs, [Build facts](build-facts.md) for what a build of the library is, and
+[Calling this library on a GPU](gpu-guide.md) if the lane you want is a device one — that page is
+also where the device half's own bounds are read from, and says which of them a run stands behind.
 
 **Read every figure with its instrument.** A *bound* is a ceiling a lane guarantees, and a *bar* is
 the figure one row is judged against. A *measured* figure is what a program in this tree measured

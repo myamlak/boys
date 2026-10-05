@@ -362,6 +362,12 @@ two instantiations at the call site, not a value passed into one.
 
 ## On a GPU, the first call is the slow one
 
+**This section is about the warm-up only.** If you are calling the library on a card, the page
+written for you is [Calling this library on a GPU](gpu-guide.md): which of the two device routes
+answers which problem, what a call looks like, what you must allocate and pass, what the library
+refuses, and how to read what you got. What follows here is the one thing that belongs on this page
+because it is about the *first* call rather than about a device call as such.
+
 The GPU entries upload coefficient tables on first use, lazily and idempotently. **The first call on
 a given device therefore pays a real one-time cost that every later
 call does not.** A caller timing a loop from a cold start measures the upload, not the evaluation.
@@ -387,6 +393,8 @@ what instantiates the version you asked for, in your translation unit.
   needs, and which lanes that leaves.
 - [The API reference](mainpage.md) — every entry, every type, and the vocabulary this library uses,
   defined.
+- [Calling this library on a GPU](gpu-guide.md) — the device half of this page: the two routes, what
+  you allocate and pass, what the library refuses, and how to read the bound you got.
 - [Build facts](build-facts.md) — what a build of this library is, read out of the build: the
   instruction sets it targets, whether a bare `a * b + c` in it is one rounding, and which arithmetic
   backends it carries.

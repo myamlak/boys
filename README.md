@@ -128,6 +128,11 @@ By what you want, not by what the library calls things:
 The complete list, with every overload, is the entry-point table in the
 [API reference](https://myamlak.github.io/boys/).
 
+**Calling it on a GPU?** The last two rows are the two routes onto a card, and
+[docs/gpu-guide.md](docs/gpu-guide.md) is written for you: which route answers which problem, what a
+device call looks like, what you must allocate and pass, what the library refuses and why that is a
+feature, and how to read the bound you got.
+
 **How much accuracy do you need?** [docs/consumer-perspective.md](docs/consumer-perspective.md) —
 what integral calculations actually require, and which of the library's evaluation paths that leaves
 to choose between. **Want the guarantee instead?** [What each path
