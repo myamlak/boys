@@ -59,6 +59,21 @@ LANES = re.compile(r"over\s+(\d+)\s+lane\(s\)")
 # prints them, so a phrase test reads the source as a run. It did exactly that.
 ARITHMETIC_WITH_NUMBERS = re.compile(r"the arithmetic:\s*\d+(?:\s*\+\s*\d+)+\s*=\s*\d+")
 
+# The library's own record of a device run it withdrew. The phrase is the withdrawal; the run it
+# names is the card and the date the sentence carries (`a Quadro T1000, on 2026-10-04`). Both are
+# read from the committed text rather than written here, so the run that retires this line retires
+# it by itself and a second withdrawn run needs no edit to this file.
+DEFAULTS_SEAM = os.path.join(REPO, "include", "boys", "boys_build_defaults.hpp")
+WITHDRAWN_PROSE = re.compile(r"withdrawn rather than published")
+WITHDRAWN_RUN = re.compile(
+    r"-\s+(?:a|an|the)?\s*([A-Za-z][A-Za-z0-9\-]*(?:\s+[A-Za-z0-9\-]+)*),\s*on\s+(\d{4}-\d{2}-\d{2})")
+
+# The run's own statement that its instrument was not steady: a fixed work read by the same clock
+# the entries were, so a pass flagged here is a pass whose clock moved by more than the alarm.
+CANARY_WIDE = re.compile(
+    r"(\d+)\s+of\s+(\d+)\s+pass\(es\)\s+ran\s+with\s+the\s+canary's\s+own\s+runs\s+wider\s+than\s+"
+    r"the\s+([\d.]+)%\s+alarm")
+
 
 def has_closure(text: str) -> bool:
     """A whole closure block: four markers and an arithmetic that actually carries numbers."""
@@ -170,6 +185,59 @@ def host_space() -> tuple[str, list[str], bool]:
     return (summary, lines, closed)
 
 
+def seam_prose(path: str) -> str:
+    """A seam header's prose, with each line's comment prefix folded to one space.
+
+    The sentence that names a withdrawn run wraps, and every wrapped line opens with the comment
+    marker, so the card and the date sit either side of `///` in the file's own text. A pattern
+    written against the sentence as it reads finds neither. This reads the sentence as it reads,
+    not as the file wraps it.
+    """
+    return re.sub(r"^\s*//[/!<]?\s?", " ", read(path), flags=re.M)
+
+
+def withdrawn_run(path: str, text: str) -> list[str]:
+    """The lines to print when `path` is a device run the library's own text records as withdrawn.
+
+    A closure that sums is an arithmetic about a run. Whether the RUN stands is a different
+    question, and the closure does not answer it: its verdict is computed over member states and
+    never looks at the instrument. The tree does answer it - the device defaults state that a run
+    on a named card and date "found every pass wider than its own canary's alarm and was withdrawn
+    rather than published" - and a space closed on that run is closed on evidence the project has
+    withdrawn, which is the host space's stale-record defect one level down.
+
+    Identity is the CARD the ruling names, and deliberately not the date. Every device closure on
+    disk is a run of that card from those two days, every one of them is canary-wide, and every one
+    of them would print CLOSED from the moment the newest file was removed - the fallback is the
+    same defect, not a sound run. The date the ruling carries is printed with it, to say which run
+    is meant; it is not made a test, because a file's mtime describes the file and not the run.
+    """
+    ruling = seam_prose(DEFAULTS_SEAM)
+    found = WITHDRAWN_PROSE.search(ruling)
+    if not found:
+        return []
+    named = WITHDRAWN_RUN.findall(ruling[:found.start()])
+    if not named:
+        # The ruling is there and the run it names is not readable. Refusing loudly is the whole
+        # point: a parse that quietly stops matching would put this space back to closing on a
+        # withdrawn run the first time the sentence was reworded.
+        return [f"   UNREAD: {os.path.basename(DEFAULTS_SEAM)} records a device run withdrawn and "
+                f"this reads no card and date from it, so whether {os.path.basename(path)} is that "
+                f"run is unknown and the space is not closed on an unread ruling"]
+    on = [f"{card}, on {date}" for card, date in named if card in text]
+    if not on:
+        return []
+
+    lines = [f"   WITHDRAWN: {os.path.basename(path)} is a run on {on[0]}, which the device "
+             f"defaults ({os.path.basename(DEFAULTS_SEAM)}) record as withdrawn rather than "
+             f"published"]
+    canary = CANARY_WIDE.search(text)
+    if canary:
+        lines.append(f"   its own canary block reads {canary.group(1)} of {canary.group(2)} "
+                     f"pass(es) ran wider than the {canary.group(3)}% alarm")
+    return lines
+
+
 def device_space() -> tuple[str, list[str], bool]:
     """The device option space, from the probe report that carries its closure arithmetic.
 
@@ -178,6 +246,13 @@ def device_space() -> tuple[str, list[str], bool]:
     the arithmetic summing them, and a verdict. A log written before that block existed carries no
     closure at all - which is a fact about the log, not about the library - so the search is for the
     block, and the absence of it is reported as the absence of a RUN rather than of a space.
+
+    The closure is one question - do the member states sum to the space - and it is not the whole
+    of the one that matters. A closure can sum correctly over a run the project has withdrawn, and
+    this tool printed exactly that as CLOSED: the run behind the 324 was a Quadro T1000 whose own
+    canary block flagged every pass, which the device defaults record as withdrawn rather than
+    published. So the run's standing is asked too, of the library's own text, and a withdrawn run
+    refuses the closure the same way a stale host run does.
     """
     carrying = []
     for directory in (os.path.join(REPO, ".claude", "tmp"),
@@ -262,6 +337,14 @@ def device_space() -> tuple[str, list[str], bool]:
         f"  the probe's own arithmetic {arith.group(1).strip()} = {arith.group(2)}",
         f"  the verdict as printed: {'PASS' if verdict.group(1) == 'PASS' else 'FAIL'}",
     ]
+    # IS IT A RUN THAT STANDS, which the closure does not say. The probe's verdict is computed over
+    # member states and never over the instrument, so the arithmetic can agree on a run whose own
+    # canary block says the clock moved under every pass. The project's ruling on such a run is in
+    # the library's text; reading it here is what keeps this line from being a success not read.
+    withdrawn = withdrawn_run(newest, text)
+    if withdrawn:
+        lines += withdrawn
+        closed = False
     return (f"{measured} of {space} measured, {unaccounted} in no state", lines, closed)
 
 
