@@ -287,11 +287,11 @@ enum class DeviceProbeDefaultHow : int {
     /// class prints it with the check that set it aside.
     kOnlyEntry,
     /// The shape's own rounds left the leader tied with others, those entries
-    /// were re-run alone at a larger protocol, and every one of those runs was
-    /// fastest with the entry this shape names — the entry the vote named,
-    /// measured again, longer, and unanimous. The row the shape's own figures put
-    /// first is printed beside it, and where the two differ that difference is
-    /// what says the top entries cannot be separated.
+    /// were re-run alone at the refinement protocol, and every one of those runs
+    /// was fastest with the entry this shape names — the entry the vote named,
+    /// measured again and unanimous. The row the shape's own figures put first is
+    /// printed beside it, and where the two differ that difference is what says
+    /// the top entries cannot be separated.
     kRefined,
     /// The same re-runs, with a majority rather than all of them leading with the
     /// entry this shape names: the vote had a plurality over the entries it could
@@ -467,14 +467,17 @@ struct DeviceProbeOptions {
 
     /// Runs the refinement stage takes of a shape whose entries its own rounds
     /// could not separate, and the factor by which each of those runs is longer
-    /// than the main protocol: a refinement run is \c passes * this passes of
+    /// than the main protocol: a refinement run is \c passes passes of
     /// \c rounds * this rounds, with its own shuffle, over the tied entries
-    /// alone. The stage is spent on the pair or the few entries the answer
-    /// actually rests on: five runs of a protocol five times the main one.
+    /// alone. **One multiplication and not two**: the factor lengthens a run's
+    /// rounds, so a run is \c refinementFactor times the main protocol and not
+    /// that factor squared, and the stage costs \c refinementRuns such runs over
+    /// the tied set alone — the pair or the few entries the answer actually rests
+    /// on, and not the whole option space.
     int refinementRuns = 5;
 
     /// The refinement protocol's multiplier; see refinementRuns.
-    int refinementFactor = 5;
+    int refinementFactor = 1;
 };
 
 /// The device the figures were taken on.
@@ -817,7 +820,7 @@ struct DeviceProbeMeasurement {
     std::string repetitionNote;
 };
 
-/// The refinement stage: a shape's tied entries, measured alone at a larger
+/// The refinement stage: a shape's tied entries, measured alone at the refinement
 /// protocol, repeated, and voted on.
 ///
 /// This is what the report does instead of naming an entry from a figure counted
@@ -826,13 +829,13 @@ struct DeviceProbeMeasurement {
 /// else in the option space is touched, so the stage's whole cost is spent on
 /// the entries the answer actually rests on.
 ///
-/// Each run is a fresh pass over the tied set at a protocol \c passes *
-/// DeviceProbeOptions::refinementFactor passes long and \c rounds * the same
-/// factor rounds long, with its own shuffle, and each run is ordered by the same
-/// within-round ratio rule the main run used — so a run is a smaller measurement
-/// of the same kind and not a different rule. The vote is over the runs, and a
-/// run whose own rounds cannot place a rival contributes its leader alone, which
-/// is what makes the vote a vote and not a re-run of the main statistic.
+/// Each run is a fresh pass over the tied set at a protocol \c passes passes long
+/// and \c rounds * DeviceProbeOptions::refinementFactor rounds long, with its own
+/// shuffle, and each run is ordered by the same within-round ratio rule the main
+/// run used — so a run is a measurement of the same kind and not a different
+/// rule. The vote is over the runs, and a run whose own rounds cannot place a
+/// rival contributes its leader alone, which is what makes the vote a vote and not
+/// a re-run of the main statistic.
 ///
 /// \ingroup boys
 struct DeviceProbeRefinement {

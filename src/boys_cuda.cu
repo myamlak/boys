@@ -157,6 +157,11 @@ __device__ int dNarrowRatBDenDeg32[detail::f32::kNarrowRatBPiecesCountF32];
 // size does not fit beside them.
 __device__ double dMonoCoeffs[kMaxCoeffs];
 __device__ double dMonoBcoeffs[24];
+// The float lane's coarsest pool in the other basis, the reading Lane32MonoFull makes of what
+// Lane64MonoFull reads here. The same offsets as the Chebyshev pool above, so the pieces, edges,
+// degrees and counts stay the float lane's own.
+__device__ float dMonoCoeffs32[kMaxCoeffs];
+__device__ float dMonoBcoeffs32[24];
 __device__ double dNarrowAMonoCoeffs[kNarrowCoeffsTotal];
 __device__ double dNarrowBMonoCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)];
 
@@ -341,6 +346,39 @@ struct Lane32Full {
     __device__ __forceinline__ float BSeed(float x, int) const {
         const float t = 2.0f * (x - static_cast<float>(detail::kX0)) / static_cast<float>(detail::kX1 - detail::kX0) - 1.0f;
         return detail::DeviceClenshawSplit32(cBcoeffs32, cBDeg32, t);
+    }
+};
+
+// The coarsest partition in the other basis, the float lane's reading of what Lane64MonoFull reads
+// on the double lane: the pieces, edges, degrees and counts are Lane32Full's, the two pools are the
+// monomial ones, and the summation is Horner's. Region B's seed is the same seed's monomial form,
+// as it is on the double lane.
+struct Lane32MonoFull {
+    static constexpr bool kMonomial = true;
+
+    __device__ __forceinline__ int Count(int order) const {
+        return cCount32[order];
+    }
+
+    __device__ __forceinline__ float A(int order, int piece) const {
+        return cA32[order][piece];
+    }
+
+    __device__ __forceinline__ float B(int order, int piece) const {
+        return cB32[order][piece];
+    }
+
+    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
+        return dMonoCoeffs32 + cOffset32[order][piece];
+    }
+
+    __device__ __forceinline__ int Deg(int order, int piece) const {
+        return cDeg32[order][piece];
+    }
+
+    __device__ __forceinline__ float BSeed(float x, int) const {
+        const float t = 2.0f * (x - static_cast<float>(detail::kX0)) / static_cast<float>(detail::kX1 - detail::kX0) - 1.0f;
+        return detail::DeviceHornerMono32(dMonoBcoeffs32, cBDeg32, t);
     }
 };
 
@@ -990,6 +1028,28 @@ __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
                                       [&](int l, float v) { out[l * count + i] = v; });
 }
 
+// The float lane's coarsest partition in the monomial basis, the reading the double lane's
+// BoysAllOrdersF64MonoKernel makes of its own: the same body, the seed lane the double lane's
+// coarsest monomial one, and the float lane's coarsest monomial pair beside it.
+template <DivisionForm kForm>
+__global__ void BoysAllOrdersF32MonoKernel(const int* n,
+                                           const double* __restrict__ x,
+                                           float* __restrict__ out,
+                                           size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(Lane64MonoFull{},
+                                      Lane32MonoFull{},
+                                      n[i],
+                                      static_cast<float>(x[i]),
+                                      [&](int l, float v) { out[l * count + i] = v; });
+}
+
 // The float lane's rational route, one kernel per partition it is carried on. The seed lane is the
 // double lane's rational pair at that partition, which is what makes the two lanes' region-A seeds
 // one reading, and the float lane supplies the region-B seed. The route has no second scheme: its
@@ -1052,6 +1112,25 @@ __global__ void BoysSingleF16Kernel(const int* n,
 
     out[i] = __float2half(
         detail::DeviceSingleF32<kForm, false>(Lane32Full{}, n[i], __half2float(x[i])));
+}
+
+// The same value read through the fast region-B exponential, which is the option the float single
+// entry carries (DeviceSingleF32's second parameter). The half lane's form of it: the arithmetic is
+// the float lane's fast reading, unaltered, and only the store is the half one.
+template <DivisionForm kForm>
+__global__ void BoysSingleF16FastKernel(const int* n,
+                                        const __half* __restrict__ x,
+                                        __half* __restrict__ out,
+                                        size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    out[i] = __float2half(
+        detail::DeviceSingleF32<kForm, true>(Lane32Full{}, n[i], __half2float(x[i])));
 }
 
 template <DivisionForm kForm>
@@ -1483,6 +1562,22 @@ __global__ void BoysAllOrdersF32NarrowOrdersMonoKernel(const int* n,
                               static_cast<float>(x[i]), out, count, i);
 }
 
+template <DivisionForm kForm>
+__global__ void BoysAllOrdersF32OrdersMonoKernel(const int* n,
+                                                 const double* __restrict__ x,
+                                                 float* __restrict__ out,
+                                                 size_t count) {
+    const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
+
+    if (i >= count)
+    {
+        return;
+    }
+
+    DeviceOrdersBody32<kForm>(Lane64MonoFull{}, Lane32MonoFull{}, n[i], static_cast<float>(x[i]),
+                              out, count, i);
+}
+
 // The fit route's orders shapes. The pair is stored once and read by the two readings: this one
 // reads each order's own piece at A = 1, which is what an order's own value is, where the
 // per-argument shape seeds at its top order's piece and carries that piece's w(b) down the
@@ -1788,6 +1883,9 @@ extern "C" int BoysCudaUploadTables() {
     // Float lane.
     {
         float coeffs[kMaxCoeffs] = {};
+        // The coarsest pool in the monomial basis, packed at the offsets of the Chebyshev one, so
+        // the pieces, edges, degrees and counts above are the two forms' common reading.
+        float monoCoeffs[kMaxCoeffs] = {};
         int offset[33][kMaxPieces] = {};
         float a[33][kMaxPieces] = {};
         float b[33][kMaxPieces] = {};
@@ -1836,6 +1934,7 @@ extern "C" int BoysCudaUploadTables() {
                     }
 
                     coeffs[runningOffset + k] = detail::f32::kCoeffs[piece.offset + k];
+                    monoCoeffs[runningOffset + k] = detail::f32::kMonoCoeffs[piece.offset + k];
                 }
 
                 runningOffset += piece.deg + 1;
@@ -1845,6 +1944,20 @@ extern "C" int BoysCudaUploadTables() {
         }
 
         if (cudaMemcpyToSymbol(cCoeffs32, coeffs, sizeof(coeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        // The monomial scheme's pools for the float lane, copied as the double lane's are: only
+        // the pool, at the offsets above, and the seed's monomial form beside it.
+        if (cudaMemcpyToSymbol(dMonoCoeffs32, monoCoeffs, sizeof(monoCoeffs)) != cudaSuccess)
+        {
+            return 2;
+        }
+
+        if (cudaMemcpyToSymbol(dMonoBcoeffs32,
+                               detail::f32::kMonoBcoeffs.data(),
+                               sizeof(detail::f32::kMonoBcoeffs)) != cudaSuccess)
         {
             return 2;
         }
@@ -2482,6 +2595,15 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowMono(
     });
 }
 
+extern "C" int BoysCudaLaunchAllOrdersF32Mono(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32MonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
 // The float lane's rational route, one launcher per partition: the two scheme names a caller may
 // use differ in the report's row and not here, because the route's pair is stored in one form and
 // the two names reach one kernel.
@@ -2529,6 +2651,15 @@ extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
     int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
     return UnderForm(form, [&](auto kForm) {
         BoysAllOrdersF32NarrowOrdersMonoKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF32OrdersMono(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32OrdersMonoKernel<kForm()>
             <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
         return static_cast<int>(cudaGetLastError());
     });
@@ -2637,6 +2768,18 @@ extern "C" int BoysCudaLaunchSingleF16(
     });
 }
 
+// The half lane's fast region-B reading: the symbol a caller names is the choice here as it is one
+// launcher up, and the choice is the float lane's fast exponential.
+extern "C" int BoysCudaLaunchSingleF16Fast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysSingleF16FastKernel<kForm()>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
 extern "C" int BoysCudaLaunchAllOrdersF16(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
     return UnderForm(form, [&](auto kForm) {
@@ -2674,6 +2817,16 @@ extern "C" int BoysCudaLaunchAllOrdersF16NarrowMono(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
     return UnderForm(form, [&](auto kForm) {
         BoysAllOrdersF16LaneKernel<kForm(), Lane64NarrowMono, Lane32NarrowMono>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16Mono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64MonoFull, Lane32MonoFull>
             <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
                 n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
         return static_cast<int>(cudaGetLastError());
@@ -2754,6 +2907,16 @@ extern "C" int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
     return UnderForm(form, [&](auto kForm) {
         BoysOrdersF16LaneKernel<kForm(), Lane64NarrowMono, Lane32NarrowMono>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16OrdersMono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64MonoFull, Lane32MonoFull>
             <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
                 n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
         return static_cast<int>(cudaGetLastError());

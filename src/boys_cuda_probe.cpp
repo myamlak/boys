@@ -1944,15 +1944,16 @@ double ShapeResolution(const std::vector<DeviceProbeMeasurement>& measurements,
     return widest;
 }
 
-/// The refinement stage: a shape's tied entries, measured alone at a larger protocol, repeated, and
-/// voted on.
+/// The refinement stage: a shape's tied entries, measured alone at the refinement protocol,
+/// repeated, and voted on.
 ///
 /// The entries re-measured are the shape's fastest entry and every entry of it the main run could
-/// not place behind the fastest. Each run is a fresh pass over the tied set at \c passes * the
-/// refinement factor passes of \c rounds * the same factor rounds, with its own shuffle, ordered by
-/// the same within-round ratio rule the main run used. A run whose own rounds cannot place a rival
-/// contributes its leader alone, which is what makes the vote a vote rather than a re-run of the
-/// main statistic.
+/// not place behind the fastest. Each run is a fresh pass over the tied set at \c passes passes of
+/// \c rounds * the refinement factor rounds - the factor lengthens the run's rounds and not its
+/// passes, so a run is the refinement factor times the protocol it refines and not that factor
+/// squared - with its own shuffle, ordered by the same within-round ratio rule the main run used. A
+/// run whose own rounds cannot place a rival contributes its leader alone, which is what makes the
+/// vote a vote rather than a re-run of the main statistic.
 ///
 /// **The figure it ranks is the main run's figure**: each entry is read at both of the run's
 /// argument counts inside the round and the cell is the count-independent cost the two readings
@@ -2006,7 +2007,11 @@ void RefineShape(DeviceProbeRanking& clause,
 
     DeviceProbeRefinement stage;
     stage.runs = std::max(1, clamped.refinementRuns);
-    stage.passes = std::max(1, clamped.passes) * std::max(1, clamped.refinementFactor);
+    // ONE multiplication, not two - the same defect the host probe carried, at the same line of its
+    // own stage. The stage refines a tie by asking whether the leader holds up over more ROUNDS of the
+    // same comparison, so the factor lengthens the rounds and leaves the passes alone. Multiplying
+    // both made a run the factor SQUARED and the whole stage 125 times the protocol it refines.
+    stage.passes = std::max(1, clamped.passes);
     stage.rounds = std::max(1, clamped.rounds) * std::max(1, clamped.refinementFactor);
 
     // A name this class's own rows do not carry is not measured: the stage re-runs
@@ -2047,9 +2052,17 @@ void RefineShape(DeviceProbeRanking& clause,
     }
 
     std::vector<std::string> winners;
+    const auto stageStarted = std::chrono::steady_clock::now();
 
     for (int run = 0; run < stage.runs; ++run)
     {
+        std::fprintf(stderr,
+                     "boys-device-probe: refinement run %d of %d over %zu tied entry(s), %.1fs "
+                     "into the stage\n",
+                     run + 1, stage.runs, pool.size(),
+                     std::chrono::duration<double>(std::chrono::steady_clock::now() - stageStarted)
+                         .count());
+        std::fflush(stderr);
         // A fresh seed per run: repetitions of one shuffle would be one run taken
         // several times, and whatever a position in the round is worth would be
         // worth the same to the same entry every time.
@@ -2839,8 +2852,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     // offered it. The refusal is reported and the rows stand unmeasured.
     const int timedPasses = tablesResident ? clamped.passes : 0;
 
+    const auto probeStarted = std::chrono::steady_clock::now();
+
     for (int pass = 0; pass < timedPasses; ++pass)
     {
+        // Progress on stderr, not stdout: the report on stdout is what a recorded closure is made
+        // from, and a run that printed progress there would be a run whose report no longer matches
+        // its own format. Without this a reader cannot tell "measuring" from "hung".
+        std::fprintf(stderr, "boys-device-probe: pass %d of %d, %.1fs in\n", pass + 1, timedPasses,
+                     std::chrono::duration<double>(std::chrono::steady_clock::now() - probeStarted)
+                         .count());
+        std::fflush(stderr);
         DeviceProbePass record;
         std::vector<double> canaryMs;
         std::vector<std::vector<double>> passRounds;

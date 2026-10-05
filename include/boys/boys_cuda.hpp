@@ -110,6 +110,26 @@ enum class BoysStatus {
 /// single entry of the same precision takes the same option, as a template
 /// argument, so the two lanes' f32 single entries carry one choice between them.
 ///
+/// **Every class of this surface is also reachable by naming a policy.** Beside
+/// the named entries above and below, each class carries a policy-templated member
+/// of its own, `BoysCuda::AllOrdersF64WithPolicy<Policy>(...)`, that dispatches,
+/// while the call site compiles, to the entry the policy names:
+/// boys/boys_cuda_policy.hpp states the rule, the axes each class reads and the
+/// defaults. \c Policy defaults to this build's own row for the class
+/// (`DefaultPolicy<Precision::kFp64Device, Shape::kAllOrders, Device::kDevice>`),
+/// so a call that names no policy reaches the kernel the build's defaults name,
+/// and a policy whose combination has **no kernel** fails to compile, with the
+/// combination named, rather than resolving to a nearby entry.
+///
+/// The member carries the entry's name with `WithPolicy` after it, and not the
+/// entry's name alone, because a second function of a name makes that name an
+/// **overload set**, and the address of an overload set cannot be taken where the
+/// pointer type is deduced — a use this library's own tests make, handing
+/// `&BoysCuda::AllOrdersF64` to a helper that deduces its launch type. With the
+/// suffix each named entry stays the one function of its name: a call that names
+/// one, an address taken by name, and a call naming the class with a division form
+/// all reach exactly what they reached before.
+///
 /// All entries are asynchronous: the kernel is queued on the caller's
 /// stream and the call returns once the launch is accepted (errors are
 /// reported by the return status). Synchronize the stream (or use
@@ -209,6 +229,25 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. This is the one class of the surface whose rows
+    /// differ by the region-B exponential, so a policy naming either member
+    /// reaches that member's entry.
+    ///
+    /// **This class's entry is itself a template** (`SingleF32<RegionBExp>`), and
+    /// this member is a different name, so the two do not compete: the call naming
+    /// the entry keeps reaching it, and a call of this member naming no policy
+    /// reaches this build's row for the class, whose own member is that entry's
+    /// default region-B exponential (\c kDefaultDeviceRegionBExp, boys/accuracy.hpp).
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for; a
+    ///   combination it has none for is a compile error naming the combination.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kSingle, Device::kDevice>>
+    static BoysStatus SingleF32WithPolicy(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i) — all orders
     /// at every argument, the top order read per element.
     ///
@@ -239,6 +278,19 @@ public:
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kAllOrders, Device::kDevice>>
+    static BoysStatus AllOrdersF32WithPolicy(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every order
     /// at every argument of the batch, in one launch.
@@ -277,6 +329,17 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and a policy naming
+    /// the member the class has no kernel for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kAllN, Device::kDevice>>
+    static BoysStatus AllNF32WithPolicy(
+        int nmax, const double* x, float* out, std::size_t count, void* stream);
+
     /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
     /// lane's loosest per-region bound; the others are tighter).
     ///
@@ -297,6 +360,19 @@ public:
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class
+    /// reads; a policy naming the member the class has no kernel for is a compile
+    /// error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kSingle, Device::kDevice>>
+    static BoysStatus SingleF64WithPolicy(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i) — shape and
     /// layout as AllOrdersF32 (a per-element top order, order-major planes).
@@ -321,6 +397,19 @@ public:
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kAllOrders, Device::kDevice>>
+    static BoysStatus AllOrdersF64WithPolicy(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second partition of
     /// the double lane's fits: region A's pieces are cut per order instead of two to
@@ -1382,6 +1471,17 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and a policy naming
+    /// the member the class has no kernel for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kAllN, Device::kDevice>>
+    static BoysStatus AllNF64WithPolicy(
+        int nmax, const double* x, double* out, std::size_t count, void* stream);
+
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
     /// boundary (behind the BoysFp16 seam). Device pointers and stream
@@ -1412,6 +1512,19 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class
+    /// reads; a policy naming the member the class has no kernel for is a compile
+    /// error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kSingle, Device::kDevice>>
+    static BoysStatus SingleF16WithPolicy(
+        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+
     /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as AllOrdersF32
     /// (out[order * count + i] = F_order(x[i])), device pointers and
     /// stream contract as SingleF16.
@@ -1433,6 +1546,19 @@ public:
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kAllOrders, Device::kDevice>>
+    static BoysStatus AllOrdersF16WithPolicy(
+        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax in fp16 — the uniform-order
     /// batch of the fp16 lane, layout as AllNF32, device pointers and stream
@@ -1460,6 +1586,17 @@ public:
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and a policy naming
+    /// the member the class has no kernel for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kAllN, Device::kDevice>>
+    static BoysStatus AllNF16WithPolicy(
+        int nmax, const F16* x, F16* out, std::size_t count, void* stream);
 
     /// The fp16 counterparts of the float lane's other bodies: each entry
     /// below computes what the float entry of the same name computes
@@ -1899,3 +2036,11 @@ public:
 };
 
 } // namespace boys
+
+// The policy-templated members declared above - each class's entry under the name
+// <Entry>WithPolicy - their definitions, and the rule
+// they dispatch by. Last, because a definition of a class member needs the class
+// complete, and here so that a translation unit that includes this header gets
+// the layer with the surface it belongs to. The other order works too - the
+// policy header includes this one at its top for a caller who names it first.
+#include "boys/boys_cuda_policy.hpp"
