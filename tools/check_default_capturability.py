@@ -26,17 +26,22 @@ corroborated against `DeviceOptionPrecision x DeviceOptionQuestion` (`boys_cuda_
 seam's rows come from `BOYS_BUILD_DEFAULT_ROWS`. The axes of a policy come from the parameter list
 of `StatedEvalPolicy` and the enumerators of each axis's own header, found by name over
 `include/boys/*.hpp`. The measurement's own key - the classes a probe run ranks - comes from the
-probe's source: `kCellPrecisions`, `kSeamShapes`, `kSeamDeviceShapes` and `LaneOf` in
-`src/boys_probe.cpp`.
+probe's source: `kCellPrecisions`, `kSeamShapes` and `kSeamDeviceShapes`, and the class of the
+seam's own key each measured class is written into, from `ClassPrecisionOf` and `ClassShapeOf` -
+the two mappings the probe's own emitter resolves rows through.
 
-THE HOLE THIS EXISTS TO NAME. `Precision::kFp16` is documented as "half precision: the fp16 and
-bfloat16 entries" (`boys/boys.hpp`) - one lane, two formats, one key. The probe keys them as two
-classes (`OptionPrecision::kFp16` and `kBf16`) and folds both onto the one lane (`LaneOf`), so
-where the two classes' measured winners differ, one of the two cannot be captured as a default:
-the lane has one row and the format that does not own it has nowhere to be written. This check
-reads the fold off the probe's own source, names the class that cannot be captured, and - when a
-run's report is handed in with `--report` - holds the fold to the report's own verdict on the two
-half formats rather than to the prose in the seam.
+THE HOLE THIS EXISTS TO NAME. The probe carries two mappings and they answer two questions.
+`LaneOf` answers which lane's tables a class's cells are enumerated from, and there the two
+half formats are one lane: one engine, whose entries are declared once under the fp16 name, with
+the bf16 entries being that engine and the other format's store. `ClassPrecisionOf` answers which
+class of the seam's own key a measured default is written into, and there the two half formats are
+two classes - `Precision::kFp16` and `Precision::kBf16` (`boys/boys.hpp`), each an entry's own
+default. A fold in the first is the library's design and not a defect; a fold in the second is two
+measured classes resolving to one row, where only the row's own format can be the consumer's
+default and the other has nowhere to be written. This check reads the second fold off the probe's
+own source, names the class that cannot be captured, and - when a run's report is handed in with
+`--report` - holds the fold to the report's own verdict on the two half formats rather than to the
+prose in the seam.
 
 NO PROBE IS RUN. Every reading is textual, from the tree in front of this file.
 
@@ -524,14 +529,18 @@ def policy_axes() -> list[tuple[str, str]]:
 
 
 def probe_key() -> dict[str, object]:
-    """The classes a run of the option probe ranks, read from the probe's own source.
+    """The classes a run of the option probe ranks, and the seam class each one is written into.
 
-    The probe's key is not the seam's: it keys the bf16 entries as a class of their own and folds
-    them onto the fp16 lane (`LaneOf`), and it walks its own shape list beside the seam's. Reading
-    both from the source is what lets this check say which of the two keys is the coarser.
+    The probe's key is not the seam's, and the probe carries two mappings that are not each
+    other's either. `LaneOf` says which lane's tables a class's cells are enumerated from, and
+    the two half formats are one engine, so it folds them onto one lane. `ClassPrecisionOf` says
+    which class of the seam's own key a measured default resolves to, and there the two half
+    formats are two classes. Both are read here so that the check can say which of the two folds,
+    and the verdict rests on the second.
     """
     text = blank(read(PROBE_SRC))
-    result: dict[str, object] = {"cells": [], "seamShapes": [], "deviceShapes": [], "laneOf": {}}
+    result: dict[str, object] = {"cells": [], "seamShapes": [], "deviceShapes": [],
+                                 "laneOf": {}, "classPrecisionOf": {}, "classShapeOf": {}}
 
     for key, name in (("cells", "kCellPrecisions"), ("seamShapes", "kSeamShapes"),
                       ("deviceShapes", "kSeamDeviceShapes")):
@@ -541,43 +550,61 @@ def probe_key() -> dict[str, object]:
             result[key] = [cell.strip().split("::")[-1]
                            for cell in split_top_level(match.group(1)) if cell.strip()]
 
-    body = re.search(r"LaneOf\s*\([^)]*\)[^{]*\{(.*?)\n\}", text, re.S)
-    if body is not None:
-        result["laneOf"] = lane_fold(body.group(1), text[body.end():body.end() + 200])
+    result["laneOf"] = mapping_fold(text, "LaneOf", "Precision")
+    result["classPrecisionOf"] = mapping_fold(text, "ClassPrecisionOf", "Precision")
+    result["classShapeOf"] = mapping_fold(text, "ClassShapeOf", "Shape")
     return result
 
 
-def lane_fold(cases: str, tail: str) -> dict[str, str]:
-    """The class -> lane fold a `switch` states, read the way the compiler reads it.
+def mapping_fold(text: str, name: str, cell_type: str) -> dict[str, str]:
+    """The class -> cell fold a named mapping of the probe states.
+
+    Read at the declaration - `constexpr Precision ClassPrecisionOf(OptionPrecision)` - and not
+    at a call: both mappings are called throughout the probe, and a reader that took the first
+    call for the definition would read the cells of whatever class the first caller named.
+    """
+    head = re.search(r"\b" + re.escape(cell_type) + r"\s+" + re.escape(name)
+                     + r"\s*\([^)]*\)[^{]*\{", text)
+    if head is None:
+        return {}
+    end = text.find("\n}", head.end())
+    if end < 0:
+        return {}
+    return switch_fold(text[head.end():end], text[end:end + 200], cell_type)
+
+
+def switch_fold(cases: str, tail: str, cell_type: str) -> dict[str, str]:
+    """The class -> cell fold a `switch` states, read the way the compiler reads it.
 
     A run of `case` labels shares the statement under it, and a run that only `break`s takes the
-    function's own trailing `return`. `LaneOf` is written in both shapes - `case kFp16:` and
-    `case kBf16:` share one return, and `case kFp64:` breaks to the return after the switch - so a
-    reader that pairs one label with one `return` loses the fold's own default.
+    function's own trailing `return`. The probe's mappings are written in both shapes - `case
+    kFp16:` and `case kBf16:` share one return, and `case kFp64:` breaks to the return after the
+    switch - so a reader that pairs one label with one `return` loses the fold's own default.
     """
     fold: dict[str, str] = {}
     pending: list[str] = []
     broken: list[str] = []
     after_break = cases
-    for match in re.finditer(r"case\s+OptionPrecision::(k[A-Za-z0-9_]+)\s*:"
-                             r"|return\s+Precision::(k[A-Za-z0-9_]+)\s*;"
-                             r"|\bbreak\s*;", cases):
+    qualifier = r"(?:[A-Za-z_][A-Za-z0-9_]*::)*"
+    label = r"case\s+" + qualifier + r"(k[A-Za-z0-9_]+)\s*:"
+    returns = r"return\s+" + qualifier + re.escape(cell_type) + r"::(k[A-Za-z0-9_]+)\s*;"
+    for match in re.finditer(label + r"|" + returns + r"|\bbreak\s*;", cases):
         if match.group(1):
             pending.append(match.group(1))
         elif match.group(2):
-            for label in pending:
-                fold[label] = match.group(2)
+            for cell in pending:
+                fold[cell] = match.group(2)
             pending = []
         else:
             broken.extend(pending)
             pending = []
             after_break = cases[match.end():]
-    trailing = re.search(r"return\s+Precision::(k[A-Za-z0-9_]+)\s*;", after_break)
+    trailing = re.search(returns, after_break)
     if trailing is None:
-        trailing = re.search(r"return\s+Precision::(k[A-Za-z0-9_]+)\s*;", tail)
+        trailing = re.search(returns, tail)
     if trailing is not None:
-        for label in broken:
-            fold[label] = trailing.group(1)
+        for cell in broken:
+            fold[cell] = trailing.group(1)
     return fold
 
 
@@ -935,45 +962,103 @@ def main() -> int:
     # ---- the measurement's key against the seam's ------------------------------------------
     print()
     probe_cells = [str(cell) for cell in probe["cells"]]
-    lane_of = probe["laneOf"]
+    seam_shapes = [str(shape) for shape in probe["seamShapes"]]
     print(f"THE MEASUREMENT'S KEY, as src/boys_probe.cpp states it: kCellPrecisions = "
           f"{', '.join(probe_cells)}")
-    print(f"  the seam's own shapes it names: {', '.join(str(s) for s in probe['seamShapes'])}; "
+    print(f"  the seam's own shapes it names: {', '.join(seam_shapes)}; "
           f"the device questions: {', '.join(str(s) for s in probe['deviceShapes'])}")
 
-    lane_of = {k: v for k, v in lane_of.items()} if isinstance(lane_of, dict) else {}
-    folded_groups: dict[str, list[str]] = {}
+    # The probe carries two mappings and they answer two questions. `LaneOf` says which lane's
+    # tables a class's cells are enumerated from - and the two half formats are one engine, so it
+    # folds them onto one lane, which is an enumeration and not a class. `ClassPrecisionOf` says
+    # which class of the seam's own key a measured default is written into, and it is the one the
+    # probe's own emitter resolves rows through. The verdict rests on the second: a fold in the
+    # first is the library's design, a fold in the second is a measured class with no row of its
+    # own to be written into.
+    lane_of = probe["laneOf"] if isinstance(probe["laneOf"], dict) else {}
+    for cell in probe_cells:
+        if lane_of.get(cell) is not None:
+            print(f"  the lane {cell} is enumerated from: {lane_of[cell]}")
     if not lane_of:
-        failures.append("LaneOf could not be read from src/boys_probe.cpp: which class of the "
-                        "measurement's key each seam lane answers for is not known here, and a "
+        notes.append("LaneOf could not be read from src/boys_probe.cpp: which lane's tables each "
+                     "class of the measurement is enumerated from is not known here. It is the "
+                     "probe's enumeration and not its key, so the verdict below does not rest on "
+                     "it")
+
+    seam_fold = probe["classPrecisionOf"] if isinstance(probe["classPrecisionOf"], dict) else {}
+    shape_fold = probe["classShapeOf"] if isinstance(probe["classShapeOf"], dict) else {}
+    folded_groups: dict[str, list[str]] = {}
+
+    if not probe_cells:
+        failures.append("kCellPrecisions could not be read from src/boys_probe.cpp: the classes "
+                        "the measurement keys are not known here, and a check that cannot read "
+                        "its own key must not pass")
+    if not seam_shapes:
+        failures.append("kSeamShapes could not be read from src/boys_probe.cpp: the shapes the "
+                        "classes of the measurement are written for are not known here, and a "
                         "check that cannot read its own key must not pass")
-    else:
-        folded: dict[str, list[str]] = {}
+    if not seam_fold:
+        failures.append("ClassPrecisionOf could not be read from src/boys_probe.cpp: the class of "
+                        "the seam's own key each class of the measurement is written into is not "
+                        "known here, and a check that cannot read its own key must not pass")
+    if not shape_fold:
+        failures.append("ClassShapeOf could not be read from src/boys_probe.cpp: the shape cell of "
+                        "the seam's own key each class of the measurement resolves to is not known "
+                        "here, and a check that cannot read its own key must not pass")
+
+    if seam_fold:
+        classes: dict[str, list[str]] = {}
         for cell in probe_cells:
-            lane = lane_of.get(cell)
-            if lane is None:
-                failures.append(f"the probe's class {cell} maps to no lane of Precision: the two "
+            klass = seam_fold.get(cell)
+            if klass is None:
+                failures.append(f"the probe's class {cell} maps to no cell of Precision: the two "
                                 "keys cannot be compared")
                 continue
-            folded.setdefault(str(lane), []).append(cell)
-        folded_groups = folded
-        for lane, cell_list in sorted(folded.items()):
+            classes.setdefault(str(klass), []).append(cell)
+        folded_groups = classes
+        for klass, cell_list in sorted(classes.items()):
             if len(cell_list) > 1:
-                own = [cell for cell in cell_list if cell == lane]
-                others = [cell for cell in cell_list if cell != lane]
+                own = [cell for cell in cell_list if cell == klass]
+                others = [cell for cell in cell_list if cell != klass]
                 print(f"  FOLD: {len(cell_list)} class(es) of the measurement - "
-                      f"{', '.join(cell_list)} - share the one seam cell {lane}")
-                shapes = list(probe["seamShapes"]) or ["<shape list not read>"]
-                print(f"        the row of {lane} is written for {own[0] if own else cell_list[0]} "
-                      f"(the lane's own name); {', '.join(others)} has no cell of its own, over "
+                      f"{', '.join(cell_list)} - resolve to the one seam cell {klass}")
+                shapes = seam_shapes or ["<shape list not read>"]
+                owner = own[0] if own else cell_list[0]
+                print(f"        the row of {klass} is written for {owner} "
+                      f"(the cell's own name); {', '.join(others)} has no cell of its own, over "
                       f"{len(shapes)} shape(s)")
                 failures.append(
                     f"the measurement keys {', '.join(others)} and the seam's key cannot name it: "
-                    f"the class(es) resolve to the {lane} row, so a default measured for "
+                    f"the class(es) resolve to the {klass} row, so a default measured for "
                     f"{', '.join(others)} cannot be captured - a format-specific default needs a "
                     "format cell that Precision does not have")
             else:
-                print(f"  cell {cell_list[0]} -> {lane}")
+                print(f"  cell {cell_list[0]} -> {klass}")
+
+        # The property the fold above is one way of breaking: the class a measured default is
+        # written into has to be a class the seam's key reaches. Its cell has to be one Precision
+        # carries, and a row list of the library has to name the class that cell and the shape
+        # make - a measured default with no such row cannot be handed to a consumer at all.
+        for cell in probe_cells:
+            klass = seam_fold.get(cell)
+            if klass is None:
+                continue
+            if klass not in lane_members:
+                failures.append(f"the measurement's class {cell} resolves to the seam cell "
+                                f"{klass}, which is no member of Precision "
+                                f"({', '.join(lane_members)}): the seam's key cannot name it")
+                continue
+            for shape in seam_shapes if shape_fold else []:
+                seam_shape = shape_fold.get(shape)
+                if seam_shape is None:
+                    failures.append(f"the probe's shape {shape} maps to no member of Shape: the "
+                                    f"class it makes with {cell} cannot be compared")
+                    continue
+                if ("kHost", klass, seam_shape) not in key_set:
+                    failures.append(f"the measurement's class {cell} of {shape} resolves to the "
+                                    f"seam's class (kHost, {klass}, {seam_shape}), which no row "
+                                    "list of the library reaches: a default measured for it cannot "
+                                    "be written as a row")
 
     # ---- the device half: what a call naming no policy gets ---------------------------------
     form_name, exp_name, form_count, exp_count, policy_count = device_call_default()
