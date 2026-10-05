@@ -3,10 +3,13 @@
 //
 // The exit status is 0 whether or not a default was named — a refusal is one of
 // this tool's results, not a failure of it — so a script that wants the verdict
-// reads it from the text. The one run that fails is one whose option space does
-// not close, which the report's last block prints: a space whose cells do not add
-// up is a defect in the accounting and not a result, and a closure check that
-// could not fail would be a decoration.
+// reads it from the text. A run that measured fails in one of two ways: its
+// option space does not close (exit 1) — which the report's last block prints,
+// because a space whose cells do not add up is a defect in the accounting and
+// not a result, and a closure check that could not fail would be a decoration —
+// or an --emit-defaults write it was asked for cannot be made (exit 3). An
+// argument this tool does not read is refused (exit 2) before anything is
+// measured.
 #include "boys/boys_probe.hpp"
 
 #include <array>
@@ -78,8 +81,11 @@ void Usage() {
                "                     cannot be separated\n"
                "                     (default 5)\n"
                "  --refine-factor=N  how much longer each refinement run is than\n"
-               "                     one pass protocol: passes and rounds are both\n"
-               "                     multiplied by it (default 5)\n"
+               "                     one pass protocol. The stage refines a tie by\n"
+               "                     asking whether the leader holds up over more\n"
+               "                     rounds of the same comparison, so the factor\n"
+               "                     lengthens the ROUNDS and leaves the passes\n"
+               "                     alone (default 1)\n"
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
                "                     flagged as one that ran on a wandering\n"

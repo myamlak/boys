@@ -166,6 +166,21 @@ target_compile_features(boys PUBLIC cxx_std_20)
 target_compile_definitions(boys PUBLIC BoysFp16=1)
 boys_strict_warnings(boys)
 
+# The option probe's own translation unit carries one instantiation per cell of
+# the option space — every combination of every class the library declares, which
+# is what makes its report an account of the space rather than of a sample of it —
+# and each instantiation is a function the object format gives a section of its
+# own. The count passes what a COFF object holds by default, so the compiler is
+# told to use the large-address form of the same file. It is MSVC's spelling only
+# because COFF is where the limit is: the ELF tools this project also builds with
+# carry no such ceiling and need no flag. It is set on this source rather than on
+# the target, because nothing else here comes near the limit and a flag spread
+# over targets that do not need it is a fact about the build nobody can trace back
+# to a measurement.
+if (MSVC)
+    set_source_files_properties(src/boys_probe.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
+endif()
+
 # --- The multiply-add route -------------------------------------------------
 # The scalar lanes' fused multiply-add is an instruction where the target has
 # one and a call into the C runtime where it does not, and a Clenshaw

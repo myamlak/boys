@@ -170,6 +170,258 @@ bool NotCarried(const OptionProbeReport& report, const std::string& name) {
     return false;
 }
 
+// The distinct routes a lane's own fit table reports, read from the library the way
+// the probe reads them: a route has one row per region it supplies, so the route is
+// taken once, and that taken-once count is one factor of every class of that lane.
+std::vector<boys::FitRoute> DistinctRoutes(boys::Precision lane) {
+    const std::span<const boys::FitRouteInfo> table =
+        (lane == boys::Precision::kFp32 || lane == boys::Precision::kFp16)
+            ? boys::BoysFitRoutesF32()
+            : boys::BoysFitRoutes();
+    std::vector<boys::FitRoute> routes;
+
+    for (const boys::FitRouteInfo& row : table) {
+        if (std::find(routes.begin(), routes.end(), row.route) == routes.end()) {
+            routes.push_back(row.route);
+        }
+    }
+
+    return routes;
+}
+
+// Whether each lane's all-N entry declares, beside its own call, the overload that
+// takes the arguments as already sorted: the one factor of a class's space that no
+// axis table reports.
+//
+// The question is asked of the library's declarations, which is how the probe asks it
+// too. The sorted call is a second cell of every combination of an all-N class rather
+// than an axis any cell names, so a space that lost the member is short by a factor
+// only the declaration can show, and a class read as the cells it carries would read
+// the loss as the space.
+//
+// The fp64 lane's entry carries the overload, so its answer is read from the call
+// itself. The other lanes' entries declare their own call alone, and their answers are
+// written as templates over the lane's own argument type, which is what makes the
+// requirement deferred rather than a diagnostic where the trait is written: an
+// expression that depends on no template parameter is resolved where it stands, and a
+// call that finds no overload there is an error rather than an answer.
+constexpr bool kFp64AllNDeclaresSorted = requires(int nmax, const double* x, double* out,
+                                                  std::size_t count,
+                                                  boys::BoysSortedArgs sorted) {
+    boys::BoysAllN(nmax, x, out, count, sorted);
+};
+template <typename Lane = float>
+constexpr bool kFp32AllNDeclaresSorted = requires(int nmax, const Lane* x, Lane* out,
+                                                  std::size_t count,
+                                                  boys::BoysSortedArgs sorted) {
+    boys::BoysAllNF32(nmax, x, out, count, sorted);
+};
+#if BoysFp16
+template <typename Lane = boys::F16>
+constexpr bool kHalfAllNDeclaresSorted = requires(int nmax, const Lane* x, Lane* out,
+                                                  std::size_t count,
+                                                  boys::BoysSortedArgs sorted) {
+    boys::BoysAllNF16(nmax, x, out, count, sorted);
+};
+template <typename Lane = boys::Bf16>
+constexpr bool kBf16AllNDeclaresSorted = requires(int nmax, const Lane* x, Lane* out,
+                                                  std::size_t count,
+                                                  boys::BoysSortedArgs sorted) {
+    boys::BoysAllNBf16(nmax, x, out, count, sorted);
+};
+#else
+// The half lane's entries leave the surface with the seam, so there is no declaration
+// to resolve and the answer is false without one; the parameter is here so that both
+// builds spell the trait the same way.
+template <typename Lane = void>
+constexpr bool kHalfAllNDeclaresSorted = false;
+template <typename Lane = void>
+constexpr bool kBf16AllNDeclaresSorted = false;
+#endif
+
+// The answer for one class's lane, taken from the declarations above.
+constexpr bool LaneAllNDeclaresSorted(OptionPrecision precision) noexcept {
+    switch (precision) {
+    case OptionPrecision::kFp64:
+        return kFp64AllNDeclaresSorted;
+    case OptionPrecision::kFp32:
+        return kFp32AllNDeclaresSorted<>;
+    case OptionPrecision::kFp16:
+        return kHalfAllNDeclaresSorted<>;
+    case OptionPrecision::kBf16:
+        return kBf16AllNDeclaresSorted<>;
+    case OptionPrecision::kFp32Device:
+        break;
+    }
+
+    return false;
+}
+
+// One class of the option space: the precision its cells were enumerated for and the
+// question they answer. That pair is the class key the report prints a class under,
+// and it is what makes one combination of the axes two cells of two classes.
+struct SpaceClass {
+    OptionPrecision precision = OptionPrecision::kFp64;
+    boys::OptionProbeShape shape = boys::OptionProbeShape::kAllOrders;
+
+    bool operator==(const SpaceClass&) const = default;
+};
+
+// The classes one book is spread over, in the order the book carries them: a book is
+// enumerated class by class, so a class's cells stand together in it.
+std::vector<SpaceClass> ClassesOf(std::span<const boys::OptionProbeCell> book) {
+    std::vector<SpaceClass> classes;
+
+    for (const boys::OptionProbeCell& cell : book) {
+        const SpaceClass klass{cell.precision, cell.shape};
+
+        if (std::find(classes.begin(), classes.end(), klass) == classes.end()) {
+            classes.push_back(klass);
+        }
+    }
+
+    return classes;
+}
+
+// One class's share of one book, read in a single pass: the lane its cells came from,
+// how many of them there are, the packing-axis members they are instantiated at, how
+// many of them are the call that takes the arguments as already sorted, and how many
+// this build serves and refuses.
+struct ClassCells {
+    boys::Precision lane = boys::Precision::kFp64;
+    std::size_t count = 0;
+    std::size_t sorted = 0;
+    std::size_t served = 0;
+    std::size_t refused = 0;
+    std::vector<boys::PackAxis> packs;
+};
+
+ClassCells ReadClass(std::span<const boys::OptionProbeCell> book, const SpaceClass& klass) {
+    ClassCells read;
+
+    for (const boys::OptionProbeCell& cell : book) {
+        if (cell.precision != klass.precision || cell.shape != klass.shape) {
+            continue;
+        }
+
+        if (read.count == 0) {
+            read.lane = cell.lane;
+        }
+
+        ++read.count;
+
+        if (std::find(read.packs.begin(), read.packs.end(), cell.pack) == read.packs.end()) {
+            read.packs.push_back(cell.pack);
+        }
+
+        if (cell.sorted) {
+            ++read.sorted;
+        }
+
+        if (cell.served) {
+            ++read.served;
+        } else {
+            ++read.refused;
+        }
+    }
+
+    return read;
+}
+
+// The class as the report spells it, for a failure message: "fp64 all-orders".
+std::string ClassLabel(const SpaceClass& klass) {
+    return std::string(boys::PrecisionName(klass.precision)) + " " +
+           boys::OptionProbeShapeName(klass.shape);
+}
+
+// The cells one class carries, read from the library's own axis tables for that
+// class's lane and from the class's own entry:
+//
+//   the routes the class's lane reports its fits in, each taken once, times the
+//   library's schemes, times the library's partitions of the fitted regions, times the
+//   packing-axis members the class's entry carries, times the library's division forms,
+//   times the library's region-B exponentials, times the sorted-arguments member where
+//   that class's lane declares the overload.
+//
+// Every factor but the last two is a table this test asks the library for, so a class
+// enumerated short of a route, a scheme, a partition, a form or an exponential is a
+// number here rather than a smaller class that still adds up. The packing axis is the
+// one factor a shape's entry can refuse, and which members a class carries is read from
+// its own cells; the sorted member is a property of the declaration alone.
+std::size_t ClassProduct(const SpaceClass& klass, const ClassCells& read) {
+    const bool sortedOverload =
+        klass.shape == boys::OptionProbeShape::kAllN && LaneAllNDeclaresSorted(klass.precision);
+
+    return DistinctRoutes(read.lane).size() * boys::BoysEvalSchemes().size() *
+           boys::BoysFitGranularities().size() * read.packs.size() *
+           boys::BoysDivisionForms().size() * boys::BoysRegionBExps().size() *
+           (sortedOverload ? 2 : 1);
+}
+
+// One class held to the library's own axes, and the cells the library's axes admit for
+// it answered back - the number the caller sums into the space's own total. This is
+// the property every class of the space has, whether the report accounts for it in the
+// measured book or in the device lane's:
+//
+//   * the class's cells are the product of the axes the library reports for its lane
+//     and the members its own entry admits (ClassProduct above);
+//   * the packing-axis members its cells carry are members of the library's own set,
+//     short of no member but the one a one-order entry refuses - the orders axis - and
+//     short of nothing at all where the class carries every member;
+//   * the sorted-argument member is the declarations': an all-N class whose lane
+//     declares the overload carries both calls of every combination, and no other
+//     class carries a sorted cell at all.
+//
+// A class that fails any of the three is a class enumerated against a space that is
+// not the library's, which is the defect this file exists to catch.
+std::size_t CheckClassAgainstTheLibrary(const SpaceClass& klass, const ClassCells& read) {
+    const std::span<const boys::PackAxisInfo> axes = boys::BoysPackAxes();
+    const std::size_t product = ClassProduct(klass, read);
+
+    EXPECT_EQ(read.count, product)
+        << ClassLabel(klass) << " carries " << read.count << " cell(s) where this library's "
+        << "axes give the class " << product;
+
+    for (const boys::PackAxis axis : read.packs) {
+        const bool reported = std::any_of(
+            axes.begin(), axes.end(),
+            [axis](const boys::PackAxisInfo& row) { return row.axis == axis; });
+
+        EXPECT_TRUE(reported)
+            << ClassLabel(klass) << " carries a packing axis the library does not report";
+    }
+
+    EXPECT_LE(read.packs.size(), axes.size())
+        << ClassLabel(klass) << " carries more packing axes than the library reports";
+
+    if (read.packs.size() < axes.size()) {
+        EXPECT_EQ(read.packs.size() + 1, axes.size())
+            << ClassLabel(klass)
+            << " is short of more than the one packing axis member an entry refuses";
+
+        EXPECT_TRUE(std::find(read.packs.begin(), read.packs.end(), boys::PackAxis::kArguments) !=
+                    read.packs.end())
+            << ClassLabel(klass) << " is short of a packing axis, and the member an entry "
+            << "refuses is the orders axis";
+    }
+
+    const bool sortedOverload =
+        klass.shape == boys::OptionProbeShape::kAllN && LaneAllNDeclaresSorted(klass.precision);
+
+    if (sortedOverload) {
+        EXPECT_EQ(read.sorted * 2, read.count)
+            << ClassLabel(klass) << " declares the sorted-arguments overload and carried "
+            << read.sorted << " sorted cell(s) of " << read.count
+            << ": the member is both calls of every combination";
+    } else {
+        EXPECT_EQ(read.sorted, 0u)
+            << ClassLabel(klass) << " carries a sorted-argument cell and this class's lane "
+            << "declares no overload that takes the tag";
+    }
+
+    return product;
+}
+
 TEST(ProbeTest, EveryReportedOptionRunsInArithmeticThisBuildCarries) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -350,7 +602,7 @@ TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
         {"f16-io",
          boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-11},
         {"bf16-io",
-         boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-9},
+         boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-8},
     };
 
     for (const auto& [name, expected] : batchRows) {
@@ -382,7 +634,7 @@ TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
             formatTerm = 0x1p-11;
         } else if (row.precision == boys::OptionPrecision::kBf16) {
             lane = boys::Precision::kFp16;
-            formatTerm = 0x1p-9;
+            formatTerm = 0x1p-8;
         } else {
             continue;
         }
@@ -710,6 +962,7 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     ProbeOptions options = Timed();
     options.passes = 1;
     options.rounds = 2;
+    options.refinementFactor = 2;
     const OptionProbeReport report = boys::RunOptionProbe(options);
 
     ASSERT_EQ(report.pairedRounds, 2);
@@ -762,11 +1015,16 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
                   : OptionProbeDefaultHow::kChosenAmongEquals);
 
     EXPECT_EQ(stage.runs, report.options.refinementRuns);
-    EXPECT_EQ(stage.passes, report.options.passes * report.options.refinementFactor)
-        << "the re-run was not at a larger protocol than the run that could not order";
+    // The stage is the same protocol run longer, and the factor is what lengthens it: it
+    // scales the ROUNDS and leaves the passes alone, so a run is this many times the
+    // protocol and not this many times this many. Both counts are read against the factor
+    // by equality, and the protocol's being longer is the rounds' own comparison below.
+    EXPECT_EQ(stage.passes, report.options.passes)
+        << "the refinement lengthened the passes, which the factor does not do";
     EXPECT_EQ(stage.rounds, report.options.rounds * report.options.refinementFactor);
     EXPECT_EQ(stage.runLeaders.size(), static_cast<std::size_t>(stage.runs));
-    EXPECT_GT(stage.rounds, report.pairedRounds);
+    EXPECT_GT(stage.rounds, report.pairedRounds)
+        << "the re-run was not at a larger protocol than the run that could not order";
     EXPECT_FALSE(stage.pool.empty());
     EXPECT_NE(stage.pool.end(), std::find(stage.pool.begin(), stage.pool.end(), stage.winner))
         << "the refinement named a winner it did not re-measure";
@@ -858,6 +1116,7 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     options.passes = 1;
     options.rounds = 2;
     options.refinementRuns = 6;
+    options.refinementFactor = 2;
     const OptionProbeReport report = boys::RunOptionProbe(options);
 
     ASSERT_FALSE(report.refinements.empty()) << "a tied class was decided with no runs behind it";
@@ -886,9 +1145,11 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
                                      : OptionProbeDefaultHow::kChosenAmongEquals))
         << "the way-it-was-reached does not match what the vote named";
 
+    EXPECT_EQ(stage.passes, report.options.passes)
+        << "the refinement lengthened the passes, which the factor does not do";
+    EXPECT_EQ(stage.rounds, report.options.rounds * report.options.refinementFactor);
     EXPECT_GT(stage.rounds, report.pairedRounds)
         << "the re-run was not at a longer protocol than the run that could not order";
-    EXPECT_GT(stage.passes, report.options.passes);
 
     // Every leader is one of the options that were re-measured, and the winner
     // is one of the leaders: the vote counts the runs it ran.
@@ -933,6 +1194,58 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
         EXPECT_NE(report.confidence.find(stage.winner), std::string::npos) << report.confidence;
         EXPECT_NE(text.find("could not be separated"), std::string::npos);
     }
+}
+
+// The refinement factor is a claim about one thing: how much longer a refinement
+// run is than one pass protocol. The stage refines a tie by asking whether the
+// leader holds up over more ROUNDS of the same comparison, so the factor lengthens
+// the ROUNDS and leaves the passes alone — a run is the factor times the protocol,
+// never the factor times the factor. Applying it to both counts squares it: at the
+// shipped factor the stage became 25 passes' worth of rounds where 5 were asked
+// for, which is what made the refinement unaffordable and the reruns at it void.
+//
+// The two counts are pinned against the protocol the report itself carries, and a
+// stage that lengthened the passes fails the first of them outright. The third
+// assertion is the one the defect is read off whatever line carried it: the stage's
+// own length is the factor's multiple of the main run and not its square.
+TEST(ProbeTest, TheRefinementFactorLengthensTheRoundsAndNotThePasses) {
+    ProbeOptions options = Timed();
+    options.passes = 1;
+    options.rounds = 2;
+    options.refinementRuns = 2;
+    options.refinementFactor = 3;
+    const OptionProbeReport report = boys::RunOptionProbe(options);
+
+    ASSERT_EQ(report.pairedRounds, 2) << "the main run is the protocol the stage refines";
+    ASSERT_EQ(report.options.refinementFactor, 3);
+
+    // The certified double lane's class: two paired rounds form no band, so this
+    // class cannot be ordered and is the one a refinement stage is run over.
+    const boys::OptionProbeRefinement* stage = nullptr;
+
+    for (const boys::OptionProbeRefinement& refinement : report.refinements) {
+        if (refinement.precision == OptionPrecision::kFp64 &&
+            refinement.shape == boys::OptionProbeShape::kAllOrders) {
+            stage = &refinement;
+        }
+    }
+
+    ASSERT_NE(stage, nullptr) << "a class of more than one option was left unrefined";
+    EXPECT_TRUE(stage->ran);
+
+    EXPECT_EQ(stage->passes, report.options.passes)
+        << "the factor lengthened the passes: it lengthens the rounds of the same comparison "
+           "and leaves the passes alone, so a run is the protocol lengthened and not squared";
+    EXPECT_EQ(stage->rounds, report.options.rounds * report.options.refinementFactor)
+        << "the factor did not lengthen the rounds exactly once";
+
+    EXPECT_EQ(stage->passes * stage->rounds,
+              report.pairedRounds * report.options.refinementFactor)
+        << "the refinement run is " << stage->passes << " pass(es) by " << stage->rounds
+        << " round(s) against a protocol of " << report.pairedRounds
+        << " paired round(s): the stage is the factor squared, not the factor";
+    EXPECT_GT(stage->rounds, report.options.rounds)
+        << "the refinement run is no longer a protocol than the run it refines";
 }
 
 // The owner's acceptance rule, stated where it can be checked: a run that
@@ -1439,71 +1752,47 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     ASSERT_FALSE(report.cells.empty());
     EXPECT_FALSE(report.granularities.empty());
 
-    // The routes a lane's cells are enumerated over: the double lane's own fit
-    // table, or the single-precision engine's, which is the table the float and
-    // half lanes' fits are reported in. Read from the library's own report of
-    // each lane rather than from one table for all of them.
-    const auto routes_of = [](boys::Precision lane) {
-        std::vector<boys::FitRoute> routes;
-        const std::span<const boys::FitRouteInfo> table =
-            (lane == boys::Precision::kFp32 || lane == boys::Precision::kFp16)
-                ? boys::BoysFitRoutesF32()
-                : boys::BoysFitRoutes();
-
-        for (const boys::FitRouteInfo& row : table) {
-            if (std::find(routes.begin(), routes.end(), row.route) == routes.end()) {
-                routes.push_back(row.route);
-            }
-        }
-
-        return routes;
-    };
-
     // The multiplier is the library's full-accuracy setting and not an axis of
     // the space: a class is the product of the axes the library reports and no
     // factor stands for a choice the library no longer offers.
 
-    // One book per precision class, each the product of its own lane's axes, so the
-    // space the report accounts for is the library's: a class measured at fewer cells
-    // than its lane serves is the defect this book exists to prevent.
-    std::vector<boys::OptionPrecision> classes = {boys::OptionPrecision::kFp64,
-                                                  boys::OptionPrecision::kFp32};
-#if BoysFp16
-    classes.push_back(boys::OptionPrecision::kFp16);
-    classes.push_back(boys::OptionPrecision::kBf16);
-#endif
+    // The space this book accounts for, class by class. A class is a precision and a
+    // question shape and not a lane: the shapes do not admit the same axes, the two
+    // half formats are two classes, and a class measured at fewer cells than its own
+    // entry admits is the defect this book exists to prevent. Every class is held to
+    // the product of the axes the library reports for its own lane, read from the
+    // library's tables and the class's own cells, so a class enumerated against a
+    // space that is not the library's is a failure at that class rather than a total
+    // that happens to add up.
+    const std::vector<SpaceClass> classes = ClassesOf(report.cells);
 
     std::size_t expected = 0;
 
-    for (const boys::OptionPrecision precision : classes) {
-        const boys::OptionProbeCell* sample = nullptr;
-
-        for (const boys::OptionProbeCell& cell : report.cells) {
-            if (cell.precision == precision) {
-                sample = &cell;
-                break;
-            }
-        }
-
-        ASSERT_NE(sample, nullptr) << "no cell of the space is enumerated for this precision";
+    for (const SpaceClass& klass : classes) {
+        const ClassCells read = ReadClass(report.cells, klass);
 
         // Every cell of one class was enumerated from one lane, which is the
         // library's answer and not the test's: the two half formats are one lane
         // and two classes.
         for (const boys::OptionProbeCell& cell : report.cells) {
-            if (cell.precision == precision) {
-                EXPECT_EQ(cell.lane, sample->lane)
+            if (cell.precision == klass.precision && cell.shape == klass.shape) {
+                EXPECT_EQ(cell.lane, read.lane)
                     << cell.name << " was enumerated from another lane than its own class's";
             }
         }
 
-        expected += routes_of(sample->lane).size() * boys::BoysEvalSchemes().size() *
-                    report.granularities.size() * boys::BoysPackAxes().size() *
-                    boys::BoysDivisionForms().size() * boys::BoysRegionBExps().size();
+        expected += CheckClassAgainstTheLibrary(klass, read);
     }
 
     EXPECT_EQ(report.cells.size(), expected)
-        << "the coverage is not the product of the axes the library reports, lane by lane";
+        << "the book is not the space the library's axes admit: the total is the sum of the "
+        << "cells every class of it can be instantiated at";
+
+    // The book carries the classes the report names and no others: a class the report
+    // offers a figure for and enumerates no cells for is a class the space is short of,
+    // and a class of cells the report does not name is one nothing accounts for.
+    EXPECT_EQ(classes.size(), report.classes.size())
+        << "the book's classes are not the classes the report names";
 
     std::set<std::string> names;
 
@@ -1883,8 +2172,7 @@ TEST(ProbeTest, APartitionRowPrintsItsOwnFiguresInterval) {
 }
 
 // What the probe does not measure is stated in its own output, with the counts: the cells
-// the library refuses, the call shapes the axes are not crossed with, and the lanes the
-// design leaves out.
+// the library refuses and the lanes the design leaves out.
 TEST(ProbeTest, TheTextStatesWhatIsNotMeasured) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1909,94 +2197,78 @@ TEST(ProbeTest, TheTextStatesWhatIsNotMeasured) {
     EXPECT_NE(text.find("counted in the closure below"), std::string::npos);
 }
 
-// The distinct routes a lane's own fit table reports, read from the library the way
-// the probe reads them: a route has one row per region it supplies, so the route is
-// taken once.
-std::vector<boys::FitRoute> DistinctRoutes(boys::Precision lane) {
-    const std::span<const boys::FitRouteInfo> table =
-        (lane == boys::Precision::kFp32 || lane == boys::Precision::kFp16) ? boys::BoysFitRoutesF32()
-                                                                         : boys::BoysFitRoutes();
-    std::vector<boys::FitRoute> routes;
-
-    for (const boys::FitRouteInfo& row : table) {
-        if (std::find(routes.begin(), routes.end(), row.route) == routes.end()) {
-            routes.push_back(row.route);
-        }
-    }
-
-    return routes;
-}
-
 // The option space is one space and not two: the cells of every class this build
-// carries - the four precision classes this machine measures and the device lane's
-// book, which it cannot run - are counted against the product of the axes the library
-// reports, every cell of the space is in exactly one state, and the verdict the
-// report's last line prints is that arithmetic's. The defect this pins is the one the
-// two halves of the report left: each was printed and the two were never reconciled
-// against one another, so the whole space had no number.
+// carries - the question shapes of the four precision lanes this machine measures, and
+// the device lane's book, which it cannot run - are counted against the product of the
+// axes the library reports, every cell of the space is in exactly one state, and the
+// verdict the report's last line prints is that arithmetic's. The defect this pins is
+// the one the two halves of the report left: each was printed and the two were never
+// reconciled against one another, so the whole space had no number.
 TEST(ProbeTest, TheClosurePutsEveryCellOfTheSpaceInOneState) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const boys::OptionProbeClosure closure = boys::OptionProbeSpaceClosure(report);
 
-    // The classes the space is spread over, read off the two books rather than written
-    // down here: the classes this machine measures, and the device lane's beside them.
-    std::vector<OptionPrecision> classes;
+    // The precision lanes the space is spread over, read off the two books rather than
+    // written down here: the lanes this machine measures, and the device lane's beside
+    // them. A lane is not a class: the classes are keyed on the lane and the question
+    // shape together, and they are counted below.
+    std::vector<OptionPrecision> lanes;
 
     for (const boys::OptionProbeCell& cell : report.cells) {
-        if (std::find(classes.begin(), classes.end(), cell.precision) == classes.end()) {
-            classes.push_back(cell.precision);
+        if (std::find(lanes.begin(), lanes.end(), cell.precision) == lanes.end()) {
+            lanes.push_back(cell.precision);
         }
     }
 
     for (const boys::OptionProbeCell& cell : report.deviceCells) {
-        if (std::find(classes.begin(), classes.end(), cell.precision) == classes.end()) {
-            classes.push_back(cell.precision);
+        if (std::find(lanes.begin(), lanes.end(), cell.precision) == lanes.end()) {
+            lanes.push_back(cell.precision);
         }
     }
 
-    ASSERT_EQ(classes.size(), 5u)
-        << "the space is the four classes this machine measures and the device lane's book";
+    ASSERT_EQ(lanes.size(), 5u)
+        << "the space is the four precision lanes this machine measures and the device lane's "
+           "book";
 
-    EXPECT_EQ(closure.classes, classes.size());
+    // The class list the space is spread over is keyed on the two parts of a class and not on
+    // the precision alone: one combination of the six run-time axes is a cell of every class
+    // whose entries carry it, and the entries of one shape are not the entries of another. The
+    // report's own list is that reading; the device lane's book is the one class beside it.
+    EXPECT_EQ(closure.classes, report.classes.size() + 1)
+        << "the space is spread over the classes the report names, and the device lane's book "
+           "beside them";
 
-    // The axis product, derived here from the library's own tables: one class's cells are
-    // its own lane's routes, crossed with the schemes, partitions, packing axes and
-    // division forms the library reports for that lane.
+    // The space class by class, each class held to the product of the axes the library
+    // reports for its own lane: the classes are the ones the two books carry, and every
+    // class of both is checked the same way, so the device lane's book is held to the
+    // library's axes exactly as the measured classes are. The packing axis is the one
+    // factor a shape can be short of, and the class's own cells state the shortfall: a
+    // one-order shape's entry evaluates one order, so it has one order to put in a lane
+    // and the orders axis is not an axis on it, which leaves that class at half its
+    // lane's product. A book that dropped one combination of a ladder shape is a failure
+    // at its class here, and not a smaller total that still adds up.
     std::size_t expected = 0;
     std::size_t refusedCells = 0;
     std::size_t deviceServed = 0;
     std::size_t deviceRefused = 0;
 
-    for (const OptionPrecision precision : classes) {
-        const bool device = precision == OptionPrecision::kFp32Device;
-        const std::vector<boys::OptionProbeCell>& book = device ? report.deviceCells : report.cells;
-        std::size_t cells = 0;
-        boys::Precision lane = boys::Precision::kFp64;
+    const std::vector<boys::OptionProbeCell>* books[] = {&report.cells, &report.deviceCells};
 
-        for (const boys::OptionProbeCell& cell : book) {
-            if (cell.precision != precision) {
-                continue;
-            }
+    for (const std::vector<boys::OptionProbeCell>* book : books) {
+        const bool device = book == &report.deviceCells;
 
-            ++cells;
-            lane = cell.lane;
+        for (const SpaceClass& klass : ClassesOf(*book)) {
+            const ClassCells read = ReadClass(*book, klass);
+
+            expected += CheckClassAgainstTheLibrary(klass, read);
 
             if (device) {
-                if (cell.served) {
-                    ++deviceServed;
-                } else {
-                    ++deviceRefused;
-                }
-            } else if (!cell.served) {
-                ++refusedCells;
+                deviceServed += read.served;
+                deviceRefused += read.refused;
+            } else {
+                refusedCells += read.refused;
             }
         }
-
-        ASSERT_GT(cells, 0u) << "no cell of the space is enumerated for this class";
-
-        expected += DistinctRoutes(lane).size() * boys::BoysEvalSchemes().size() *
-                    boys::BoysFitGranularities().size() * boys::BoysPackAxes().size() *
-                    boys::BoysDivisionForms().size() * boys::BoysRegionBExps().size();
     }
 
     EXPECT_EQ(closure.admitted, expected)
@@ -2036,8 +2308,11 @@ TEST(ProbeTest, TheClosurePutsEveryCellOfTheSpaceInOneState) {
     EXPECT_EQ(text.find("the verdict: FAIL"), std::string::npos) << text;
 
     // The whole space's total, printed as one number beside the axis product that generates
-    // it: the sum the two halves of the report never carried.
-    EXPECT_NE(text.find("the axes' own product over the " + std::to_string(classes.size()) +
+    // it: the sum the two halves of the report never carried. The line is printed over the
+    // classes the closure counted, which is the report's own class list and the device
+    // lane's book beside it - the count the line names is that one, and not the lanes the
+    // space is spread over.
+    EXPECT_NE(text.find("the axes' own product over the " + std::to_string(closure.classes) +
                         " class(es): "),
               std::string::npos)
         << text;
@@ -2077,22 +2352,22 @@ TEST(ProbeTest, AClosureOverASpaceTheRunNeverReachedFails) {
         << text;
 }
 
-// The run's own table is closed with the space it was taken over: every row it carries is
-// either a place the space owes this request or a row that is no cell of the space at all
-// - the call shapes the axes are not crossed with, which the report names in prose. The
-// cells their crossing would add are counted, so the paragraph's debt is a number.
-TEST(ProbeTest, TheClosureCountsTheRowsThatAreNoCellOfTheSpace) {
+// The run's own table is closed with the space it was taken over: every row it carries is a
+// place the space owes this request. The probe once measured the call shapes the axes were not
+// crossed with at their own default policy alone - one row per shape and per lane, the all-N
+// grouping and its sorted-argument overload among them - and reported the cells their crossing
+// would add as outstanding work. That is the defect this instrument exists to remove, so the
+// count of rows that are no cell of the space is now zero, and it is read off the report's own
+// table rather than taken from the closure.
+TEST(ProbeTest, EveryRowTheRunCarriesIsACellOfTheSpace) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const boys::OptionProbeClosure closure = boys::OptionProbeSpaceClosure(report);
+
+    ASSERT_GT(report.measurements.size(), 0u);
 
     EXPECT_EQ(closure.rows, report.measurements.size());
     EXPECT_EQ(closure.rows, closure.rowsOwed + closure.shapesNotCrossed);
     EXPECT_TRUE(closure.closed);
-
-    // Which rows they are, read here from the report's own table rather than off the
-    // closure: a row whose name matches no cell of either book.
-    std::size_t outside = 0;
-    std::size_t crossed = 0;
 
     for (const OptionProbeMeasurement& row : report.measurements) {
         bool cell = false;
@@ -2105,66 +2380,20 @@ TEST(ProbeTest, TheClosureCountsTheRowsThatAreNoCellOfTheSpace) {
             cell = cell || (candidate.name == row.name);
         }
 
-        if (cell) {
-            continue;
-        }
-
-        ++outside;
-
-        // The cells of the row's own class, less the cell the row itself stands at. The
-        // rows outside the space are one per shape and per lane, so the row's own lane is
-        // not always the double lane's: it is the lane the row's class's cells were
-        // enumerated from, read here from the report's own cell book, which the probe
-        // filled from the library. The two half formats are one lane in the library and
-        // two classes here, so the class does not answer this and the cell does.
-        bool hasLane = false;
-        boys::Precision rowLane = boys::Precision::kFp64;
-
-        for (const boys::OptionProbeCell& candidate : report.cells) {
-            if (candidate.precision == row.precision) {
-                rowLane = candidate.lane;
-                hasLane = true;
-                break;
-            }
-        }
-
-        EXPECT_TRUE(hasLane) << row.name
-                             << " is a row outside the space and no cell of the report's books "
-                                "was enumerated for its class";
-
-        const std::size_t perClass = DistinctRoutes(rowLane).size() *
-                                     boys::BoysEvalSchemes().size() *
-                                     boys::BoysFitGranularities().size() *
-                                     boys::BoysPackAxes().size() *
-                                     boys::BoysDivisionForms().size() *
-                                     boys::BoysRegionBExps().size();
-        crossed += perClass - 1;
+        EXPECT_TRUE(cell) << row.name
+                          << " is a row of this report and no cell of the space: every call "
+                             "shape is a class of it and every row of one a cell";
     }
 
-    EXPECT_EQ(closure.shapesNotCrossed, outside);
-    EXPECT_EQ(closure.crossedOwed, crossed);
-    EXPECT_GT(closure.shapesNotCrossed, 0u)
-        << "the all-N grouping and its sorted-argument overload are rows of this report and "
-           "no cell of the space";
+    EXPECT_EQ(closure.shapesNotCrossed, 0u)
+        << "a row that is no cell of the space is a shape the axes were not crossed with";
+    EXPECT_EQ(closure.crossedOwed, 0u)
+        << "there is no crossing left owed: every shape is enumerated at its own axes";
 
     const std::string text = boys::FormatOptionProbe(report);
 
-    EXPECT_NE(text.find("the call shapes the axes are not crossed with"), std::string::npos) << text;
-
-    for (const OptionProbeMeasurement& row : report.measurements) {
-        bool cell = false;
-
-        for (const boys::OptionProbeCell& candidate : report.cells) {
-            cell = cell || (candidate.name == row.name);
-        }
-
-        if (cell) {
-            continue;
-        }
-
-        EXPECT_NE(text.find(row.name), std::string::npos)
-            << row.name << " is a row outside the space and the closure does not name it";
-    }
+    EXPECT_EQ(text.find("the call shapes the axes are not crossed with"), std::string::npos)
+        << "the report named a debt the space no longer has";
 }
 
 // A request that named a set is closed with the rest of the space stated: the cells no name

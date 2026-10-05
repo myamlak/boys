@@ -105,8 +105,18 @@ struct ProbeOptions {
 
     /// How much longer each refinement run is than the pass protocol above: the
     /// refinement re-measures only the tied options, so it can spend more per
-    /// option. Its passes and rounds are \c passes and \c rounds times this.
-    int refinementFactor = 5;
+    /// option. The stage refines a tie by asking whether the leader holds up over
+    /// more ROUNDS of the same comparison, so this lengthens the run's \c rounds
+    /// and leaves its \c passes alone - a run is this many times the protocol, not
+    /// this many times this many. Multiplying both, which this did, made a run the
+    /// factor squared and the whole stage 125 times the protocol it refines.
+    ///
+    /// The default is 1: a refinement run is then exactly as long as the protocol
+    /// it refines, and the whole stage costs \c refinementRuns protocols per class
+    /// that needed one. The vote is taken over the runs and the runs are what
+    /// decide, so longer runs buy precision the vote does not read - and a stage
+    /// that refines a measurement must not cost a large multiple of it.
+    int refinementFactor = 1;
 
     /// The options to measure, named as the report prints them. Empty measures
     /// every option this build offers.
@@ -284,6 +294,18 @@ struct OptionProbeMeasurement {
     /// option is only ordered against options of the same shape.
     OptionProbeShape shape = OptionProbeShape::kAllOrders;
 
+    /// Whether the call this figure was measured through takes the arguments as
+    /// already sorted: the axis the all-N class carries beside the six where its
+    /// entry declares that overload, and false for every other cell.
+    ///
+    /// The six axes above are the combination the row runs and this is the call it
+    /// ran: the two members of this axis resolve to one policy, and the figures
+    /// beside this row are the ones the member measured — the sorted call skips
+    /// the sort of the run's arguments the other call pays for — so a reader
+    /// comparing two figures that differ only here is comparing two calls of one
+    /// combination.
+    bool sorted = false;
+
     /// The arithmetic the option ran in, named by the library's own backend
     /// table (see backend::BoysBackends).
     std::string arithmetic;
@@ -446,6 +468,24 @@ struct OptionProbeClass {
     /// question shape, in that order — "fp64 all-orders".
     std::string name;
 
+    /// How many combinations this class has: the product of the lane's own axis
+    /// table over the six run-time axes, less the members the class's entry
+    /// refuses. Read from the library by the class's own enumeration, so a class
+    /// whose shape carries one axis fewer reports the smaller number.
+    std::size_t possible = 0;
+
+    /// How many of them the library serves this build.
+    std::size_t served = 0;
+
+    /// How many of them the run placed a row for. Short of \c served only when
+    /// the run was narrowed by \c ProbeOptions::only or the class's cells were
+    /// owed an arithmetic or a body this build does not carry; a class measured
+    /// short of its own count is visible as this number against \c served.
+    std::size_t measured = 0;
+
+    /// How many of them the library refuses, with its own reason, for this build.
+    std::size_t refused = 0;
+
     /// The bound every row of this class documents, read from the library.
     double bound = 0.0;
 
@@ -459,6 +499,27 @@ struct OptionProbeClass {
     /// The leader's cost per argument, nanoseconds.
     double leaderNsPerArgument = 0.0;
 
+    /// The fastest option's own combination, all seven axes of the policy its
+    /// cell names, each spelled the way the library spells that axis's member.
+    /// A row's name states the axes its combination moves away from the class's
+    /// default and leaves the rest implicit, so the fastest option of a class is
+    /// stated here in full rather than inferred from a name. Empty exactly when
+    /// \c leader is.
+    std::string leaderAxes;
+
+    /// The entry this class names: the leader where the class's own rounds placed
+    /// every rival behind it, and otherwise the option the class's refinement stage
+    /// voted for. Empty exactly when \c leader is.
+    ///
+    /// The two differ where a class's rounds left its top options tied and the
+    /// vote named one the printed figures did not put first. Where they differ this
+    /// is the class's answer: the stage ran over the class's own tied set alone, so
+    /// the vote is a second reading of the same measurement and the reading the
+    /// class states. Every reader of the class's answer reads this field — the
+    /// report's prose and the build-defaults seam both — so the two cannot name
+    /// different options for one class.
+    std::string named;
+
     /// The options this class's rounds could not place behind the leader. Empty
     /// when the class is ordered.
     std::vector<std::string> unplaced;
@@ -469,7 +530,7 @@ struct OptionProbeClass {
     /// single option: one entry is not a ranking.
     bool ordered = false;
 
-    /// How the entry this class names — its leader — was reached.
+    /// How the entry this class names — \c named — was reached.
     /// \c kNone for a class that produced no measured option.
     OptionProbeDefaultHow how = OptionProbeDefaultHow::kNone;
 
@@ -506,6 +567,14 @@ struct OptionProbeCell {
     /// in the library and two classes here, so this tells their books apart.
     OptionPrecision precision = OptionPrecision::kFp64;
 
+    /// The question this cell answers, which is half of the class key beside the
+    /// precision above. One combination of the six run-time axes is a cell of
+    /// every class whose entries carry it, and the entries of one shape are not
+    /// the entries of another: the cell is measured through the entry of *this*
+    /// shape at its own axes, so the shape is part of the cell and not a label
+    /// the report adds.
+    OptionProbeShape shape = OptionProbeShape::kAllOrders;
+
     /// The precision lane whose fit table and whose carriage answer this cell was
     /// enumerated from. The half lanes are one lane at one budget, enumerated as
     /// \c kFp16.
@@ -532,6 +601,18 @@ struct OptionProbeCell {
     /// division form: both members are served at every cell of the other axes,
     /// and the member is part of the combination an option runs.
     RegionBExp regionBExp = kDefaultHostRegionBExp;
+
+    /// Whether this cell's call takes the arguments as already sorted, which is
+    /// the axis the all-N class carries beside the six where its entry declares
+    /// that overload, and false everywhere else.
+    ///
+    /// The axis is a property of the call and not of a combination: no policy
+    /// names it, the two members resolve to one policy, and both are the same
+    /// question answered at the same axes. It is a cell of this space all the
+    /// same, because the two calls a consumer chooses between are two costs for
+    /// that one answer, and a space that carried one of them would report the
+    /// class's fastest call as a call nothing made.
+    bool sorted = false;
 
     /// Whether this build serves the cell, so a served cell has an option row in
     /// this report unless the run was narrowed by ProbeOptions::only, or the cell
@@ -828,14 +909,54 @@ struct OptionProbeReport {
     /// the clock differently.
     std::string confidence = "not measured";
 
-    /// The refinement stages this run took: one entry per precision whose reference
-    /// class the main run left tied. Empty when every reference class was ordered by
-    /// the main run or held a single option.
+    /// The refinement stages this run took: one entry per class the main run could
+    /// not order, each holding that class's own tied set and vote. The reference
+    /// class's stage stands first where it has one, and the row that stage's vote
+    /// named is \c recommended; the classes that tied besides it follow in the
+    /// enumeration's own order, so no class's vote is dropped for being someone
+    /// else's. Empty when no class needed a stage.
     std::vector<OptionProbeRefinement> refinements;
 
     /// Whether the report ends with a default for the caller to take: true
     /// exactly when \c recommended names an option.
     bool hasDefault = false;
+};
+
+/// One class's own four counts inside \c OptionProbeClosure, so that the space's
+/// totals are readable class by class and a class short of its own cells is a
+/// number on a line of its own rather than a difference buried in a sum.
+///
+/// The four are the class's own enumeration of its cells: \c possible is the
+/// product of the class's lane's axes less the axis members its entry refuses,
+/// \c served is the share of them this build's library serves, \c refused is the
+/// rest with the library's own reason printed in the coverage above, and
+/// \c measured is the cells this run placed a figure for. \c possible is
+/// \c served plus \c refused for every class, and \c measured is at most
+/// \c served; a class measured short of its own is visible as that difference.
+///
+/// \ingroup boys
+struct OptionProbeClassCount {
+    /// The precision this class is.
+    OptionPrecision precision = OptionPrecision::kFp64;
+
+    /// The question shape this class is.
+    OptionProbeShape shape = OptionProbeShape::kAllOrders;
+
+    /// The class's whole key as a report prints it: "fp64 all-orders".
+    std::string name;
+
+    /// The cells this class has, read from its own lane's axes.
+    std::size_t possible = 0;
+
+    /// Of those, the cells this build's library serves.
+    std::size_t served = 0;
+
+    /// Of those, the cells this run placed a figure for.
+    std::size_t measured = 0;
+
+    /// Of those, the cells the library refuses for this build, each with its own
+    /// reason in the coverage above.
+    std::size_t refused = 0;
 };
 
 /// The option space counted: every cell of every class this build enumerates, each
@@ -883,8 +1004,10 @@ struct OptionProbeReport {
 ///
 /// \ingroup boys
 struct OptionProbeClosure {
-    /// Classes the space is spread over: the precision classes this machine
-    /// measures, plus the device lane's book.
+    /// Classes the space is spread over: one per (precision, shape) the library
+    /// declares an entry for, plus the device lane's book. A precision is not a
+    /// class on its own, because a shape's entry is what a cell's leaf calls and
+    /// the shapes do not admit the same axes.
     std::size_t classes = 0;
 
     /// The cells the library's own axes admit across those classes: the space's
@@ -938,6 +1061,26 @@ struct OptionProbeClosure {
     /// count the verdict fails on.
     std::size_t unaccounted = 0;
 
+    /// Classes whose own four counts do not add up: a class whose served and refused
+    /// cells are not its held count of its cells, or whose cells are not the cells
+    /// this closure's own walk enumerated for it. The per-class reading of
+    /// \c unaccounted, and a class short of its own is a number here even when the
+    /// totals still agree.
+    ///
+    /// Zero for every run whose closure closes. This is not the same question as a
+    /// class measured short of its cells: a run narrowed by \c ProbeOptions::only
+    /// leaves classes measured short and their counts in order, which is the run
+    /// the request asked for.
+    std::size_t classesUnaccounted = 0;
+
+    /// The class-by-class sums of \c perClass, which the totals above are held to:
+    /// \c classPossible against \c total, \c classServed plus \c classRefused against
+    /// \c classPossible, and \c classMeasured against \c measured.
+    std::size_t classPossible = 0;
+    std::size_t classServed = 0;
+    std::size_t classMeasured = 0;
+    std::size_t classRefused = 0;
+
     /// Rows this run's own option table carries: \c OptionProbeReport::measurements.
     std::size_t rows = 0;
 
@@ -959,6 +1102,19 @@ struct OptionProbeClosure {
 
     /// Whether the closure holds; see this struct's own note.
     bool closed = false;
+
+    /// The same counts class by class, in the order the space's classes are
+    /// enumerated: one entry per class, each carrying its own cells, the share of
+    /// them this build serves and refuses, and the share this run measured. The
+    /// totals above are the sum of these, and the report prints them one line each,
+    /// so a class measured short of its own is visible without the reader
+    /// subtracting.
+    ///
+    /// The device lane's book is an entry here too, keyed by \c kFp32Device: this
+    /// host runs none of its cells, so its \c measured is zero and its
+    /// \c possible and \c served are its own, which is the reading a class the
+    /// machine cannot run is owed.
+    std::vector<OptionProbeClassCount> perClass;
 };
 
 /// Counts the option space one report was taken over; see \c OptionProbeClosure.
