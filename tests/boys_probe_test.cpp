@@ -85,6 +85,35 @@ const OptionProbeMeasurement* Find(const OptionProbeReport& report, const std::s
     return nullptr;
 }
 
+// The certified double lane's all-orders class, read from the library the way the
+// probe reads it: every name below is formed against this class's own row, so a
+// test that moves an axis names the cell that row moved the axis on.
+using DoubleAllOrders = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+
+// The name the probe prints one cell of the certified double lane's all-orders class
+// under: that class's own row, read from the library, with a segment for each axis on
+// which the named cell departs from it and every segment the library's own spelling of
+// the member. Every axis this does not name is the row's, so the cells these tests
+// reach are the row's own cell with the partition and the scheme moved, and the row's
+// own cell is `batch-fp64` under it - the cell that departs on no axis is the cell the
+// class's call compiles when it names no policy, whatever combination the seam gives
+// that class as its row.
+std::string DoubleCellName(boys::FitGranularity granularity, boys::EvalScheme scheme) {
+    std::string name = "batch";
+
+    if (granularity != DoubleAllOrders::kGranularity) {
+        name += "-";
+        name += boys::GranularityName(granularity);
+    }
+
+    if (scheme != DoubleAllOrders::kScheme) {
+        name += "-";
+        name += boys::EvalSchemeName(scheme);
+    }
+
+    return name + "-fp64";
+}
+
 // The printed line an option's row occupies, so a test about what a row says
 // reads the row and not the prose around it. Empty when the row is not printed.
 std::string RowLine(const std::string& text, const std::string& name) {
@@ -494,17 +523,24 @@ TEST(ProbeTest, NothingTheLibraryOffersGoesUnreported) {
 }
 
 // The reference bound the report prints is the library's, not a number written
-// in the probe: it is what the library's own accessor answers for the certified
-// lane at the default policy's axes.
+// in the probe: it is what the library's own accessor answers for the anchor cell at
+// the anchor's own axes - the cell every ratio is in units of, and not another
+// combination's figure standing beside it.
 TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
-    const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-        boys::Precision::kFp64, boys::kDefaultFitRoute, boys::kDefaultEvalScheme,
-        boys::kDefaultPackAxis, boys::kDefaultFitGranularity, boys::kDefaultDivisionForm);
+    const OptionProbeMeasurement* anchor = Find(report, report.referenceOption);
+
+    ASSERT_NE(anchor, nullptr) << "the report anchors on a row that is not one of its own";
+
+    const boys::AccuracyFigure figure =
+        boys::BoysAccuracyGuaranteed(boys::Precision::kFp64, anchor->route, anchor->scheme,
+                                     anchor->pack, anchor->granularity, anchor->division);
 
     ASSERT_TRUE(figure.available) << figure.reason;
     EXPECT_DOUBLE_EQ(report.referenceBound, figure.value);
+    EXPECT_DOUBLE_EQ(report.referenceBound, anchor->bound)
+        << "the anchor's own bar is not the figure the report prints as the comparison's floor";
 }
 
 // The accuracy column is measured whether or not a cost was: the values a lane
@@ -579,21 +615,24 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
 
 // A row is judged against the figure the policy it runs publishes, and the probe asks the
 // library for that figure rather than rebuilding it from an axis tuple. The two are not the
-// same question: the batch entries of the float and the half lanes take a defaulted policy,
-// so a bar written out as (the shipped partition, the default division form) names a
-// combination no entry under that row runs - at a seam whose row is the plain reciprocal
-// that bar is 1.5e-7 where the policy publishes 2.5e-7, and the row is reported ABOVE BOUND
-// against a figure its own form never promised. The division-form axis carries the same
-// exposure one axis down: a cell runs at its own form, so its bar is asked at that form and
-// a cell of the plain form is not judged at the refined form's figure.
+// same question: the class's own cell - the one this class's name denotes - is the cell the
+// class's call compiles when it names no policy, which is the row this build's seam states
+// for it, so the bar and the figure come from one combination. A bar composed from another
+// combination names an arithmetic no entry under that row runs: at a seam whose row is the
+// plain reciprocal a bar at (the shipped partition, the refined reciprocal) is 1.5e-7 where
+// the policy publishes 2.5e-7, and the row is reported ABOVE BOUND against a figure its own
+// form never promised. The division-form axis carries the same exposure one axis down: a
+// cell runs at its own form, so its bar is asked at that form and a cell of the plain form
+// is not judged at the refined form's figure.
 //
 // The bar is asserted against the library's own answer, never against a number written
 // here: a seam that names another row moves both sides of the comparison together.
 TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
-    // The batch rows: the entry takes no policy, so the bar is the class's own guarantee.
-    // The two half formats add their own term beside the base the lane publishes.
+    // The batch rows: the entry takes no policy, so the bar is the class's own guarantee,
+    // each format asking it of its own class. The two half formats add their own term
+    // beside the base their lane publishes.
     const double fp32Own =
         boys::DefaultGuarantee<boys::Precision::kFp32, boys::Shape::kAllOrders>().value;
 
@@ -602,7 +641,7 @@ TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
         {"f16-io",
          boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-11},
         {"bf16-io",
-         boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-8},
+         boys::DefaultGuarantee<boys::Precision::kBf16, boys::Shape::kAllOrders>().value + 0x1p-8},
     };
 
     for (const auto& [name, expected] : batchRows) {
@@ -1048,12 +1087,26 @@ TEST(ProbeTest, ThePairsAreFormedInsideTheRounds) {
 
     ASSERT_FALSE(report.referenceOption.empty());
     ASSERT_FALSE(report.passes.empty());
-    EXPECT_EQ(report.referenceOption, "batch-fp64")
-        << "the anchor is the option book's choice, not the winner of the comparison it anchors";
 
     const OptionProbeMeasurement* reference = Find(report, report.referenceOption);
     ASSERT_NE(reference, nullptr);
     ASSERT_TRUE(reference->measured);
+
+    // The anchor is a cell of the double all-orders class chosen for the reading and
+    // not the winner of the comparison it anchors, which is why it is stated as this
+    // combination: the shipped partition, on the arguments axis, at the shipped route
+    // and scheme, in the build's own division form and exponential - the cell the
+    // probe's own anchor has always been, whatever name the class grammar gives it.
+    EXPECT_EQ(reference->precision, boys::OptionPrecision::kFp64)
+        << "the anchor is no cell of the certified double lane";
+    EXPECT_EQ(reference->shape, boys::OptionProbeShape::kAllOrders);
+    EXPECT_EQ(reference->route, boys::FitRoute::kChebyshev);
+    EXPECT_EQ(reference->scheme, boys::EvalScheme::kSplitClenshaw);
+    EXPECT_EQ(reference->pack, boys::PackAxis::kArguments);
+    EXPECT_EQ(reference->granularity, boys::FitGranularity::kCoarsest);
+    EXPECT_EQ(reference->division, boys::kDefaultDivisionForm);
+    EXPECT_EQ(reference->regionBExp, boys::kDefaultHostRegionBExp)
+        << "the anchor moved with the seam, and a unit that moves with the answer is no unit";
 
     EXPECT_DOUBLE_EQ(reference->ratioToReference, 1.0);
     EXPECT_DOUBLE_EQ(reference->ratioLo, 1.0);
@@ -1846,15 +1899,16 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
         EXPECT_STREQ(forms[i].name, boys::DivisionFormName(forms[i].form));
     }
 
-    // The no-axis cell of the double lane, at each form. The default
-    // form's carries the name the shape row has always had, because that row runs the
-    // default policy and therefore divides in it; the other two carry the library's own
-    // spelling of the member beside it, and the three names differ.
+    // The double lane's own cell, at each form: the cell that departs from that class's
+    // row on this axis and on no other. The row's own form carries the class's own name -
+    // the name with no segment, because the row is the combination the class's call
+    // compiles - and the other two carry the library's own spelling of the member beside
+    // it, so the three names differ.
     std::set<std::string> names;
 
     for (const boys::DivisionFormInfo& form : forms)
     {
-        const std::string name = form.form == boys::kDefaultDivisionForm
+        const std::string name = form.form == DoubleAllOrders::kDivision
                                      ? std::string("batch-fp64")
                                      : std::string("batch-") + form.name + "-fp64";
 
@@ -1864,7 +1918,8 @@ TEST(ProbeTest, TheDivisionFormAxisIsEnumeratedAndRanked) {
 
         ASSERT_NE(row, nullptr) << name << " is not an option this run measured";
         EXPECT_EQ(row->division, form.form) << name << " is measured at a form it does not name";
-        EXPECT_EQ(row->granularity, boys::FitGranularity::kCoarsest) << name;
+        EXPECT_EQ(row->granularity, DoubleAllOrders::kGranularity)
+            << name << " is not the row's cell: its partition is not the one the row reads";
     }
 
     // Ranked against each other, not in three classes of their own: this is the
@@ -1915,14 +1970,15 @@ TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
         EXPECT_STREQ(exps[i].name, boys::RegionBExpName(exps[i].exp));
     }
 
-    // The no-axis cell of the double lane, at each member: the host default's carries the name
-    // the shape row has always had, because that row runs the default policy and therefore
-    // seeds its ladders with it, and the other carries the library's own spelling of the
-    // member beside it. The two names differ.
+    // The double lane's own cell, at each member: the cell that departs from that class's
+    // row on this axis and on no other. The row's own member carries the class's own name -
+    // the name with no segment, because the row is the combination the class's call
+    // compiles - and the other carries the library's own spelling of the member beside it.
+    // The two names differ.
     std::set<std::string> names;
 
     for (const boys::RegionBExpInfo& exp : exps) {
-        const std::string name = exp.exp == boys::kDefaultHostRegionBExp
+        const std::string name = exp.exp == DoubleAllOrders::kRegionBExp
                                      ? std::string("batch-fp64")
                                      : std::string("batch-") + exp.name + "-fp64";
 
@@ -1932,7 +1988,8 @@ TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
 
         ASSERT_NE(row, nullptr) << name << " is not an option this run measured";
         EXPECT_EQ(row->regionBExp, exp.exp) << name << " is measured at a member it does not name";
-        EXPECT_EQ(row->granularity, boys::FitGranularity::kCoarsest) << name;
+        EXPECT_EQ(row->granularity, DoubleAllOrders::kGranularity)
+            << name << " is not the row's cell: its partition is not the one the row reads";
     }
 
     // Ranked against each other, not in two classes of their own: this is the class the
@@ -1992,7 +2049,11 @@ TEST(ProbeTest, TheUniformPartitionIsEnumeratedAndMeasured) {
 
     ASSERT_NE(uniform, nullptr) << "this build's partition table carries no uniform partition";
 
-    for (const std::string name : {"uniform-fp64", "uniform-horner-fp64"}) {
+    // The double lane's cell at the uniform partition, at each scheme this build carries:
+    // the cell that departs from that class's row on the partition axis alone and, one
+    // scheme over, on the scheme axis too.
+    for (const boys::EvalSchemeInfo& scheme : boys::BoysEvalSchemes()) {
+        const std::string name = DoubleCellName(boys::FitGranularity::kUniform, scheme.scheme);
         const OptionProbeMeasurement* measured = Find(report, name);
 
         ASSERT_NE(measured, nullptr) << name << " is a cell of the option space the library "
@@ -2093,8 +2154,14 @@ TEST(ProbeTest, APartitionRowIsJudgedByTheEntrysWholeDomainFigure) {
 
     ASSERT_NE(narrow, nullptr) << "this build's partition table carries no narrow partition";
 
-    const OptionProbeMeasurement* measured = Find(report, "narrow-fp64");
-    const OptionProbeMeasurement* shipped = Find(report, "batch-fp64");
+    // The two cells this test compares are the double lane's all-orders class with the
+    // partition axis moved and every other axis left at that class's own row, so the
+    // comparison is between partitions of one arithmetic and of one entry's accuracy,
+    // and the cells are named the way the class's row names them.
+    const OptionProbeMeasurement* measured =
+        Find(report, DoubleCellName(boys::FitGranularity::kNarrow, DoubleAllOrders::kScheme));
+    const OptionProbeMeasurement* shipped =
+        Find(report, DoubleCellName(boys::FitGranularity::kCoarsest, DoubleAllOrders::kScheme));
     ASSERT_NE(measured, nullptr);
     ASSERT_NE(shipped, nullptr);
 
@@ -2110,7 +2177,7 @@ TEST(ProbeTest, APartitionRowIsJudgedByTheEntrysWholeDomainFigure) {
         << "the partition's own figure was carried with no interval at all";
 
     EXPECT_TRUE(measured->meetsBound)
-        << "narrow-fp64 delivered " << measured->maxError << " against the entry's figure of "
+        << measured->name << " delivered " << measured->maxError << " against the entry's figure of "
         << measured->bound;
 }
 
@@ -2128,7 +2195,10 @@ TEST(ProbeTest, TheVerdictDoesNotMoveWithTheWorkloadRange) {
     const OptionProbeReport wholeReport = boys::RunOptionProbe(whole);
     const OptionProbeReport fittedReport = boys::RunOptionProbe(fitted);
 
-    for (const std::string name : {"narrow-fp64", "narrow-horner-fp64"}) {
+    // Both schemes this build carries, at the narrow partition, every other axis at the
+    // double lane's own row: the cells are named the way that row names them.
+    for (const boys::EvalSchemeInfo& scheme : boys::BoysEvalSchemes()) {
+        const std::string name = DoubleCellName(boys::FitGranularity::kNarrow, scheme.scheme);
         const OptionProbeMeasurement* overWhole = Find(wholeReport, name);
         const OptionProbeMeasurement* overFitted = Find(fittedReport, name);
         ASSERT_NE(overWhole, nullptr) << name;
@@ -2150,7 +2220,8 @@ TEST(ProbeTest, APartitionRowPrintsItsOwnFiguresInterval) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
     const std::string text = boys::FormatOptionProbe(report);
 
-    const OptionProbeMeasurement* measured = Find(report, "narrow-fp64");
+    const OptionProbeMeasurement* measured =
+        Find(report, DoubleCellName(boys::FitGranularity::kNarrow, DoubleAllOrders::kScheme));
     ASSERT_NE(measured, nullptr);
 
     const std::string row = RowLine(text, measured->name);

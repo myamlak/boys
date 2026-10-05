@@ -804,9 +804,14 @@ struct OptionProbeReport {
     /// reporting a band it could not form.
     int pairedRounds = 0;
 
-    /// The option every ratio is formed against: the library's default
-    /// double-precision entry when the run measured it, else the first measured
-    /// option of that precision, else the first measured option.
+    /// The option every ratio is formed against: the double lane's unmoved batch
+    /// cell - the shipped partition, on the arguments axis, at the shipped route
+    /// and scheme, in the build's own division form and region-B exponential -
+    /// when the run measured it, else the first measured option of that lane,
+    /// else the first measured option. It is the cell and not the name: a cell's
+    /// name is read against its class's own row, and the row is what a measurement
+    /// of that class decides, so the anchor is resolved by its combination and
+    /// stays the same arithmetic in every build.
     std::string referenceOption;
 
     /// Its own cost per argument, nanoseconds, at the lower quartile of its rounds.

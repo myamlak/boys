@@ -678,6 +678,166 @@ Buffers MakeBuffers(const Workload& work) {
     return buffers;
 }
 
+/// The combination a class's call sites compile when they name no policy: the
+/// row this build's seam gives that class, one cell per axis of the policy.
+///
+/// **The class's own cell of the option space is this row's combination, and
+/// nothing else.** A call site that names no policy compiles \c DefaultPolicy,
+/// which is the policy this row states, so the cell a class's own name denotes
+/// and the figure the class's own policy publishes are two readings of one
+/// arithmetic. A combination read off the seam's five instead is a combination
+/// the class's entries run only where the row spells the five, which is why both
+/// sides are read from this one row rather than composed a second time.
+struct ClassRow {
+    FitRoute route;             ///< the fit the class's entries evaluate
+    EvalScheme scheme;          ///< the scheme they sum it in
+    PackAxis pack;              ///< the axis the packed entries vectorise over
+    FitGranularity granularity; ///< the partition their tables are read from
+    DivisionForm division;      ///< the form their steps divide in
+    RegionBExp regionBExp;      ///< the member their region-B ladders are seeded with
+};
+
+/// The row a class the seam states no row for is read and named against: the
+/// build's own point, which is the combination \c EvalPolicy names.
+///
+/// A seam that carries a row list is read instead of the one the five compose, so
+/// a class its list omits has no default policy at all and fails to compile where
+/// it is asked for (the seam's own control, \c build_defaults_rows.hpp). Such a
+/// class has no own cell either - a call naming no policy does not compile to
+/// reach one - and this is the point its cells are named against instead: the
+/// build's own five, which is what every class of a build with no list resolves
+/// to. It is the same reading the writer takes for a class its run ranked no cell
+/// of, and it is stated here as one point rather than spelled per class.
+constexpr ClassRow kBuildPointRow = {kDefaultFitRoute,     kDefaultEvalScheme,
+                                     kDefaultPackAxis,     kDefaultFitGranularity,
+                                     kDefaultDivisionForm, kDefaultHostRegionBExp};
+
+/// The precision cell of the library's own class key for one of the probe's
+/// lanes.
+///
+/// The two half formats are one arithmetic and two classes, so the probe's bf16
+/// class is the library's bf16 class here where the engine's lane is \c LaneOf's
+/// answer: the row a class resolves to is keyed by the format a return is stored
+/// in, and a row read from the other half's class would be another class's
+/// arithmetic.
+constexpr Precision ClassPrecisionOf(OptionPrecision precision) noexcept {
+    switch (precision)
+    {
+    case OptionPrecision::kBf16:
+        return Precision::kBf16;
+    case OptionPrecision::kFp16:
+        return Precision::kFp16;
+    case OptionPrecision::kFp32:
+        return Precision::kFp32;
+    case OptionPrecision::kFp64:
+    case OptionPrecision::kFp32Device:
+        break;
+    }
+
+    return Precision::kFp64;
+}
+
+/// The shape cell of the library's own class key for one of the probe's shapes.
+constexpr Shape ClassShapeOf(OptionProbeShape shape) noexcept {
+    switch (shape)
+    {
+    case OptionProbeShape::kSingle:
+        return Shape::kSingle;
+    case OptionProbeShape::kFixedN:
+        return Shape::kFixedN;
+    case OptionProbeShape::kAllN:
+        return Shape::kAllN;
+    case OptionProbeShape::kAllNAtOrders:
+        return Shape::kAllNAtOrders;
+    case OptionProbeShape::kAllOrders:
+        break;
+    }
+
+    return Shape::kAllOrders;
+}
+
+/// Whether this build's seam states a row for one class of the library's key.
+///
+/// Read from the table itself rather than from a list written here: \c kCarried
+/// is the seam's own answer, and it is answered without an instantiation, so a
+/// class the seam omits is a class whose row is not to be read rather than one
+/// whose missing row is a build error inside the probe.
+template <OptionPrecision kPrecision, OptionProbeShape kShape>
+constexpr bool RowCarriedFor() noexcept {
+    return detail::DefaultPolicyRow<Device::kHost, ClassPrecisionOf(kPrecision),
+                                    ClassShapeOf(kShape)>::kCarried;
+}
+
+/// The row one class of the probe's own key resolves to, or the build's own point
+/// where the seam states no row for it.
+template <OptionPrecision kPrecision, OptionProbeShape kShape>
+constexpr ClassRow RowOrBuildPoint() noexcept {
+    if constexpr (RowCarriedFor<kPrecision, kShape>())
+    {
+        using Policy = DefaultPolicy<ClassPrecisionOf(kPrecision), ClassShapeOf(kShape)>;
+
+        return ClassRow{Policy::kRoute,       Policy::kScheme, Policy::kPack,
+                        Policy::kGranularity, Policy::kDivision, Policy::kRegionBExp};
+    }
+    else
+    {
+        return kBuildPointRow;
+    }
+}
+
+/// The row one class's cells are named against, at the class's own shape.
+template <OptionPrecision kPrecision>
+constexpr ClassRow ClassRowOfShape(OptionProbeShape shape) noexcept {
+    switch (shape)
+    {
+    case OptionProbeShape::kSingle:
+        return RowOrBuildPoint<kPrecision, OptionProbeShape::kSingle>();
+    case OptionProbeShape::kAllOrders:
+        return RowOrBuildPoint<kPrecision, OptionProbeShape::kAllOrders>();
+    case OptionProbeShape::kFixedN:
+        return RowOrBuildPoint<kPrecision, OptionProbeShape::kFixedN>();
+    case OptionProbeShape::kAllN:
+        return RowOrBuildPoint<kPrecision, OptionProbeShape::kAllN>();
+    case OptionProbeShape::kAllNAtOrders:
+        return RowOrBuildPoint<kPrecision, OptionProbeShape::kAllNAtOrders>();
+    }
+
+    return kBuildPointRow;
+}
+
+/// The row one class of the probe's own key is named against.
+///
+/// The device lane's single precision is the one class with no row here: this
+/// probe has no device arm and enumerates no cell of it, so there is no
+/// combination of its space whose name could be read against one.
+constexpr ClassRow ClassRowOf(OptionPrecision precision, OptionProbeShape shape) noexcept {
+    switch (precision)
+    {
+    case OptionPrecision::kFp64:
+        return ClassRowOfShape<OptionPrecision::kFp64>(shape);
+    case OptionPrecision::kFp32:
+        return ClassRowOfShape<OptionPrecision::kFp32>(shape);
+    case OptionPrecision::kFp16:
+        return ClassRowOfShape<OptionPrecision::kFp16>(shape);
+    case OptionPrecision::kBf16:
+        return ClassRowOfShape<OptionPrecision::kBf16>(shape);
+    case OptionPrecision::kFp32Device:
+        return kBuildPointRow;
+    }
+
+    return kBuildPointRow;
+}
+
+/// Whether one cell of a class is the class's own cell: the cell at the row's
+/// members, one member per axis the policy carries.
+constexpr bool IsTheClasssOwnCell(const ClassRow& own, FitRoute route, EvalScheme scheme,
+                                  PackAxis pack, FitGranularity granularity, DivisionForm division,
+                                  RegionBExp regionBExp) noexcept {
+    return route == own.route && scheme == own.scheme && pack == own.pack &&
+           granularity == own.granularity && division == own.division &&
+           regionBExp == own.regionBExp;
+}
+
 // --- the options ------------------------------------------------------------
 
 struct Option {
@@ -737,10 +897,10 @@ struct Option {
 constexpr const char* kPackedFp64Name = "avx2-fp64";
 constexpr const char* kPackedFp32Name = "avx2-fp32";
 
-/// The entry every ratio is formed against, by default: the double lane's own
-/// unmoved cell, the cell that names no axis at all — the shipped
-/// partition, on the arguments axis, at the shipped route and scheme. Naming it
-/// here is what makes the anchor a documented choice
+/// The cell every ratio is formed against, by default: the double lane's own
+/// unmoved cell — the shipped partition, on the arguments axis, at the shipped
+/// route and scheme, in the build's own division form and region-B exponential.
+/// Stating the combination here is what makes the anchor a documented choice
 /// rather than the winner of the comparison it anchors.
 ///
 /// **It is not the call a caller who names no policy gets**, and the difference
@@ -751,12 +911,28 @@ constexpr const char* kPackedFp32Name = "avx2-fp32";
 /// The cell a caller who names no policy gets is measured like every other, and
 /// \c ProbeOptions::reference is how a reader takes the same run in that row's
 /// units instead.
-constexpr const char* kReferenceOptionName = "batch-fp64";
+///
+/// **It is a combination and not a name**, because the grammar reads a cell's
+/// name against the class's own row and the row is a cell of a class's own
+/// again: the anchor fixed by a name would be a different combination in every
+/// build whose seam spells another row, which is the movement this anchor exists
+/// not to have. Found cell by cell, it is the same arithmetic in every build.
+constexpr ClassRow kAnchorCell = {FitRoute::kChebyshev,   EvalScheme::kSplitClenshaw,
+                                  PackAxis::kArguments,   FitGranularity::kCoarsest,
+                                  kDefaultDivisionForm,   kDefaultHostRegionBExp};
+
+/// Whether one option of a book is the anchor cell above.
+bool IsAnchorCell(const Option& option) noexcept {
+    return option.precision == OptionPrecision::kFp64 &&
+           option.shape == OptionProbeShape::kAllOrders &&
+           IsTheClasssOwnCell(kAnchorCell, option.route, option.scheme, option.pack,
+                              option.granularity, option.division, option.regionBExp);
+}
 
 /// The option every ratio is formed against, resolved from the option book: the
-/// entry named above, or the one the caller asked for, when this run measured
-/// it; else the first option of the default precision; else the first option
-/// measured.
+/// cell stated above, or the one the caller asked for by name, when this run
+/// measured it; else the first option of the default precision; else the first
+/// option measured.
 ///
 /// Resolved before any round is timed, so the anchor cannot be chosen from the
 /// figures to suit the answer. It is one row's own cost that every column is
@@ -780,7 +956,7 @@ std::size_t ReferenceIndex(const std::vector<Option>& options, const std::string
 
     for (std::size_t index = 0; index < options.size(); ++index)
     {
-        if (options[index].name == kReferenceOptionName)
+        if (IsAnchorCell(options[index]))
         {
             return index;
         }
@@ -998,35 +1174,62 @@ double LaneCellBound(OptionPrecision precision,
     // provenance with, and the multiplier this revision carries is one.
     return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp64)].bound;
 }
+/// The name the library prints a route under, read from its own route table
+/// rather than written here, so a coverage line cannot name a route the library
+/// does not.
+const char* RouteName(std::span<const FitRouteInfo> routes, FitRoute route) {
+    for (const FitRouteInfo& row : routes)
+    {
+        if (row.route == route)
+        {
+            return row.name;
+        }
+    }
+
+    return "unknown";
+}
 
 /// The name a cell's option is printed under, in one grammar for all of them.
 ///
-/// The name states the cell's own axes and omits the defaults, so a defaulted
-/// route, scheme, partition, axis and division form leave no segment behind. The
-/// partition takes the first segment — `batch` for the shipped one, and `narrow`
-/// or `uniform` for either of the other two — and the precision closes every
-/// name, because a name is only ever read inside its class.
+/// The name states the cell's own axes and omits the class's own row, so a cell
+/// at the row's member on an axis leaves that axis' segment behind and a cell at
+/// another member carries the library's own name for it. The first segment is
+/// the class's own word — `batch`, which is the partition the class's row reads
+/// when no other segment follows it — and the precision closes every name,
+/// because a name is only ever read inside its class.
 ///
-/// The division form is named only where it is not the one the library's default
-/// policy runs, and that is the one reading of this axis under which the names
-/// above it keep meaning what they say: the name with no form segment is the
-/// default form's cell, and the entry it reaches is the default policy's, so the
-/// form left unmarked is the form it really divides in.
-/// The other two members are named so that no two cells of one combination can
-/// print the same name — without the segment a reader would take the plain
-/// reciprocal's row for the default's, which is exactly the confusion the two
-/// forms' arithmetic differs by.
+/// **The combination with no segment at all is the class's own cell**, which is
+/// the cell its own name denotes and the row its own call compiles: the segment a
+/// departing axis adds is what a reader is owed, and the name that carries none
+/// is the arithmetic the class would run unnamed. Reading the unmarked
+/// combination off the seam's five instead names one combination's cell with
+/// another's arithmetic the moment a row spells anything but the five, which is
+/// the confusion every segment here exists to prevent.
 ///
-/// The region-B exponential is named on the same reading and for the same reason:
-/// the member left unmarked is the host default, which is the member the
-/// unmarked cell reaches, and the other member is named so that a
-/// cell of one combination cannot print the other's name.
+/// A member is named with the library's own spelling — the route's own name from
+/// its table, and \c GranularityName, \c PackAxisName, \c EvalSchemeName,
+/// \c DivisionFormName and \c RegionBExpName for the rest — so a segment a report
+/// prints is the name the library answers for the enumerator, and no two cells of
+/// one class can print the same name: every difference on every axis is a segment
+/// and every segment is the departing member's own word.
 ///
 /// The precision in the closing segment is the class the row is ranked in, not
 /// the lane its cells were enumerated from: the two half formats are one lane and
 /// two classes, so the same cell of that lane is named once for each format it is
 /// measured in.
+/// \param precision    the class's lane
+/// \param own          the class's own row, the combination this name is read against
+/// \param granularity  the cell's partition
+/// \param pack         the cell's packing axis
+/// \param route        the cell's fit route
+/// \param scheme       the cell's evaluation scheme
+/// \param division     the cell's division form
+/// \param regionBExp   the cell's region-B exponential
+///
+/// \returns the cell's name, whose segments are exactly the axes on which the
+///          cell departs from the class's own row
 std::string CellName(OptionPrecision precision,
+                     const ClassRow& own,
                      FitGranularity granularity,
                      PackAxis pack,
                      FitRoute route,
@@ -1035,42 +1238,42 @@ std::string CellName(OptionPrecision precision,
                      RegionBExp regionBExp) {
     std::string name = "batch";
 
-    if (granularity == FitGranularity::kUniform)
+    // One segment per departing axis, in the order the axes are walked. Each
+    // carries the library's own spelling of the member the cell names, so a
+    // segment is the word the library answers for that enumerator and not a
+    // second way of writing it here.
+    if (granularity != own.granularity)
     {
-        name = "uniform";
-    } else if (granularity == FitGranularity::kNarrow)
-    {
-        name = "narrow";
+        name += "-";
+        name += GranularityName(granularity);
     }
 
-    if (pack == PackAxis::kOrders)
+    if (pack != own.pack)
     {
-        name += "-pack-orders";
+        name += "-";
+        name += PackAxisName(pack);
     }
 
-    if (route == FitRoute::kRationalMinimax)
+    if (route != own.route)
     {
-        name += "-rational";
+        name += "-";
+        name += RouteName(LaneRoutes(LaneOf(precision)), route);
     }
 
-    if (scheme == EvalScheme::kHorner)
+    if (scheme != own.scheme)
     {
-        name += "-horner";
+        name += "-";
+        name += EvalSchemeName(scheme);
     }
 
-    if (division != kDefaultDivisionForm)
+    if (division != own.division)
     {
-        // The library's own spelling of the form, so the segment a report prints
-        // is the name the library answers for the enumerator and not a second
-        // way of writing it here.
         name += "-";
         name += DivisionFormName(division);
     }
 
-    if (regionBExp != kDefaultHostRegionBExp)
+    if (regionBExp != own.regionBExp)
     {
-        // The library's own spelling of the member, on the same reading as the
-        // form's segment above.
         name += "-";
         name += RegionBExpName(regionBExp);
     }
@@ -1079,8 +1282,8 @@ std::string CellName(OptionPrecision precision,
 }
 
 /// The name a class's own cell is printed under: the cell of that class that
-/// names no axis at all — the shipped partition on the arguments axis at the
-/// shipped route and scheme.
+/// names no axis at all — the combination this build's seam gives that class as
+/// its row, which is the cell its call compiles when it names no policy.
 ///
 /// Every class has one such cell, and the coverage and the option book both read
 /// it by name. On the double, float and device lanes' all-orders classes it is
@@ -1153,11 +1356,11 @@ constexpr const char* kSortedCellSegment = "-sorted";
 /// The all-N class is the call the report has printed as `grouped-fp64` (the
 /// double lane) and `grouped-fp32` (the float lane) since the hand-written shape
 /// rows: one all-N call per order run, taken at the class's own combination of
-/// the six run-time axes - the shipped partition on the arguments axis at the
-/// shipped route and scheme. The double lane's entry also declares the overload
-/// that takes the arguments as already sorted, and the report has printed that
-/// call as `tagged-fp64`; the sorted name belongs to the own cell's twin and to
-/// no other cell of any class.
+/// the six run-time axes, which is the row this build's seam states for that
+/// class and not the seam's five. The double lane's entry also declares the
+/// overload that takes the arguments as already sorted, and the report has printed
+/// that call as `tagged-fp64`; the sorted name belongs to the own cell's twin and
+/// to no other cell of any class.
 ///
 /// A name the report has carried is dropped in silence by no grammar: the classes
 /// here print their own cell, and its twin, under the names a reader of the
@@ -1565,21 +1768,6 @@ const backend::BackendInfo* ResolveArithmetic(std::span<const backend::BackendIn
     return nullptr;
 }
 
-/// The name the library prints a route under, read from its own route table
-/// rather than written here, so a coverage line cannot name a route the library
-/// does not.
-const char* RouteName(std::span<const FitRouteInfo> routes, FitRoute route) {
-    for (const FitRouteInfo& row : routes)
-    {
-        if (row.route == route)
-        {
-            return row.name;
-        }
-    }
-
-    return "unknown";
-}
-
 /// The routes a partition's tables carry, as the library names them, joined for
 /// a report line — so a refusal can say what the partition does hold rather
 /// than only what it lacks.
@@ -1694,6 +1882,13 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
     const std::span<const FitRouteInfo> routes = LaneRoutes(lane);
     const PackAxisAdmission admission = ShapePackAxis(precision, shape);
 
+    // The combination this class's own call compiles: the row of the library's
+    // own table, read once for the class and not per cell. Every cell's name is
+    // read against it and the class's own cell is the one at its members, so the
+    // name a row is printed under and the figure the library answers for that
+    // row's policy are two readings of one combination.
+    const ClassRow own = ClassRowOf(precision, shape);
+
     // Whether this class's entry declares the sorted-arguments overload, which is
     // whether every one of its combinations carries a second cell.
     const bool sortedOverload = ShapeHasSortedOverload(precision, shape);
@@ -1733,28 +1928,27 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
                         for (const RegionBExpInfo& exp : BoysRegionBExps())
                         {
                             OptionProbeCell cell;
-                            // The form and the exponential are part of the test
-                            // and not only of the name: the class's own cell is
-                            // the one this grammar gives the *default* members'
-                            // combination, and the entry that cell runs is built
-                            // at those members. A cell of the same combination at
-                            // another member is its own cell and keeps its own
-                            // name - two cells printing one name is the collision
-                            // the segments exist to stop.
-                            const bool namedCell =
-                                partition.granularity == FitGranularity::kCoarsest &&
-                                axis.axis == PackAxis::kArguments &&
-                                route.route == FitRoute::kChebyshev &&
-                                scheme.scheme == EvalScheme::kSplitClenshaw &&
-                                form.form == kDefaultDivisionForm &&
-                                exp.exp == kDefaultHostRegionBExp;
-                            const std::string cellName = CellName(precision,
-                                                                  partition.granularity,
-                                                                  axis.axis,
-                                                                  route.route,
-                                                                  scheme.scheme,
-                                                                  form.form,
-                                                                  exp.exp);
+                            // The class's own cell is the cell at the row its
+                            // own call compiles - one combination of the six
+                            // run-time axes - and that row is read from the
+                            // library rather than composed here: the seam's five
+                            // are the fallback for a class with no row and not
+                            // the combination a class's entries run, so a cell
+                            // at the five's members is another arithmetic the
+                            // moment a row spells anything else, and naming it
+                            // the class's own is how a row came to be judged at
+                            // a figure its own policy never published. A cell at
+                            // another member of any axis is its own cell and
+                            // keeps its own name - two cells printing one name
+                            // is the collision the segments exist to stop - and
+                            // the grammar marks every axis on which a cell
+                            // departs from the row for exactly that reason.
+                            const bool ownCell =
+                                IsTheClasssOwnCell(own, route.route, scheme.scheme, axis.axis,
+                                                   partition.granularity, form.form, exp.exp);
+                            const std::string cellName =
+                                CellName(precision, own, partition.granularity, axis.axis,
+                                         route.route, scheme.scheme, form.form, exp.exp);
 
                             // One combination of the six run-time axes carries
                             // five questions, so a class other than the all-orders
@@ -1765,7 +1959,7 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
                             // shape's word in front of the name the grammar gives
                             // the combination.
                             cell.name =
-                                namedCell
+                                ownCell
                                     ? OwnCellName(precision, shape)
                                     : (shape == OptionProbeShape::kAllOrders
                                            ? cellName
@@ -1822,7 +2016,7 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
                             {
                                 OptionProbeCell sorted = cell;
                                 sorted.sorted = true;
-                                sorted.name = namedCell ? SortedOwnCellName(precision, shape)
+                                sorted.name = ownCell ? SortedOwnCellName(precision, shape)
                                                         : sorted.name + kSortedCellSegment;
                                 cells.push_back(std::move(sorted));
                             }
@@ -5049,9 +5243,9 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     report.avx2 = BoysAvx2Available();
     report.backends = backend::BoysBackends();
     report.granularities = BoysFitGranularities();
-    report.referenceBound = LaneCellBound(OptionPrecision::kFp64, kDefaultFitRoute,
-                                          kDefaultEvalScheme, kDefaultPackAxis,
-                                          kDefaultFitGranularity, kDefaultDivisionForm);
+    report.referenceBound = LaneCellBound(OptionPrecision::kFp64, kAnchorCell.route,
+                                          kAnchorCell.scheme, kAnchorCell.pack,
+                                          kAnchorCell.granularity, kAnchorCell.division);
 
     const Workload work = BuildWorkload(options);
     Buffers buffers = MakeBuffers(work);
