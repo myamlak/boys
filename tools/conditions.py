@@ -148,6 +148,17 @@ CONDITIONS = [
         "timeout": 120,
     },
     {
+        "n": 1,
+        "title": "Complete option space (the probe measures every combination of every class)",
+        "cmd": [PY, "tools/check_class_combinations.py", "--report",
+                ".claude/lane-status/probes/host-report.txt", "--no-compile"],
+        "covers": "every class's measured count against the combinations it can be instantiated at, "
+                  "read from the report the probe wrote - the post-run validation of the space",
+        "does_not_cover": "a run that has not happened: this reads a report, so it states nothing "
+                          "until one exists, which is why it is a condition and not a freeze",
+        "timeout": 120,
+    },
+    {
         "n": 8,
         "title": "House rules (the probe measures every declared entry)",
         "cmd": [PY, "tools/check_probe_measures_every_entry.py"],
@@ -224,28 +235,19 @@ FREEZE = [
         "empty": False,
         "timeout": 120,
     },
-    {
-        # The owner's condition, as one gate: every class (device, precision, shape) complete on
-        # all three legs - its possible combinations implemented, probed, and a default of its own.
-        # The tool does not read the device half or the default leg yet, and it exits 1 when it
-        # checked no class rather than passing quietly, so this reads short until the work is done
-        # rather than reading clean on the strength of what it does cover.
-        "name": "every class is complete: its possible combinations implemented, probed, defaulted",
-        "cmd": [PY, "tools/combination_matrix.py", "--report",
-                ".claude/lane-status/probes/host-report.txt"],
-        "empty": False,
-        "timeout": 300,
-    },
-    {
-        # The entry half of the same question: an entry the surface declares and the probe never
-        # calls is a class whose row reads "no option of this precision and shape produced a
-        # figure" - a sentence about the probe taken for one about the library.
-        "name": "the option probe measures every combination a class can be instantiated at",
-        "cmd": [PY, "tools/check_class_combinations.py", "--report",
-                ".claude/lane-status/probes/host-report.txt", "--no-compile"],
-        "empty": False,
-        "timeout": 120,
-    },
+    # Two checks that used to stand here have moved to CONDITIONS, and the reason is the whole
+    # point of a gate: both read the report a probe run PRODUCES - check_class_combinations and
+    # combination_matrix are handed `.claude/lane-status/probes/host-report.txt` - so a freeze that
+    # required them would be a gate whose opening needs the artifact it guards. It could never
+    # open, and the run it blocks is the only thing that would open it. This is the same
+    # circularity the host/device space entries below call out, and it is worse here because the
+    # stale report on disk is not evidence about the current probe at all: it was written before
+    # the space became per-class.
+    #
+    # What gates a run is what exists BEFORE it: the space's own closure, the class surface, the
+    # entries the probe calls, and the recorded gate run. What validates the run's output is a
+    # CONDITION, read after the report exists - and a report that reads short there is a void run,
+    # discarded rather than published.
     {
         "name": "the recorded run is current",
         "cmd": [PY, "tools/check_recorded_run.py"],
