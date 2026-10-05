@@ -107,13 +107,45 @@ SHAPE_ENUM = re.compile(r"^\s*(k[A-Za-z0-9]+)\s*(?:=\s*\d+)?\s*,?\s*///<\s*(.*)$
 ONE_ORDER = re.compile(r"\bone order\b", re.I)
 
 # One class line of the report's accuracy-classes section:
-#   "  fp64 all-orders       144 measured | fastest ... | not ordered"
-CLASS_LINE = re.compile(r"^\s{2}([a-z0-9]+(?:-[a-z0-9]+)*)\s+([a-z-]+)\s+(\d+) measured", re.M)
+#   "  fp64 all-orders       possible 144 = 144 served + 0 refused | 144 measured | fastest
+#    uniform-pack-orders-horner-plain-reciprocal-accurate-fp64 at 88.66 ns/argument, documented
+#    at 5.5e-14 | not ordered"
+# The line carries the class's own arithmetic - the cells it holds, the share this build serves
+# and refuses, and the share this run placed a figure for - and the fastest option's cost and the
+# figure it documents, and whether the class was ordered. A class this run produced no figure for
+# prints the same counts with no fastest segment, so that segment is optional here: its absence is
+# the report's statement about the class and not a line this reader failed to match.
+CLASS_LINE = re.compile(
+    r"^\s{2}(?P<precision>[a-z0-9]+(?:-[a-z0-9]+)*)\s+(?P<shape>[a-z][a-z-]*?)\s+"
+    r"possible\s+(?P<possible>\d+)\s*=\s*(?P<served>\d+)\s+served\s*\+\s*"
+    r"(?P<refused>\d+)\s+refused\s*\|\s*(?P<measured>\d+)\s+measured"
+    r"(?:\s*\|\s*fastest\s+(?P<fastest>[a-z0-9][a-z0-9-]*)\s+at\s+(?P<cost>[0-9.]+)\s*"
+    r"ns/argument,\s*documented\s+at\s+(?P<bound>[0-9.eE+-]+)\s*\|\s*"
+    r"(?P<order>not ordered|ordered))?", re.M)
 
-# And the line of a class that produced no figure at all:
-#   "  fp64 fixed-n          no option of this precision and shape produced a figure on this run"
-EMPTY_LINE = re.compile(r"^\s{2}([a-z0-9]+(?:-[a-z0-9]+)*)\s+([a-z-]+)\s+no option of this precision",
-                        re.M)
+# The closure's class-by-class table, one row per class this build carries, the device lane's book
+# among them:
+#   "    class                  possible   served  measured  refused"
+#   "    fp64 all-n                  288      288       288        0"
+CLASS_ROW = re.compile(
+    r"^\s{4}(?P<precision>[a-z0-9]+(?:-[a-z0-9]+)*)\s+(?P<shape>[a-z][a-z-]*?)\s+"
+    r"(?P<possible>\d+)\s+(?P<served>\d+)\s+(?P<measured>\d+)\s+(?P<refused>\d+)\s*$", re.M)
+
+# The closure's own reconciliation of that table, which states the space's total and this build's
+# share of it in one sentence:
+#   "the class-by-class sums: 2592 possible = 2592 served + 0 refused, answered by the 2592
+#    cell(s) the space's own total states, and 2448 cell(s) measured against the 2448 this run
+#    published"
+CLASS_SUMS = re.compile(
+    r"the class-by-class sums:\s*(?P<possible>\d+)\s+possible\s*=\s*(?P<served>\d+)\s+served\s*\+\s*"
+    r"(?P<refused>\d+)\s+refused.*?and\s+(?P<measured>\d+)\s+cell\(s\) measured", re.S)
+
+# The device lane's own book: the class table carries a row for it and the class lines carry none,
+# because this probe has no device arm. The lane is named by the report here, so the rows that
+# belong to it are identified from the report's own words rather than from a spelling assumed
+# here:
+#   "    fp32-device (lane fp32-device): 144 served + 0 refused = 144 cells, counted here"
+DEVICE_LANE = re.compile(r"^\s{4}(?P<lane>[a-z0-9]+(?:-[a-z0-9]+)*) \(lane (?P=lane)\):", re.M)
 
 # A declared entry of one shape at one precision, read from the headers: the surface's own
 # statement that the combination is one the library serves.
@@ -191,12 +223,68 @@ def axes_of(report: str) -> list[int] | None:
 
 def measured_by_class(report: str) -> dict[tuple[str, str], int]:
     """Every class the report states a measured count for, keyed by (precision, shape)."""
-    counts: dict[tuple[str, str], int] = {}
+    return {key: line["measured"] for key, line in classes_by_class(report).items()}
+
+
+def classes_by_class(report: str) -> dict[tuple[str, str], dict]:
+    """Every class line's own figures, keyed by (precision, shape).
+
+    The line is read as the report writes it: the cells the class holds, the share this build
+    serves and refuses, the share this run measured, and - where the class produced a figure - the
+    fastest option with its cost, the figure it documents, and whether the class was ordered.
+    """
+    found: dict[tuple[str, str], dict] = {}
 
     for match in CLASS_LINE.finditer(report):
-        counts[(match.group(1), match.group(2))] = int(match.group(3))
+        found[(match.group("precision"), match.group("shape"))] = {
+            "possible": int(match.group("possible")),
+            "served": int(match.group("served")),
+            "refused": int(match.group("refused")),
+            "measured": int(match.group("measured")),
+            "fastest": match.group("fastest"),
+            "cost": float(match.group("cost")) if match.group("cost") else None,
+            "bound": match.group("bound"),
+            "ordered": match.group("order"),
+            "line": match.group(0).strip(),
+        }
 
-    return counts
+    return found
+
+
+def class_table(report: str) -> dict[tuple[str, str], dict]:
+    """The closure's class-by-class table: every class this build carries, device book included.
+
+    This is the report's second reading of the same classes as the class lines, and the table the
+    space's own total is summed from - so a class the lines carry and the table does not, or the
+    reverse, is a class one of the two books lost.
+    """
+    found: dict[tuple[str, str], dict] = {}
+
+    for match in CLASS_ROW.finditer(report):
+        found[(match.group("precision"), match.group("shape"))] = {
+            "possible": int(match.group("possible")),
+            "served": int(match.group("served")),
+            "measured": int(match.group("measured")),
+            "refused": int(match.group("refused")),
+        }
+
+    return found
+
+
+def class_sums(report: str) -> dict | None:
+    """The closure's own totals for that table: the space's cells and this build's measured share."""
+    match = CLASS_SUMS.search(report)
+
+    if match is None:
+        return None
+
+    return {"possible": int(match.group("possible")), "served": int(match.group("served")),
+            "refused": int(match.group("refused")), "measured": int(match.group("measured"))}
+
+
+def device_lanes(report: str) -> set[str]:
+    """The lanes the report counts apart from this build, read from its own device-book statement."""
+    return {match.group("lane") for match in DEVICE_LANE.finditer(report)}
 
 
 # The library target's own statement of what a consumer's translation unit needs defined:
@@ -365,6 +453,23 @@ def main() -> int:
               "run checked nothing and its exit status is a failure rather than a clean bill")
         return 1
 
+    lines = classes_by_class(report)
+    table = class_table(report)
+    sums = class_sums(report)
+    apart = device_lanes(report)
+
+    if not table or not sums:
+        print("check_class_combinations: the report states no closure class-by-class table with its "
+              "own sums, so the classes' counts cannot be held against the total the report sums "
+              "them to - the reader is wrong, not the report")
+        return 1
+
+    if not apart:
+        print("check_class_combinations: the report names no lane it counts apart from this build, "
+              "so the class lines' sum cannot be reconciled with the space's own total - the reader "
+              "is wrong, not the report")
+        return 1
+
     if not one_order:
         print("check_class_combinations: no Shape enumerator's documentation names one order, so "
               "the exclusion this check rests on was read as absent - the reader is wrong, not the "
@@ -434,40 +539,156 @@ def main() -> int:
     def entry_name(precision: str, shape: str) -> str:
         return ENTRY[shape] + SUFFIX[precision]
 
-    empty = {(p, s) for p, s in EMPTY_LINE.findall(report)}
+    # The class lines' own arithmetic, and their reconciliation with the closure's table: the
+    # relations the report states about itself. None is assumed - a line whose parts do not add up,
+    # a class one book carries and the other does not, or a sum that is not the total the report
+    # prints are each named with their own numbers rather than read past.
+    findings: list[str] = []
+
+    for (precision, shape), line in sorted(lines.items()):
+        name = f"{precision} {shape}"
+
+        if line["served"] + line["refused"] != line["possible"]:
+            findings.append(
+                f"the class line for {name} states {line['possible']} cell(s) as {line['served']} "
+                f"served + {line['refused']} refused, which is "
+                f"{line['served'] + line['refused']}")
+
+        if line["measured"] and line["measured"] != line["served"]:
+            findings.append(
+                f"the class line for {name} states {line['measured']} measured where this build "
+                f"serves {line['served']} cell(s), so the class this run measured is not the class "
+                "its own line describes")
+
+    for (precision, shape), row in sorted(table.items()):
+        if row["served"] + row["refused"] != row["possible"]:
+            findings.append(
+                f"the closure's row for {precision} {shape} states {row['possible']} cell(s) as "
+                f"{row['served']} served + {row['refused']} refused, which is "
+                f"{row['served'] + row['refused']}")
+
+    # The class lines are the classes this build measures; the closure's table is every class this
+    # build carries, the device lane's book among them. A class one carries and the other does not
+    # is a class a book lost, and it is named rather than counted.
+    carried = {key: row for key, row in table.items() if key[0] not in apart}
+    set_apart = {key: row for key, row in table.items() if key[0] in apart}
+
+    for key in sorted(set(lines) - set(carried)):
+        findings.append(f"the class line for {key[0]} {key[1]} has no row in the closure's "
+                        "class-by-class table, so one of the report's two books lost it")
+
+    for key in sorted(set(carried) - set(lines)):
+        findings.append(f"the closure's class-by-class table carries {key[0]} {key[1]}, which no "
+                        "class line states, so one of the report's two books lost it")
+
+    if not set_apart:
+        findings.append("no row of the closure's class-by-class table belongs to a lane the report "
+                        "counts apart from this build, so the table's total is not the space's")
+
+    table_sum = {field: sum(row[field] for row in table.values())
+                 for field in ("possible", "served", "measured", "refused")}
+
+    for field in ("possible", "served", "measured", "refused"):
+        if table_sum[field] != sums[field]:
+            findings.append(
+                f"the closure's class-by-class table sums to {table_sum[field]} {field} where the "
+                f"report's own class-by-class sums state {sums[field]}")
+
+    line_sum = {field: sum(line[field] for line in lines.values())
+                for field in ("possible", "served", "measured", "refused")}
+    apart_possible = sum(row["possible"] for row in set_apart.values())
+    apart_measured = sum(row["measured"] for row in set_apart.values())
+
+    if line_sum["possible"] + apart_possible != sums["possible"]:
+        findings.append(
+            f"the class lines' {line_sum['possible']} cell(s) plus the {apart_possible} cell(s) of "
+            f"the book the report counts apart are {line_sum['possible'] + apart_possible}, where "
+            f"the space's own total is {sums['possible']} cell(s)")
+
+    if line_sum["measured"] != sums["measured"] or apart_measured != sums["measured"] - line_sum["measured"]:
+        findings.append(
+            f"the class lines' {line_sum['measured']} measured cell(s) and the "
+            f"{apart_measured} measured of the book counted apart are not the "
+            f"{sums['measured']} the report's own sums state")
+
+    print(f"classes, both books: {len(lines)} class line(s) over {len({p for p, _ in lines})} "
+          f"precision(s), and {len(table)} row(s) in the closure's table "
+          f"({len(set_apart)} of them the book the report counts apart: "
+          f"{', '.join(sorted(p for p, _ in set_apart))})")
+    print(f"the report's own sums: {sums['possible']} possible = {sums['served']} served + "
+          f"{sums['refused']} refused, {sums['measured']} measured")
+    print(f"read off the class lines: {line_sum['possible']} possible = {line_sum['served']} served "
+          f"+ {line_sum['refused']} refused, {line_sum['measured']} measured, and the "
+          f"{apart_possible} cell(s) of the book counted apart beside them")
 
     shortfall = 0
     undeclared = []
-    print("\n  class                     possible  measured  shortfall")
+    print("\n  class                     possible  served  refused  measured  shortfall  axes")
+    print("  " + "-" * 24 + "  " + "-" * 8 + "  " + "-" * 7 + "  " + "-" * 8 + "  " + "-" * 8 +
+          "  " + "-" * 9 + "  " + "-" * 8)
 
-    for precision, shape in sorted(set(measured) | empty):
+    # The classes the report's own two books carry, lines first and the book counted apart beside
+    # them, so a class either book lost is visible in this table and not only in a total.
+    for precision, shape in sorted(set(lines) | set(set_apart)):
         if shape not in ENTRY:
             continue
 
-        count = measured.get((precision, shape), 0)
+        name = f"{precision} {shape}"
+        line = lines.get((precision, shape))
 
-        if count == 0 and entry_name(precision, shape) not in surface:
+        if line is None:
+            row = set_apart[(precision, shape)]
+            print(f"  {name:<24} {row['possible']:>8}  {row['served']:>7}  {row['refused']:>8}  "
+                  f"{row['measured']:>8}  {'-':>9}  {'counted apart':>8}")
+            continue
+
+        if line["measured"] == 0 and entry_name(precision, shape) not in surface:
             # No entry, so the class holds no combination anything could be instantiated at. It is
             # named rather than counted: a class the library does not serve is a hole in the
             # surface, and a zero in the possible column is what that is.
             undeclared.append((precision, shape))
-            print(f"  {precision + ' ' + shape:<24} {0:>8}  {0:>8}  {'no entry':>9}")
+            print(f"  {name:<24} {0:>8}  {0:>7}  {0:>8}  {0:>8}  {'no entry':>9}  {'-':>8}")
             continue
 
         # A one-order shape drops the orders member of the packing axis: the axis has one member
-        # there and not two, so the product loses exactly the factor the axis contributed.
+        # there and not two, so the product loses exactly the factor the axis contributed. The
+        # class's own count is a whole number of crossings of what is left - which is the one
+        # standard the axes give that the class line cannot state about itself.
         pack_index = 3  # route, scheme, partition, packing, division, exponential
         expected = full // cardinalities[pack_index] if is_one_order(shape) else full
 
-        gap = expected - count
+        if line["possible"] % expected:
+            findings.append(
+                f"the class line for {name} states {line['possible']} cell(s), which is not a whole "
+                f"number of the {expected} combination(s) the axes offer this class "
+                f"({line['possible']} % {expected} = {line['possible'] % expected})")
+
+        gap = line["possible"] - line["measured"]
         shortfall += gap if gap > 0 else 0
-        print(f"  {precision + ' ' + shape:<24} {expected:>8}  {count:>8}  {gap:>9}")
+        crossings = f"{line['possible'] // expected}x{expected}" if expected else "-"
+        print(f"  {name:<24} {line['possible']:>8}  {line['served']:>7}  {line['refused']:>8}  "
+              f"{line['measured']:>8}  {gap:>9}  {crossings:>8}")
+
+    print("\nthe fastest each class names, and the figure it documents:")
+    for (precision, shape), line in sorted(lines.items()):
+        if line["fastest"] is None:
+            print(f"  {precision + ' ' + shape:<24} no option of this precision and shape produced "
+                  "a figure on this run")
+            continue
+
+        print(f"  {precision + ' ' + shape:<24} {line['fastest']} at {line['cost']:.2f} "
+              f"ns/argument, documented at {line['bound']} | {line['ordered']}")
 
     if undeclared:
         print(f"\n{len(undeclared)} class(es) have no entry in the headers: "
               + ", ".join(f"{p} {s}" for p, s in undeclared)
               + " — the library declares no such shape at that precision, so no combination "
                 "of it can be measured and the gap is the surface's rather than this run's.")
+
+    if findings:
+        print()
+        for finding in findings:
+            print(f"FINDING: {finding}")
 
     print()
     print(HOST_TOTAL.format(total=shortfall))
@@ -479,7 +700,14 @@ def main() -> int:
               "account of the probe rather than of the library.")
         return 1
 
-    print("\nevery class's measured count is the number of combinations it can be instantiated at")
+    if findings:
+        print(f"\n{len(findings)} finding(s) above: the class lines' own arithmetic, or the sums "
+              "the report states over them, do not hold, so its counts are not usable")
+        return 1
+
+    print(f"\nevery class's measured count is the number of combinations it can be instantiated at, "
+          f"and the {line_sum['possible']} cell(s) the class lines state sum to the total the report "
+          f"itself sums them to")
     return 0
 
 

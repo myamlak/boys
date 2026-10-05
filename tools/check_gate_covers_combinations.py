@@ -302,10 +302,30 @@ STATE = re.compile(r"c\.state\s*=\s*\"(?P<state>[^\"]+)\"")
 FORM_COVERAGE = re.compile(r"every cell of the cross above was read at each of the\s*"
                            r"(?P<count>\d+)\s*form\(s\) BoysDivisionForms\(\) answers")
 
+# The run's own statement that every *host* cell of its cross was read at each of the
+# region-B members the library answers - which is what makes one host row a measurement of
+# one combination per member rather than of one combination. The scope word is read with
+# the count, because the same statement scoped to a subset of the lanes is a different
+# fact: the sentence below it takes the device arms' cells out of the table, and a reader
+# that dropped the scope would count those at two members where the run reads them at one.
+MEMBER_COVERAGE = re.compile(r"the region-B member:\s*every\s*(?P<scope>[a-z]+)\s*cell of the "
+                             r"cross above was read at each of the\s*(?P<count>\d+)\s*"
+                             r"member\(s\) BoysRegionBExps\(\) answers")
+
+# ...and the sentence that takes the device arms out of it, which has to be there: a run
+# that read its host cells at two members and said nothing about the device ones would
+# leave those counted at one member by this check's reading rather than by the run's word.
+MEMBER_DEVICE_EXCLUSION = re.compile(
+    r"the device arms' cells\s*are not in this table:\s*they are read at the member their\s*"
+    r"entry names", re.I)
+
 # The packing-axis member a one-order shape cannot be instantiated at, named the way the
 # gate names it. The library spells the axis; this is the member, and it is read from the
 # axis table rather than written here.
 ORDERS_MEMBER = "kOrders"
+
+# What makes a lane a device lane: its own member's documentation in the Precision enumeration.
+DEVICE_LANE_DOC = re.compile(r"\bdevice\b", re.I)
 
 SCALAR = {"kFp64": "double", "kFp32": "float", "kFp16": "boys::F16"}
 BUDGET = {"kFp64": "kFloat", "kFp32": "kFloat", "kFp16": "kFp16"}
@@ -378,6 +398,16 @@ class Library:
                 "plain": float(match.group("plain")),
                 "additiveMember": match.group("member_exp"),
             })
+
+        # Which lanes are the device lanes. The Precision enumeration documents each of its
+        # members, and the member whose own documentation names the device is a lane whose cells
+        # are reached through the CUDA surface; a name spelled `-device` would be this check's
+        # idea of the library's split rather than the library's. It is what the run's member
+        # sentence is scoped by - `every host cell` - so it is read here and not assumed there.
+        precision_docs = self.enum_members("Precision", self.header)
+
+        for lane in self.lanes:
+            lane["device"] = bool(DEVICE_LANE_DOC.search(precision_docs.get(lane["member"], "")))
 
         # The classes the default-policy list names.
         self.classes: list[tuple[str, str, str]] = []
@@ -900,6 +930,9 @@ class RecordedRun:
         self.revision: str | None = None
         self.arithmetic: dict | None = None
         self.forms_per_row: int | None = None
+        self.members_per_row: int | None = None
+        self.member_scope: str | None = None
+        self.member_device_exclusion = False
 
         match = REVISION.search(self.text)
 
@@ -910,6 +943,14 @@ class RecordedRun:
 
         if forms is not None:
             self.forms_per_row = int(forms.group("count"))
+
+        members = MEMBER_COVERAGE.search(self.text)
+
+        if members is not None:
+            self.members_per_row = int(members.group("count"))
+            self.member_scope = members.group("scope").lower()
+
+        self.member_device_exclusion = MEMBER_DEVICE_EXCLUSION.search(self.text) is not None
 
         arithmetic = RUN_ARITHMETIC.search(self.text)
 
@@ -1382,14 +1423,27 @@ def main() -> int:
             continue
 
         # A row is read at every division form the axis carries - the run's own words,
-        # read above and not assumed - and at the one region-B member its figure is
-        # composed under: the accessor's term beside the base is answered at
-        # `additiveMember`, and the bar the row is judged by is the lane's base plus it.
+        # read above and not assumed - and at every region-B member the run's own member
+        # sentence covers it at. On a host lane that is both members where the run says
+        # every host cell of its cross was read at each of them; on a device lane it is the
+        # one member the row's entry names, which is the sentence's own exclusion.
+        #
+        # The member a row's figure is composed under stays the lane's `additiveMember`: the
+        # term a row publishes beside its base is that member's own, and a reading at the
+        # other member is judged against the figure the lane answers for that member, which
+        # is what the run states it did.
+        members_read = [lane["additiveMember"]]
+
+        if (run.members_per_row is not None and not lane["device"]
+                and run.members_per_row == len(library.exps)):
+            members_read = list(library.exps)
+
         for form in (library.forms if run.forms_per_row is not None
                      else library.forms[:1]):
-            key = (lane["member"], members["route"], members["scheme"], members["axis"],
-                   members["partition"], form, lane["additiveMember"])
-            measured[key] = row
+            for exp in members_read:
+                key = (lane["member"], members["route"], members["scheme"], members["axis"],
+                       members["partition"], form, exp)
+                measured[key] = row
 
     if unknown:
         findings.append(f"{len(unknown)} row(s) of the recorded run name an axis member no table of "
@@ -1412,6 +1466,23 @@ def main() -> int:
                         f"division form(s) where BoysDivisionForms() answers "
                         f"{len(library.forms)}: the forms this check counts a row at are not the "
                         f"forms the run says it read")
+
+    if run.members_per_row is None:
+        findings.append(f"{args.run} does not state that its host cells were read at every "
+                        f"region-B member, so each row is counted as a measurement of the one "
+                        f"member its lane's figure is composed under. The statement that both "
+                        f"members were read is the run's, and this one does not carry it")
+    elif run.members_per_row != len(library.exps):
+        findings.append(f"{args.run} states each of its host cells was read at "
+                        f"{run.members_per_row} region-B member(s) where BoysRegionBExps() answers "
+                        f"{len(library.exps)}: the members this check counts a row at are not the "
+                        f"members the run says it read")
+
+    if run.members_per_row is not None and not run.member_device_exclusion:
+        findings.append(f"{args.run} states its host cells were read at every region-B member and "
+                        f"says nothing about the device lanes' cells, so this check has no word of "
+                        f"the run's to count those at one member: they are counted at one because "
+                        f"nothing states the other")
 
     # ----------------------------------------------------- the accessor's own statement
     universe = [(lane["member"], route, scheme, axis, partition, form, exp)
@@ -1445,11 +1516,20 @@ def main() -> int:
     print(f"\nthe accessor's space: BoysAccuracyGuaranteed over {len(axis_sizes)} axes")
     print(f"  {' x '.join(str(size) for size in axis_sizes.values())} = {accessor_total} "
           f"combination(s), {accessor_total // axis_sizes['lane']} per lane")
+    host_lanes = [lane for lane in library.lanes if not lane["device"]]
+    device_lanes = [lane for lane in library.lanes if lane["device"]]
+    members_host = len(library.exps) if (run.members_per_row == len(library.exps)) else 1
+
     print(f"  measured by the recorded run : {len(covered)}"
-          f"   ({len(run.rows)} row(s) x {run.forms_per_row or 1} form(s))")
-    print(f"  not measured                 : {len(uncovered)}"
-          f"   (the same rows at the other region-B member: "
-          f"{len(run.rows)} x {run.forms_per_row or 1})")
+          f"   ({len(run.rows)} row(s) x {run.forms_per_row or 1} form(s) x "
+          f"{members_host} region-B member(s) on the {len(host_lanes)} host lane(s), "
+          f"1 on the {len(device_lanes)} device lane(s), whose arms are read at the member "
+          f"their entry names)")
+    where = ("the same rows at the other region-B member" if run.members_per_row is None else
+             "this run's own member sentence takes the device lanes' cells out of its table, and "
+             "those are counted at the one member their entry names")
+    print(f"  not measured                 : {len(uncovered)} of {accessor_total}"
+          f"   ({where})")
 
     if run.arithmetic is not None:
         lanes = run.arithmetic["lanes"]

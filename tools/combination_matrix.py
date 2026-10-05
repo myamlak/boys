@@ -147,11 +147,16 @@ def read_function_table(reader: Reader, source: str, function: str) -> dict[str,
              re.findall(r"case\s+[A-Za-z_][A-Za-z0-9_]*::(k[A-Za-z0-9]+)\s*:\s*"
                         r"(?:\n\s*)*return\s+\"([^\"]*)\"\s*;", body)}
 
-    if not found:
-        default = re.search(r"return\s+\"([^\"]*)\"\s*;", body)
+    # The member the switch falls out of unspelled: the function's own return below the switch is
+    # what that member answers, and a reader that dropped it would read the double lane's cell as a
+    # cell with no name. The case returns are taken out first, so the return left standing is the
+    # one below the switch rather than the first case's.
+    without_cases = re.sub(r"case\s+[A-Za-z_][A-Za-z0-9_]*::(k[A-Za-z0-9]+)\s*:\s*"
+                           r"(?:\n\s*)*return\s+\"[^\"]*\"\s*;", "", body)
+    default = re.search(r"return\s+\"([^\"]*)\"\s*;", without_cases)
 
-        if default:
-            found[""] = default.group(1)
+    if default:
+        found[""] = default.group(1)
 
     return found
 
@@ -162,9 +167,35 @@ def read_function_table(reader: Reader, source: str, function: str) -> dict[str,
 
 AXIS_LINE = re.compile(r"^\s*axes:\s*(.*)$", re.M)
 MEMBER_LIST = re.compile(r"\(([^)]*)\)")
-CLASS_LINE = re.compile(r"^\s{2}([a-z0-9]+)\s+([a-z-]+)\s+(\d+) measured", re.M)
-EMPTY_LINE = re.compile(r"^\s{2}([a-z0-9]+)\s+([a-z-]+)\s+no option of this precision", re.M)
+
+# One class line of the report's accuracy-classes section:
+#   "  fp64 all-orders       possible 144 = 144 served + 0 refused | 144 measured | fastest
+#    uniform-pack-orders-horner-plain-reciprocal-accurate-fp64 at 88.66 ns/argument, documented
+#    at 5.5e-14 | not ordered"
+# The line states the class's own arithmetic - the cells it holds, the share this build serves and
+# refuses, the share this run measured - and, where the class produced a figure, the fastest option
+# with its cost, the figure it documents and whether the class was ordered. A class with no figure
+# prints the counts and no fastest segment, so the segment is optional.
+CLASS_LINE = re.compile(
+    r"^\s{2}(?P<precision>[a-z0-9]+(?:-[a-z0-9]+)*)\s+(?P<shape>[a-z][a-z-]*?)\s+"
+    r"possible\s+(?P<possible>\d+)\s*=\s*(?P<served>\d+)\s+served\s*\+\s*"
+    r"(?P<refused>\d+)\s+refused\s*\|\s*(?P<measured>\d+)\s+measured"
+    r"(?:\s*\|\s*fastest\s+(?P<fastest>[a-z0-9][a-z0-9-]*)\s+at\s+(?P<cost>[0-9.]+)\s*"
+    r"ns/argument,\s*documented\s+at\s+(?P<bound>[0-9.eE+-]+)\s*\|\s*"
+    r"(?P<order>not ordered|ordered))?", re.M)
+
 FASTEST = re.compile(r"fastest\s+([a-z0-9][a-z0-9-]*)")
+
+# The closure's class-by-class table and its own sums, which are what the class lines are held
+# against: the table carries every class this build carries including the device lane's book, and
+# the sums line states the space's total and this build's measured share of it.
+CLASS_ROW = re.compile(
+    r"^\s{4}(?P<precision>[a-z0-9]+(?:-[a-z0-9]+)*)\s+(?P<shape>[a-z][a-z-]*?)\s+"
+    r"(?P<possible>\d+)\s+(?P<served>\d+)\s+(?P<measured>\d+)\s+(?P<refused>\d+)\s*$", re.M)
+CLASS_SUMS = re.compile(
+    r"the class-by-class sums:\s*(?P<possible>\d+)\s+possible\s*=\s*(?P<served>\d+)\s+served\s*\+\s*"
+    r"(?P<refused>\d+)\s+refused.*?and\s+(?P<measured>\d+)\s+cell\(s\) measured", re.S)
+DEVICE_LANE = re.compile(r"^\s{4}(?P<lane>[a-z0-9]+(?:-[a-z0-9]+)*) \(lane (?P=lane)\):", re.M)
 
 # One ranked row of a class's book. The report prints several rows that tied on one line,
 # separated by ", ", so the names are read from the whole line: a reader that takes the first name
@@ -235,16 +266,63 @@ def shapes_from(report: str) -> list[str]:
     return found
 
 
-def stated_counts_of(report: str) -> dict[tuple[str, str], int]:
-    """The figure each class line states, which the class's own book of rows must bear out.
+def stated_counts_of(report: str) -> dict[tuple[str, str], dict]:
+    """The figures each class line states, which the class's own book of rows must bear out.
 
-    The report states a class's count in one place and ranks that class's options in another, and
-    the two are two readings of one fact. A tool that takes the stated figure alone cannot tell a
+    The report states a class's counts in one place and ranks that class's options in another, and
+    the two are two readings of one fact. A tool that takes the stated figures alone cannot tell a
     report whose book lost its rows from a library that measured nothing, and a tool that counts
-    the rows alone cannot tell the same two apart either; this is what lets both be checked.
+    the rows alone cannot tell the same two apart either; this is what lets both be checked. The
+    line's own arithmetic - the cells it holds against the share this build serves and refuses, and
+    the share this run measured - is stated with them, so a line whose parts do not add up is read
+    as that rather than taken as a count.
     """
-    return {(match.group(1), match.group(2)): int(match.group(3))
-            for match in CLASS_LINE.finditer(report)}
+    found: dict[tuple[str, str], dict] = {}
+
+    for match in CLASS_LINE.finditer(report):
+        found[(match.group("precision"), match.group("shape"))] = {
+            "possible": int(match.group("possible")),
+            "served": int(match.group("served")),
+            "refused": int(match.group("refused")),
+            "measured": int(match.group("measured")),
+            "fastest": match.group("fastest"),
+            "cost": float(match.group("cost")) if match.group("cost") else None,
+            "bound": match.group("bound"),
+            "ordered": match.group("order"),
+        }
+
+    return found
+
+
+def class_table(report: str) -> dict[tuple[str, str], dict]:
+    """The closure's class-by-class table: every class this build carries, device book included."""
+    found: dict[tuple[str, str], dict] = {}
+
+    for match in CLASS_ROW.finditer(report):
+        found[(match.group("precision"), match.group("shape"))] = {
+            "possible": int(match.group("possible")),
+            "served": int(match.group("served")),
+            "measured": int(match.group("measured")),
+            "refused": int(match.group("refused")),
+        }
+
+    return found
+
+
+def class_sums(report: str) -> dict | None:
+    """The closure's own totals over that table: the space's cells and this build's measured share."""
+    match = CLASS_SUMS.search(report)
+
+    if match is None:
+        return None
+
+    return {"possible": int(match.group("possible")), "served": int(match.group("served")),
+            "refused": int(match.group("refused")), "measured": int(match.group("measured"))}
+
+
+def device_lanes(report: str) -> set[str]:
+    """The lanes the report counts apart from this build, from its own device-book statement."""
+    return {match.group("lane") for match in DEVICE_LANE.finditer(report)}
 
 
 # The resolution section's per-class block: a class, the refinement runs over its tied options, and
@@ -291,10 +369,10 @@ def ranked_by_class(report: str) -> dict[tuple[str, str], list[str]]:
     current: tuple[str, str] | None = None
 
     for line in report.splitlines():
-        header = CLASS_LINE.match(line) or EMPTY_LINE.match(line)
+        header = CLASS_LINE.match(line)
 
         if header:
-            current = (header.group(1), header.group(2))
+            current = (header.group("precision"), header.group("shape"))
             ranked.setdefault(current, [])
             continue
 
@@ -311,11 +389,6 @@ def ranked_by_class(report: str) -> dict[tuple[str, str], list[str]]:
             continue
 
         ranked[current].extend(RANKED_ROW.findall(line))
-
-        fastest = FASTEST.search(line)
-
-        if fastest:
-            ranked[current].append(fastest.group(1))
 
     return ranked
 
@@ -363,6 +436,79 @@ PRECISION_ENUM = re.compile(r"^\s*(k[A-Za-z0-9]+)\s*(?:=[^,]+)?,\s*///<\s*(.*)$"
 def join_continuations(text: str) -> str:
     """The seam's rows as one line each: a row is written across as many lines as its width needs."""
     return re.sub(r"\\\s*\n\s*", " ", text)
+
+
+# =============================================================================================
+# The names a class's cells are printed under, read from the probe and from the surface.
+# =============================================================================================
+
+# One row of ``CarriedOwnCellNames``: the two names the report has carried for a class's own cell
+# and for its sorted twin, either of which the probe writes as nullptr where the grammar's own
+# name is the one the report carries.
+CARRIED_GATE = re.compile(r"shape\s*!=\s*OptionProbeShape::(k[A-Za-z0-9]+)")
+CARRIED_ROW = re.compile(r"case\s+OptionPrecision::(k[A-Za-z0-9]+)\s*:\s*return\s*\{\s*"
+                         r"(nullptr|\"[^\"]*\")\s*,\s*(nullptr|\"[^\"]*\")\s*\}\s*;", re.S)
+SORTED_SEGMENT = re.compile(r"\bkSortedCellSegment\s*=\s*\"([^\"]*)\"")
+SORTED_OVERLOAD = re.compile(r"\b(Boys[A-Za-z0-9_]+)\s*\(([^;{]*)\)")
+
+
+def carried_own_cells(reader: Reader) -> tuple[str | None, dict[str, tuple[str | None, str | None]]]:
+    """The class names the report carried before its grammar did, read out of the probe's table.
+
+    ``CarriedOwnCellNames`` states, for one shape alone, the name a class's own cell has been
+    printed under and the one its sorted twin carries; every other class prints the grammar's own
+    name. The shape the table is gated on is read with it, because a reader that took the table for
+    every shape would put the double lane's carried names on four questions that never had them.
+    The segment a sorted twin takes where no name was carried is read here too, so that the spelling
+    the report prints is the probe's own.
+    """
+    text = reader.text("src/boys_probe.cpp")
+    match = re.search(r"constexpr\s+CarriedNames\s+CarriedOwnCellNames\s*\([^)]*\)[^{]*\{", text)
+
+    if not match:
+        return None, {}
+
+    body = text[match.end():]
+    end = body.find("\n}\n")
+    body = body[:end if end >= 0 else len(body)]
+
+    gate = CARRIED_GATE.search(body)
+    found: dict[str, tuple[str | None, str | None]] = {}
+
+    for row in CARRIED_ROW.finditer(body):
+        found[row.group(1)] = tuple(None if cell == "nullptr" else cell.strip('"')
+                                    for cell in (row.group(2), row.group(3)))
+
+    return (gate.group(1) if gate else None), found
+
+
+def sorted_segment(reader: Reader) -> str:
+    """The segment the probe appends to a cell's name for the call that skips the sort."""
+    match = SORTED_SEGMENT.search(reader.text("src/boys_probe.cpp"))
+
+    return match.group(1) if match else ""
+
+
+def sorted_overload_entries(reader: Reader) -> set[str]:
+    """The entries whose declaration carries the ``BoysSortedArgs`` overload, from the surface.
+
+    The probe asks this question of the compiler, with a ``requires`` expression over the entry
+    itself; a reader without a compiler asks the same question of the declaration, which is the
+    thing that expression resolves against. A class whose entry declares the overload carries a
+    second cell per combination - the same combination reached by the call that skips the sort -
+    and a tool that counted one cell there would read the run's book as double what its grammar
+    states.
+    """
+    found: set[str] = set()
+
+    for header in ("boys.hpp", "boys_span.hpp", "boys_half.hpp"):
+        text = join_continuations(reader.text(f"include/boys/{header}"))
+
+        for match in SORTED_OVERLOAD.finditer(text):
+            if "BoysSortedArgs" in match.group(2):
+                found.add(match.group(1))
+
+    return found
 
 
 def seam_rows(text: str) -> dict[tuple[str, str, str], dict[str, str]]:
@@ -481,22 +627,30 @@ def kebab(member: str) -> str:
     return re.sub(r"(?<!^)(?=[A-Z])", "-", member).lower()
 
 
-def device_entries(rows: str, options: str) -> tuple[dict[str, tuple[str, str, str]], list[str], int]:
+def device_entries(rows: str, options: str) -> tuple[dict[str, tuple[str, str, str, str]],
+                                                     list[str], int]:
     """The device option space, read from the library's own table of it.
 
     ``kDeviceOptions`` (src/boys_cuda.cpp) carries one row per ``DeviceEntry``, in enumerator order,
-    and each row states the group a caller reaches the entry by, the precision it computes in and
-    the shape it answers with. Those three fields are what this reads, and not the enumerator's
-    spelling: the spelling is a name, and the group a row belongs to is a fact the library states.
+    and each row states the group a caller reaches the entry by, the precision it computes in, the
+    shape it answers with and the question that shape answers. Those four fields are what this
+    reads, and not the enumerator's spelling: the spelling is a name, and the group a row belongs to
+    is a fact the library states.
+
+    The question is read beside the shape because the two are not one field: a shape delivered to a
+    sink and the same shape written to an array are one question, and the seam's device rows are
+    keyed by the question (``SeamShapeCell`` in the device probe). A reader that took the shape for
+    the class key would look for a class the seam does not carry.
 
     The row's group is a member of ``DeviceOptionGroup``, whose own documentation tells the two
     routes apart - one is queued by this library and the other is inlined into the caller's kernel -
     so which member means which route is read rather than written here.
 
-    :returns the entries, keyed by enumerator, as (route family, precision member, shape member);
-    the rows whose enumerator comment names a route family their row's group does not, which is two
-    statements of one fact disagreeing and so a defect rather than a preference; and the number of
-    enumerators the enumeration declares, which the caller checks the table against.
+    :returns the entries, keyed by enumerator, as (route family, precision member, shape member,
+    question member); the rows whose enumerator comment names a route family their row's group does
+    not, which is two statements of one fact disagreeing and so a defect rather than a preference;
+    and the number of enumerators the enumeration declares, which the caller checks the table
+    against.
     """
     groups = enum_members(options, "DeviceOptionGroup")
     queued = [member for member, doc in groups.items() if QUEUED_DOC.search(doc)]
@@ -507,10 +661,10 @@ def device_entries(rows: str, options: str) -> tuple[dict[str, tuple[str, str, s
 
     routes = {queued[0]: "launched", inlined[0]: "in-kernel"}
     comments = enum_members(options, "DeviceEntry")
-    found: dict[str, tuple[str, str, str]] = {}
+    found: dict[str, tuple[str, str, str, str]] = {}
     disagreements: list[str] = []
 
-    for entry, group, precision, shape in DEVICE_ROW.findall(rows):
+    for entry, group, precision, shape, question in DEVICE_ROW.findall(rows):
         route = routes.get(group)
 
         if route is None:
@@ -525,7 +679,7 @@ def device_entries(rows: str, options: str) -> tuple[dict[str, tuple[str, str, s
                 f"{entry}: the enumeration's comment names a {named} entry and the option table's "
                 f"row places it in {route} ({group})")
 
-        found[entry] = (route, precision, shape)
+        found[entry] = (route, precision, shape, question)
 
     return found, disagreements, len(comments)
 
@@ -630,7 +784,8 @@ ONE_ORDER = re.compile(r"\bone order\b", re.I)
 # order; this reader holds its count against the enumeration's own for that reason.
 DEVICE_ROW = re.compile(
     r"\{\s*DeviceEntry::(k\w+)\s*,\s*\"[^\"]*\"\s*,\s*DeviceOptionGroup::(k\w+)\s*,\s*"
-    r"DeviceOptionPrecision::(k\w+)\s*,\s*DeviceOptionShape::(k\w+)\s*,", re.S)
+    r"DeviceOptionPrecision::(k\w+)\s*,\s*DeviceOptionShape::(k\w+)\s*,\s*"
+    r"DeviceOptionQuestion::(k\w+)\s*,", re.S)
 DEVICE_MEMBER = re.compile(r"^\s*(k[A-Za-z0-9]+)\s*(?:=\s*\d+)?\s*,?\s*///<\s*(.*)$", re.M)
 QUEUED_DOC = re.compile(r"\bqueued by this library\b", re.I)
 INLINED_DOC = re.compile(r"\binlined into the caller's kernel\b", re.I)
@@ -847,7 +1002,16 @@ def main() -> int:
     shapes = shapes_from(report)
     ranked = ranked_by_class(report)
     stated_counts = stated_counts_of(report)
+    closure = class_table(report)
+    sums = class_sums(report)
+    apart = device_lanes(report)
     votes_by_class_of = votes_by_class(report)
+
+    if not closure or sums is None:
+        print("combination_matrix: the report states no class-by-class table or no sums over it, "
+              "so the counts its class lines carry have nothing to be held against and this run "
+              "checked far less than it reads as having checked")
+        return 1
 
     if len(axes) != 6:
         print(f"combination_matrix: the report states {len(axes)} axis/axes where the policy has "
@@ -876,7 +1040,29 @@ def main() -> int:
               "probe's own spelling")
         return 1
 
-    by_precision = {value: key for key, value in probe_precision.items()}
+    by_precision = {value: key for key, value in probe_precision.items() if key}
+
+    # The rest of the naming: the shape the report has carried names for, those names, the segment
+    # a sorted twin takes, and the entries that declare the sorted overload at all.
+    shape_words = read_function_table(reader, "src/boys_probe.cpp", "OptionProbeShapeName")
+    carried_shape_enum, carried = carried_own_cells(reader)
+    sorted_suffix = sorted_segment(reader)
+    sorted_entries = sorted_overload_entries(reader)
+
+    if not shape_words or not sorted_suffix or not sorted_entries:
+        print("combination_matrix: the probe's shape names, its sorted-cell segment and the "
+              "surface's sorted-arguments overloads were not all read - a name this tool builds "
+              "would then be its own spelling rather than the probe's, so the reader is wrong, "
+              "not the library")
+        return 1
+
+    carried_shape = shape_words.get(carried_shape_enum) if carried_shape_enum else None
+    all_orders_shape = shape_words.get("kAllOrders")
+
+    if (carried and carried_shape is None) or all_orders_shape is None:
+        print("combination_matrix: the probe's own shape table does not spell a shape this tool "
+              "names classes by - the reader is wrong, not the library")
+        return 1
 
     surface = set()
     for header in ("boys.hpp", "boys_span.hpp", "boys_half.hpp"):
@@ -1033,6 +1219,10 @@ def main() -> int:
           "default")
     total_possible = 0
     total_probed = 0
+    total_stated = 0
+    total_served = 0
+    total_refused = 0
+    total_measured = 0
     rows = []
     shape_rows: list[tuple[str, str]] = []
 
@@ -1046,8 +1236,58 @@ def main() -> int:
         combinations = [dict(zip(keys, combination))
                         for combination in itertools.product(*members)]
 
-        names = {cell_name(precision, c["partition"], c["packing"], c["route"], c["scheme"],
-                           c["division"], c["exponential"]) for c in combinations}
+        # The name each of the class's cells is printed under, in the probe's own rules. The
+        # grammar's name is the probe's, segment for segment; every class but the all-orders one
+        # carries its shape's word in front of it, because one combination of the six run-time
+        # axes carries five questions and a name that did not say which one a row answers would be
+        # one name on five cells. The class's own cell is the combination whose grammar name
+        # carries no axis segment at all - the shipped partition on the arguments axis at the
+        # shipped route and scheme - and it prints under the name the report has carried for that
+        # call where it has one, which is a fact of the probe's table and not of this tool's
+        # spelling.
+        own_grammar = "batch-" + precision
+        prefix = "" if shape == all_orders_shape else shape + "-"
+        lane_key = by_precision.get(precision, "")
+
+        if shape == all_orders_shape:
+            # The all-orders class's own cell is the lane's own name for the call - `batch-fp64`
+            # on the double lane, and the format-boundary names on the half lanes, whose entries
+            # are the single-precision engine with a store on either side.
+            own_name = lane_name.get(lane_key, lane_name.get("", ""))
+        else:
+            own_name = shape + "-" + precision
+
+        carved = carried.get(lane_key) if shape == carried_shape else None
+
+        if carved and carved[0]:
+            own_name = carved[0]
+
+        if not own_name:
+            print(f"combination_matrix: the probe's own tables name no cell for the class "
+                  f"{precision} {shape}, so its book cannot be read against a name this tool "
+                  "builds - the reader is wrong, not the library")
+            return 1
+
+        own_sorted = carved[1] if carved and carved[1] else own_name + sorted_suffix
+
+        # Whether the class carries a second cell per combination: the entry's declaration is what
+        # the probe's own trait resolves against, so the declaration is what this reads.
+        second = host_entry(precision, shape) in sorted_entries
+        names = set()
+
+        def printed_name(cell: dict[str, str]) -> str:
+            """One combination of this class, under the name the probe prints it under."""
+            grammar = cell_name(precision, cell["partition"], cell["packing"], cell["route"],
+                                cell["scheme"], cell["division"], cell["exponential"])
+
+            return own_name if grammar == own_grammar else prefix + grammar
+
+        for combination in combinations:
+            printed = printed_name(combination)
+            names.add(printed)
+
+            if second:
+                names.add(own_sorted if printed == own_name else printed + sorted_suffix)
 
         # A class with no entry has no combination anything can be instantiated at, which is not
         # the same as a class whose combinations exist and went unmeasured: the first is a hole in
@@ -1082,25 +1322,68 @@ def main() -> int:
         # name twice would be a report whose book double-counts.
         measured = sorted(set(ranked.get((precision, shape), [])) - {""})
 
-        # The lane's own name for a question: one of the probe's appended rows is the lane's
-        # default cell, and it is printed under this name rather than under the axes'. The name is
-        # the probe's own table's, read above, so a lane whose row is called what the grammar calls
-        # it is a cell here and a lane whose row is called something else is still a cell.
-        lane_row = lane_name.get(by_precision.get(precision, ""))
-
         known = [name for name in measured if name in names]
-        lane_named = [name for name in measured if name not in names and name == lane_row]
-        unknown = [name for name in measured if name not in names and name != lane_row]
+        unknown = [name for name in measured if name not in names]
 
+        # What the class line states, and what the closure's own table states for the same class.
+        # The line's counts are read as an arithmetic that has to hold - the cells it holds against
+        # the share the build serves and refuses, and the share this run measured - and the closure's
+        # row is a second reading of the same three counts, so a class whose own line and whose row
+        # disagree is named rather than averaged.
         stated = stated_counts.get((precision, shape))
-
-        if stated is not None and stated != len(measured):
-            defects.append(
-                f"{precision} {shape}: the class line states {stated} measured and its own book "
-                f"ranks {len(measured)} name(s), so one of the two readings is wrong and neither "
-                "figure is usable")
+        row_stated = closure.get((precision, shape))
 
         possible = len(names) if implemented else 0
+
+        if stated is None:
+            defects.append(f"{precision} {shape}: the report states no class line for this class, "
+                           "so nothing about it is asserted to hold and this row is the tool's own "
+                           "reading alone")
+        else:
+            if stated["served"] + stated["refused"] != stated["possible"]:
+                defects.append(
+                    f"{precision} {shape}: the class line states {stated['possible']} possible but "
+                    f"{stated['served']} served + {stated['refused']} refused - the line's own "
+                    "arithmetic does not hold")
+
+            if stated["measured"] and stated["measured"] != stated["served"]:
+                defects.append(
+                    f"{precision} {shape}: the class line states {stated['measured']} measured of "
+                    f"{stated['served']} served, so the share this run measured is not the share "
+                    "this build serves")
+
+            if stated["fastest"] and stated["fastest"] not in measured:
+                defects.append(
+                    f"{precision} {shape}: the class line names `{stated['fastest']}` as the "
+                    "class's fastest option and the class's own book ranks no such name, so the "
+                    "line names a figure the book below it does not carry")
+
+            if stated["measured"] != len(known) and stated["measured"] != len(measured):
+                defects.append(
+                    f"{precision} {shape}: the class line states {stated['measured']} measured and "
+                    f"its own book ranks {len(measured)} name(s) - one of the two readings is "
+                    "wrong and neither figure is usable")
+
+            if implemented and stated["possible"] != len(names) and stated["measured"] != 0:
+                defects.append(
+                    f"{precision} {shape}: the class line states {stated['possible']} cell(s) and "
+                    f"the axes the report states give this class {len(names)} "
+                    f"(one per combination, and {'a second' if second else 'no second'} where the "
+                    "entry declares the sorted-arguments overload)")
+
+        if row_stated is not None and stated is not None:
+            for figure in ("possible", "served", "refused"):
+                if row_stated[figure] != stated[figure]:
+                    defects.append(
+                        f"{precision} {shape}: the class line states {stated[figure]} {figure} and "
+                        f"the closure's class-by-class table states {row_stated[figure]}, so the "
+                        "report carries two figures for one class")
+
+            if row_stated["measured"] != stated["measured"]:
+                defects.append(
+                    f"{precision} {shape}: the class line states {stated['measured']} measured and "
+                    f"the closure's class-by-class table states {row_stated['measured']}, so the "
+                    "report carries two figures for one class")
 
         # The default leg. A class has a default of its own when the seam in force carries a row
         # keyed at it AND that row names a combination the class was measured at; a row naming a
@@ -1136,15 +1419,15 @@ def main() -> int:
                     defects.append(f"{precision} {shape}: the seam's row names a combination this "
                                    "tool cannot read back into the report's axis members, so "
                                    "whether it is a measured combination is unproven")
-            elif cell_name(precision, cell["partition"], cell["packing"], cell["route"],
-                           cell["scheme"], cell["division"], cell["exponential"]) in set(known) or \
-                    unknown:
+            elif printed_name(cell) in set(known) or unknown:
                 # Either the seam's combination is one the class ranked, or the class ranked a
-                # name its own grammar does not produce - which is a shape row, and a shape row is
-                # appended at the class's own default policy. The probe appends one per (shape,
-                # lane) for the shapes no cell of the axes carries, and the default policy is
-                # exactly what the seam's row states, so such a row measures the seam's cell under
-                # the lane's name for it rather than under the axes' name.
+                # name its own grammar does not produce, which this tool cannot place on any
+                # combination of the class and names rather than assumes. The name the seam's row
+                # is held to is the one the class's own cells are printed under - the grammar's
+                # name with its shape's word in front of it, or the carried name on the own cell -
+                # because a name built for the comparison alone would be a second grammar, and a
+                # class whose book ranks the seam's combination under the probe's own spelling
+                # would read as a class whose default nothing measured.
                 default = "row" if key_owner == seam_key else f"row via {key_owner}"
 
                 if key_owner != seam_key:
@@ -1198,30 +1481,87 @@ def main() -> int:
         # outnumber its combinations - the half lane's shape row is a name and not a combination -
         # which is a fact about the probe's book and not a negative amount of work, so the count
         # floors at zero and the over-count is reported where the name is read.
-        rows.append((precision, shape, possible, len(measured), max(0, possible - len(measured)),
-                     len(known), unknown,
+        rows.append((precision, shape, possible, len(measured), max(0, possible - len(known)),
+                     len(known), unknown, stated,
                      "NO ENTRY" if not implemented else
                      f"{len(names)}/{len(names)}" if compiled_here else
                      "declared" if compiled_here is None else "REFUSED",
                      default))
         total_possible += possible
         total_probed += len(measured)
+        total_served += stated["served"] if stated else 0
+        total_refused += stated["refused"] if stated else 0
+        total_stated += stated["possible"] if stated else 0
+        total_measured += stated["measured"] if stated else 0
         shape_rows.extend((f"{precision} {shape}", name) for name in unknown)
 
-    for precision, shape, possible, probed, missing, known, unknown, implemented, default in rows:
+    print("\n  the class line, and this tool's own reading of the same class. The first four "
+          "columns are what\n  the report states; `cells` is what the axes it states give the "
+          "class, and `missing` is what that\n  leaves unranked in the class's own book:")
+    print("  class                    possible  served  refused  measured     cells  probed  "
+          "missing  note            default")
+
+    for (precision, shape, possible, probed, missing, known, unknown, stated, implemented,
+         default) in rows:
         label = f"{precision} {shape}"
-        note = f"{len(unknown)} shape row(s)" if unknown else ""
-        print(f"  {label:<24} {possible:>8}  {implemented:>9}  {probed:>8}  {missing:>8}  "
-              f"{note:<15} {default}")
+        note = f"{len(unknown)} unknown name(s)" if unknown else ""
+        figures = (stated["possible"], stated["served"], stated["refused"], stated["measured"]) \
+            if stated else (0, 0, 0, 0)
+        print(f"  {label:<24} {figures[0]:>8} {figures[1]:>7} {figures[2]:>8} {figures[3]:>9}  "
+              f"{possible:>9}  {probed:>6}  {missing:>7}  {note:<15} {default}")
 
     host_unmeasured = sum(row[4] for row in rows)
     print(f"\n  class(es) the library serves:                    {len(rows)}")
-    print(f"  combination(s) their entries instantiate at:     {total_possible}")
-    print(f"  of them the report ranks in their class:         {total_probed}")
-    print(f"host total — combination(s) a class can be instantiated at and this run did not "
-          f"measure: {host_unmeasured}")
+    print(f"  cell(s) their class lines state:                 {total_stated} = {total_served} "
+          f"served + {total_refused} refused, {total_measured} measured")
+    print(f"  cell(s) the axes the report states give them:    {total_possible}")
+    print(f"  cell(s) their books rank:                        {total_probed}")
+    print(f"host total — cell(s) a class can be instantiated at and this run did not rank: "
+          f"{host_unmeasured}")
 
-    unserved = [f"{precision} {shape}" for precision, shape, _, _, _, _, _, implemented, _ in rows
+    # The space's own total, which the host classes' lines are not the whole of: the closure
+    # carries the device lane's book beside this build and counts it apart, so the total the class
+    # lines add up to and the total the space states are two figures that have to differ by
+    # exactly that book and by nothing else.
+    print(f"\n  the closure's own sums: {sums['possible']} possible = {sums['served']} served + "
+          f"{sums['refused']} refused, {sums['measured']} measured")
+
+    if not apart:
+        defects.append(
+            "the space: the report states no book it counts apart from this build, so the class "
+            "lines' total cannot be squared with the space's own total - the reader is wrong, "
+            "not the report")
+
+    apart_rows = {key: row for key, row in closure.items() if key[0] in apart}
+    apart_totals = {figure: sum(row[figure] for row in apart_rows.values())
+                    for figure in ("possible", "served", "measured", "refused")}
+
+    if apart:
+        print(f"  counted apart, from the closure's own table ({len(apart_rows)} row(s) over "
+              f"{', '.join(sorted(apart))}): {apart_totals['possible']} possible = "
+              f"{apart_totals['served']} served + {apart_totals['refused']} refused, "
+              f"{apart_totals['measured']} measured")
+
+    # The class lines are the classes this build carries; the closure's table is the space. The
+    # two totals have to differ by exactly the book the report counts apart and by nothing else,
+    # so a class line missing from the table, or a row the lines do not add up to, is a number
+    # here rather than a rounding of the space.
+    for figure, total in (("possible", total_stated), ("served", total_served),
+                          ("refused", total_refused), ("measured", total_measured)):
+        if total + apart_totals[figure] != sums[figure]:
+            defects.append(
+                f"the space: the class lines state {total} {figure} cell(s) and the book the "
+                f"report counts apart adds {apart_totals[figure]}, while the closure's own sums "
+                f"state {sums[figure]} - the space's total is not the two together")
+
+    if total_possible != total_stated:
+        defects.append(
+            f"the space: the axes the report states give the classes {total_possible} cell(s) and "
+            f"their own class lines state {total_stated}, so the axes and the lines are two "
+            "readings of one space that disagree")
+
+    unserved = [f"{precision} {shape}"
+                for precision, shape, *_, implemented, _ in rows
                 if implemented == "NO ENTRY"]
 
     if unserved:
@@ -1264,16 +1604,41 @@ def main() -> int:
               "the reader is wrong, not the library")
         return 1
 
-    print("\nthe device half — a class is (precision, shape, ROUTE), and each route is complete or "
-          "not on its own")
+    # The class is (precision, question, ROUTE) and not (precision, shape, ROUTE): a shape the
+    # library delivers to a sink and the same shape written to an array are one question, which is
+    # what the option table's own question cell states and what the seam's device rows are keyed by.
+    # The shape-to-question folding is read from the table, so it is the library's that is used and
+    # not a rule written here; where the table folds nothing, the two readings are the same one.
+    print("\nthe device half — a class is (precision, question, ROUTE), and each route is complete "
+          "or not on its own")
     counts: dict[tuple[str, str, str], int] = {}
 
-    for _, (route, precision, shape) in table.items():
-        counts[(precision, shape, route)] = counts.get((precision, shape, route), 0) + 1
+    for _, (route, precision, shape, question) in table.items():
+        counts[(precision, question, route)] = counts.get((precision, question, route), 0) + 1
 
-    shape_order = list(enum_members(options_text, "DeviceOptionShape"))
-    device_shapes = sorted({shape for _, shape, _ in counts},
-                           key=lambda s: shape_order.index(s) if s in shape_order else len(shape_order))
+    # The cell the seam spells for a question, which is the question's own shape: read from the
+    # device probe's table rather than assumed, because a class the table carries and the seam has
+    # no key for is exactly what a spelling taken for granted would hide.
+    seam_cells = read_function_table(reader, "src/boys_cuda_probe.cpp", "SeamShapeCell")
+
+    if not seam_cells:
+        print("combination_matrix: the device probe's own question-to-seam-cell table was not "
+              "read, so no device class can be held to a default row - the reader is wrong, not "
+              "the library")
+        return 1
+
+    shapes_of = {shape for _, _, shape, _ in table.values()}
+    questions_of = {question for _, _, _, question in table.values()}
+    folded = {question: sorted({shape for _, _, shape, q in table.values() if q == question})
+              for question in questions_of}
+    print(f"  the table's own question cell places its {len(shapes_of)} shape(s) in "
+          f"{len(questions_of)} question(s): "
+          + "; ".join(f"{kebab(q[1:])} = {' + '.join(kebab(s[1:]) for s in folded[q])}"
+                      for q in sorted(questions_of)))
+
+    question_order = list(enum_members(options_text, "DeviceOptionQuestion"))
+    device_questions = sorted(questions_of, key=lambda q: question_order.index(q)
+                              if q in question_order else len(question_order))
     device_precisions = sorted({p for p, _, _ in counts})
     device_routes = sorted({route for _, _, route in counts})
 
@@ -1300,21 +1665,22 @@ def main() -> int:
               "has two - the reader is wrong, not the library")
         return 1
 
-    for shape in device_shapes:
+    for question in device_questions:
         for precision in device_precisions:
             for route in device_routes:
-                count = counts.get((precision, shape, route), 0)
-                seam_row = seam.get(("device", precision + SEAM_DEVICE_PRECISION, shape))
+                count = counts.get((precision, question, route), 0)
+                seam_row = seam.get(("device", precision + SEAM_DEVICE_PRECISION,
+                                     seam_cells.get(question, "")))
                 has_default = "row" if seam_row else "no row"
 
                 if count == 0:
                     other = "in-kernel" if route == "launched" else "launched"
                     note = "NOT IMPLEMENTED — no kernel of this class in the DeviceEntry table"
                     device_defects.append(
-                        f"device {kebab(precision[1:])} {kebab(shape[1:])} {route}: the library "
+                        f"device {kebab(precision[1:])} {kebab(question[1:])} {route}: the library "
                         "names no kernel of this class, and the other route names "
-                        f"{counts.get((precision, shape, other), 0)} — a route that is complete on "
-                        "its own would carry both")
+                        f"{counts.get((precision, question, other), 0)} — a route that is complete "
+                        "on its own would carry both")
                 else:
                     note = ""
 
@@ -1324,18 +1690,19 @@ def main() -> int:
                         # and the class's own answer is not reachable at all.
                         note = "NO DEFAULT ROW — entries exist and no seam row names this class"
                         device_defects.append(
-                            f"device {kebab(precision[1:])} {kebab(shape[1:])} {route}: the table "
-                            f"names {count} kernel(s) of this class and the seam in force carries "
-                            "no row for it, so nothing states which of them the class resolves to")
+                            f"device {kebab(precision[1:])} {kebab(question[1:])} {route}: the "
+                            f"table names {count} kernel(s) of this class and the seam in force "
+                            "carries no row for it, so nothing states which of them the class "
+                            "resolves to")
 
-                label = (f"device {kebab(precision[1:]):<6} {kebab(shape[1:]):<12} {route:<10}")
+                label = (f"device {kebab(precision[1:]):<6} {kebab(question[1:]):<12} {route:<10}")
                 print(f"  {label} {count:>8}  {has_default:<11} {note}")
 
     device_total = sum(counts.values())
     print(f"\n  device entries read from DeviceEntry: {device_total}")
     print(f"  device classes with entries:         {len(counts)}")
     print(f"  device classes with no entry:        "
-          f"{len(device_shapes) * len(device_precisions) * len(device_routes) - len(counts)}")
+          f"{len(device_questions) * len(device_precisions) * len(device_routes) - len(counts)}")
 
     if arguments.device_report:
         print(f"\ndevice report: {arguments.device_report}")
