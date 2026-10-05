@@ -438,29 +438,110 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 }
 
 // ---------------------------------------------------------------------------
-// the region-B exponential of the float lane
+// the region-B exponential
 // ---------------------------------------------------------------------------
 
-// The two arithmetics the single float entry offers (RegionBExp, boys_cuda.hpp), and
+// The arithmetic the region-B seed's t = e^{-x}/2 takes, at the member the option
+// names (RegionBExp, boys/accuracy.hpp) and per the device the lane runs on. This is
 // the one factor of the region-B path a caller can trade accuracy for speed on.
 //
+// Float lane:
 //  - kFastExp is the hardware approximation with its argument-scaling residual
 //    removed: __expf(y) evaluates 2^fl(y log2 e), and that one rounding is the term
 //    that grows with |y|. The residual fma(y, log2 e, -t) of that product is exact,
 //    and 2^(t + d) = 2^t 2^d ~= 2^t (1 + d ln 2), so two fused steps take the error
 //    back to the approximation's own few ulp, flat in the argument.
 //  - otherwise the library routine, which is what the batch bodies compute.
-template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute>
-__device__ __forceinline__ float DeviceRegionBExp(float xx) {
-    if constexpr (kFastExp)
+//
+// Double lane: both members are the host's own (boys_impl.hpp, RegionBHalfExp), and
+// they are ported rather than re-derived because the members are named once and a
+// device figure that differed from the host's for one name would be a second bound
+// for that name.
+//  - kFastExp is the reduced-argument polynomial below, the host's arithmetic
+//    term for term.
+//  - otherwise the library routine, as on the host.
+
+// The host's constants for the double lane's fast member, at the device's own names
+// so that a reader of either can see there is one statement of each number and not
+// two. kDeviceRegionBExpReduced is e^{-r} on |r| <= ln 2/2, degree 7, Chebyshev fit,
+// 8.336e-11 relative; kDeviceRegionBExpCheapFrom is the smallest x whose ladder
+// requirement reaches ten times that error, solved from T(32, x) (boys_impl.hpp,
+// kRegionBExpCheapFrom). The coefficients are a device object because the sum indexes
+// them at a loop variable's value, which is an odr-use the device compiler needs a
+// device copy for; the scalars beside it are folded as values and need none.
+inline constexpr double kDeviceRegionBExpCheapFrom = 16.173039304440838;
+__device__ constexpr double kDeviceRegionBExpReduced[8] = {
+    0.9999999999190966,
+    -0.9999999999910163,
+    0.5000000168381031,
+    -0.16666666853653805,
+    0.04166608365203089,
+    -0.008333268585902836,
+    0.0013956053200368968,
+    -0.00019915868993476617,
+};
+inline constexpr double kDeviceRegionBExpLog2e = 1.4426950408889634073599246810018921;
+inline constexpr double kDeviceRegionBExpLn2 = 0.6931471805599453094172321214581766;
+inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
+
+// The double fast member's reduction is the textbook one - x = k ln 2 + r with
+// |r| <= ln 2/2, so e^{-x} = 2^{-k} e^{-r} - with k out of the magic constant rather
+// than a libm rounding call and 2^{-k} out of the exponent field rather than ldexp;
+// __longlong_as_double is the device's spelling of the bit reinterpretation the host
+// writes std::bit_cast. Over region B k is in [25, 42], far from the exponent field's
+// ends, so the scale is exact. Below kDeviceRegionBExpCheapFrom the ladder's own
+// requirement on this term - |delta| <= 1.0e-14 / T(N, x), the bar the host states as
+// kRegionBExpBar - is tighter than the polynomial's error, and this member reads the
+// library routine there: that arm is part of the member rather than a fallback,
+// because the polynomial alone would fail a bound over a band interior to region B.
+//
+// The two steps of the reduction and the seven of the Horner sum run at the lane's
+// multiply-add route, so what the build selected is what the member runs: at the
+// separate route they are the host's own two-rounding spellings, and at the fused
+// route each step rounds once more than the host's - a difference four orders below
+// the 8.336e-11 the polynomial itself carries.
+template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
+__device__ __forceinline__ T DeviceRegionBExp(T xx) {
+    if constexpr (std::is_same_v<T, float>)
     {
-        const float y = -xx;
-        const float t = y * 1.4426950408889634f;
-        const float d = DeviceMulAdd<kRoute>(y, 1.4426950408889634f, -t);
-        return 0.5f * __expf(y) * DeviceMulAdd<kRoute>(d, 0.6931471805599453f, 1.0f);
-    } else
+        if constexpr (kFastExp)
+        {
+            const float y = -xx;
+            const float t = y * 1.4426950408889634f;
+            const float d = DeviceMulAdd<kRoute>(y, 1.4426950408889634f, -t);
+            return 0.5f * __expf(y) * DeviceMulAdd<kRoute>(d, 0.6931471805599453f, 1.0f);
+        } else
+        {
+            return 0.5f * expf(-xx);
+        }
+    }
+    else
     {
-        return 0.5f * expf(-xx);
+        if constexpr (kFastExp)
+        {
+            if (xx < kDeviceRegionBExpCheapFrom)
+            {
+                return 0.5 * exp(-xx);
+            }
+
+            const double biased =
+                DeviceMulAdd<kRoute>(xx, kDeviceRegionBExpLog2e, kDeviceRegionBExpRoundMagic);
+            const double kd = biased - kDeviceRegionBExpRoundMagic;
+            const double r = DeviceMulAdd<kRoute>(-kd, kDeviceRegionBExpLn2, xx);
+
+            double p = kDeviceRegionBExpReduced[7];
+
+            for (int k = 6; k >= 0; --k)
+            {
+                p = DeviceMulAdd<kRoute>(p, r, kDeviceRegionBExpReduced[k]);
+            }
+
+            const int k = static_cast<int>(kd);
+            return 0.5 * __longlong_as_double(static_cast<long long>(1023 - k) << 52) * p;
+        } else
+        {
+            return 0.5 * exp(-xx);
+        }
     }
 }
 
@@ -642,7 +723,11 @@ __device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
 // Region A asks the fit for the order directly; the higher regions seed F_0
 // and recur upward once per order, since a fit of every order over the whole
 // range would cost more table than the recursion costs work.
-template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
+//
+// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp) and
+// touches nothing else: region A is not region B, so its own 0.5 * exp(-xx) is the
+// accurate member at every value of kFastExp.
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, double xx) {
     if (xx < kX0)
     {
@@ -652,7 +737,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
     if (xx < kX1)
     {
         double f = lane.BSeed(xx, order);
-        const double expx = 0.5 * exp(-xx);
+        const double expx = DeviceRegionBExp<kFastExp, kRoute>(xx);
         const double invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 0; l < order; ++l)
@@ -718,7 +803,12 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 // its plane and a caller can keep the ladder in registers. Region A descends,
 // so its stores arrive high order first and the value in the register chain
 // is the one the downward recursion carries.
-template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
+//
+// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp) and
+// touches nothing else: region A is not region B, so its own 0.5 * exp(-xx) is the
+// accurate member at every value of kFastExp, exactly as it is in the single body
+// above.
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
@@ -740,7 +830,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
     {
         double f = lane.BSeed(xx, order);
         store(0, f);
-        const double expx = 0.5 * exp(-xx);
+        const double expx = DeviceRegionBExp<kFastExp, kRoute>(xx);
         const double invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 1; l <= order; ++l)
@@ -768,7 +858,12 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
 // amplifies a float seed error past the float budget, so the seed is computed
 // in double and rounded once on entry to the recursion. That is what the
 // second lane argument is, and it is why this body takes two of them.
-template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
+//
+// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp)
+// and touches nothing else: region A is not region B, so its own 0.5*expf(-xx)
+// is the accurate member at every value of kFastExp, exactly as it is in the
+// single body above.
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
@@ -791,7 +886,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
     {
         float f = lane.BSeed(xx, order);
         store(0, f);
-        const float expx = 0.5f * expf(-xx);
+        const float expx = DeviceRegionBExp<kFastExp, kRoute>(xx);
         const float invx = DeviceStepReciprocal<kForm>(xx);
 
         for (int l = 1; l <= order; ++l)
@@ -1146,7 +1241,10 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
 // certified one above, which is also where the region-A fit it replaces ends.
 // Outside region A the two bodies are one body, so a row that carries this
 // axis names its interval as region A rather than claiming the rest.
-template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
+//
+// kFastExp is the body above's own parameter, carried through: past kX0 this body
+// is that one, and it takes the same region-B exponential the option named.
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
@@ -1159,12 +1257,12 @@ __device__ __forceinline__ void DeviceOrdersF64(
         return;
     }
 
-    DeviceAllOrdersF64<kForm, kRoute>(lane, order, xx, store);
+    DeviceAllOrdersF64<kForm, kFastExp, kRoute>(lane, order, xx, store);
 }
 
 // The float lane's and the fp16 lane's, over the double region-A seed lane the
 // body above takes for the same reason.
-template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
+template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
@@ -1177,7 +1275,7 @@ __device__ __forceinline__ void DeviceOrdersF32(
         return;
     }
 
-    DeviceAllOrdersF32<kForm, kRoute>(seedLane, lane, order, xx, store);
+    DeviceAllOrdersF32<kForm, kFastExp, kRoute>(seedLane, lane, order, xx, store);
 }
 
 } // namespace boys::detail

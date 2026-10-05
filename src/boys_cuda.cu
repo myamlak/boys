@@ -761,7 +761,7 @@ __global__ void BoysSingleF32Kernel(const int* n,
                                                       static_cast<float>(x[i]));
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32Kernel(const int* n,
                                        const double* __restrict__ x,
                                        float* __restrict__ out,
@@ -773,7 +773,7 @@ __global__ void BoysAllOrdersF32Kernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64Full{},
                                       Lane32Full{},
                                       n[i],
                                       static_cast<float>(x[i]),
@@ -782,7 +782,7 @@ __global__ void BoysAllOrdersF32Kernel(const int* n,
 
 // The uniform-order entry: one nmax for the whole batch, so the recursion
 // bounds are warp-uniform and no order array is read.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllNF32Kernel(int nmax,
                                   const double* __restrict__ x,
                                   float* __restrict__ out,
@@ -794,14 +794,14 @@ __global__ void BoysAllNF32Kernel(int nmax,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64Full{},
                                       Lane32Full{},
                                       nmax,
                                       static_cast<float>(x[i]),
                                       [&](int l, float v) { out[l * count + i] = v; });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -810,10 +810,10 @@ __global__ void BoysSingleF64Kernel(const int* n, const double* x, double* out, 
         return;
     }
 
-    out[i] = detail::DeviceSingleF64<kForm>(Lane64Full{}, n[i], x[i]);
+    out[i] = detail::DeviceSingleF64<kForm, kFastExp>(Lane64Full{}, n[i], x[i]);
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -822,13 +822,13 @@ __global__ void BoysAllOrdersF64Kernel(const int* n, const double* x, double* ou
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64Full{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64Full{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
 // The uniform-order entry (see BoysAllNF32Kernel).
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t count) {
     const size_t i = blockIdx.x * static_cast<size_t>(blockDim.x) + threadIdx.x;
 
@@ -837,7 +837,7 @@ __global__ void BoysAllNF64Kernel(int nmax, const double* x, double* out, size_t
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64Full{}, nmax, x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64Full{}, nmax, x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
@@ -990,7 +990,7 @@ __global__ void BoysAllOrdersF32FlatRatKernel(const int* n,
 // region-B seed is the float lane's own, the split the coarsest entry (Lane64Full beside Lane32Full)
 // already makes. Here the double lane's parts are its narrow partition's, so the entry is the
 // narrow route rather than a mixed one.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              float* __restrict__ out,
@@ -1002,14 +1002,14 @@ __global__ void BoysAllOrdersF32NarrowKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64Narrow{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64Narrow{},
                                       Lane32Narrow{},
                                       n[i],
                                       static_cast<float>(x[i]),
                                       [&](int l, float v) { out[l * count + i] = v; });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  float* __restrict__ out,
@@ -1021,7 +1021,7 @@ __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64NarrowMono{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64NarrowMono{},
                                       Lane32NarrowMono{},
                                       n[i],
                                       static_cast<float>(x[i]),
@@ -1031,7 +1031,7 @@ __global__ void BoysAllOrdersF32NarrowMonoKernel(const int* n,
 // The float lane's coarsest partition in the monomial basis, the reading the double lane's
 // BoysAllOrdersF64MonoKernel makes of its own: the same body, the seed lane the double lane's
 // coarsest monomial one, and the float lane's coarsest monomial pair beside it.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32MonoKernel(const int* n,
                                            const double* __restrict__ x,
                                            float* __restrict__ out,
@@ -1043,7 +1043,7 @@ __global__ void BoysAllOrdersF32MonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64MonoFull{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64MonoFull{},
                                       Lane32MonoFull{},
                                       n[i],
                                       static_cast<float>(x[i]),
@@ -1054,7 +1054,7 @@ __global__ void BoysAllOrdersF32MonoKernel(const int* n,
 // double lane's rational pair at that partition, which is what makes the two lanes' region-A seeds
 // one reading, and the float lane supplies the region-B seed. The route has no second scheme: its
 // pair is stored in monomial form and read by Horner, so both scheme names reach one kernel.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           float* __restrict__ out,
@@ -1066,14 +1066,14 @@ __global__ void BoysAllOrdersF32RatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64RatFull{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64RatFull{},
                                       Lane32Rat{},
                                       n[i],
                                       static_cast<float>(x[i]),
                                       [&](int l, float v) { out[l * count + i] = v; });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 float* __restrict__ out,
@@ -1085,7 +1085,7 @@ __global__ void BoysAllOrdersF32NarrowRatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64NarrowRat{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64NarrowRat{},
                                       Lane32NarrowRat{},
                                       n[i],
                                       static_cast<float>(x[i]),
@@ -1133,7 +1133,7 @@ __global__ void BoysSingleF16FastKernel(const int* n,
         detail::DeviceSingleF32<kForm, true>(Lane32Full{}, n[i], __half2float(x[i])));
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF16Kernel(const int* n,
                                        const __half* __restrict__ x,
                                        __half* __restrict__ out,
@@ -1145,7 +1145,7 @@ __global__ void BoysAllOrdersF16Kernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64Full{},
                                       Lane32Full{},
                                       n[i],
                                       __half2float(x[i]),
@@ -1155,7 +1155,7 @@ __global__ void BoysAllOrdersF16Kernel(const int* n,
 }
 
 // The uniform-order entry (see BoysAllNF64Kernel).
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllNF16Kernel(int nmax,
                                   const __half* __restrict__ x,
                                   __half* __restrict__ out,
@@ -1167,7 +1167,7 @@ __global__ void BoysAllNF16Kernel(int nmax,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(Lane64Full{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(Lane64Full{},
                                       Lane32Full{},
                                       nmax,
                                       __half2float(x[i]),
@@ -1187,7 +1187,7 @@ __global__ void BoysAllNF16Kernel(int nmax,
 // The seed lane's first argument is the double lane's piece table on the float
 // bodies (DeviceAllOrdersF32's own comment), which is why a half kernel names a
 // Lane64 seed: it is not a widening of this lane, it is the float lane's seed.
-template <DivisionForm kForm, typename SeedLane, typename Lane>
+template <DivisionForm kForm, typename SeedLane, typename Lane, bool kFastExp = false>
 __global__ void BoysAllOrdersF16LaneKernel(const int* n,
                                            const __half* __restrict__ x,
                                            __half* __restrict__ out,
@@ -1199,7 +1199,7 @@ __global__ void BoysAllOrdersF16LaneKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF32<kForm>(SeedLane{},
+    detail::DeviceAllOrdersF32<kForm, kFastExp>(SeedLane{},
                                       Lane{},
                                       n[i],
                                       __half2float(x[i]),
@@ -1258,7 +1258,7 @@ __global__ void BoysAllOrdersF16FlatRatKernel(const int* n,
 
 // The orders reading, over the same seed/lane pairs the float lane's orders
 // kernels name.
-template <DivisionForm kForm, typename SeedLane, typename Lane>
+template <DivisionForm kForm, typename SeedLane, typename Lane, bool kFastExp = false>
 __global__ void BoysOrdersF16LaneKernel(const int* n,
                                         const __half* __restrict__ x,
                                         __half* __restrict__ out,
@@ -1270,7 +1270,7 @@ __global__ void BoysOrdersF16LaneKernel(const int* n,
         return;
     }
 
-    detail::DeviceOrdersF32<kForm>(SeedLane{},
+    detail::DeviceOrdersF32<kForm, kFastExp>(SeedLane{},
                                    Lane{},
                                    n[i],
                                    __half2float(x[i]),
@@ -1287,14 +1287,14 @@ __global__ void BoysOrdersF16LaneKernel(const int* n,
 //
 // The orders axis is a choice inside region A only: past kX0 these kernels run the certified
 // all-orders body, whose row is the lane's own bound over the whole range.
-template <DivisionForm kForm, typename Lane>
+template <DivisionForm kForm, bool kFastExp = false, typename Lane>
 __device__ __forceinline__ void DeviceOrdersBody(
     const Lane& lane, int order, double xx, double* out, size_t count, size_t i) {
-    detail::DeviceOrdersF64<kForm>(lane, order, xx,
+    detail::DeviceOrdersF64<kForm, kFastExp>(lane, order, xx,
                                    [&](int l, double v) { out[l * count + i] = v; });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64OrdersKernel(const int* n,
                                              const double* __restrict__ x,
                                              double* __restrict__ out,
@@ -1306,10 +1306,10 @@ __global__ void BoysAllOrdersF64OrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64Full{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64Full{}, n[i], x[i], out, count, i);
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowKernel(const int* n,
                                              const double* __restrict__ x,
                                              double* __restrict__ out,
@@ -1321,12 +1321,12 @@ __global__ void BoysAllOrdersF64NarrowKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64Narrow{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64Narrow{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
                                                    const double* __restrict__ x,
                                                    double* __restrict__ out,
@@ -1338,7 +1338,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64Narrow{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64Narrow{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1351,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersKernel(const int* n,
 //
 // The orders axis composes with it too: DeviceOrdersBody takes the lane, so the axis is a choice
 // inside region A whichever basis that lane sums.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64MonoKernel(const int* n,
                                            const double* __restrict__ x,
                                            double* __restrict__ out,
@@ -1363,12 +1363,12 @@ __global__ void BoysAllOrdersF64MonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64MonoFull{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64MonoFull{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64OrdersMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  double* __restrict__ out,
@@ -1380,10 +1380,10 @@ __global__ void BoysAllOrdersF64OrdersMonoKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64MonoFull{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64MonoFull{}, n[i], x[i], out, count, i);
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowMonoKernel(const int* n,
                                                  const double* __restrict__ x,
                                                  double* __restrict__ out,
@@ -1395,12 +1395,12 @@ __global__ void BoysAllOrdersF64NarrowMonoKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64NarrowMono{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64NarrowMono{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
                                                        const double* __restrict__ x,
                                                        double* __restrict__ out,
@@ -1412,7 +1412,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64NarrowMono{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64NarrowMono{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1429,7 +1429,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersMonoKernel(const int* n,
 //
 // The scheme axis is inert on this route: the pair is stored once, in one basis, so both scheme
 // names launch this same kernel.
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64RatKernel(const int* n,
                                           const double* __restrict__ x,
                                           double* __restrict__ out,
@@ -1441,12 +1441,12 @@ __global__ void BoysAllOrdersF64RatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64RatFull{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64RatFull{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64OrdersRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 double* __restrict__ out,
@@ -1458,10 +1458,10 @@ __global__ void BoysAllOrdersF64OrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64RatFull{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64RatFull{}, n[i], x[i], out, count, i);
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowRatKernel(const int* n,
                                                 const double* __restrict__ x,
                                                 double* __restrict__ out,
@@ -1473,12 +1473,12 @@ __global__ void BoysAllOrdersF64NarrowRatKernel(const int* n,
         return;
     }
 
-    detail::DeviceAllOrdersF64<kForm>(Lane64NarrowRat{}, n[i], x[i], [&](int l, double v) {
+    detail::DeviceAllOrdersF64<kForm, kFastExp>(Lane64NarrowRat{}, n[i], x[i], [&](int l, double v) {
         out[l * count + i] = v;
     });
 }
 
-template <DivisionForm kForm>
+template <DivisionForm kForm, bool kFastExp = false>
 __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
                                                       const double* __restrict__ x,
                                                       double* __restrict__ out,
@@ -1490,7 +1490,7 @@ __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
         return;
     }
 
-    DeviceOrdersBody<kForm>(Lane64NarrowRat{}, n[i], x[i], out, count, i);
+    DeviceOrdersBody<kForm, kFastExp>(Lane64NarrowRat{}, n[i], x[i], out, count, i);
 }
 
 // ---------------------------------------------------------------------------
@@ -1506,11 +1506,11 @@ __global__ void BoysAllOrdersF64NarrowOrdersRatKernel(const int* n,
 // float budget. So each kernel below hands DeviceOrdersF32 a lane object this file already runs and
 // a piece table this lane already stores - the axis is a reading of the same stored fits and not a
 // new fit.
-template <DivisionForm kForm, typename SeedLane, typename Lane>
+template <DivisionForm kForm, typename SeedLane, typename Lane, bool kFastExp = false>
 __device__ __forceinline__ void DeviceOrdersBody32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, float* out, size_t count,
     size_t i) {
-    detail::DeviceOrdersF32<kForm>(seedLane, lane, order, xx,
+    detail::DeviceOrdersF32<kForm, kFastExp>(seedLane, lane, order, xx,
                                    [&](int l, float v) { out[l * count + i] = v; });
 }
 

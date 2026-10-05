@@ -181,14 +181,17 @@ struct Dev32T {
                                                                  float x,
                                                                  float* out,
                                                                  int capacity) {
-        return BoysDeviceAllOrdersF32<kForm>(tables, order, x, out, capacity);
+        return BoysDeviceAllOrdersF32<kForm, kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, out, capacity);
     }
 
     template <boys::DivisionForm kForm>
     static __device__ __forceinline__ BoysDeviceStatus AllN(const BoysDeviceTables& tables,
                                                             float x,
                                                             float* out) {
-        return BoysDeviceAllNF32<kForm, kProbeInKernelTopOrder>(tables, x, out);
+        return BoysDeviceAllNF32<kForm, kProbeInKernelTopOrder,
+                                 kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, x, out);
     }
 
     template <boys::DivisionForm kForm, typename Sink>
@@ -196,7 +199,9 @@ struct Dev32T {
                                                                  int order,
                                                                  float x,
                                                                  Sink sink) {
-        return BoysDeviceEachOrderF32<kForm>(tables, order, x, sink);
+        return BoysDeviceEachOrderF32<kForm, Sink,
+                                      kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, sink);
     }
 
     static __device__ __forceinline__ float Cheap(float x, int l) {
@@ -327,6 +332,53 @@ BOYS_PROBE_LADDER_POLICY(
 
 #undef BOYS_PROBE_LADDER_POLICY
 
+// The fast region-B reading's rows over the same axes: one policy per row, over
+// the same body the row's accurate sibling names, at the one template argument
+// the row's own name carries. It is a second macro rather than a fourth field of
+// the one above because the accurate reading is what an invocation that says
+// nothing means, so a field would have to be spelled at all twenty-four accurate
+// call sites to leave the default here.
+#define BOYS_PROBE_LADDER_POLICY_FAST(NAME, VALUE, ENTRY) \
+    struct NAME { \
+        using Value = VALUE; \
+ \
+        template <boys::DivisionForm kForm> \
+        static __device__ __forceinline__ BoysDeviceStatus AllOrders( \
+            const BoysDeviceTables& tables, \
+            int order, \
+            VALUE arg, \
+            VALUE* out, \
+            int capacity) { \
+            return ENTRY<kForm, RegionBExp::kFast>(tables, order, arg, out, capacity); \
+        } \
+ \
+        static __device__ __forceinline__ VALUE Cheap(VALUE x, int l) { \
+            return x * static_cast<VALUE>(l + 1); \
+        } \
+    };
+
+// The float lane's fast rows, one policy per row of the option table that names
+// one, in the enumeration's own order. The row that is not an axis of the ladder
+// is not here: its shape is the whole policy, and Dev32Fast above is it.
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32OrdersFast, float, BoysDeviceAllOrdersF32Orders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32RatFast, float, BoysDeviceAllOrdersF32Rat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32OrdersRatFast, float, BoysDeviceAllOrdersF32OrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32RatHornerFast, float, BoysDeviceAllOrdersF32RatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev32OrdersRatHornerFast, float, BoysDeviceAllOrdersF32OrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32NarrowFast, float, BoysDeviceAllOrdersF32Narrow)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32NarrowOrdersFast, float, BoysDeviceAllOrdersF32NarrowOrders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32NarrowMonoFast, float, BoysDeviceAllOrdersF32NarrowMono)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev32NarrowOrdersMonoFast, float, BoysDeviceAllOrdersF32NarrowOrdersMono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32NarrowRatFast, float, BoysDeviceAllOrdersF32NarrowRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev32NarrowOrdersRatFast, float, BoysDeviceAllOrdersF32NarrowOrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev32NarrowRatHornerFast, float, BoysDeviceAllOrdersF32NarrowRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev32NarrowOrdersRatHornerFast, float, BoysDeviceAllOrdersF32NarrowOrdersRatHorner)
+
 #if BoysFp16
 // The half lane's rows, one policy per row, over the body the row names: the same
 // ladder the policy above writes, at the lane's own value type. The cheap
@@ -370,9 +422,32 @@ BOYS_PROBE_HALF_POLICY(Dev16UniformRatHorner, BoysDeviceAllOrdersF16UniformRatHo
 
 #undef BOYS_PROBE_HALF_POLICY
 
-/// The half lane's fast region-B reading, the one row of that lane that is not a
-/// ladder: the shape is one value per argument, so the policy is the single-order
-/// entry the row names and not an all-orders body.
+// The half lane's fast rows, the same one-policy-per-row list the float lane's
+// fast rows above are, over the lane's own bodies: a build with the seam closed
+// has no such row to measure, so they carry the lane's guard as the rows do.
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16OrdersFast, __half, BoysDeviceAllOrdersF16Orders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16RatFast, __half, BoysDeviceAllOrdersF16Rat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16OrdersRatFast, __half, BoysDeviceAllOrdersF16OrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16RatHornerFast, __half, BoysDeviceAllOrdersF16RatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev16OrdersRatHornerFast, __half, BoysDeviceAllOrdersF16OrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16NarrowFast, __half, BoysDeviceAllOrdersF16Narrow)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16NarrowOrdersFast, __half, BoysDeviceAllOrdersF16NarrowOrders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16NarrowMonoFast, __half, BoysDeviceAllOrdersF16NarrowMono)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev16NarrowOrdersMonoFast, __half, BoysDeviceAllOrdersF16NarrowOrdersMono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16NarrowRatFast, __half, BoysDeviceAllOrdersF16NarrowRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev16NarrowOrdersRatFast, __half, BoysDeviceAllOrdersF16NarrowOrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev16NarrowRatHornerFast, __half, BoysDeviceAllOrdersF16NarrowRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev16NarrowOrdersRatHornerFast, __half, BoysDeviceAllOrdersF16NarrowOrdersRatHorner)
+
+/// The half lane's fast region-B reading, the four shapes `Dev16` carries at the
+/// lane's own reading: the single-order row is a symbol of its own, and the other
+/// three are the bodies above at the fast reading, spelled the way `Dev32T` above
+/// spells it.
 struct Dev16Fast {
     using Value = __half;
 
@@ -384,11 +459,37 @@ struct Dev16Fast {
         return BoysDeviceSingleF16Fast<kForm>(tables, order, x, out);
     }
 
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus AllOrders(const BoysDeviceTables& tables,
+                                                                 int order,
+                                                                 __half x,
+                                                                 __half* out,
+                                                                 int capacity) {
+        return BoysDeviceAllOrdersF16<kForm, RegionBExp::kFast>(tables, order, x, out, capacity);
+    }
+
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus AllN(const BoysDeviceTables& tables,
+                                                            __half x,
+                                                            __half* out) {
+        return BoysDeviceAllNF16<kForm, kProbeInKernelTopOrder, RegionBExp::kFast>(tables, x, out);
+    }
+
+    template <boys::DivisionForm kForm, typename Sink>
+    static __device__ __forceinline__ BoysDeviceStatus EachOrder(const BoysDeviceTables& tables,
+                                                                 int order,
+                                                                 __half x,
+                                                                 Sink sink) {
+        return BoysDeviceEachOrderF16<kForm, Sink, RegionBExp::kFast>(tables, order, x, sink);
+    }
+
     static __device__ __forceinline__ __half Cheap(__half x, int l) {
         return __float2half(__half2float(x) * static_cast<float>(l + 1));
     }
 };
 #endif // BoysFp16
+
+#undef BOYS_PROBE_LADDER_POLICY_FAST
 
 /// The four shapes, as a template parameter. Every shape writes its whole
 /// output, and the removed-call half writes the same slots with the same
@@ -741,6 +842,112 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH(Dev16Fast, __half, kSingle, xh);
                 break;
 #endif // BoysFp16
+            // The fast region-B reading's rows, in the enumeration's own order:
+            // the same bodies as the arms above, at the one template argument the
+            // row's own name carries. The enumeration holds them after the four
+            // shapes and the axes they share their bodies with, one lane at a
+            // time, and so they are armed here.
+            case ProbeEntry::kDeviceAllOrdersF32Fast:
+                BOYS_PROBE_LAUNCH(Dev32Fast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersFast:
+                BOYS_PROBE_LAUNCH(Dev32OrdersFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatFast:
+                BOYS_PROBE_LAUNCH(Dev32RatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev32OrdersRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev32RatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev32OrdersRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowMonoFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowMonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersMonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllNF32Fast:
+                BOYS_PROBE_LAUNCH(Dev32Fast, float, kAllN, xf);
+                break;
+            case ProbeEntry::kDeviceEachOrderF32Fast:
+                BOYS_PROBE_LAUNCH(Dev32Fast, float, kEachOrder, xf);
+                break;
+#if BoysFp16
+            // The half lane's fast rows, under the lane's guard as the arms above
+            // are: a build with the seam closed has no such enumerator to be asked
+            // for and no half array to read.
+            case ProbeEntry::kDeviceAllOrdersF16Fast:
+                BOYS_PROBE_LAUNCH(Dev16Fast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersFast:
+                BOYS_PROBE_LAUNCH(Dev16OrdersFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16RatFast:
+                BOYS_PROBE_LAUNCH(Dev16RatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev16OrdersRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16RatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev16RatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev16OrdersRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowMonoFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllNF16Fast:
+                BOYS_PROBE_LAUNCH(Dev16Fast, __half, kAllN, xh);
+                break;
+            case ProbeEntry::kDeviceEachOrderF16Fast:
+                BOYS_PROBE_LAUNCH(Dev16Fast, __half, kEachOrder, xh);
+                break;
+#endif // BoysFp16
             default:
                 return 1;
         }
@@ -952,6 +1159,107 @@ int LaunchInKernel(ProbeEntry entry,
                 break;
             case ProbeEntry::kDeviceSingleF16Fast:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kSingle, xh);
+                break;
+#endif // BoysFp16
+            // The removed-call half of the fast rows armed above, in the same
+            // order and over the same policies: the subtraction's other side.
+            case ProbeEntry::kDeviceAllOrdersF32Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32RatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32RatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32RatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowMonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersMonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRatFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRatHornerFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllNF32Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kAllN, xf);
+                break;
+            case ProbeEntry::kDeviceEachOrderF32Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kEachOrder, xf);
+                break;
+#if BoysFp16
+            // The removed-call half of the lane's fast rows; see above.
+            case ProbeEntry::kDeviceAllOrdersF16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16RatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16RatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16RatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16RatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRatFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRatHornerFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllNF16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kAllN, xh);
+                break;
+            case ProbeEntry::kDeviceEachOrderF16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kEachOrder, xh);
                 break;
 #endif // BoysFp16
             default:
