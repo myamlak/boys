@@ -373,6 +373,25 @@ struct BoysDeviceTables {
     const int* flatRatDenDeg32 = nullptr; ///< [interval] the denominator's degree, as above
     const int* flatRatStored32 = nullptr; ///< [interval] the count one row stores, as above
     const int* flatRatOffsets32 = nullptr; ///< [interval + 1] the first coefficient, as above
+
+    /// The coarsest partition's monomial tables: the two stored forms of the fit the
+    /// piece tables at the top of this handle carry in Chebyshev form, for the entries
+    /// that sum a piece by Horner rather than by the split Clenshaw
+    /// (BoysDeviceAllOrdersF64Mono and its siblings). They are the pools the launched
+    /// monomial kernels read, and they are appended here rather than written beside
+    /// the Chebyshev ones for the reason every table after the first seventeen is: a
+    /// field a caller's build already reads keeps its offset.
+    ///
+    /// The pieces, their edges, their degrees and the piece index base are the
+    /// Chebyshev ones above — the two forms are two pools over one cut, which is what
+    /// the two forms of the grid's table are as well — so the piece of order \c n and
+    /// index \c p is read at \c pieceStart[n] + p in both. Region B's seed is one fit
+    /// over [kX0, kX1] like the Chebyshev seed, at the same stored degree,
+    /// \c bSeedDeg here and \c bSeedDeg32 in the float lane.
+    const double* monoCoeffs = nullptr;      ///< region A, monomial form
+    const double* monoBSeedCoeffs = nullptr; ///< region B's seed, monomial form
+    const float* monoCoeffs32 = nullptr;     ///< the float lane's region A, monomial form
+    const float* monoBSeedCoeffs32 = nullptr; ///< the float lane's region-B seed, monomial form
 };
 
 /// The number of addresses the handle's tail export writes: one for every symbol
@@ -381,7 +400,7 @@ struct BoysDeviceTables {
 /// the status layer, which sizes its array with it, and asserted in the device image
 /// against the order's own length, so a table added to either end without the other
 /// is a compile error rather than an address written past an array.
-inline constexpr int kBoysDeviceTablesTailCount = 68;
+inline constexpr int kBoysDeviceTablesTailCount = 72;
 
 /// The tail export's four slots for the uniform grid's per-interval tables on its
 /// Chebyshev route, in the order (double degrees, double offsets, float degrees,
@@ -389,16 +408,23 @@ inline constexpr int kBoysDeviceTablesTailCount = 68;
 /// these are named from the end of those groups: a group appended without re-cutting
 /// them reads the wrong slots, and the device image's own assert on the tail's length
 /// makes that a compile error.
-inline constexpr int kBoysDeviceTablesTailFlatGrid = kBoysDeviceTablesTailCount - 14;
+inline constexpr int kBoysDeviceTablesTailFlatGrid = kBoysDeviceTablesTailCount - 18;
 
 /// The tail export's five slots for the double lane's uniform grid on its
 /// RATIONAL route, in the order (the pool, numDeg, denDeg, stored, offsets).
 /// They are appended after the Chebyshev grid's group, as the append-only rule
 /// requires, so a slot a caller's build already reads keeps its index.
-inline constexpr int kBoysDeviceTablesTailRatGrid = kBoysDeviceTablesTailCount - 10;
+inline constexpr int kBoysDeviceTablesTailRatGrid = kBoysDeviceTablesTailCount - 14;
 
 /// The tail export's five slots for the float lane's grid on the same route,
 /// the same five in the same order, appended after the double lane's.
-inline constexpr int kBoysDeviceTablesTailRatGrid32 = kBoysDeviceTablesTailCount - 5;
+inline constexpr int kBoysDeviceTablesTailRatGrid32 = kBoysDeviceTablesTailCount - 9;
+
+/// The tail export's four slots for the coarsest partition's monomial tables, in the
+/// order (the double lane's pool, its region-B seed, the float lane's pool, that
+/// lane's seed). They are the last group, appended after the grid's rational groups
+/// as the append-only rule requires, which is why they are named from the end too:
+/// the four slots no named group above claims.
+inline constexpr int kBoysDeviceTablesTailMono = kBoysDeviceTablesTailCount - 4;
 
 } // namespace boys
