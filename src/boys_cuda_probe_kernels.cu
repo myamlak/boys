@@ -677,140 +677,70 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
                 BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
                 break;
-            // The half lane's rows, one arm per row of the option table that
-            // names one. The label is written outside the seam's guard and the
-            // call inside it, so the row is named in every configuration: with
-            // the seam open the arm measures the entry the row names, and with
-            // it closed it refuses a row this build does not carry rather than
-            // leaving it to the default, which does not name it either.
-            case ProbeEntry::kDeviceAllOrdersF16Narrow:
 #if BoysFp16
+            // The half lane's rows of those same axes, one arm per row of the
+            // option table that names one, with the lane: the entries they name
+            // are behind the same seam, so a build without them has no such
+            // enumerator to be asked for and no half array to read. A row such a
+            // build is without is refused before this switch is reached, so the
+            // arm it loses had nothing to measure.
+            case ProbeEntry::kDeviceAllOrdersF16Narrow:
                 BOYS_PROBE_LAUNCH(Dev16Narrow, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowMono:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowMono, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrders:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowOrders, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMono:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowOrdersMono, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Rat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16Rat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16RatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16RatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Orders:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16Orders, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16OrdersRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16OrdersRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16OrdersRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16OrdersRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Uniform:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16Uniform, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16UniformHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16UniformRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH(Dev16UniformRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceSingleF16Fast:
-#if BoysFp16
                 // The one row of the lane that is not a ladder: its shape is one
                 // value per argument, so the call is the single-order entry.
                 BOYS_PROBE_LAUNCH(Dev16Fast, __half, kSingle, xh);
                 break;
-#else
-                return 1;
-#endif
+#endif // BoysFp16
             default:
                 return 1;
         }
@@ -967,134 +897,63 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
                 break;
-            // The half lane's rows, at the same shape as the arms above: the
-            // label outside the seam's guard, the call inside it.
-            case ProbeEntry::kDeviceAllOrdersF16Narrow:
 #if BoysFp16
+            // The removed-call half of the same eighteen arms; see above.
+            case ProbeEntry::kDeviceAllOrdersF16Narrow:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Narrow, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowMono:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowMono, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrders:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrders, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMono:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersMono, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Rat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Rat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16RatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16RatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Orders:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Orders, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16OrdersRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16OrdersRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16Uniform:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Uniform, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformRat:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformRat, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceAllOrdersF16UniformRatHorner:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformRatHorner, __half, kAllOrders, xh);
                 break;
-#else
-                return 1;
-#endif
             case ProbeEntry::kDeviceSingleF16Fast:
-#if BoysFp16
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kSingle, xh);
                 break;
-#else
-                return 1;
-#endif
+#endif // BoysFp16
             default:
                 return 1;
         }
