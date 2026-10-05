@@ -1,6 +1,6 @@
 #pragma once
 
-/// ile
+/// \file
 /// The device option space: one row per option of the CUDA lane, with what a
 /// chooser needs to place it.
 ///

@@ -149,6 +149,7 @@
 /// \ingroup boys
 
 namespace boys {
+/// \cond
 namespace detail {
 
 /// The fit route an assertion is instantiated on, so that the refusal is a
@@ -238,6 +239,7 @@ BoysStatus AllOrdersF16Cascade(
 #endif
 
 } // namespace detail
+/// \endcond
 
 // ---------------------------------------------------------------------------
 // The single-order classes: F_n(x[i]) for one order per element.
@@ -445,6 +447,7 @@ BoysStatus BoysCuda::AllOrdersF64WithPolicy(
     }
 }
 
+/// \cond
 namespace detail {
 
 template <EvalPolicyLike Policy>
@@ -913,6 +916,7 @@ BoysStatus AllOrdersF64Cascade(
 }
 
 } // namespace detail
+/// \endcond
 
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllOrdersF32WithPolicy(
@@ -933,6 +937,7 @@ BoysStatus BoysCuda::AllOrdersF32WithPolicy(
     }
 }
 
+/// \cond
 namespace detail {
 
 template <EvalPolicyLike Policy>
@@ -1397,6 +1402,7 @@ BoysStatus AllOrdersF32Cascade(
 }
 
 } // namespace detail
+/// \endcond
 
 #if BoysFp16
 template <EvalPolicyLike Policy>
@@ -1418,6 +1424,7 @@ BoysStatus BoysCuda::AllOrdersF16WithPolicy(const int* n, const F16* x, F16* out
     }
 }
 
+/// \cond
 namespace detail {
 
 template <EvalPolicyLike Policy>
@@ -1879,6 +1886,7 @@ BoysStatus AllOrdersF16Cascade(
     }
 }
 } // namespace detail
+/// \endcond
 
 #endif // BoysFp16
 

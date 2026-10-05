@@ -2980,12 +2980,18 @@ void StopOnRefusedAxis(const Option& option) {
     std::abort();
 }
 
+#if !BoysFp16
 /// Stops on a cell of a lane this build's seam does not declare.
 ///
 /// The enumeration offers no option of such a lane and registers it as not
 /// carried, so this arm is unreachable; it stops rather than returning nothing,
 /// because a value visitor that answered no values would read as an option this
 /// build measured and found empty.
+///
+/// Defined only where it is called: its two callers are the `#else` arms of
+/// `#if BoysFp16`, so in a build that carries the half lane it is called by
+/// nothing - and a definition with no caller is an error under this tree's
+/// warnings, on every compiler but MSVC.
 ///
 /// \param option the cell that named it
 void StopOnLaneThisBuildDoesNotCarry(const Option& option) {
@@ -2995,6 +3001,7 @@ void StopOnLaneThisBuildDoesNotCarry(const Option& option) {
                  option.name.c_str());
     std::abort();
 }
+#endif
 
 /// Stops on a cell of a shape this lane's library carries no entry for.
 ///
