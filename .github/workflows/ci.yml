@@ -390,6 +390,24 @@ jobs:
           cmake -S . -B build-defaults-tuned -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }} -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
           cmake --build build-defaults-tuned
           ctest --test-dir build-defaults-tuned --output-on-failure
+      # The fit-granularity axis's third member, built and tested. The two fixtures
+      # above move that axis and both name the coarsest partition, so a class resolving
+      # the grid - one table over the whole of the fitted domain - was compiled by no
+      # tree here and by no leg, and the umbrella's granularity lane was free to assert
+      # of every partition what is true of a partition whose stored fits end at x1.
+      # tests/build_defaults_uniform.hpp is that reading: ten rows' granularity cell
+      # moved off the committed value and no other cell of any row, which is what makes
+      # a failure under this tree the axis's rather than the build's. The ten are the
+      # two host lanes' five classes each: a lane's five move together because this
+      # library documents one shape's values in terms of another's, and a draft that
+      # moved one of them alone failed a test whose comparison is that lane's
+      # single-order and fixed-order rows.
+      - name: Build defaults (the grid's row built and tested)
+        if: ${{ matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-uniform -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }} -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
+          cmake --build build-defaults-uniform
+          ctest --test-dir build-defaults-uniform --output-on-failure
   # -------------------------------------------------------------------------
   # ubuntu-latest, GCC and Clang, Debug + Release. The original
   # linux-gcc-release job, unchanged, plus Clang and the Debug configurations.
@@ -814,6 +832,23 @@ jobs:
             -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
           cmake --build build-defaults-tuned -j 4
           ctest --test-dir build-defaults-tuned --output-on-failure
+      # The granularity axis's third member, for the reason the same step in
+      # windows-msvc states: two fixtures move that axis and both name the coarsest
+      # partition, so a class resolving the grid - one table over the whole fitted
+      # domain, its end past x1 by design - was compiled by nothing, and the umbrella's
+      # granularity lane stated of every partition what holds only of one whose stored
+      # fits end at x1. Ten rows' granularity cells are the whole of what this fixture
+      # moves - the two host lanes' five classes each, a lane's five together for the
+      # reason the same step in windows-msvc states - so a failure under this tree is
+      # the axis's and not the build's.
+      - name: Build defaults (the grid's row built and tested)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-uniform -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
+            -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
+          cmake --build build-defaults-uniform -j 4
+          ctest --test-dir build-defaults-uniform --output-on-failure
       # The device surface is described by five hand-written lists and nothing
       # reconciled them, so they disagreed: four rows of the option enumeration
       # named entries that had never been declared in any commit - and they

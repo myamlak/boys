@@ -1508,7 +1508,9 @@ entry that produces one order has no second order to pack into a vector lane. Th
 the fit granularity was the second until this revision: the four batched bodies that refused it now
 hand a policy naming the grid to the path that reads it, and the accuracy gate's entry book measures
 those cells as rows rather than counting them as owed. Whether a build *naming* that member compiles
-is not stated here, because it has not been measured — no fixture in this tree names it. Setting the
+is measured rather than left open here: class rows naming it are carried by
+`tests/build_defaults_uniform.hpp`, and the `Build defaults (the grid's row built and tested)` step of
+`.github/workflows/ci.yml` configures that header, builds it and runs its suite on two legs. Setting the
 packing axis to what the library already runs is fine; setting it to another member is a build that
 does not compile. The device lane's own two are named in that same file: the division form its
 entries take is `BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM` and the region-B exponential its tables

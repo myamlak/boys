@@ -14,7 +14,7 @@
 // figures beside its choices (include/boys/boys_build_defaults.hpp states the contract a
 // replacement satisfies, and this file satisfies it at the shipped values plus one).
 //
-// WHICH MEMBER MOVES, AND WHICH ONE NO BUILD CAN NAME
+// WHICH MEMBER MOVES, AND WHERE THE THIRD ONE IS NAMED
 //
 // Moved: the narrow partition, the committed file's value, to the shipped partition -
 // region A's per-order pieces and region B's single seed, at the degrees the committed
@@ -24,13 +24,17 @@
 //
 // The member this file does not name is kUniform: the batched bodies refused it until this
 // revision and now hand it to the path that reads the grid (the accuracy gate's entry
-// book measures their six cells), so that refusal is gone, and nothing in this tree names
-// the member: a build naming it is unmeasured rather than refused. This axis offers three
-// values and not one: kNarrow and kCoarsest are both reachable, and CONTRIBUTING.md states
-// which choice a build cannot move. The shipped partition is also the one the library reads
-// back most often - the accuracy gate is defined at it, the packed lane carries it beside
-// the narrow one, and the entries' own fallbacks name it - so a build resolving it is a
-// configuration the library already exercises rather than a path this file invents.
+// book measures their six cells), so that refusal is gone, and the member is named by the
+// row-list fixture beside this one, tests/build_defaults_uniform.hpp, on ten class rows of
+// a table (the two host lanes' five each) rather than through the name this file sets: a
+// build whose class row names it compiles, and what it compiles to is measured there
+// rather than unmeasured here. This
+// axis offers three values and not one: kNarrow and kCoarsest are both reachable, and
+// CONTRIBUTING.md states which choice a build cannot move. The shipped partition is also
+// the one the library reads back most often - the accuracy gate is defined at it, the
+// packed lane carries it beside the narrow one, and the entries' own fallbacks name it -
+// so a build resolving it is a configuration the library already exercises rather than a
+// path this file invents.
 //
 // WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
 //

@@ -2291,18 +2291,25 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
 // region B's seed - so the things a consumer has to be able to read from it are
 // that naming it changes the values over the fitted domain at both regions the two
 // tables are cut in, so that the member is a partition and not the default's tables
-// under another name; that it changes nothing at or above the fitted domain's end,
+// under another name; that above both partitions' published ends it changes nothing,
 // the axis being a selection between two stored tables and not a second arithmetic
-// path; that naming the default member is the default call bit for bit, so the
-// default is a member of the axis; and that every value it returns is inside the
-// lane's published bound, so the member does not widen the contract a caller relies
-// on. The counts the partition costs are the generated header's own static_assert
-// and the gate's narrow rows; what is asserted here is that the policy carries the
-// partition it was named with.
+// path; that between those two ends the partition whose own tables reach there is the
+// one that answers, because the end a partition publishes is not the same argument for
+// all three members - the two per-order partitions stop at x1, the grid reaches its own
+// join past it - so a reading that cut every partition at one argument would be
+// asserting the axis changes nothing over arguments the grid's own tables serve; that
+// naming the default member is the default call bit for bit, so the default is a member
+// of the axis; and that every value it returns is inside the lane's published bound, so
+// the member does not widen the contract a caller relies on. The counts the partition
+// costs are the generated header's own static_assert and the gate's narrow rows; what
+// is asserted here is that the policy carries the partition it was named with.
 //
 // The member named is the one the class's own row leaves at the other, so the readings
 // hold at either setting: they separate the two partitions, they do not pin which of
-// the two a given row names as its default.
+// the two a given row names as its default. The two ends the readings are cut at are
+// read off the partitions' own rows of BoysFitGranularities rather than transcribed,
+// so the readings hold for a class row naming any member the axis carries and not only
+// for the two the shipped table names.
 void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
     // The axis' default member, named: the policy the entry under this check compiles
     // when no policy is named, which is the row its own class carries, so the reading
@@ -2352,17 +2359,48 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
 
     Rule& rule = NewRule("granularity: both partitions through the entries");
 
-    // x1, where the fitted domain ends and the asymptotic path takes over, as the
-    // umbrella header publishes it - region B runs x0 <= x < x1 and region C is
-    // x >= x1. The public surface names no constant for it, so it is transcribed here.
-    constexpr double kFittedDomainEnd = 28.98933773882074;
+    // The two ends, read off the public surface rather than transcribed: a row of
+    // BoysFitGranularities states the interval its own tables serve, `hi` being one past
+    // the highest argument they reach, and the two partitions this check compares do not
+    // serve the same interval - the per-order partitions end where region C begins, the
+    // grid covers the fitted domain whole and reaches its own join past it. A policy
+    // naming a partition therefore answers exactly to that partition's own `hi`, and the
+    // end the readings below are cut at is a different argument for the two rows.
+    const boys::FitGranularityInfo* otherRow = nullptr;
+    const boys::FitGranularityInfo* defaultRow = nullptr;
+
+    for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
+    {
+        if (row.granularity == kOtherGranularity)
+        {
+            otherRow = &row;
+        }
+
+        if (row.granularity == DefaultPolicy::kGranularity)
+        {
+            defaultRow = &row;
+        }
+    }
+
+    Require(report,
+            otherRow != nullptr && defaultRow != nullptr,
+            "BoysFitGranularities carries a row for each partition this check names, so the "
+            "interval each of them serves is read off the public surface and not transcribed");
+
+    const double defaultEnd = defaultRow != nullptr ? defaultRow->hi : 0.0;
+    const double otherEnd = otherRow != nullptr ? otherRow->hi : 0.0;
+    const double lowerEnd = std::min(defaultEnd, otherEnd);
+    const double upperEnd = std::max(defaultEnd, otherEnd);
+    const bool endsApart = lowerEnd < upperEnd;
 
     std::size_t inA = 0;
     std::size_t changedInA = 0;
     std::size_t inB = 0;
     std::size_t changedInB = 0;
-    std::size_t aboveDomain = 0;
-    std::size_t changedAboveDomain = 0;
+    std::size_t inBand = 0;
+    std::size_t changedInBand = 0;
+    std::size_t aboveBoth = 0;
+    std::size_t changedAboveBoth = 0;
     std::size_t defaultDiffering = 0;
 
     for (const Cell& cell : cells)
@@ -2383,7 +2421,7 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
             {
                 ++changedInA;
             }
-        } else if (cell.x < kFittedDomainEnd)
+        } else if (cell.x < lowerEnd)
         {
             ++inB;
 
@@ -2391,13 +2429,21 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
             {
                 ++changedInB;
             }
-        } else
+        } else if (cell.x < upperEnd)
         {
-            ++aboveDomain;
+            ++inBand;
 
             if (other != byDefault)
             {
-                ++changedAboveDomain;
+                ++changedInBand;
+            }
+        } else
+        {
+            ++aboveBoth;
+
+            if (other != byDefault)
+            {
+                ++changedAboveBoth;
             }
         }
 
@@ -2423,29 +2469,42 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
             "against the default call: the member is a partition and not the class row's seed "
             "under another name");
     Require(report,
-            aboveDomain > 0 && changedAboveDomain == 0,
-            "naming the partition the class row does not carry changes nothing at or above the "
-            "fitted domain's end: above it the entry reads the asymptotic path, which no "
-            "partition of the stored fits is part of");
+            (!endsApart || inBand > 0) && changedInBand == inBand,
+            "every argument between the two partitions' published ends changes when the "
+            "partition whose own tables reach there is named: where the two ends differ there is "
+            "at least one such argument and the entry answers each of them from the tables its "
+            "own row covers, so the axis is a selection between two stored tables and still "
+            "reaches the whole of each one's interval");
+    Require(report,
+            aboveBoth > 0 && changedAboveBoth == 0,
+            "naming the partition the class row does not carry changes nothing at or above both "
+            "partitions' published ends: above them the entry reads the asymptotic path, which "
+            "no partition of the stored fits is part of");
     Require(report,
             defaultDiffering == 0,
             "naming the partition the class row carries is the default call bit for bit, so the "
             "row's member is the default and not a third reading beside the two");
 
     std::printf("  %-56s %7zu cells  %zu of %zu in region A changed, %zu of %zu in region B, "
-                "%zu of %zu above the fitted domain\n",
+                "%zu of %zu between the published ends [%.17g, %.17g), %zu of %zu above both\n",
                 rule.name.c_str(),
                 rule.cells,
                 changedInA,
                 inA,
                 changedInB,
                 inB,
-                changedAboveDomain,
-                aboveDomain);
+                changedInBand,
+                inBand,
+                lowerEnd,
+                upperEnd,
+                changedAboveBoth,
+                aboveBoth);
 
     Covered("boys::FitGranularity");
     Covered("boys::kDefaultFitGranularity");
     Covered("boys::GranularityName");
+    Covered("boys::FitGranularityInfo");
+    Covered("boys::BoysFitGranularities");
 }
 
 // --- the accuracy a combination carries, and the tolerance a caller names ----

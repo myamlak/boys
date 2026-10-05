@@ -261,22 +261,43 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // domains are the body's, and the route names only its two fits. Region C,
     // which reads no coefficient at all, is answered by the body's own branch -
     // the default entry's code for those arguments.
+    //
+    // Every cell but the route is read off the row this entry's default arm runs -
+    // BoysSingleF32's own default, the row this build's seam carries for the class,
+    // or the five where it carries none - and the route is the one thing a call
+    // changes. The partition is one of those cells, and it is why this is the row
+    // and not a fit family named here: a class row naming the uniform grid is a grid
+    // the default entry reads, so an arm that named its own fit family would answer
+    // from that row only where the grid is absent, and hand back the narrow pieces
+    // under a row that named the grid - a substitution of another partition's tables
+    // under the named member's name, reported by nothing, which is the one
+    // BoysSingleF32Impl refuses in as many words ("That is the substitution the guard
+    // refuses rather than serves"). Read off the row, the two arms and the default
+    // entry are one body under three routes, which is what this entry's contract says
+    // they are: BoysSingleF32 with one thing changed.
+    //
+    // The scheme, the budget and the packing axis come off the row for the same
+    // reason, and the packing axis is the arguments one by the row's own contract (a
+    // single-order class has no second order to fill a lane with); the row is a class
+    // of this shape, so the axis it carries is this entry's.
+    using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+
+    using RowCells = EvalPolicy<FitRoute::kChebyshev, SingleOrderClass::kScheme,
+                                SingleOrderClass::kBudget, SingleOrderClass::kPack,
+                                SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
+                                SingleOrderClass::kRegionBExp>;
+
     if (route == FitRoute::kRationalMinimax)
     {
-        // The division form and the region-B exponential are read off the policy
-        // this entry's other arm runs - BoysSingleF32's own default, the row this
-        // build's seam carries for the class, or the five where it carries none -
-        // rather than restated: a row and the arithmetic it names are one
-        // statement, and this entry is the default entry's call under a route
-        // argument. Read off the lane name instead, the two agree with that entry
-        // only while the seam carries no row for the class.
-        using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+        using RationalClass = EvalPolicy<FitRoute::kRationalMinimax, SingleOrderClass::kScheme,
+                                         SingleOrderClass::kBudget, SingleOrderClass::kPack,
+                                         SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
+                                         SingleOrderClass::kRegionBExp>;
 
-        return detail::SingleOrderF32Body<detail::RationalFit32<>, SingleOrderClass::kDivision,
-                                          SingleOrderClass::kRegionBExp>(n, x);
+        return BoysSingleF32<RationalClass>(n, x);
     }
 
-    return BoysSingleF32<>(n, x);
+    return BoysSingleF32<RowCells>(n, x);
 }
 
 std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {

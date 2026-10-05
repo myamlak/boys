@@ -494,6 +494,16 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
                             "belongs to, so an unnamed call cannot hand back the shipped policy's "
                             "values: the row the build's table carries for the class is not being "
                             "read";
+#elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_UNIFORM_ROW)
+    // The uniform-row fixture's five ARE the shipped five and its class rows move the fit
+    // granularity cell to the grid, so a value that differs here is the class's row answering
+    // where the five would have - the grid's own table, which the entry reads before any
+    // route or region test - and the all-orders ladder this comparison is made through is one
+    // of the rows that move.
+    EXPECT_GT(moved, 0u) << "the uniform-row fixture names the grid on the class row this entry "
+                            "resolves to, so an unnamed call cannot hand back the shipped policy's "
+                            "narrow-partition values: the row the build's table carries for the "
+                            "class is not being read";
 #endif
 }
 

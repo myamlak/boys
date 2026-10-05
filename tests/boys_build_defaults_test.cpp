@@ -69,9 +69,10 @@
 //     revision: the batched bodies that refused it now hand a policy naming the
 //     grid to the path that reads it, and the accuracy gate's entry book measures
 //     their six cells (tests/boys_accuracy_gate.cpp). The tuned fixture leaves the
-//     packing axis at the shipped value and quotes that refusal; no fixture in
-//     this tree names the uniform member, so what a build naming it compiles to is
-//     not measured here.
+//     packing axis at the shipped value and quotes that refusal; the uniform
+//     member is named by tests/build_defaults_uniform.hpp, whose row table carries
+//     it on the two host lanes' ten classes, so what a build whose class row names
+//     it compiles to is measured there rather than unmeasured here.
 //   - whether the bodies use the policy they are handed is not a text or a type
 //     fact: a body reading another partition's table under this policy's name is
 //     the accuracy gate's business (tests/boys_accuracy_gate.cpp), not this

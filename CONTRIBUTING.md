@@ -77,8 +77,9 @@ the packing axis, because an entry that produces one order has no second order t
 lane. The uniform member of the fit granularity was the second until this revision: the four batched
 bodies that refused it now hand a policy naming the grid to the path that reads it, and the accuracy
 gate's entry book measures the six cells they cover over the committed grid. Whether a build naming
-that member now compiles is not stated here, because it has not been measured - no fixture in this
-tree names it, and a configure that did would be the first reading of that configuration.
+that member compiles is measured rather than left open here: class rows naming it are carried by
+`tests/build_defaults_uniform.hpp`, and the `Build defaults (the grid's row built and tested)` step of
+`.github/workflows/ci.yml` configures that header, builds it and runs its suite on two legs.
 Setting the packing axis to what the library already runs is fine; setting it to another member is a
 build that does not compile, and that is the answer rather than a defect. The file is
 `include/boys/boys_build_defaults.hpp`. Its own comment is the contract a replacement satisfies: the

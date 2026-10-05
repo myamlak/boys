@@ -49,6 +49,8 @@
 
 #include "boys/backend.hpp"
 
+#include "boys/boys.hpp"
+
 #include <cstdio>
 #include <gtest/gtest.h>
 
@@ -70,6 +72,8 @@ constexpr const char* kFixtureInForce =
     "the division-form fixture (tests/build_defaults_division_form.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_FIT_GRANULARITY)
     "the fit-granularity fixture (tests/build_defaults_fit_granularity.hpp)";
+#elif defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_UNIFORM_ROW)
+    "the uniform-row fixture (tests/build_defaults_uniform.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_TEST_ROWS)
     "the row-list fixture (tests/build_defaults_rows.hpp)";
 #elif defined(BOYS_BUILD_DEFAULTS_SHIPPED)
@@ -143,4 +147,59 @@ static_assert(boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciproc
               "the fit-granularity fixture's division form is not the committed value");
 static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest,
               "the fit-granularity fixture's fit granularity is not in force");
+#endif
+
+// --- tests/build_defaults_uniform.hpp: the granularity moves, on the rows --------------------
+#if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE_UNIFORM_ROW)
+// The five names this fixture writes are the committed ones: what it moves is the fit
+// granularity cell of its row list, so these five comparisons hold by construction and are
+// stated for the same reason the four blocks above state theirs - a fixture's names are a
+// claim like the cells it moves.
+static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
+              "the uniform-row fixture's fit route is not the committed value");
+static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
+              "the uniform-row fixture's evaluation scheme is not the committed value");
+static_assert(boys::kDefaultPackAxis == boys::PackAxis::kArguments,
+              "the uniform-row fixture's packing axis is not the committed value");
+static_assert(boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal,
+              "the uniform-row fixture's division form is not the committed value");
+static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow,
+              "the uniform-row fixture's fit granularity, the five's own, is not the committed value");
+
+// The teeth: the class table is where this fixture moves the axis, and a class the table
+// carried no row for resolves the five above - the narrow partition - so a row whose cell was
+// dropped, or a table no class resolved through, fails one of these ten assertions. The two
+// host lanes' five classes each, which is the whole of what the fixture moves.
+static_assert(boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp64 all-orders row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp64 single-order row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp64 fixed-order row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp64 all-N row does not name the grid");
+static_assert(
+    boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>::kGranularity ==
+        boys::FitGranularity::kUniform,
+    "the uniform-row fixture's fp64 all-N-at-orders row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp32 all-orders row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp32 single-order row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kFixedN>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp32 fixed-order row does not name the grid");
+static_assert(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>::kGranularity ==
+                  boys::FitGranularity::kUniform,
+              "the uniform-row fixture's fp32 all-N row does not name the grid");
+static_assert(
+    boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllNAtOrders>::kGranularity ==
+        boys::FitGranularity::kUniform,
+    "the uniform-row fixture's fp32 all-N-at-orders row does not name the grid");
 #endif

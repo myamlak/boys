@@ -33,11 +33,12 @@
 // words at the place a build naming it would fail. The uniform member of the fit
 // granularity was the second until this revision, when the batched bodies that
 // refused it began handing it to the path that reads the grid (the accuracy
-// gate's entry book measures their six cells); no fixture in this tree names it,
-// so what a build naming it compiles to is not measured. The third is movable and
-// is held here by a pin in the seam test, which is a debt this file names rather
-// than a property of the library. Each is quoted where its value is defined
-// below.
+// gate's entry book measures their six cells); it is named now by the row-list
+// fixture beside this one, tests/build_defaults_uniform.hpp, whose class rows
+// carry it, so what a build whose row names it compiles to is measured there.
+// The third is movable and is held here by a pin in the seam test, which is a
+// debt this file names rather than a property of the library. Each is quoted
+// where its value is defined below.
 
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 
@@ -85,10 +86,14 @@
 // cannot move: that is the packing axis, and CONTRIBUTING.md says so. The
 // granularity's uniform member was refused by the batched bodies until this
 // revision and those bodies now hand it to the path that reads the grid, so that
-// refusal is gone, and no fixture in this tree names the member: a build naming
-// it is unmeasured here. kCoarsest is the reference partition: the accuracy gate
-// reads it (tests/boys_accuracy_gate.cpp), the packed lane carries it beside the
-// narrow one, and the entries' own fallbacks name it.
+// refusal is gone, and the member is named by a fixture beside this one,
+// tests/build_defaults_uniform.hpp, which carries a row table naming it on ten
+// class rows (the two host lanes' five each): a build whose class row names the
+// member compiles, and what it compiles to is measured there rather than unmeasured
+// here. kCoarsest is the reference
+// partition: the accuracy gate reads it (tests/boys_accuracy_gate.cpp), the
+// packed lane carries it beside the narrow one, and the entries' own fallbacks
+// name it.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
 // Shipped: the device lane's own two names, which this fixture does not move. A device class
