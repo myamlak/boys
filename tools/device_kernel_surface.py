@@ -962,6 +962,17 @@ def main() -> int:
         (lambda c: c.member("kPartition") == "kUniform" and c.member("kPacking") == "kLadder",
          "the grid's cells carry their own degree and block start, so the route's packing axis has "
          "one member", OPTIONS),
+        # The grid's own exponential. A grid entry reads no exponential at any argument - below
+        # the join it sums each order from its own block, above it the call falls to the
+        # asymptote - so the region-B exponential, which seeds a ladder, has no member here. The
+        # sentence the library states it in names the body and the join, so a grid that later
+        # answers region A alone and seeds region B from a ladder is a different partition member
+        # whose kFast cells are owed work in the ordinary sense, and this refusal does not bury
+        # that work item.
+        (lambda c: c.member("kPartition") == "kUniform" and c.member("kRegionBExp") == "kFast",
+         "The grid reads no exponential at any argument: below the join every order is summed "
+         "from its own stored block, and above it the call falls to the asymptote, whose seed is "
+         "the reciprocal square root.", OPTIONS),
     )
     def scope_notes(combination: Combination) -> list[tuple[str, str]]:
         """The library's own statements about where this combination's members are built.

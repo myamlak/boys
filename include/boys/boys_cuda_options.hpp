@@ -1077,6 +1077,12 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
+        // The grid reads no exponential at any argument: below the join every order is
+        // summed from its own stored block, and above it the call falls to the
+        // asymptote, whose seed is the reciprocal square root. The region-B walk, and
+        // the exponential that seeds it, are two of the walks this partition replaces
+        // with a table, so RegionBExp has no member at FitGranularity::kUniform.
+
         // The fit route: the same partitions, region structure and shapes with a piece
         // stored as a numerator and a denominator, which is a family of its own and the
         // lane's kRational member (boys_cuda_arithmetic.hpp, DeviceRatSum). Its pair is
