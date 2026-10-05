@@ -43,6 +43,18 @@ PY = sys.executable
 CONDITIONS = [
     {
         "n": 1,
+        "title": "Complete option space (every class complete on all three legs)",
+        "cmd": [PY, "tools/combination_matrix.py", "--report",
+                ".claude/lane-status/probes/host-report.txt"],
+        "covers": "per class (device, precision, shape): the combinations that can be instantiated, "
+                  "how many the run measured, and which are missing by name — the owner's condition "
+                  "read as one enumeration instead of three separate claims",
+        "does_not_cover": "the device half and the default leg, which the tool does not read yet; a "
+                          "run that checks no class exits 1 rather than passing quietly",
+        "timeout": 300,
+    },
+    {
+        "n": 1,
         "title": "Complete option space",
         "cmd": [PY, "tools/check_class_surface.py", "--check"],
         "covers": "every (precision, shape) class the header's own enumerations imply is served by an "
@@ -136,6 +148,16 @@ CONDITIONS = [
         "timeout": 120,
     },
     {
+        "n": 8,
+        "title": "House rules (the probe measures every declared entry)",
+        "cmd": [PY, "tools/check_probe_measures_every_entry.py"],
+        "covers": "every entry the host headers declare against the entries the option probe calls, "
+                  "so an entry nothing times cannot read as a class the library does not serve",
+        "does_not_cover": "whether a called entry is called at every combination of the axes, which "
+                          "the probe's own closure accounts for in its report",
+        "timeout": 120,
+    },
+    {
         "n": 10,
         "title": "Defaults according to design",
         "cmd": None,
@@ -189,6 +211,40 @@ FREEZE = [
         "cmd": [PY, "tools/check_device_class_surface.py", "--check"],
         "empty": False,
         "timeout": 60,
+    },
+    {
+        # Five entries were declared, served and never timed until this was asked: the probe's row
+        # list was short of the surface, so five classes reported "no option of this precision and
+        # shape produced a figure on this run" - a sentence about the probe that reads as one about
+        # the library - and their seam rows were written from the file's own names. A run over that
+        # space produces defaults for classes nothing measured, which is why the question is a
+        # freeze condition and not only a house rule.
+        "name": "the option probe calls every entry the host surface declares",
+        "cmd": [PY, "tools/check_probe_measures_every_entry.py"],
+        "empty": False,
+        "timeout": 120,
+    },
+    {
+        # The owner's condition, as one gate: every class (device, precision, shape) complete on
+        # all three legs - its possible combinations implemented, probed, and a default of its own.
+        # The tool does not read the device half or the default leg yet, and it exits 1 when it
+        # checked no class rather than passing quietly, so this reads short until the work is done
+        # rather than reading clean on the strength of what it does cover.
+        "name": "every class is complete: its possible combinations implemented, probed, defaulted",
+        "cmd": [PY, "tools/combination_matrix.py", "--report",
+                ".claude/lane-status/probes/host-report.txt"],
+        "empty": False,
+        "timeout": 300,
+    },
+    {
+        # The entry half of the same question: an entry the surface declares and the probe never
+        # calls is a class whose row reads "no option of this precision and shape produced a
+        # figure" - a sentence about the probe taken for one about the library.
+        "name": "the option probe measures every combination a class can be instantiated at",
+        "cmd": [PY, "tools/check_class_combinations.py", "--report",
+                ".claude/lane-status/probes/host-report.txt", "--no-compile"],
+        "empty": False,
+        "timeout": 120,
     },
     {
         "name": "the recorded run is current",

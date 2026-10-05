@@ -194,13 +194,25 @@
    "shape": "one-array-out",
    "spelling": "template; the fp16 lane, under #if BoysFp16"
   },
+  "BoysFixedNBf16": {
+   "shape": "one-array-out",
+   "spelling": "template; the bf16 lane, under #if BoysFp16"
+  },
   "BoysAllNF16": {
    "shape": "ladder-array-planes",
    "spelling": "template; the fp16 lane, under #if BoysFp16"
   },
+  "BoysAllNBf16": {
+   "shape": "ladder-array-planes",
+   "spelling": "template; the bf16 lane, under #if BoysFp16"
+  },
   "BoysAllNAtOrdersF16": {
    "shape": "ladder-array-ragged-planes",
    "spelling": "template; the fp16 lane, under #if BoysFp16"
+  },
+  "BoysAllNAtOrdersBf16": {
+   "shape": "ladder-array-ragged-planes",
+   "spelling": "template; the bf16 lane, under #if BoysFp16"
   },
   "BoysAllOrdersBf16": {
    "shape": "ladder-scalar-out",

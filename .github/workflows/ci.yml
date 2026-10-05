@@ -937,6 +937,31 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_enum_arms_covered.py --check
+      # The device probe accounts for its rows from the library's own option table,
+      # which the library asserts is one row per DeviceEntry in enumerator order -
+      # so the accounted space and the enumeration cannot disagree without the
+      # library failing to compile. What can still disagree is whether a row can be
+      # MEASURED: the probe reaches an entry through a hand-written switch in its
+      # own CUDA translation unit, one switch for the launched family and one for
+      # the device-callable one, and an entry no arm reaches takes that switch's
+      # default and produces no figure. The row is then offered, owed a place by
+      # the closure and reported with nothing in it, which reads as a card the
+      # entry is slow on rather than as an arm that was never written.
+      #
+      # This step is the three sets reconciled by name: the enumeration, the rows
+      # of kDeviceOptions, and the probe's own arms with the preprocessor guard
+      # each sits under - because an arm behind `#if BoysFp16` is the seam's, and
+      # the rows it must cover are the ones whose own built cell is that seam's
+      # constant. Both directions are defects: an unarmed row is unmeasurable, and
+      # an arm naming an entry the enumeration does not declare is a switch arm for
+      # an option that does not exist.
+      #
+      # It reads three source files and nothing else - no CUDA build, no compiler,
+      # no card - so the CUDA lane's absence from a leg does not leave this unrun.
+      - name: Device probe (every declared entry armed in the probe's own dispatch)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_probe_measures_every_entry.py --check
       - name: Docs (zero-warning Doxygen gate)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
