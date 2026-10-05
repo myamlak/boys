@@ -305,7 +305,90 @@ BOYS_PROBE_LADDER_POLICY(Dev32UniformHorner, float, BoysDeviceAllOrdersF32Unifor
 BOYS_PROBE_LADDER_POLICY(Dev32UniformRat, float, BoysDeviceAllOrdersF32UniformRat)
 BOYS_PROBE_LADDER_POLICY(Dev32UniformRatHorner, float, BoysDeviceAllOrdersF32UniformRatHorner)
 
+// The orders-axis rows of the two wider lanes: the packing axis's other side, on
+// the partition each row names, one policy per row as the rows above are.
+BOYS_PROBE_LADDER_POLICY(Dev64Orders, double, BoysDeviceAllOrdersF64Orders)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowOrders, double, BoysDeviceAllOrdersF64NarrowOrders)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowOrdersMono, double, BoysDeviceAllOrdersF64NarrowOrdersMono)
+BOYS_PROBE_LADDER_POLICY(Dev64OrdersRat, double, BoysDeviceAllOrdersF64OrdersRat)
+BOYS_PROBE_LADDER_POLICY(Dev64NarrowOrdersRat, double, BoysDeviceAllOrdersF64NarrowOrdersRat)
+BOYS_PROBE_LADDER_POLICY(Dev64OrdersRatHorner, double, BoysDeviceAllOrdersF64OrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY(
+    Dev64NarrowOrdersRatHorner, double, BoysDeviceAllOrdersF64NarrowOrdersRatHorner)
+
+BOYS_PROBE_LADDER_POLICY(Dev32Orders, float, BoysDeviceAllOrdersF32Orders)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowOrders, float, BoysDeviceAllOrdersF32NarrowOrders)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowOrdersMono, float, BoysDeviceAllOrdersF32NarrowOrdersMono)
+BOYS_PROBE_LADDER_POLICY(Dev32OrdersRat, float, BoysDeviceAllOrdersF32OrdersRat)
+BOYS_PROBE_LADDER_POLICY(Dev32NarrowOrdersRat, float, BoysDeviceAllOrdersF32NarrowOrdersRat)
+BOYS_PROBE_LADDER_POLICY(Dev32OrdersRatHorner, float, BoysDeviceAllOrdersF32OrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY(
+    Dev32NarrowOrdersRatHorner, float, BoysDeviceAllOrdersF32NarrowOrdersRatHorner)
+
 #undef BOYS_PROBE_LADDER_POLICY
+
+#if BoysFp16
+// The half lane's rows, one policy per row, over the body the row names: the same
+// ladder the policy above writes, at the lane's own value type. The cheap
+// stand-in is the lane's, spelled as Dev16 spells it.
+#define BOYS_PROBE_HALF_POLICY(NAME, ENTRY) \
+    struct NAME { \
+        using Value = __half; \
+ \
+        template <boys::DivisionForm kForm> \
+        static __device__ __forceinline__ BoysDeviceStatus AllOrders( \
+            const BoysDeviceTables& tables, \
+            int order, \
+            __half arg, \
+            __half* out, \
+            int capacity) { \
+            return ENTRY<kForm>(tables, order, arg, out, capacity); \
+        } \
+ \
+        static __device__ __forceinline__ __half Cheap(__half x, int l) { \
+            return __float2half(__half2float(x) * static_cast<float>(l + 1)); \
+        } \
+    };
+
+BOYS_PROBE_HALF_POLICY(Dev16Narrow, BoysDeviceAllOrdersF16Narrow)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowMono, BoysDeviceAllOrdersF16NarrowMono)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowOrders, BoysDeviceAllOrdersF16NarrowOrders)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowOrdersMono, BoysDeviceAllOrdersF16NarrowOrdersMono)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowRat, BoysDeviceAllOrdersF16NarrowRat)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowRatHorner, BoysDeviceAllOrdersF16NarrowRatHorner)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowOrdersRat, BoysDeviceAllOrdersF16NarrowOrdersRat)
+BOYS_PROBE_HALF_POLICY(Dev16NarrowOrdersRatHorner, BoysDeviceAllOrdersF16NarrowOrdersRatHorner)
+BOYS_PROBE_HALF_POLICY(Dev16Rat, BoysDeviceAllOrdersF16Rat)
+BOYS_PROBE_HALF_POLICY(Dev16RatHorner, BoysDeviceAllOrdersF16RatHorner)
+BOYS_PROBE_HALF_POLICY(Dev16Orders, BoysDeviceAllOrdersF16Orders)
+BOYS_PROBE_HALF_POLICY(Dev16OrdersRat, BoysDeviceAllOrdersF16OrdersRat)
+BOYS_PROBE_HALF_POLICY(Dev16OrdersRatHorner, BoysDeviceAllOrdersF16OrdersRatHorner)
+BOYS_PROBE_HALF_POLICY(Dev16Uniform, BoysDeviceAllOrdersF16Uniform)
+BOYS_PROBE_HALF_POLICY(Dev16UniformHorner, BoysDeviceAllOrdersF16UniformHorner)
+BOYS_PROBE_HALF_POLICY(Dev16UniformRat, BoysDeviceAllOrdersF16UniformRat)
+BOYS_PROBE_HALF_POLICY(Dev16UniformRatHorner, BoysDeviceAllOrdersF16UniformRatHorner)
+
+#undef BOYS_PROBE_HALF_POLICY
+
+/// The half lane's fast region-B reading, the one row of that lane that is not a
+/// ladder: the shape is one value per argument, so the policy is the single-order
+/// entry the row names and not an all-orders body.
+struct Dev16Fast {
+    using Value = __half;
+
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus Single(const BoysDeviceTables& tables,
+                                                              int order,
+                                                              __half x,
+                                                              __half* out) {
+        return BoysDeviceSingleF16Fast<kForm>(tables, order, x, out);
+    }
+
+    static __device__ __forceinline__ __half Cheap(__half x, int l) {
+        return __float2half(__half2float(x) * static_cast<float>(l + 1));
+    }
+};
+#endif // BoysFp16
 
 /// The four shapes, as a template parameter. Every shape writes its whole
 /// output, and the removed-call half writes the same slots with the same
@@ -549,6 +632,185 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF32UniformRatHorner:
                 BOYS_PROBE_LAUNCH(Dev32UniformRatHorner, float, kAllOrders, xf);
                 break;
+            // The orders-axis rows of the two wider lanes: the same ladder one
+            // packing axis over, on the partition each row names. Their argument
+            // array is the lane's, as it is for every row above.
+            case ProbeEntry::kDeviceAllOrdersF64Orders:
+                BOYS_PROBE_LAUNCH(Dev64Orders, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrders:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrders, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRat:
+                BOYS_PROBE_LAUNCH(Dev64OrdersRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatHorner:
+                BOYS_PROBE_LAUNCH(Dev64OrdersRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Orders:
+                BOYS_PROBE_LAUNCH(Dev32Orders, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrders:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrders, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRat:
+                BOYS_PROBE_LAUNCH(Dev32OrdersRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatHorner:
+                BOYS_PROBE_LAUNCH(Dev32OrdersRatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
+                break;
+            // The half lane's rows, one arm per row of the option table that
+            // names one. The label is written outside the seam's guard and the
+            // call inside it, so the row is named in every configuration: with
+            // the seam open the arm measures the entry the row names, and with
+            // it closed it refuses a row this build does not carry rather than
+            // leaving it to the default, which does not name it either.
+            case ProbeEntry::kDeviceAllOrdersF16Narrow:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16Narrow, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowMono:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowMono, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrders:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrders, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMono:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersMono, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16NarrowOrdersRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Rat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16Rat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16RatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16RatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Orders:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16Orders, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16OrdersRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16OrdersRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Uniform:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16Uniform, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16UniformHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16UniformRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH(Dev16UniformRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceSingleF16Fast:
+#if BoysFp16
+                // The one row of the lane that is not a ladder: its shape is one
+                // value per argument, so the call is the single-order entry.
+                BOYS_PROBE_LAUNCH(Dev16Fast, __half, kSingle, xh);
+                break;
+#else
+                return 1;
+#endif
             default:
                 return 1;
         }
@@ -661,6 +923,178 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF32UniformRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32UniformRatHorner, float, kAllOrders, xf);
                 break;
+            // The removed-call half of the thirty-two arms above, in the same
+            // order and over the same policies: the subtraction's other side.
+            case ProbeEntry::kDeviceAllOrdersF64Orders:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Orders, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrders:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrders, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersRat, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersRatHorner, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Orders:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Orders, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrders:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrders, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRat, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersRatHorner, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
+                break;
+            // The half lane's rows, at the same shape as the arms above: the
+            // label outside the seam's guard, the call inside it.
+            case ProbeEntry::kDeviceAllOrdersF16Narrow:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Narrow, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowMono:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowMono, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrders:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrders, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersMono:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersMono, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16NarrowOrdersRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Rat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Rat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16RatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16RatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Orders:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Orders, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16OrdersRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16Uniform:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Uniform, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformRat:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformRat, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceAllOrdersF16UniformRatHorner:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16UniformRatHorner, __half, kAllOrders, xh);
+                break;
+#else
+                return 1;
+#endif
+            case ProbeEntry::kDeviceSingleF16Fast:
+#if BoysFp16
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kSingle, xh);
+                break;
+#else
+                return 1;
+#endif
             default:
                 return 1;
         }
@@ -683,6 +1117,9 @@ int BoysCudaLaunchAllOrdersF32(int, const int*, const double*, float*, std::size
 int BoysCudaLaunchAllOrdersF32Narrow(int, const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowMono(
     int, const int*, const double*, float*, std::size_t, void*);
+// The whole-range partition's monomial basis, which is a kernel of its own here
+// as it is one launcher up.
+int BoysCudaLaunchAllOrdersF32Mono(int, const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32Uniform(int, const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32UniformRat(
     int, const int*, const double*, float*, std::size_t, void*);
@@ -698,6 +1135,11 @@ int BoysCudaLaunchAllOrdersF32Orders(int, const int*, const double*, float*, std
 int BoysCudaLaunchAllOrdersF32NarrowOrders(
     int, const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32NarrowOrdersMono(
+    int, const int*, const double*, float*, std::size_t, void*);
+// The whole-range partition on that side, in the monomial basis: the grid's two
+// orders rows share a launcher and this partition's two do not, because the
+// monomial image is a kernel of its own.
+int BoysCudaLaunchAllOrdersF32OrdersMono(
     int, const int*, const double*, float*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF32OrdersRat(
     int, const int*, const double*, float*, std::size_t, void*);
@@ -732,6 +1174,9 @@ int BoysCudaLaunchAllOrdersF64UniformHorner(
 int BoysCudaLaunchAllNF64(int, int, const double*, double*, std::size_t, void*);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(int, const int*, const void*, void*, std::size_t, void*);
+// The lane's fast region-B reading: the symbol names the choice, as it does one
+// launcher up in the float lane.
+int BoysCudaLaunchSingleF16Fast(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllNF16(int, int, const void*, void*, std::size_t, void*);
 // The lane's partition and route bodies, the same one-per-body list the float
@@ -739,6 +1184,7 @@ int BoysCudaLaunchAllNF16(int, int, const void*, void*, std::size_t, void*);
 // no other, and the probe names the one each entry's row carries.
 int BoysCudaLaunchAllOrdersF16Narrow(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowMono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16Mono(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16Rat(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowRat(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16Uniform(int, const int*, const void*, void*, std::size_t, void*);
@@ -749,6 +1195,8 @@ int BoysCudaLaunchAllOrdersF16Orders(int, const int*, const void*, void*, std::s
 int BoysCudaLaunchAllOrdersF16NarrowOrders(
     int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16OrdersMono(
     int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16OrdersRat(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
@@ -980,6 +1428,17 @@ int LaunchLaunched(boys::DivisionForm form,
                                                  count,
                                                  stream);
             break;
+        case ProbeEntry::kAllOrdersF32Mono:
+            // The whole-range partition in the monomial basis, which is a kernel
+            // of its own: this row is that basis and not the Chebyshev one the
+            // wide row above launches.
+            BoysCudaLaunchAllOrdersF32Mono(static_cast<int>(form),
+                                           n,
+                                           x,
+                                           static_cast<float*>(out),
+                                           count,
+                                           stream);
+            break;
         // The same partition on the packing axis's other side.
         case ProbeEntry::kAllOrdersF32NarrowOrders:
             BoysCudaLaunchAllOrdersF32NarrowOrders(static_cast<int>(form),
@@ -996,6 +1455,15 @@ int LaunchLaunched(boys::DivisionForm form,
                                                        static_cast<float*>(out),
                                                        count,
                                                        stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersMono:
+            // The same side and the same basis on the whole-range partition.
+            BoysCudaLaunchAllOrdersF32OrdersMono(static_cast<int>(form),
+                                                 n,
+                                                 x,
+                                                 static_cast<float*>(out),
+                                                 count,
+                                                 stream);
             break;
         // The float lane's grid, which is the uniform route at that lane's width:
         // one degree for every order and every interval, so the route has one
@@ -1159,6 +1627,16 @@ int LaunchLaunched(boys::DivisionForm form,
                                     count,
                                     stream);
             break;
+        case ProbeEntry::kSingleF16Fast:
+            // The lane's other region-B bound, which is its own kernel and its
+            // own launcher: the wide arm above is not this row.
+            BoysCudaLaunchSingleF16Fast(static_cast<int>(form),
+                                        n,
+                                        xh,
+                                        out,
+                                        count,
+                                        stream);
+            break;
         case ProbeEntry::kAllOrdersF16:
             BoysCudaLaunchAllOrdersF16(static_cast<int>(form),
                                        n,
@@ -1188,6 +1666,11 @@ int LaunchLaunched(boys::DivisionForm form,
             break;
         case ProbeEntry::kAllOrdersF16NarrowMono:
             BoysCudaLaunchAllOrdersF16NarrowMono(static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16Mono:
+            // The whole-range partition in the monomial basis, a kernel of its
+            // own here as it is one lane up.
+            BoysCudaLaunchAllOrdersF16Mono(static_cast<int>(form), n, xh, out, count, stream);
             break;
         case ProbeEntry::kAllOrdersF16Uniform:
         case ProbeEntry::kAllOrdersF16OrdersUniform:
@@ -1221,6 +1704,11 @@ int LaunchLaunched(boys::DivisionForm form,
             break;
         case ProbeEntry::kAllOrdersF16NarrowOrdersMono:
             BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
+                static_cast<int>(form), n, xh, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersMono:
+            // The same side and the same basis on the whole-range partition.
+            BoysCudaLaunchAllOrdersF16OrdersMono(
                 static_cast<int>(form), n, xh, out, count, stream);
             break;
         case ProbeEntry::kAllOrdersF16OrdersRat:
