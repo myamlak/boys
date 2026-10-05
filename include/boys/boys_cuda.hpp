@@ -2032,6 +2032,128 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The half lane's fast region-B reading of the single shape, beside
+    /// \c SingleF16 as \c SingleF32Fast stands beside \c SingleF32.
+    ///
+    /// The two differing exponentials are the two certified members of \c RegionBExp
+    /// (boys_device_tables.hpp), and the choice is one of arithmetic rather than of
+    /// kernel: this entry runs the same float engine, storing what it returns into
+    /// fp16, with the lane's fast exponential in region B's seed in place of the
+    /// library routine's. Its bound is \c SingleF32Fast's constant term plus the half
+    /// format's own.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in fp16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleF16Fast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+#endif // BoysFp16
+
+    /// The coarsest partition's ladder in the monomial basis on the float lane, beside
+    /// \c AllOrdersF64Mono as this lane's \c AllOrdersF32NarrowMono stands beside
+    /// \c AllOrdersF64NarrowMono.
+    ///
+    /// The pieces are the coarsest partition's own, the fit is the one
+    /// \c AllOrdersF32 carries, and what differs is the summation its stored
+    /// coefficients are read by: Horner over the monomial form rather than the split
+    /// Clenshaw recurrence over the Chebyshev one. The two forms are one fit stored
+    /// twice, so the two entries differ in the summation and in nothing else.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Mono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Mono on the coarsest partition's orders reading, with the
+    /// contract of \c AllOrdersF32Orders: each order's own piece located and summed
+    /// where it lies, in the monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersMono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+#if BoysFp16
+    /// The half lane's rows of the two entries above: the same float engine's bodies
+    /// with this lane's fp16 store around them, as every half-lane ladder row is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF16Mono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Mono on the coarsest partition's orders reading.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF16OrdersMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
 #endif // BoysFp16
 };
 

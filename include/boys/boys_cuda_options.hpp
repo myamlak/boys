@@ -213,6 +213,30 @@ enum class DeviceEntry : int {
     kDeviceAllOrdersF32UniformRat, ///< BoysDeviceAllOrdersF32UniformRat, inside the caller's kernel
     kDeviceAllOrdersF32UniformRatHorner, ///< BoysDeviceAllOrdersF32UniformRatHorner, in-kernel
 
+    /// The rows appended after the block above: the combinations the classes already
+    /// carry a kernel and a launcher for, whose option row was not written.
+    ///
+    /// Their enumerators are appended and never inserted, so every value above keeps
+    /// the number it had: a row is reached by its name, and an ordinal that moved
+    /// would move under a caller holding one. The consequence is that the row order
+    /// this enumeration states is no longer the group order the header's preamble
+    /// describes for these rows alone — a launched row appended after the
+    /// device-callable block — which is the price of keeping the block above stable
+    /// and is the reason each row below prints its group in its own right.
+    ///
+    /// Each is the counterpart of a row the same shape already has in another lane or
+    /// at another member of an axis, over a body the lane already runs: the monomial
+    /// Summation of the coarsest partition's ladder and of its per-order reading in
+    /// the float and half lanes, whose double lane counterparts are
+    /// \c kAllOrdersF64Mono and \c kAllOrdersF64OrdersMono, and the half lane's fast
+    /// region-B reading of the single shape, whose counterpart is
+    /// \c kSingleF32Fast.
+    kAllOrdersF32Mono, ///< BoysCuda::AllOrdersF32Mono at EvalScheme::kHorner, launched
+    kAllOrdersF32OrdersMono, ///< BoysCuda::AllOrdersF32OrdersMono at kHorner, launched
+    kAllOrdersF16Mono, ///< BoysCuda::AllOrdersF16Mono at EvalScheme::kHorner, launched
+    kAllOrdersF16OrdersMono, ///< BoysCuda::AllOrdersF16OrdersMono at kHorner, launched
+    kSingleF16Fast, ///< BoysCuda::SingleF16Fast at RegionBExp::kFast, launched
+
     kCount, ///< rows this report defines; one past the last
 };
 
@@ -476,6 +500,14 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32Orders:
         case DeviceEntry::kAllOrdersF32OrdersRat:
         case DeviceEntry::kAllOrdersF32OrdersRatHorner:
+        // The coarsest rows appended for the combinations the lane already had a kernel for: the
+        // float and half lanes' monomial pair beside the double lane's above, and the half lane's
+        // fast single, which reads the same cut the lane's other single rows do.
+        case DeviceEntry::kAllOrdersF32Mono:
+        case DeviceEntry::kAllOrdersF32OrdersMono:
+        case DeviceEntry::kAllOrdersF16Mono:
+        case DeviceEntry::kAllOrdersF16OrdersMono:
+        case DeviceEntry::kSingleF16Fast:
         // The all-N and each-order shapes, whose one top order is the shape and not a
         // partition, and the device-callable entries that mirror the rows above.
         case DeviceEntry::kAllNF64:
@@ -735,6 +767,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceSingleF32:
         case DeviceEntry::kDeviceSingleF32Fast:
         case DeviceEntry::kDeviceSingleF16:
+        // The half lane's fast region-B reading of the shape, appended: the same body the four
+        // above hand their lanes to, with the half lane's store around it and the flag the f32
+        // single pair states set.
+        case DeviceEntry::kSingleF16Fast:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kNotApplicable,
                     kDefaultDeviceDivisionForm};
 
@@ -794,6 +830,11 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersF32NarrowMono:
         // The half lane's monomial row of the same pieces, read by the same bodies.
         case DeviceEntry::kAllOrdersF16NarrowMono:
+        // The coarsest partition's monomial rows, appended: the float and half lanes' rows of
+        // the pieces the double lane's two rows above carry, over the same kernels' bodies with
+        // those lanes' tables and stores around them.
+        case DeviceEntry::kAllOrdersF32Mono:
+        case DeviceEntry::kAllOrdersF16Mono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
@@ -802,6 +843,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF32NarrowOrdersMono:
         // The half lane's row of it.
         case DeviceEntry::kAllOrdersF16NarrowOrdersMono:
+        // The coarsest partition's rows of that reading, appended for the same reason as the
+        // ladder rows above.
+        case DeviceEntry::kAllOrdersF32OrdersMono:
+        case DeviceEntry::kAllOrdersF16OrdersMono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 

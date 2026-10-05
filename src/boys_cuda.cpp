@@ -86,6 +86,10 @@ int BoysCudaLaunchAllOrdersF64NarrowOrdersRat(
     int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllNF64(
     int form, int nmax, const double* x, double* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF32Mono(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF32OrdersMono(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
@@ -116,6 +120,12 @@ int BoysCudaLaunchAllOrdersF16NarrowOrdersMono(
 int BoysCudaLaunchAllOrdersF16OrdersRat(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchSingleF16Fast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16Mono(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersF16OrdersMono(
     int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 #endif
 }
@@ -1280,6 +1290,80 @@ template BoysStatus BoysCuda::SingleF32<RegionBExp::kFast>(
     const int*, const double*, float*, std::size_t, void*, DivisionForm);
 
 // ---------------------------------------------------------------------------
+// The appended rows: the combinations these lanes already had a kernel and a
+// launcher for, whose option row and surface were not written.
+//
+// Nothing here is new arithmetic and none of these needs a launcher of its own:
+// each calls the launcher of the float row of the same name, or the half lane's
+// fast single, all of which the CUDA lane has exported since the row it belongs to
+// was written. What was missing was the way in - a call a chooser can name and a row
+// a report can print.
+// ---------------------------------------------------------------------------
+BoysStatus BoysCuda::AllOrdersF32Mono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other form of the coarsest partition, as AllOrdersF32NarrowMono is of the narrow
+    // one: the same pieces, read by Horner over the monomial coefficients.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Mono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF32OrdersMono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The partition above on the orders reading of region A: each order's own piece, in the
+    // monomial basis.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersMono, n, x, out, count, stream, form);
+}
+
+#if BoysFp16
+BoysStatus BoysCuda::AllOrdersF16Mono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store, as every half-lane ladder row is.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Mono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersF16OrdersMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::SingleF16Fast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // SingleF16 at the lane's other region-B exponential, as SingleF32Fast is SingleF32.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleF16Fast, n, x, out, count, stream, form);
+}
+#endif // BoysFp16
+
+// ---------------------------------------------------------------------------
 // The device option space.
 //
 // One row per option, read from the entries above rather than from a list kept beside them: a
@@ -1834,6 +1918,38 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp32,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
      RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
+
+    // The appended block, the rows of the entries appended to the enumeration. Each is a
+    // combination the class already ran - the kernel, the lane and the launcher are the ones
+    // the row beside it names - and none of them changes an arithmetic: the mono rows read the
+    // monomial basis at the coarsest and the orders partitions, and the half lane's fast single
+    // is the float lane's fast reading with the half store, which is what the kernel states.
+    //
+    // The half lane's fast single carries the half lane's figure and not the float lane's fast
+    // pair: this lane answers at kFp16Device's own contract row, 1e-7 plus half of the last
+    // representable digit of the returned value, and that digit is the store's. The fast
+    // reading's 8e-8 is a term of the float lane's figure, and the half store's digit is three
+    // orders above it, so the term does not reach this lane's sentence.
+    {DeviceEntry::kAllOrdersF32Mono, "all-orders-fp32-mono", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kScheme, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
+     kFormF32, true, nullptr},
+    {DeviceEntry::kAllOrdersF32OrdersMono, "all-orders-fp32-orders-mono",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
+    {DeviceEntry::kAllOrdersF16Mono, "all-orders-fp16-mono", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
+     DeviceOptionAxis::kScheme, RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kAllOrdersF16OrdersMono, "all-orders-fp16-orders-mono",
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
+     DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
+     BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
+    {DeviceEntry::kSingleF16Fast, "single-fp16-fast", DeviceOptionGroup::kLaunched,
+     DeviceOptionPrecision::kFp16, DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
+     DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF16Single, kBoundF16,
+     kFormF16, kFp16Served, kFp16Refusal},
 };
 
 // The report's contract, checked at compile time: one row per DeviceEntry, row i is entry i.
