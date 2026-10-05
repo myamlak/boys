@@ -5,22 +5,33 @@ F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32.
 It does so in scalar fp64 and fp32, an AVX2 vector tier behind the same entries, fp16/bf16 I/O, a
 native packed-half lane, and optional CUDA lanes.
 
-Source and quick start: the [GitHub repository](https://github.com/myamlak/boys).
+Source: the [GitHub repository](https://github.com/myamlak/boys).
 
-Two pages go with this reference. Read both before any signature:
+Four pages go with this reference. Read them before any signature, and **if you have not called this
+library before, start with the first**: it builds the library, runs four calls, and prints each one's
+output beside the command that reproduces it.
 
+- `docs/getting-started.md` — getting started: build it, call it, read the output
 - \subpage md_docs_2consumer-perspective "Choosing a lane: how much accuracy the calculation needs"
 - \subpage md_docs_2lane-contract "The per-lane contract: where each bound holds, and where it stops"
+- \subpage md_docs_2build-facts "Build facts: what a build of this library is, read out of the build"
 
 ## The words this library uses
 
-Six words carry the design. Each means something narrower here than it means elsewhere:
+Nine words carry the design. Each means something narrower here than it means elsewhere:
 
 - **lane** — an entry plus the arithmetic behind it. The fp64 entries are "the double lane", the
   packed binary16 ones "the native half lane". A bound always describes one lane.
 - **region** — an interval of the argument x. There are three. **A** is below
   x = 11.899848152108484, **B** runs from there to x = 28.98933773882074, **C** is at or above it.
   Each is evaluated differently, so a bound is stated per lane *and* region.
+- **band** (the extended band) — the part of region A the per-order fits do not cover: from the
+  argument at which an order stops being read from its own fit up to x = 11.899848152108484 where
+  region B begins. That argument rises with the order — 1.0855252345349333 for orders 0 to 4,
+  2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.783587858916762 for 17 to 32 —
+  so the band's left edge is the lowest of them. One fit of its own serves the whole band, at degree
+  24, and that fit's figure is 3e-14 where the per-order fits are held to 1e-15. A region-A figure is
+  therefore stated for a range of arguments and not for the region as a whole.
 - **route** — a table of stored fits serving a region. The double lane carries two, the default
   Chebyshev fits and a rational minimax alternative. Naming one with
   \ref boys::BoysAllOrdersWithRoute changes only the fits that serve the intervals its rows report.
@@ -28,6 +39,14 @@ Six words carry the design. Each means something narrower here than it means els
   second field of \ref boys::EvalPolicy, and changes values only where the default fit answers.
 - **axis** (the packing axis) — which of a call's values share a vector register: four arguments at
   one order, the committed axis, or four orders at one argument (\ref boys::PackAxis).
+- **partition** — how the fitted intervals are cut into pieces, and one of the axes a call site
+  names. Three are carried: the committed cut (`FitGranularity::kCoarsest`), the narrower cut the
+  proved truncation bound places, which is the default (`FitGranularity::kNarrow`), and a fixed grid
+  of one uniform width over the whole fitted domain, every order fitted independently at one degree
+  and no order built from another (`FitGranularity::kUniform`). All three cut one fit, so naming one
+  changes the work and the storage, not the accuracy (\ref boys::FitGranularity).
+- **cell** — one order at one argument: the unit every sweep on these pages counts in. The
+  `--probe n x` flag of the accuracy gate prints one cell, from every lane, for one argument.
 - **gate** — a program in this tree that measures the documented claims against the committed
   reference and fails when one does not hold. `boys-accuracy-gate` is the accuracy one; the platform,
   option-matrix and device legs have gates of their own.
@@ -46,6 +65,11 @@ lane's own member (\ref boys::kDefaultDeviceDivisionForm, \ref boys::kDefaultDev
 Every entry evaluates at the one
 accuracy this library carries, the full static accuracy of the certified lane. The native half lane
 is the exception: it has no stored fit, and no region but region C. See the accuracy contract below.
+
+The first column is the entry's name in this reference. The second names the lane each group belongs
+to, the call shape it answers — one order at one argument, the full ladder at one argument, one order
+over an array of arguments, or every order over an array — and, where the group adds something to
+that shape, what it adds.
 
 | Entry point | Lane |
 |---|---|
@@ -149,6 +173,12 @@ above are the surface.
 
 The bound is |F̂_n(x) − F_n(x)| ≤ B for every supported n, x and lane. Every figure holds for
 **all** x ≥ 0:
+
+A row's clauses nest, and each names the range it holds over: the first figure is the lane's worst
+anywhere, the second holds for arguments below the value named in it, and the third for arguments
+below a smaller one. The value in the middle clause is where region B begins. *Single* is the entry
+that answers for one order at one argument; *batch* is the entries that answer a whole call at once,
+and the two rows carrying those labels are both the double lane.
 
 | Lane | Error bound |
 |---|---|

@@ -6,6 +6,20 @@ and arguments x ≥ 0.
 It offers several lanes, which differ in precision and in cost. This page states each lane's error
 bound, the arguments the bound covers, and where the lane stops being usable.
 
+This page is the per-lane contract: for each lane, the bound it guarantees and the arguments that
+bound covers; then what each axis inside a lane changes; then what the default selects when a call
+names nothing; and, at the end, what is not claimed. The words it uses are defined on
+[the API reference's landing page](mainpage.md) — *lane*, *region*, *route*, *scheme*, *partition*,
+*band*, *cell* and *gate* among them. Three shorter pages sit beside this one:
+`docs/getting-started.md` in this tree if you have not called the library yet,
+[Choosing a lane](consumer-perspective.md) if you are deciding how much accuracy the calculation
+needs, and [Build facts](build-facts.md) for what a build of the library is.
+
+**Read every figure with its instrument.** A *bound* is a ceiling a lane guarantees, and a *bar* is
+the figure one row is judged against. A *measured* figure is what a program in this tree measured
+against the committed reference; where it belongs to one machine, the machine is named beside it. A
+figure counting instructions or retired slots is what the machine named beside it retired.
+
 Every bound here is stated as an **absolute** error — |computed − true| — except where an entry says
 otherwise. The packed-half lane's bound is relative, and the half lanes' bound is absolute plus a
 term that depends on the size of the result.
@@ -44,6 +58,12 @@ to 4, 2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.7835878
 to 32 — and past its own boundary an order is served by recursion from a single fit, the band
 seed, which is slightly less accurate than the fits themselves.
 
+That single fit is the **extended band**: the part of region A running from the argument at which an
+order stops being read from its own fit — the band's left edge is the lowest of them,
+1.0855252345349333 — up to x = 11.899848152108484, where region B begins. It is its own fit at degree
+24 in both routes, and it is why region A carries two figures rather than one: the per-order fits
+below an order's own end are held to 1e-15, and the band above that end to 3e-14.
+
 **Two lanes do not hold over the whole range**, and their entries say where they stop: the half
 lanes return nothing usable once the result falls below their bound, and the packed-half lane covers
 only the largest arguments.
@@ -75,6 +95,10 @@ truncation and on some pieces smaller than it.
 The double lane's fits come in two routes, chosen per call with `BoysAllOrdersWithRoute` and
 reported by `BoysFitRoutes()`. A route is a way of serving a region, and the two
 hold the same bar over the same interval.
+
+The columns are: the route's name; the region the row serves; the left end of the interval its fit
+covers; the argument its selector takes over at; the coefficients it stores; the error it was measured
+to deliver against the committed reference; and the bar it is certified against.
 
 | Route | Region | Fit covers | Selector serves from | Stored | Measured | Bar |
 |---|---|---|---|---|---|---|
@@ -150,8 +174,9 @@ parameter falls as the degree rises and partly cancels the gain. **Splitting is 
 more degree is not.** The library offers three partitions and no spectrum between them. The narrow one
 is the default: a call site that names no partition reads the pieces cut to the proved bound, and
 `FitGranularity::kCoarsest` is how a caller asks for the committed table by name. Beside those two,
-`FitGranularity::kUniform` is a grid of one fixed width with each interval fitted at its own degree,
-chosen so that a call locates its piece by a multiply rather than a search. All three cut one fit, so
+`FitGranularity::kUniform` is a grid of one fixed width over the whole fitted domain, every order
+fitted independently at one degree and no order built from another, chosen so that a call locates its
+piece by a multiply rather than a search. All three cut one fit, so
 the move is a choice of table and not of accuracy.
 
 **What narrower pieces buy, and what they cost.** They cut the number of coefficients an evaluation
@@ -261,7 +286,9 @@ widest, since the gain is 1 at order 0, while a high order's last pieces come ba
 rational route is fitted over these same pieces, and a piece the family's own degree pair could not
 hold the target on is bisected: the result is 311 pieces again at 2611 stored coefficients, one
 evaluation reading 6 to 9 of them where the Chebyshev fits on the same pieces read 11. The two
-partitions as tables, the default route's counts beside them:
+partitions as tables, the default route's counts beside them — the rows are the coefficients stored,
+the stored rows (one piece is one row, and the seed is another), the degree a piece is fitted at, and
+the coefficients one evaluation reads:
 
 | | `FitGranularity::kCoarsest` | `FitGranularity::kNarrow` |
 | --- | --- | --- |
@@ -325,7 +352,9 @@ over the narrow partition. The call shapes are the stored fits read directly, th
 entry below the band (where the seeding fallback is taken), the batch and plane entries over the band
 and below, the batch entry over region B, the single-order entry at region A's cell, and the
 single-order, fixed-order and plane entries over the whole grid. Three rows move between the
-partitions, and every other row is the same figure under either name:
+partitions, and every other row is the same figure under either name. The first column is what the
+row measures, the two middle columns are the two partitions, and the last is the bar the row was
+certified against:
 
 | row, worst over both schemes | shipped | narrow | bar |
 | --- | --- | --- | --- |
@@ -921,7 +950,8 @@ x = 4.8998472055064735, has the axis **5.82e-17** from the reference and the per
 other region-A row at.
 
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
-and is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ 1e-15** on the per-order
+— `kX0` is the library's constant for 11.899848152108484, the argument at which region A ends — and
+is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ 1e-15** on the per-order
 fits and **3e-14** on the extended band. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
@@ -1275,8 +1305,9 @@ the bound is here.
 | double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
 | half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
 
-The host's two half lanes are two rows and not one, as the device's three are three: the seam keys a
-class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and the
+The host's two half lanes are two rows and not one, as the device's three are three: the seam — the
+build-defaults header `include/boys/boys_build_defaults.hpp`, and the `BOYS_BUILD_DEFAULTS` CMake
+option a build points at its own replacement — keys a class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and the
 two rows state one base at two formats' digits — `DefaultPolicy<Precision::kBf16, Shape>` resolves the
 bfloat16 class and not the fp16 one. What the two rows do not do is impose a lane on a class: a
 bf16 entry that names no policy is answered by the bf16 row.
@@ -1456,8 +1487,9 @@ asked the same question and would answer with the accessor's own reason.
 Those counts are the accuracy gate's own tolerance block, and the block this page quotes is the one
 the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, revision e987074, whose
 build's lane table had six rows where this revision's `BoysLaneContracts()` publishes seven.
-`boys-consumer-umbrella`'s accuracy section prints the same comparison, and its four requests above
-are its own.
+`boys-consumer-umbrella` — a check whose translation unit includes `<boys/boys.hpp>` and nothing
+else, and links the library — prints the same comparison in its accuracy section, and its four
+requests above are its own.
 
 The gate's own lines for the tolerance question, as that recorded run has them:
 

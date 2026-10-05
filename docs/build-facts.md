@@ -11,10 +11,14 @@ read out of the library's own object code, or the operating system's report of t
 machine and its neighbours as much as the code, and none of the questions below needs one. Each is a
 yes-or-no fact about a build, and the same build answers it identically on every run.
 
+A **leg** is one job of this project's CI matrix — one combination of platform, compiler and build
+configuration that the service builds and tests on every push — named by the check name that job
+reports under. The **runner** is the machine the service gives that job for one run.
+
 This page is a record of builds, not of machines. A machine's contribution is named: the processor
 the row was seen on, the count of logical processors, the compiler version, and the date the row was
 recorded. It is reported rather than gated, because the runners these rows come from are ephemeral
-and the same build leg draws different hardware from run to run. **Read a row as a statement about
+and the same leg draws different hardware from run to run. **Read a row as a statement about
 an architecture and a flag set, never as a statement about the machine that produced it.**
 
 The rows are printed by `tests/boys_build_facts.cpp`, built as the `boys-build-facts` target. Every
@@ -53,6 +57,11 @@ the same call is two different costs:
 
 This page claims no speed for anything. It records the facts a cost decision depends on. Which route
 wins on a given build and machine is a question for a measurement taken on that machine.
+
+Where this page sits with the others: [the per-lane contract](lane-contract.md) states what each lane
+guarantees, [the API reference](mainpage.md) lists the entries, and `docs/getting-started.md` in this
+tree builds the library and runs it. What this page adds to them is the half of a cost decision a
+timing cannot tell you: what the build itself is.
 
 ## The format
 

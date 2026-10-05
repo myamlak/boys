@@ -4,7 +4,7 @@ This note is written for a reader who has not built the library yet and has not 
 The words it needs — *lane*, *region*, *partition* — are defined on [the API reference's landing
 page](mainpage.md). What follows is about the choice rather than about the code.
 
-`docs/lane-contract.md` states what each lane guarantees and where it stops. This note is about the
+[The per-lane contract](lane-contract.md) states what each lane guarantees and where it stops. This note is about the
 other half of the choice: how much accuracy your calculation actually needs, and where reduced
 precision earns its place.
 
@@ -73,8 +73,8 @@ which orders it may be asked to seed a recursion at.
 
 ## Choosing inside the lane you picked
 
-Picking a lane is not the whole of the choice. Inside one lane the library offers the product of six
-axes. Each of them is a decision a caller can make:
+Picking a lane is not the whole of the choice. Inside one lane the library offers five axes, and each
+of them is a decision a caller can make:
 
 - **the fit route** — the stored fits that serve a region are either the Chebyshev ones the
   certified lanes are defined by, or a rational minimax alternative that holds the same bar by
@@ -90,6 +90,9 @@ axes. Each of them is a decision a caller can make:
 - **the division form** — how each step of the recurrence divides: exactly, by a plain reciprocal, or
   by a reciprocal refined back to the correctly-rounded quotient. That last one is bit-identical to
   dividing and costs two fused multiply-adds to get there.
+
+Each is a type the policy names: `FitRoute`, `EvalScheme`, `FitGranularity`, `PackAxis`,
+`DivisionForm`. [The API reference](mainpage.md) documents each beside the argument it fills.
 
 **Every axis is a name resolved where the code is written.** The route, the scheme, the partition,
 the packing axis and the division form are written into the call site, and there is nothing left over
@@ -142,5 +145,5 @@ what it was measured to do.
 
 ## What is not claimed
 
-No speed claim is made for any lane. See the end of `docs/lane-contract.md` for why, and for what a
-measurement would need to look like.
+No speed claim is made for any lane. See the end of [the per-lane contract](lane-contract.md) for why,
+and for what a measurement would need to look like.
