@@ -30,6 +30,13 @@ which switch must arm it: a `kLaunched` row is measured by launching the library
 BoysFp16` is the fp16 seam's, and it is read against the rows whose own `built` cell is the seam's
 constant rather than against a second list here.
 
+A row's own extent is its braces - from the `{` that opens it to the `}` that closes it - and the
+seam's name is looked for in the code of that extent rather than in a window of characters after the
+row's fields. A window is as long as the line the row happens to be wrapped on, so a row whose cells
+run past it was read as a row the seam does not close, and which rows the seam closes changed when a
+line was reflowed. The same question about a row's cells and not about its text is why the name is
+read in the row's code: a comment in the row naming the seam is not the row's `built` cell.
+
 Both directions are defects: an entry no arm reaches is unmeasurable, and an arm naming an entry the
 enumeration does not declare is a switch arm for an option that does not exist.
 
@@ -116,6 +123,101 @@ def enumerators_of(path: pathlib.Path) -> list[str]:
     return [name for name in names if name != "kCount"]
 
 
+def row_extent(text: str, opened: int) -> str:
+    """The text of the brace group `text[opened]` opens, through its matching close.
+
+    **A row's boundary is its own braces and not a number of characters after its match.** The rows
+    of `kDeviceOptions` are the braced initializer groups of one array, so a row runs from the `{`
+    that opens it to the `}` that closes it, and both are tokens the C++ grammar fixes in place:
+    wrapping a row over four lines or collapsing it onto one moves neither. A window measured from
+    the row's fields is a fact about the lines the row was wrapped on - the cell a reader is looking
+    for leaves the window when a line is reflowed, and the answer changes with it. That was this
+    check's own fault once: an earlier version read the seam's name out of the 200 characters after
+    the precision field, which is inside the row for some rows and outside it for others, so which
+    rows the seam closes was decided by where the columns fell.
+
+    String literals and comments are skipped, so a brace written inside either of them neither opens
+    nor closes a row.
+    """
+    depth = 0
+    index = opened
+
+    while index < len(text):
+        # A comment is two characters wide, and it is matched as two: reading `text[index + 1]` and
+        # comparing it against a two-character string is never true, so a version of this that did
+        # that skipped line comments and walked straight through block comments, braces and all.
+        if text.startswith("//", index):
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline + 1
+            continue
+
+        if text.startswith("/*", index):
+            close = text.find("*/", index + 2)
+            index = len(text) if close < 0 else close + 2
+            continue
+
+        char = text[index]
+
+        if char in "\"'":
+            index += 1
+            while index < len(text) and text[index] != char:
+                index += 2 if text[index] == "\\" else 1
+            index += 1
+            continue
+
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[opened : index + 1]
+
+        index += 1
+
+    return text[opened:]
+
+
+def code_of(extent: str) -> str:
+    """`extent` with its string literals and its comments replaced by a space each.
+
+    The seam's cell is a value the row hands the report - `built` - and that is code. A name written
+    in a comment in the row, or inside one of the row's own strings, is not that cell, and looking
+    the name up in the row's whole text let a comment decide whether the seam closes the row. That is
+    the same fault as the window: an answer read off the text where an answer about the row's cells
+    was wanted.
+    """
+    kept: list[str] = []
+    index = 0
+
+    while index < len(extent):
+        if extent.startswith("//", index):
+            newline = extent.find("\n", index)
+            index = len(extent) if newline < 0 else newline + 1
+            kept.append(" ")
+            continue
+
+        if extent.startswith("/*", index):
+            close = extent.find("*/", index + 2)
+            index = len(extent) if close < 0 else close + 2
+            kept.append(" ")
+            continue
+
+        char = extent[index]
+
+        if char in "\"'":
+            index += 1
+            while index < len(extent) and extent[index] != char:
+                index += 2 if extent[index] == "\\" else 1
+            index += 1
+            kept.append(" ")
+            continue
+
+        kept.append(char)
+        index += 1
+
+    return "".join(kept)
+
+
 def rows_of(path: pathlib.Path) -> list[tuple[str, str, str, bool]]:
     """Every row of `kDeviceOptions`: (entry, name, group, behind the fp16 seam)."""
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -126,14 +228,15 @@ def rows_of(path: pathlib.Path) -> list[tuple[str, str, str, bool]]:
 
     # The seam's own cell: a row the build cannot serve carries the constant and its reason in the
     # last two fields. It is read as a name and not as a value, so the check never evaluates a
-    # configuration - it states which rows the arms behind the same guard have to cover.
+    # configuration - it states which rows the arms behind the same guard have to cover. The name is
+    # looked for in the row's own extent, which is the whole of the row and nothing else, and in the
+    # code of that extent, so a name written in a comment there is not mistaken for the cell.
     seam = "kFp16Served"
     found: list[tuple[str, str, str, bool]] = []
 
     for match in ROW.finditer(text, start):
         entry, name, group, precision = match.groups()
-        tail = text[match.end() : match.end() + 200]
-        found.append((entry, name, group, seam in tail))
+        found.append((entry, name, group, seam in code_of(row_extent(text, match.start()))))
 
     return found
 
