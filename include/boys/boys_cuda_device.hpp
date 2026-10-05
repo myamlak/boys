@@ -2225,4 +2225,1480 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
     return BoysDeviceAllOrdersF32NarrowRat<kForm>(tables, order, x, out, capacity);
 }
 
+// ---------------------------------------------------------------------------
+// the orders reading of every partition, and the half lane's rows of the whole
+// ladder family, in the caller's own kernel
+// ---------------------------------------------------------------------------
+// The packing axis of the ladder shape, and the half lane's rows of the partitions
+// and the route, reachable from a caller's own kernel.
+//
+// The orders reading is the axis the launched group already carries: region A's
+// per-order fits are located and summed where they lie rather than seeded from the
+// top order's fit and brought back down the recurrence (boys_cuda_arithmetic.hpp,
+// DeviceOrdersF64 and DeviceOrdersF32). The reading covers region A and nothing
+// else - past kX0 the body is the certified ladder, which is where the region-A fit
+// it replaces ends - so an entry of this group answers at its lane's bound and not
+// at a second one.
+//
+// Every entry below reads the tables its lane was stored with, as every entry of
+// this header does: no entry of this group resolves a second reading of a table.
+
+/// F_0(x)..F_n(x) in double precision from the coarsest partition, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The packing axis the launched group names \c DevicePacking::kPerOrder, over the
+/// same pieces BoysDeviceAllOrdersF64 reads: every order's own piece is located and
+/// its own fit summed, so no value here came down a recurrence from a higher order's
+/// fit. Contract, bound and refusals are BoysDeviceAllOrdersF64's, the reading of
+/// region A aside.
+///
+/// The arithmetic is the launched row's kernel's (boys_cuda.cu,
+/// BoysAllOrdersF64OrdersKernel): the two differ in where the coefficients come from
+/// and not in what is done with them.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64Orders(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceReady(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF64Batch>(tables);
+
+    detail::DeviceOrdersF64<kForm>(
+        detail::TableLane64{&tables, deg}, order, x, [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in double precision from the narrow partition, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The same partition and the same pieces as BoysDeviceAllOrdersF64Narrow, read on
+/// the other packing axis: each order's own piece is located and its own fit summed
+/// rather than seeded from the top order's and brought back down the recurrence.
+/// Contract, bound and refusals are BoysDeviceAllOrdersF64Narrow's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrders(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF64<kForm>(
+        detail::NarrowLane64<false>{&tables}, order, x, [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values from the narrow partition's monomial form, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The lane BoysDeviceAllOrdersF64NarrowMono reads, on the packing axis
+/// BoysDeviceAllOrdersF64NarrowOrders reads: the pieces are the narrow partition's
+/// and the coefficients the monomial form of them, summed by Horner. Contract,
+/// bound and refusals are BoysDeviceAllOrdersF64Narrow's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersMono(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF64<kForm>(
+        detail::NarrowLane64<true>{&tables}, order, x, [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in double precision from the fit route, each order summed from
+/// its own piece, inside the caller's kernel.
+///
+/// The route and the pieces BoysDeviceAllOrdersF64Rat reads, on the packing axis
+/// BoysDeviceAllOrdersF64Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF64Rat's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRat(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    const BoysDeviceStatus request = detail::DeviceLadderRequest(tables.ratCoeffs, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF64<kForm>(
+        detail::RatLane64<false>{&tables}, order, x, [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in double precision from the fit route's narrow partition, each
+/// order summed from its own piece, inside the caller's kernel.
+///
+/// The route and the pieces BoysDeviceAllOrdersF64NarrowRat reads, on the packing
+/// axis BoysDeviceAllOrdersF64Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF64NarrowRat's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRat(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowRatCoeffs, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF64<kForm>(
+        detail::RatLane64<true>{&tables}, order, x, [&](int l, double v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, for the reason its ladder counterpart gives:
+/// the rational member is stored in one form, so both scheme names reach one
+/// arithmetic. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF64OrdersRat's.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF64OrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
+/// \param capacity   the number of doubles \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF64OrdersRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRatHorner(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    return BoysDeviceAllOrdersF64OrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as BoysDeviceAllOrdersF64OrdersRatHorner is.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF64NarrowOrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
+/// \param capacity   the number of doubles \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF64NarrowOrdersRat returns, and its refusals
+/// with it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRatHorner(
+    const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
+    return BoysDeviceAllOrdersF64NarrowOrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// F_0(x)..F_n(x) in float precision from the coarsest partition, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The float lane's counterpart of BoysDeviceAllOrdersF64Orders, over the same two
+/// lanes that entry's siblings read: region A's seed is the double lane's piece
+/// table and region B's is this lane's own order-0 entry. Contract, bound and
+/// refusals are BoysDeviceAllOrdersF32's, the reading of region A aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32Orders(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceReady(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF32Batch>(tables);
+
+    detail::DeviceOrdersF32<kForm>(detail::TableLane64{&tables, deg},
+                                   detail::TableLane32{&tables, deg},
+                                   order,
+                                   static_cast<float>(x),
+                                   [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in float precision from the narrow partition, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The partition and the lanes BoysDeviceAllOrdersF32Narrow reads, on the packing
+/// axis BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF32Narrow's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrders(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::NarrowLane64<false>{&tables},
+                                   detail::NarrowLane32<false>{&tables},
+                                   order,
+                                   static_cast<float>(x),
+                                   [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values from the narrow partition's monomial form, each order summed
+/// from its own fit, inside the caller's kernel.
+///
+/// The lanes BoysDeviceAllOrdersF32NarrowMono reads, on the packing axis
+/// BoysDeviceAllOrdersF32NarrowOrders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF32Narrow's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersMono(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::NarrowLane64<true>{&tables},
+                                   detail::NarrowLane32<true>{&tables},
+                                   order,
+                                   static_cast<float>(x),
+                                   [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in float precision from the fit route, each order summed from its
+/// own piece, inside the caller's kernel.
+///
+/// The route and the lanes BoysDeviceAllOrdersF32Rat reads, on the packing axis
+/// BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF32Rat's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRat(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    const BoysDeviceStatus lanes = detail::DeviceGroupReady2(tables.ratCoeffs, tables.ratBNum32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request = detail::DeviceLadderRequest(tables.ratCoeffs, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::RatLane64<false>{&tables},
+                                   detail::RatLane32<false>{&tables},
+                                   order,
+                                   static_cast<float>(x),
+                                   [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in float precision from the fit route's narrow partition, each
+/// order summed from its own piece, inside the caller's kernel.
+///
+/// The route and the lanes BoysDeviceAllOrdersF32NarrowRat reads, on the packing
+/// axis BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF32NarrowRat's.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
+/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
+///      kCapacityTooSmall and writes nothing.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRat(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowRatCoeffs, tables.narrowRatBCoeffs32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowRatBCoeffs32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::RatLane64<true>{&tables},
+                                   detail::RatLane32<true>{&tables},
+                                   order,
+                                   static_cast<float>(x),
+                                   [&](int l, float v) { out[l] = v; });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as its double counterpart is.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF32OrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
+/// \param capacity   the number of floats \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF32OrdersRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRatHorner(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    return BoysDeviceAllOrdersF32OrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as its double counterpart is.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF32NarrowOrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
+/// \param capacity   the number of floats \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF32NarrowOrdersRat returns, and its refusals
+/// with it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRatHorner(
+    const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
+    return BoysDeviceAllOrdersF32NarrowOrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+#if BoysFp16
+// ---------------------------------------------------------------------------
+// the half lane's rows of the ladder family, in the caller's own kernel
+// ---------------------------------------------------------------------------
+// The half lane's definition is that it runs the float lane's arithmetic and stores
+// what that engine returns, so every entry below is the float entry of the same
+// position with the half store around it: the same lanes, the same tables, the same
+// partitions and the same route. The value crosses the boundary twice - in through
+// __half2float and out through __float2half - which is the whole of the difference
+// and the whole of the bound's difference.
+
+/// F_n(x) in fp16 from the lane's fast region-B exponential, inside the caller's
+/// kernel.
+///
+/// The same body BoysDeviceSingleF16 runs, over the region-B exponential
+/// BoysCuda::SingleF16Fast was launched at: the fast exponential is this entry's
+/// identity rather than a template argument, because the launched row it answers
+/// for is named at that option and at no other. A caller that selects
+/// RegionBExp::kFast takes that option's bound, which is the lane's plus the
+/// corrected seed's own contribution.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_n(x) in fp16; untouched unless kSuccess is returned
+///
+/// \pre \c x is a binary16 value, hence >= 0 and finite; \c out is a
+///      device-writable location for one __half.
+///
+/// \returns kSuccess after writing F_n(x); kTablesNotReady or kOrderOutOfRange
+/// otherwise, without writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus
+BoysDeviceSingleF16Fast(const BoysDeviceTables& tables, int order, __half x, __half* out) {
+    const BoysDeviceStatus ready = detail::DeviceReady(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Single>(tables);
+
+    *out = __float2half(detail::DeviceSingleF32<kForm, true>(
+        detail::TableLane32{&tables, deg}, order, __half2float(x)));
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the coarsest partition, each order summed from its
+/// own fit, inside the caller's kernel.
+///
+/// The packing axis BoysDeviceAllOrdersF16's own pieces carry, in the half store:
+/// each order's own piece is located and its own fit summed rather than seeded from
+/// the top order's. Contract, bound and refusals are BoysDeviceAllOrdersF16's, the
+/// reading of region A aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16Orders(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceReady(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    const detail::Degrees deg = detail::DeviceStoredDegrees<BoysDeviceLane::kF16Batch>(tables);
+
+    detail::DeviceOrdersF32<kForm>(detail::TableLane64{&tables, deg},
+                                   detail::TableLane32{&tables, deg},
+                                   order,
+                                   __half2float(x),
+                                   [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the narrow partition, inside the caller's kernel.
+///
+/// The float lane's narrow ladder in the half store: the pieces and the lanes
+/// BoysDeviceAllOrdersF32Narrow reads, with the value rounded at the boundary.
+/// Contract, bound and refusals are BoysDeviceAllOrdersF16's, the partition aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16Narrow(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(detail::NarrowLane64<false>{&tables},
+                                      detail::NarrowLane32<false>{&tables},
+                                      order,
+                                      __half2float(x),
+                                      [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the narrow partition, each order summed from its own
+/// fit, inside the caller's kernel.
+///
+/// The partition and the lanes BoysDeviceAllOrdersF16Narrow reads, on the packing
+/// axis BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the partition aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrders(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::NarrowLane64<false>{&tables},
+                                   detail::NarrowLane32<false>{&tables},
+                                   order,
+                                   __half2float(x),
+                                   [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the float lane's grid, inside the caller's kernel.
+///
+/// The grid is the float lane's and this lane's rows of it are that lane's rows
+/// in the half store (src/boys_cuda.cu, BoysAllOrdersF16FlatKernel), so contract,
+/// bound and refusals are BoysDeviceAllOrdersF32Uniform's, the store aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16Uniform(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceFlatReady32(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    detail::DeviceAllOrdersF32Flat<kForm, false>(tables.flatCoeffs32,
+                                                 tables.flatMonoCoeffs32,
+                                                 tables.flatDegs32,
+                                                 tables.flatOffsets32,
+                                                 order,
+                                                 __half2float(x),
+                                                 [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the narrow partition's monomial form, inside the
+/// caller's kernel.
+///
+/// The lanes BoysDeviceAllOrdersF32NarrowMono reads, in the half store. Contract,
+/// bound and refusals are BoysDeviceAllOrdersF16's, the partition and the basis
+/// aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowMono(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(detail::NarrowLane64<true>{&tables},
+                                      detail::NarrowLane32<true>{&tables},
+                                      order,
+                                      __half2float(x),
+                                      [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the narrow partition's monomial form, each order
+/// summed from its own fit, inside the caller's kernel.
+///
+/// The lanes BoysDeviceAllOrdersF16NarrowMono reads, on the packing axis
+/// BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the partition and the basis aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersMono(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowPieceStart, tables.narrowStoredDeg);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowPieceStart32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::NarrowLane64<true>{&tables},
+                                   detail::NarrowLane32<true>{&tables},
+                                   order,
+                                   __half2float(x),
+                                   [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the float lane's grid in its other stored form,
+/// inside the caller's kernel.
+///
+/// The same table read by Horner rather than by the split Clenshaw, as
+/// BoysDeviceAllOrdersF16Uniform is the float lane's first form. Contract, bound
+/// and refusals are BoysDeviceAllOrdersF32Uniform's, the store aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16UniformHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceFlatReady32(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    detail::DeviceAllOrdersF32Flat<kForm, true>(tables.flatCoeffs32,
+                                                tables.flatMonoCoeffs32,
+                                                tables.flatDegs32,
+                                                tables.flatOffsets32,
+                                                order,
+                                                __half2float(x),
+                                                [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the fit route, inside the caller's kernel.
+///
+/// The float lane's coarsest rational pair in the half store: the route and the
+/// lanes BoysDeviceAllOrdersF32Rat reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the route aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16Rat(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes = detail::DeviceGroupReady2(tables.ratCoeffs, tables.ratBNum32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request = detail::DeviceLadderRequest(tables.ratCoeffs, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(detail::RatLane64<false>{&tables},
+                                      detail::RatLane32<false>{&tables},
+                                      order,
+                                      __half2float(x),
+                                      [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the fit route, each order summed from its own piece,
+/// inside the caller's kernel.
+///
+/// The route and the lanes BoysDeviceAllOrdersF16Rat reads, on the packing axis
+/// BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the route aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRat(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes = detail::DeviceGroupReady2(tables.ratCoeffs, tables.ratBNum32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request = detail::DeviceLadderRequest(tables.ratCoeffs, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::RatLane64<false>{&tables},
+                                   detail::RatLane32<false>{&tables},
+                                   order,
+                                   __half2float(x),
+                                   [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the fit route's narrow partition, inside the
+/// caller's kernel.
+///
+/// The float lane's narrow rational pair in the half store: the route and the lanes
+/// BoysDeviceAllOrdersF32NarrowRat reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the route aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRat(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowRatCoeffs, tables.narrowRatBCoeffs32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowRatBCoeffs32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceAllOrdersF32<kForm>(detail::RatLane64<true>{&tables},
+                                      detail::RatLane32<true>{&tables},
+                                      order,
+                                      __half2float(x),
+                                      [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the fit route's narrow partition, each order summed
+/// from its own piece, inside the caller's kernel.
+///
+/// The route and the lanes BoysDeviceAllOrdersF16NarrowRat reads, on the packing
+/// axis BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF16's, the route aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRat(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus lanes =
+        detail::DeviceGroupReady2(tables.narrowRatCoeffs, tables.narrowRatBCoeffs32);
+
+    if (lanes != BoysDeviceStatus::kSuccess)
+    {
+        return lanes;
+    }
+
+    const BoysDeviceStatus request =
+        detail::DeviceLadderRequest(tables.narrowRatBCoeffs32, order, capacity);
+
+    if (request != BoysDeviceStatus::kSuccess)
+    {
+        return request;
+    }
+
+    detail::DeviceOrdersF32<kForm>(detail::RatLane64<true>{&tables},
+                                   detail::RatLane32<true>{&tables},
+                                   order,
+                                   __half2float(x),
+                                   [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// F_0(x)..F_n(x) in fp16 from the float lane's grid on the rational route, inside
+/// the caller's kernel.
+///
+/// The grid's rational member in the half store: one numerator/denominator pair per
+/// interval at the interval's own stored count, which is the arithmetic
+/// BoysDeviceAllOrdersF32UniformRat runs. Contract, bound and refusals are
+/// BoysDeviceAllOrdersF32UniformRat's, the store aside.
+///
+/// \tparam kForm the division form the entry's ladder steps divide in. The
+///         three forms are certified and differ in the arithmetic of the
+///         division, never in what is approximated, so a call is placed by the
+///         lane's figure plus whatever the form adds to it — the axis states
+///         that term where a form has one (boys::DivisionForm). The default is
+///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
+///         that names no form is compiled as; the choice is a template argument
+///         because it selects an arithmetic inside the caller's own kernel, so
+///         the form not named is absent from it rather than merely untaken.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the order n, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
+/// \param capacity   the number of values \c out holds
+///
+/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
+///      refused.
+///
+/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
+/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
+/// writing.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16UniformRat(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    const BoysDeviceStatus ready = detail::DeviceFlatRatReady32(tables);
+
+    if (ready != BoysDeviceStatus::kSuccess)
+    {
+        return ready;
+    }
+
+    if (!detail::DeviceOrderValid(order))
+    {
+        return BoysDeviceStatus::kOrderOutOfRange;
+    }
+
+    if (capacity < order + 1)
+    {
+        return BoysDeviceStatus::kCapacityTooSmall;
+    }
+
+    detail::DeviceAllOrdersF32FlatRat<kForm>(tables.flatRatCoeffs32,
+                                             tables.flatRatNumDeg32,
+                                             tables.flatRatDenDeg32,
+                                             tables.flatRatStored32,
+                                             tables.flatRatOffsets32,
+                                             order,
+                                             __half2float(x),
+                                             [&](int l, float v) { out[l] = __float2half(v); });
+    return BoysDeviceStatus::kSuccess;
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, for the reason its float counterpart gives.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF16Rat unchanged: this name selects no arithmetic
+///         of its own, so the axis and its default are that entry's \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
+/// \param capacity   the number of __half values \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF16Rat returns, and its refusals with it:
+/// this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16RatHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    return BoysDeviceAllOrdersF16Rat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as its siblings are.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF16OrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
+/// \param capacity   the number of __half values \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF16OrdersRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRatHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    return BoysDeviceAllOrdersF16OrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as its siblings are.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF16NarrowRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
+/// \param capacity   the number of __half values \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF16NarrowRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRatHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    return BoysDeviceAllOrdersF16NarrowRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, as its siblings are.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF16NarrowOrdersRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
+/// \param capacity   the number of __half values \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF16NarrowOrdersRat returns, and its refusals
+/// with it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRatHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    return BoysDeviceAllOrdersF16NarrowOrdersRat<kForm>(tables, order, x, out, capacity);
+}
+
+/// The same values under the Horner scheme name, inside the caller's kernel.
+///
+/// A forwarder and not a second body, for the reason its float counterpart gives:
+/// the grid's rational member is stored in one form, so both scheme names reach one
+/// arithmetic.
+///
+/// \tparam kForm the division form, forwarded to
+///         BoysDeviceAllOrdersF16UniformRat unchanged: this name selects no
+///         arithmetic of its own, so the axis and its default are that entry's
+///         \tparam kForm.
+/// \param tables     the handle BoysCuda::DeviceTables filled
+/// \param order      the top order, 0..kMaxBoysOrder
+/// \param x          the argument, >= 0, formed by the calling thread
+/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
+/// \param capacity   the number of __half values \c out holds
+///
+/// \returns what BoysDeviceAllOrdersF16UniformRat returns, and its refusals with
+/// it: this name is that entry's and adds none of its own.
+template <DivisionForm kForm = kDefaultDeviceDivisionForm>
+__device__ BoysDeviceStatus BoysDeviceAllOrdersF16UniformRatHorner(
+    const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
+    return BoysDeviceAllOrdersF16UniformRat<kForm>(tables, order, x, out, capacity);
+}
+#endif // BoysFp16
+
 } // namespace boys

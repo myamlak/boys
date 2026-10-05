@@ -235,6 +235,54 @@ enum class DeviceEntry : int {
     kAllOrdersF32OrdersMono, ///< BoysCuda::AllOrdersF32OrdersMono at kHorner, launched
     kAllOrdersF16Mono, ///< BoysCuda::AllOrdersF16Mono at EvalScheme::kHorner, launched
     kAllOrdersF16OrdersMono, ///< BoysCuda::AllOrdersF16OrdersMono at kHorner, launched
+    /// The orders reading of every partition, and the half lane's rows of the whole
+    /// ladder family, reachable from a caller's own kernel.
+    ///
+    /// Each is the same option as the launched row named beside it in the report — one
+    /// arithmetic, two ways to reach it — so a chooser reading the two reads one
+    /// partition, one route, one scheme and one bound.
+    ///
+    /// The packing axis is the one axis of this block no device-callable row carried
+    /// before it: the entries above read the ladder, and these read the per-order
+    /// packing of the same pieces. The half lane's rows of the ladder family are the
+    /// float lane's with this lane's store around them, which is this lane's own
+    /// definition (src/boys_cuda.cu, the fp16 kernels), and its fast single is the
+    /// float lane's fast reading in that store.
+    kDeviceAllOrdersF64Orders, ///< BoysDeviceAllOrdersF64Orders, inside the caller's kernel
+    kDeviceAllOrdersF64NarrowOrders, ///< BoysDeviceAllOrdersF64NarrowOrders, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersMono, ///< BoysDeviceAllOrdersF64NarrowOrdersMono, in-kernel
+    kDeviceAllOrdersF64OrdersRat, ///< BoysDeviceAllOrdersF64OrdersRat, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersRat, ///< BoysDeviceAllOrdersF64NarrowOrdersRat, in-kernel
+    kDeviceAllOrdersF64OrdersRatHorner, ///< BoysDeviceAllOrdersF64OrdersRatHorner, in-kernel
+    kDeviceAllOrdersF64NarrowOrdersRatHorner, ///< BoysDeviceAllOrdersF64NarrowOrdersRatHorner,
+                                              ///< in-kernel
+    kDeviceAllOrdersF32Orders, ///< BoysDeviceAllOrdersF32Orders, inside the caller's kernel
+    kDeviceAllOrdersF32NarrowOrders, ///< BoysDeviceAllOrdersF32NarrowOrders, in-kernel
+    kDeviceAllOrdersF32NarrowOrdersMono, ///< BoysDeviceAllOrdersF32NarrowOrdersMono, in-kernel
+    kDeviceAllOrdersF32OrdersRat, ///< BoysDeviceAllOrdersF32OrdersRat, in-kernel
+    kDeviceAllOrdersF32NarrowOrdersRat, ///< BoysDeviceAllOrdersF32NarrowOrdersRat, in-kernel
+    kDeviceAllOrdersF32OrdersRatHorner, ///< BoysDeviceAllOrdersF32OrdersRatHorner, in-kernel
+    kDeviceAllOrdersF32NarrowOrdersRatHorner, ///< BoysDeviceAllOrdersF32NarrowOrdersRatHorner,
+                                              ///< in-kernel
+    kDeviceAllOrdersF16Orders, ///< BoysDeviceAllOrdersF16Orders, inside the caller's kernel
+    kDeviceAllOrdersF16Narrow, ///< BoysDeviceAllOrdersF16Narrow, in-kernel
+    kDeviceAllOrdersF16NarrowOrders, ///< BoysDeviceAllOrdersF16NarrowOrders, in-kernel
+    kDeviceAllOrdersF16Uniform, ///< BoysDeviceAllOrdersF16Uniform, in-kernel
+    kDeviceAllOrdersF16NarrowMono, ///< BoysDeviceAllOrdersF16NarrowMono, in-kernel
+    kDeviceAllOrdersF16NarrowOrdersMono, ///< BoysDeviceAllOrdersF16NarrowOrdersMono, in-kernel
+    kDeviceAllOrdersF16UniformHorner, ///< BoysDeviceAllOrdersF16UniformHorner, in-kernel
+    kDeviceAllOrdersF16Rat, ///< BoysDeviceAllOrdersF16Rat, in-kernel
+    kDeviceAllOrdersF16OrdersRat, ///< BoysDeviceAllOrdersF16OrdersRat, in-kernel
+    kDeviceAllOrdersF16NarrowRat, ///< BoysDeviceAllOrdersF16NarrowRat, in-kernel
+    kDeviceAllOrdersF16NarrowOrdersRat, ///< BoysDeviceAllOrdersF16NarrowOrdersRat, in-kernel
+    kDeviceAllOrdersF16UniformRat, ///< BoysDeviceAllOrdersF16UniformRat, in-kernel
+    kDeviceAllOrdersF16RatHorner, ///< BoysDeviceAllOrdersF16RatHorner, in-kernel
+    kDeviceAllOrdersF16OrdersRatHorner, ///< BoysDeviceAllOrdersF16OrdersRatHorner, in-kernel
+    kDeviceAllOrdersF16NarrowRatHorner, ///< BoysDeviceAllOrdersF16NarrowRatHorner, in-kernel
+    kDeviceAllOrdersF16NarrowOrdersRatHorner, ///< BoysDeviceAllOrdersF16NarrowOrdersRatHorner,
+                                              ///< in-kernel
+    kDeviceAllOrdersF16UniformRatHorner, ///< BoysDeviceAllOrdersF16UniformRatHorner, in-kernel
+    kDeviceSingleF16Fast, ///< BoysDeviceSingleF16Fast at RegionBExp::kFast, in-kernel
     kSingleF16Fast, ///< BoysCuda::SingleF16Fast at RegionBExp::kFast, launched
 
     kCount, ///< rows this report defines; one past the last
@@ -429,6 +477,12 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16UniformRatHorner:
         case DeviceEntry::kAllOrdersF16OrdersUniformRat:
         case DeviceEntry::kAllOrdersF16OrdersUniformRatHorner:
+        // The half lane's grid rows reachable from a caller's own kernel, which read the float
+        // lane's own intervals.
+        case DeviceEntry::kDeviceAllOrdersF16Uniform:
+        case DeviceEntry::kDeviceAllOrdersF16UniformHorner:
+        case DeviceEntry::kDeviceAllOrdersF16UniformRat:
+        case DeviceEntry::kDeviceAllOrdersF16UniformRatHorner:
             return FitGranularity::kUniform;
 
         // The narrow partition, whose pieces are cut per order: the rows of the
@@ -469,6 +523,24 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16NarrowOrdersMono:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRat:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
+        // The narrow partition's pieces reachable from a caller's own kernel, on both packing
+        // axes, in both bases and on both routes.
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16Narrow:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowMono:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRat:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
             return FitGranularity::kNarrow;
 
         // The entries whose row carries no partition axis, and which read the shipped
@@ -537,6 +609,20 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kAllOrdersF16Orders:
         case DeviceEntry::kAllOrdersF16OrdersRat:
         case DeviceEntry::kAllOrdersF16OrdersRatHorner:
+        // The shipped cut reachable from a caller's own kernel: the coarsest partition's own
+        // ladders on its other packing axis, in every lane and on both routes.
+        case DeviceEntry::kDeviceAllOrdersF64Orders:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32Orders:
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16Orders:
+        case DeviceEntry::kDeviceAllOrdersF16Rat:
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF16RatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRatHorner:
+        case DeviceEntry::kDeviceSingleF16Fast:
             return FitGranularity::kCoarsest;
 
         // The sentinel one past the last row this report defines, and not a row a call
@@ -771,6 +857,9 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // above hand their lanes to, with the half lane's store around it and the flag the f32
         // single pair states set.
         case DeviceEntry::kSingleF16Fast:
+        // The half lane's fast single in the caller's own kernel: the same shape, the same
+        // route and the same scheme as the row above, over the other region-B exponential.
+        case DeviceEntry::kDeviceSingleF16Fast:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kNotApplicable,
                     kDefaultDeviceDivisionForm};
 
@@ -803,6 +892,9 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // float lane's bodies, and the float lane's narrow ladder is the body
         // BoysCuda::AllOrdersF16Narrow hands its lane.
         case DeviceEntry::kAllOrdersF16Narrow:
+        // The half lane's narrow ladder from a caller's own kernel, which is the float lane's
+        // body over this lane's store.
+        case DeviceEntry::kDeviceAllOrdersF16Narrow:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
@@ -816,6 +908,16 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // store.
         case DeviceEntry::kAllOrdersF16Orders:
         case DeviceEntry::kAllOrdersF16NarrowOrders:
+        // The per-order reading of the same pieces from a caller's own kernel, on the coarsest
+        // and the narrow partitions of both precision pairs: the launched rows above them read
+        // the same bodies through DeviceOrdersBody and DeviceOrdersBody32, and the device
+        // entries call those bodies directly over the handle's lanes.
+        case DeviceEntry::kDeviceAllOrdersF64Orders:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF32Orders:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrders:
+        case DeviceEntry::kDeviceAllOrdersF16Orders:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrders:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -835,6 +937,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // those lanes' tables and stores around them.
         case DeviceEntry::kAllOrdersF32Mono:
         case DeviceEntry::kAllOrdersF16Mono:
+        // The half lane's monomial narrow ladder from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16NarrowMono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
@@ -847,6 +951,11 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // ladder rows above.
         case DeviceEntry::kAllOrdersF32OrdersMono:
         case DeviceEntry::kAllOrdersF16OrdersMono:
+        // The monomial form of that reading, from a caller's own kernel, on the narrow
+        // partition of both lanes.
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersMono:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersMono:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -865,6 +974,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's grid rows, which read the float lane's grid.
         case DeviceEntry::kAllOrdersF16Uniform:
         case DeviceEntry::kAllOrdersF16OrdersUniform:
+        // The half lane's rows of the float lane's grid, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16Uniform:
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -877,6 +988,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the grid's monomial blocks.
         case DeviceEntry::kAllOrdersF16UniformHorner:
         case DeviceEntry::kAllOrdersF16OrdersUniformHorner:
+        // The same grid at the scheme's other name, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16UniformHorner:
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -899,6 +1012,9 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's pair of that family, over the float lane's coarsest and narrow pieces.
         case DeviceEntry::kAllOrdersF16Rat:
         case DeviceEntry::kAllOrdersF16NarrowRat:
+        // The half lane's pair of the route's ladders, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16Rat:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
@@ -913,6 +1029,9 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's pair of the same names, reaching the same two kernels.
         case DeviceEntry::kAllOrdersF16RatHorner:
         case DeviceEntry::kAllOrdersF16NarrowRatHorner:
+        // The same two names at the route's other scheme name, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16RatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
@@ -926,6 +1045,14 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the route on its orders reading.
         case DeviceEntry::kAllOrdersF16OrdersRat:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRat:
+        // The route's per-order reading, from a caller's own kernel, on both partitions of
+        // every precision.
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRat:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -936,6 +1063,13 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the same, at the route's other scheme name.
         case DeviceEntry::kAllOrdersF16OrdersRatHorner:
         case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
+        // The same rows at the route's other scheme name, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRatHorner:
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -952,6 +1086,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the grid's rational route.
         case DeviceEntry::kAllOrdersF16UniformRat:
         case DeviceEntry::kAllOrdersF16OrdersUniformRat:
+        // The half lane's rows of the grid's rational member, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16UniformRat:
             return {FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
@@ -964,6 +1100,8 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The half lane's rows of the same, at the route's other scheme name.
         case DeviceEntry::kAllOrdersF16UniformRatHorner:
         case DeviceEntry::kAllOrdersF16OrdersUniformRatHorner:
+        // The same grid at the route's other scheme name, from a caller's own kernel.
+        case DeviceEntry::kDeviceAllOrdersF16UniformRatHorner:
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
