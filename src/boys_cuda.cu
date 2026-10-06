@@ -3623,6 +3623,42 @@ extern "C" int BoysCudaLaunchAllNF16Fast(
 }
 #endif // BoysFp16
 
+// The float lane's rational pair at the other region-B exponential: one symbol per surface
+// the table books, over the kernel the pair's split-Clenshaw sibling launches. The pair is
+// stored in one form, so the two names select one arithmetic.
+extern "C" int BoysCudaLaunchAllOrdersF32RatHornerFast(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32RatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+extern "C" int BoysCudaLaunchAllOrdersF32OrdersRatHornerFast(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32OrdersRatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowRatHornerFast(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowRatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+extern "C" int BoysCudaLaunchAllOrdersF32NarrowOrdersRatHornerFast(
+    int form, const int* n, const double* x, float* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF32NarrowOrdersRatKernel<kForm(), true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(n, x, out, count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
 // ---------------------------------------------------------------------------
 // the bfloat16 lane
 // ---------------------------------------------------------------------------
@@ -4286,6 +4322,55 @@ extern "C" int BoysCudaLaunchAllNBf16Fast(
         return static_cast<int>(cudaGetLastError());
     });
 }
+
+// The rational pair's other scheme name at the other region-B exponential: one symbol per
+// surface the table books, over the kernel the pair's split-Clenshaw sibling launches. The
+// pair is stored in one form, so the two names select one arithmetic - the same sharing the
+// accurate pair above makes, spelled per surface because each is booked as a row of its own.
+
+
+
+
+extern "C" int BoysCudaLaunchAllOrdersF16RatHornerFast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64RatFull, Lane32Rat, true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16OrdersRatHornerFast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64RatFull, Lane32Rat, true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowRatHornerFast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysAllOrdersF16LaneKernel<kForm(), Lane64NarrowRat, Lane32NarrowRat, true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
+extern "C" int BoysCudaLaunchAllOrdersF16NarrowOrdersRatHornerFast(
+    int form, const int* n, const void* x, void* out, std::size_t count, void* stream) {
+    return UnderForm(form, [&](auto kForm) {
+        BoysOrdersF16LaneKernel<kForm(), Lane64NarrowRat, Lane32NarrowRat, true>
+            <<<LaunchBlocks(count), 256, 0, static_cast<cudaStream_t>(stream)>>>(
+                n, static_cast<const __half*>(x), static_cast<__half*>(out), count);
+        return static_cast<int>(cudaGetLastError());
+    });
+}
+
 #endif // BoysFp16
 
 } // namespace

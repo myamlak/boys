@@ -21,10 +21,13 @@ recorded. It is reported rather than gated, because the runners these rows come 
 and the same leg draws different hardware from run to run. **Read a row as a statement about
 an architecture and a flag set, never as a statement about the machine that produced it.**
 
-The rows are printed by `tests/boys_build_facts.cpp`, built as the `boys-build-facts` target. Every
-CI leg that builds anything builds it, runs it under that leg's own check name, and compares what it
-finds against the row recorded here for that leg. A fact that moves turns the leg red. A leg whose
-row has not been recorded yet prints the row it would record and says so, instead of passing quietly.
+The rows are printed by `tests/boys_build_facts.cpp`, built as the `boys-build-facts` target. A leg
+that carries the build-facts step builds it, runs it under that leg's own check name, and compares
+what it finds against the row recorded here for that leg. Not every leg that builds something
+carries that step: the option-matrix cells build the accuracy gate and the test suite instead,
+and option-plan and the clang-tidy leg build no binary at all. Every leg without a row here is
+listed at the foot of the table. A fact that moves turns the leg red. A leg whose row has not been
+recorded yet prints the row it would record and says so, instead of passing quietly.
 `tools/gen_build_facts.py` is what folds a printed row into this page.
 
 ## What these facts mean for a consumer
@@ -34,13 +37,13 @@ build rather than to the source. The same expression is two different arithmetic
 the same call is two different costs:
 
 - **A build that does not contract has a different fastest option.** `contract.this-tu.fp64` and
-  `contract.this-tu.fp32` say whether a plain `a * b + c`, compiled the way this build compiles it,
-  is a single rounding. Where the answer is 1, the compiler emits one fused instruction from that
-  bare expression, and an explicit fused call is a second way of writing something the build already
-  does. Where the answer is 0, the same bare expression is two roundings, and a kernel that wants the
-  fused value has to name it: `std::fma`, or this library's own `Fused`. **A route tuned on one build
-  is not the route that build's neighbour measures fastest on, because it is not the same
-  arithmetic.**
+  `contract.this-tu.fp32` — `this-tu` being the translation unit the row was printed from — say
+  whether a plain `a * b + c`, compiled the way this build compiles it, is a single rounding. Where
+  the answer is 1, the compiler emits one fused instruction from that bare expression, and an
+  explicit fused call is a second way of writing something the build already does. Where the answer
+  is 0, the same bare expression is two roundings, and a kernel that wants the fused value has to
+  name it: `std::fma`, or this library's own `Fused`. **A route tuned on one build is not the route
+  that build's neighbour measures fastest on, because it is not the same arithmetic.**
 - **`fma.route` says what naming it costs.** `out-of-line-call` means the library's objects carry an
   undefined reference to the runtime's `fma`, so every fused operation is a call into the C library.
   `no-call` means they carry no such reference; on a target with an FMA instruction, the compiler
@@ -73,15 +76,15 @@ Nothing is inferred from a neighbouring fact, and no fact is omitted.
 
 | Key | What it says |
 |---|---|
-| `leg` | the CI leg the row belongs to (that leg's check name), or a derived name for a developer build |
+| `leg` | the CI leg the row belongs to (that leg's check name). A developer build that names no leg records under the name the probe derives from the build itself — `local-<os>-<arch>-<simd.target> <compiler.id>-<compiler.version> <config>`, with ` <sanitizers>` appended when the build carries any. The derived shape is what tells the two apart in the table below: a heading without a runner label is a developer build |
 | `recorded` | the date the row was folded into this page. Stamped by the generator: the probe itself reads no clock |
 | `config` | the build configuration (`Release`, `Debug`, ...) |
 | `cpu.model`, `cpu.model.source` | the processor the row was observed on, and where that report came from (`cpuid`, `/proc/cpuinfo`, `sysctl`, `PROCESSOR_IDENTIFIER`) |
 | `cpu.logical` | logical processors the platform reports |
 | `os`, `arch`, `pointer.bits`, `endian` | what the build targets |
 | `compiler.id`, `compiler.version`, `compiler.standard` | the compiler, its version, and the standard level it was told to use |
-| `sanitizers` | the sanitizers this build carries, or `none` |
-| `macro.<NAME>` | 1 when that preprocessor macro is defined in this build, 0 when it is not. The list is fixed: SSE2, AVX, AVX2, FMA, F16C, AVX512F, NEON and the arm64 arithmetic-feature macros |
+| `sanitizers` | the sanitizers this build's compiler reports, or `none`. The report reaches only what the compiler defines a macro for, and that is not the same at every version: a build compiled with `-fsanitize=address,undefined` reports `address,undefined` on Clang and on GCC 15, and `address` alone on GCC 13, which defines no macro for UBSan |
+| `macro.<NAME>` | 1 when that preprocessor macro is defined in this build, 0 when it is not. The list is fixed, and a key is `macro.` plus the macro's own name: `__SSE2__`, `__AVX__`, `__AVX2__`, `__FMA__`, `__F16C__`, `__AVX512F__`, `__ARM_NEON`, `__ARM_FEATURE_FMA`, `__ARM_FEATURE_FP16_SCALAR_ARITHMETIC`, `__ARM_FEATURE_FP16_VECTOR_ARITHMETIC` |
 | `simd.target`, `simd.bits` | the packed arithmetic the build targets, and its width in bits |
 | `simd.lanes.fp64`, `.fp32`, `.fp16` | values one packed operation covers, per format |
 | `backend.<name>.contracts` | whether a bare `a * b + c` in that backend's arithmetic is a single rounding, as the library's `BoysBackends()` reports it |
@@ -784,8 +787,8 @@ simd.lanes.fp32=4
 simd.lanes.fp16=8
 backend.scalar-fp64.contracts=0
 backend.scalar-fp32.contracts=0
-backend.avx2-fp64.contracts=1
-backend.avx2-fp32.contracts=1
+backend.avx2-fp64.contracts=0
+backend.avx2-fp32.contracts=0
 contract.this-tu.fp64=0
 contract.this-tu.fp32=0
 runtime.avx2=1
@@ -793,7 +796,7 @@ fma.route=out-of-line-call
 fma.route.symbols=fma,fmaf
 fma.route.artifact=libboys.a
 fma.route.tool=nm
-recorded=2026-09-24
+recorded=2026-10-06
 ```
 
 #### `local-windows-x86-64-avx2 msvc-19.51.36256 Release`

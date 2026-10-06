@@ -1526,6 +1526,100 @@ constexpr auto GateDeviceEntryF16(boys::FitRoute route,
 }
 #endif // BOYS_GATE_FP16
 
+/// The launched entry the fast member of the float device lane is measured through.
+///
+/// The region-B exponential is not a policy argument on a device lane: the launched
+/// entries are distinct functions and the option table states the member each one
+/// runs (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp). This revision's
+/// table carries the float lane's all-orders family at \c RegionBExp::kAccurate - so
+/// the cross's arms above read that member and no other - and carries the lane's
+/// \c RegionBExp::kFast at one entry of its own, the single-order launch
+/// (`kSingleF32Fast`, whose C++ name is `BoysCuda::SingleF32` at that member). The
+/// double lane's table carries no row at \c kFast in either group at this revision,
+/// and the arm below names that member rather than judging it at the other member's
+/// figure.
+///
+/// The four parameters are accepted and unused so that this entry is reached through
+/// the same call shape as the family above: the fast member's launch reads one ladder
+/// of the lane's own, and the axes the cross crosses select the fits the accurate
+/// member's family is cut from, so the cell a caller asks about does not move it.
+///
+/// \param route     the member's fit route, which selects no part of this entry
+/// \param scheme    the member's summation, which selects no part of this entry
+/// \param partition the member's partition, which selects no part of this entry
+/// \param axis      the member's packing axis, which selects no part of this entry
+///
+/// \returns the launched entry the float lane runs at \c RegionBExp::kFast
+constexpr auto GateDeviceEntryFast(boys::FitRoute route,
+                                   boys::EvalScheme scheme,
+                                   boys::FitGranularity partition,
+                                   boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*,
+                            boys::DivisionForm) {
+    (void)route;
+    (void)scheme;
+    (void)partition;
+    (void)axis;
+
+    return &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>;
+}
+
+/// The double lane's launched entry at the other region-B exponential: its own fast
+/// member, whose name is the lane's (`BoysCuda::SingleF64Fast`, boys/boys_cuda.hpp,
+/// defined in src/boys_cuda.cpp beside the float lane's).
+///
+/// The four parameters are unused for the reason the float lane's map states above:
+/// this member's launch is one arithmetic of the lane and not one per cell.
+///
+/// \param route     the member's fit route, which selects no part of this entry
+/// \param scheme    the member's summation, which selects no part of this entry
+/// \param partition the member's partition, which selects no part of this entry
+/// \param axis      the member's packing axis, which selects no part of this entry
+///
+/// \returns the launched entry the double lane runs at \c RegionBExp::kFast
+constexpr auto GateDeviceEntryF64Fast(boys::FitRoute route,
+                                      boys::EvalScheme scheme,
+                                      boys::FitGranularity partition,
+                                      boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const double*, double*, std::size_t, void*,
+                            boys::DivisionForm) {
+    (void)route;
+    (void)scheme;
+    (void)partition;
+    (void)axis;
+
+    return &boys::BoysCuda::SingleF64Fast;
+}
+
+#ifdef BOYS_GATE_FP16
+/// The half lane's launched entry at the other region-B exponential: its own fast
+/// member, whose parameter list takes fp16 arguments and whose name is the lane's
+/// (`BoysCuda::SingleF16Fast`, boys/boys_cuda.hpp).
+///
+/// The four parameters are unused for the reason the float lane's map states above:
+/// this member's launch is one arithmetic of the lane and not one per cell.
+///
+/// \param route     the member's fit route, which selects no part of this entry
+/// \param scheme    the member's summation, which selects no part of this entry
+/// \param partition the member's partition, which selects no part of this entry
+/// \param axis      the member's packing axis, which selects no part of this entry
+///
+/// \returns the launched entry the half lane runs at \c RegionBExp::kFast
+constexpr auto GateDeviceEntryF16Fast(boys::FitRoute route,
+                                      boys::EvalScheme scheme,
+                                      boys::FitGranularity partition,
+                                      boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const boys::F16*, boys::F16*, std::size_t, void*,
+                            boys::DivisionForm) {
+    (void)route;
+    (void)scheme;
+    (void)partition;
+    (void)axis;
+
+    return &boys::BoysCuda::SingleF16Fast;
+}
+#endif // BOYS_GATE_FP16
+
 /// One device allocation the arm owns for the length of the sweep: allocated
 /// on construction, freed on the way out, and reporting what it could not do
 /// rather than ending the run - a host whose device refuses the allocation
@@ -1578,6 +1672,21 @@ private:
     T* mPtr = nullptr;
     std::size_t mCount = 0;
 };
+
+// The device-callable arm of the fast-member reading: one kernel that calls the
+// lane's in-kernel entry at RegionBExp::kFast from inside itself, over this gate's own
+// grid (tests/boys_accuracy_gate_fast_device.cu, the shape
+// tests/boys_cuda_device_demo.cu states for a consumer). It is declared here because a
+// __device__ entry may only be included by a .cu and this gate's extension is not one;
+// the argument list below is the launched entries' own, so the sweep reads this arm
+// through the same call as the rest of them.
+extern "C" int BoysGateFastDeviceSingleF32(const boys::BoysDeviceTables* tables,
+                                           const int* n,
+                                           const double* x,
+                                           float* out,
+                                           std::size_t count,
+                                           void* stream,
+                                           boys::DivisionForm form);
 #endif // BOYS_GATE_CUDA
 
 } // namespace
@@ -10795,6 +10904,15 @@ int main(int argc, char** argv) {
     // differently, so a reader asking whether the exponential changes an answer
     // reads a count rather than an assurance.
     //
+    // The three device lanes cross this axis as far as their surface carries it and
+    // no further: their arms launch entries of the launched all-orders family,
+    // those rows state one member each (BoysDeviceOptions()), and each cell is
+    // judged at the figure the accessor answers for that member - on fp32-device
+    // 1.5e-07, and not the 2.3e-07 its row publishes for the fast member the entry
+    // does not run. A lane whose family named a second member is failed on where
+    // the arms are set up, rather than judged at one of the two, and the table the
+    // device arms print names the member each of them read.
+    //
     // The two half families are judged with the format's own digit: the figure a
     // half lane's row states beside its base carries half of the last representable
     // digit of the value returned, and that digit is the format's width - binary16
@@ -11543,6 +11661,110 @@ int main(int argc, char** argv) {
     std::vector<std::string> combDeviceLaneReason(static_cast<std::size_t>(combLaneCount));
 
 #ifdef BOYS_GATE_CUDA
+    // The region-B member each device lane's arms read, read off the library's own
+    // option table rather than transcribed here, and the term the figure carries
+    // for it. Every device arm below launches an entry of the launched all-orders
+    // family its map returns, and those rows state the member they run
+    // (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp), so the members
+    // those rows name are the members these arms read. The set is held rather than
+    // a member: a lane whose family named a second one is a lane this gate owes a
+    // second arm for, which is printed and failed on rather than judged at the
+    // wrong figure.
+    //
+    // The member decides the figure. A lane row's term beside the base belongs to
+    // the member that row names (LaneContractInfo::additiveMember, src/boys.cpp,
+    // the composition BoysAccuracyGuaranteed makes), so a cell read at the other
+    // member is judged without it - on fp32-device 1.5e-07 against 2.3e-07, which
+    // are two claims about two arithmetics and not one figure under two names.
+    const auto combDeviceOptionPrecision = [](int lane) {
+        switch (static_cast<boys::Precision>(lane))
+        {
+        case boys::Precision::kFp64Device:
+            return boys::DeviceOptionPrecision::kFp64;
+        case boys::Precision::kFp32Device:
+            return boys::DeviceOptionPrecision::kFp32;
+        case boys::Precision::kFp16Device:
+            return boys::DeviceOptionPrecision::kFp16;
+        case boys::Precision::kFp64:
+        case boys::Precision::kFp32:
+        case boys::Precision::kFp16:
+        case boys::Precision::kBf16:
+            break;
+        }
+
+        return boys::DeviceOptionPrecision::kCount;
+    };
+
+    // Per lane: the members the launched all-orders rows of that lane name, and how
+    // many such rows this build serves - the count the set is read over.
+    std::vector<std::vector<boys::RegionBExp>> combDeviceLaneMembers(
+        static_cast<std::size_t>(combLaneCount));
+    std::vector<std::size_t> combDeviceLaneMemberRows(static_cast<std::size_t>(combLaneCount), 0);
+
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        if (!combIsDeviceLane(lane))
+        {
+            continue;
+        }
+
+        const boys::DeviceOptionPrecision precision = combDeviceOptionPrecision(lane);
+
+        for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
+        {
+            if (row.group != boys::DeviceOptionGroup::kLaunched ||
+                row.shape != boys::DeviceOptionShape::kAllOrders || row.precision != precision ||
+                !row.built)
+            {
+                continue;
+            }
+
+            ++combDeviceLaneMemberRows[static_cast<std::size_t>(lane)];
+
+            std::vector<boys::RegionBExp>& members =
+                combDeviceLaneMembers[static_cast<std::size_t>(lane)];
+
+            if (std::find(members.begin(), members.end(), row.regionBExp) == members.end())
+            {
+                members.push_back(row.regionBExp);
+            }
+        }
+    }
+
+    // The region-B member the cross's device rows are read at: the member the three maps
+    // above launch. Every one of them names a launched all-orders entry of the accurate
+    // family (GateDeviceEntry, GateDeviceEntryF64, GateDeviceEntryF16), so the figure
+    // these rows are judged at is that member's - on fp32-device 1.5e-07, where the
+    // family's other member is 2.3e-07. The family's second member is read by the
+    // fast-member arm below and not by these rows: a row judged at two members would be
+    // judging a figure the arm did not take.
+    //
+    // Stated once, here, because it is a statement about the maps and not a reading of
+    // the library's table: the launched all-orders family names two members since the
+    // fast entries landed, so a set read off the table no longer says which member the
+    // entry an arm launches runs.
+    constexpr boys::RegionBExp kCombDeviceRowMember = boys::RegionBExp::kAccurate;
+
+    // The term beside the base for that member: the lane row's own where the row names
+    // it, and 0.0 where the row's term belongs to the other member - the composition the
+    // accessor makes, applied to the member the rows were read at rather than to the
+    // member the row's term is under.
+    const std::vector<double> combDeviceLaneMemberAdd = [&] {
+        std::vector<double> term(static_cast<std::size_t>(combLaneCount), 0.0);
+
+        for (int lane = 0; lane < combLaneCount; ++lane)
+        {
+            if (kCombDeviceRowMember ==
+                combLaneRows[static_cast<std::size_t>(lane)].additiveMember)
+            {
+                term[static_cast<std::size_t>(lane)] =
+                    combLaneRows[static_cast<std::size_t>(lane)].additive;
+            }
+        }
+
+        return term;
+    }();
+
     // ---- the device lanes' arms ---------------------------------------------
     //
     // The three device lanes' reading, taken on the card this build was compiled
@@ -11640,6 +11862,107 @@ int main(int argc, char** argv) {
         }
     }
 
+    // Which device lanes this build has a second arm for: the fast-member arm below,
+    // which launches the lane's single-order entry at RegionBExp::kFast
+    // (GateDeviceEntryFast on the float lane, GateDeviceEntryF16Fast on the half one).
+    // Which lanes those are is read from the revision's own option table - a lane whose
+    // table carries no built launched single-order row at that member is a lane no arm
+    // here can measure that member on - and the two entries this gate reaches the
+    // member through are named here and nowhere else.
+    const std::vector<char> combDeviceLaneFastArmed = [&] {
+        std::vector<char> armed(static_cast<std::size_t>(combLaneCount), 0);
+
+        for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
+        {
+            if (!row.built || row.group != boys::DeviceOptionGroup::kLaunched ||
+                row.shape != boys::DeviceOptionShape::kSingle ||
+                row.regionBExp != boys::RegionBExp::kFast)
+            {
+                continue;
+            }
+
+            for (int lane = 0; lane < combLaneCount; ++lane)
+            {
+                if (!combIsDeviceLane(lane) || row.precision != combDeviceOptionPrecision(lane))
+                {
+                    continue;
+                }
+
+                if (lane == static_cast<int>(boys::Precision::kFp32Device) ||
+                    lane == static_cast<int>(boys::Precision::kFp64Device))
+                {
+                    armed[static_cast<std::size_t>(lane)] = 1;
+                }
+
+#ifdef BOYS_GATE_FP16
+                if (lane == static_cast<int>(boys::Precision::kFp16Device))
+                {
+                    armed[static_cast<std::size_t>(lane)] = 1;
+                }
+#endif
+            }
+        }
+
+        return armed;
+    }();
+
+    // The arms per lane this gate has are a reading of the members above: the cross's
+    // arm reads the member the launched all-orders family's own rows run, and the
+    // fast-member arm below reads the other one where this build's surface carries the
+    // lane's single-order entry at it. A member the family names that no arm of this
+    // gate reads is printed and failed on here, before anything is measured, rather
+    // than passed over while the figure below is composed for one of them.
+    for (int lane = 0; lane < combLaneCount; ++lane)
+    {
+        if (!combIsDeviceLane(lane) || !deviceLaneUsable)
+        {
+            continue;
+        }
+
+#ifndef BOYS_GATE_FP16
+        // The half lane's entries are behind the seam this build has closed, so
+        // its family holds no built row here and the lane is counted apart below
+        // with that sentence rather than failed on for it.
+        if (lane == static_cast<int>(boys::Precision::kFp16Device))
+        {
+            continue;
+        }
+#endif
+
+        const std::vector<boys::RegionBExp>& members =
+            combDeviceLaneMembers[static_cast<std::size_t>(lane)];
+        const std::size_t rows = combDeviceLaneMemberRows[static_cast<std::size_t>(lane)];
+
+        if (rows == 0)
+        {
+            std::printf("  the %s lane: this build serves no launched all-orders entry of it, so "
+                        "the arm below has nothing to launch and its members are measured by no "
+                        "cell here\n",
+                        combLaneRows[static_cast<std::size_t>(lane)].name);
+            failed = true;
+        }
+        else if (std::find(members.begin(), members.end(), kCombDeviceRowMember) == members.end())
+        {
+            std::printf("  the %s lane: the launched all-orders entries of this build do not name "
+                        "the region-B member this cross's device maps launch, so the figure these "
+                        "rows are judged at is not one of the members the table states - the maps "
+                        "and the table have parted company\n",
+                        combLaneRows[static_cast<std::size_t>(lane)].name);
+            failed = true;
+        }
+        else if (members.size() > 1 &&
+                 !combDeviceLaneFastArmed[static_cast<std::size_t>(lane)])
+        {
+            std::printf("  the %s lane: the launched all-orders entries of this build name %zu "
+                        "region-B member(s) of it and this build's surface carries no entry of "
+                        "that lane at the second that an arm of this gate launches, so the member "
+                        "is measured by no cell here\n",
+                        combLaneRows[static_cast<std::size_t>(lane)].name,
+                        members.size());
+            failed = true;
+        }
+    }
+
     const std::size_t combDeviceCells = ref.count * static_cast<std::size_t>(nmax + 1);
     const std::vector<int> combDeviceTops(ref.count, nmax);
     GateDeviceBuffer<int> combDeviceN(ref.count);
@@ -11692,7 +12015,11 @@ int main(int argc, char** argv) {
         [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis,
             boys::FitGranularity kGran>(int lane) {
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-            const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+
+            // The term beside the base for the member this lane's entries run, and
+            // not the term its row publishes: the two are one number on a lane whose
+            // row names that member, and on fp32-device they are 0.0 against 8e-8.
+            const double laneMemberAdd = combDeviceLaneMemberAdd[static_cast<std::size_t>(lane)];
             const double lanePlainAdd =
                 combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
@@ -11721,14 +12048,16 @@ int main(int argc, char** argv) {
 
             // The figure the row is judged by, computed the way the
             // accessor computes it (src/boys.cpp, BoysAccuracyGuaranteed):
-            // the lane's base, plus the term the lane adds beside it -
-            // on this lane the fast region-B exponential's corrected
-            // seed, which the base does not carry - and, under the
-            // plain reciprocal, that form's own figure where the lane's
-            // row states one.
-            a.bound = laneBound + laneAdd;
+            // the lane's base, plus the term the lane adds beside it where
+            // the member read is the one the lane's row names the term
+            // under - on fp32-device the fast region-B exponential's
+            // corrected seed, which the base does not carry and which this
+            // arm's accurate entry is not owed - and, under the plain
+            // reciprocal, that form's own figure where the lane's row
+            // states one.
+            a.bound = laneBound + laneMemberAdd;
             a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
-                laneBound + lanePlainAdd + laneAdd;
+                laneBound + lanePlainAdd + laneMemberAdd;
 
             for (std::size_t f = 0; f < kCombForms; ++f)
             {
@@ -11941,7 +12270,7 @@ int main(int argc, char** argv) {
 
             const char* const laneName = combLaneRows[static_cast<std::size_t>(lane)].name;
             const double laneBound = combLaneRows[static_cast<std::size_t>(lane)].bound;
-            const double laneAdd = combLaneRows[static_cast<std::size_t>(lane)].additive;
+            const double laneMemberAdd = combDeviceLaneMemberAdd[static_cast<std::size_t>(lane)];
             const double lanePlainAdd =
                 combLaneRows[static_cast<std::size_t>(lane)].plainAdditive;
 
@@ -12034,17 +12363,18 @@ int main(int argc, char** argv) {
                             // The figure the row is judged by, computed the way
                             // the accessor computes it (src/boys.cpp,
                             // BoysAccuracyGuaranteed): the lane's base, plus the
-                            // term the lane adds beside it - and on the half
-                            // lane plus half a representable digit of the value
-                            // each cell returned, which is the term that lane's
-                            // own figure carries and the term its arm above
+                            // term the lane adds beside it where the member read
+                            // is the one its row names the term under - and on the
+                            // half lane plus half a representable digit of the
+                            // value each cell returned, which is the term that
+                            // lane's own figure carries and the term its arm above
                             // judges its cells with. Under the plain reciprocal
                             // it is that form's own figure where the lane's row
                             // states one.
-                            a.bound = laneBound + laneAdd;
+                            a.bound = laneBound + laneMemberAdd;
                             a.formBar[static_cast<std::size_t>(
                                 boys::DivisionForm::kPlainReciprocal)] =
-                                laneBound + lanePlainAdd + laneAdd;
+                                laneBound + lanePlainAdd + laneMemberAdd;
                             a.ceiling = halfLane ? a.bound : 0.0;
 
                             bool ran = false;
@@ -12189,6 +12519,252 @@ int main(int argc, char** argv) {
         "build has closed, so the half lane's carried member has no entry in this binary to "
         "measure; a build with the seam open measures that member on the card";
 #endif // BOYS_GATE_FP16
+
+    // ---- the fast member of each device lane ---------------------------------
+    //
+    // The region-B exponential is not a policy argument on a device lane: a launched
+    // entry is a function of its own and the option table states the member it runs
+    // (DeviceOptionInfo::regionBExp). The arms above launch the lane's launched
+    // all-orders family, which the revision this gate's record names carries at
+    // RegionBExp::kAccurate alone, so they read one member of each lane; the member
+    // they do not read is launched here, through the entry this build reaches it
+    // through - the lane's single-order launch, SingleF32<RegionBExp::kFast> on the
+    // float lane and SingleF16Fast on the half one.
+    //
+    // The double lane is named rather than measured. This build's table carries rows of
+    // that lane at RegionBExp::kFast and no arm of this gate launches one: the entry
+    // the lane's single-order fast launch is named by (BoysCuda::SingleF64Fast) is a
+    // declaration this build's header carries and the library's sources define nowhere,
+    // so a call of it is a link error rather than a measurement. The sentence below is
+    // a reading of the table's own rows and of what this build defines, and the count
+    // in it moves with them.
+    //
+    // The figure each cell is judged at is the accessor's own for the member read: the
+    // lane's base plus the term its row publishes under THAT member
+    // (LaneContractInfo::additiveMember, src/boys.cpp, the composition
+    // BoysAccuracyGuaranteed makes) - on fp32-device the row's 8e-8 belongs to the fast
+    // member, which is why the arms above are judged at 1.5e-07 and this one at 2.3e-07
+    // - plus the half lane's own term of the value the call returned.
+    //
+    // The cells are every (order, argument) of the committed grid at each of the three
+    // forms, read through the entry's own layout: a single-order entry answers one value
+    // per argument, so the sweep names one order for the whole batch per launch and
+    // reads the grid's column for that order.
+    const auto combDeviceFastMember =
+        [&]<typename TArg, typename TVal>(int lane, const char* entryName, auto entry,
+                                          const std::vector<TArg>& args,
+                                          const std::vector<double>& want, bool halfLane) {
+            const boys::LaneContractInfo& laneRow = combLaneRows[static_cast<std::size_t>(lane)];
+            const double laneBound = laneRow.bound;
+            const double memberAdd =
+                laneRow.additiveMember == boys::RegionBExp::kFast ? laneRow.additive : 0.0;
+
+            GateDeviceBuffer<int> laneN(ref.count);
+            GateDeviceBuffer<TArg> laneArgs(args.size());
+            GateDeviceBuffer<TVal> laneValues(ref.count);
+            std::vector<int> tops(ref.count, 0);
+            std::vector<TVal> laneOut(ref.count);
+
+            if (!laneN.Upload(tops) || !laneArgs.Upload(args) || !laneValues.ok())
+            {
+                std::printf("  the %s lane's fast member: the device refused an allocation or the "
+                            "argument upload this arm needs, so the member is measured by no cell "
+                            "here\n",
+                            laneRow.name);
+                failed = true;
+
+                return;
+            }
+
+            CombAccum a;
+            a.bound = laneBound + memberAdd;
+            a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
+                laneBound + laneRow.plainAdditive + memberAdd;
+            a.ceiling = halfLane ? a.bound : 0.0;
+
+            for (std::size_t f = 0; f < kCombForms; ++f)
+            {
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    std::fill(tops.begin(), tops.end(), n);
+
+                    if (!laneN.Upload(tops))
+                    {
+                        std::printf("  the %s lane's fast member: the order upload this arm needs "
+                                    "was refused, so the member is measured by no cell here\n",
+                                    laneRow.name);
+                        failed = true;
+
+                        return;
+                    }
+
+                    const boys::BoysStatus status =
+                        entry(laneN.get(),
+                              laneArgs.get(),
+                              laneValues.get(),
+                              ref.count,
+                              nullptr,
+                              kDeviceForms[f]);
+
+                    if (status != boys::BoysStatus::kSuccess ||
+                        cudaDeviceSynchronize() != cudaSuccess || !laneValues.Download(laneOut))
+                    {
+                        std::printf("  the %s lane's fast member: the entry did not run "
+                                    "(BoysStatus %d), so the member is measured by no cell here\n",
+                                    laneRow.name,
+                                    static_cast<int>(status));
+                        failed = true;
+
+                        return;
+                    }
+
+                    for (std::size_t i = 0; i < ref.count; ++i)
+                    {
+                        const double got = static_cast<double>(laneOut[i]);
+
+                        a.add(n,
+                              static_cast<double>(args[i]),
+                              got,
+                              want[ref.Index(n, i)],
+                              halfLane ? halfUlp(got) : 0.0,
+                              static_cast<int>(f));
+                    }
+                }
+            }
+
+            std::printf("  the %s lane's fast member (%s): %zu cell(s) over the committed grid at "
+                        "each of the %zu form(s), worst %.6g at n=%d, x=%.6g, judged at %.6g, "
+                        "%zu outside it\n",
+                        laneRow.name,
+                        entryName,
+                        a.cells,
+                        kCombForms,
+                        a.worst,
+                        a.worstN,
+                        a.worstX,
+                        a.judgedTo,
+                        a.over);
+
+            if (a.over != 0)
+            {
+                failed = true;
+            }
+        };
+
+    if (deviceLaneUsable)
+    {
+        if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp32Device)])
+        {
+            combDeviceFastMember.template operator()<double, float>(
+                static_cast<int>(boys::Precision::kFp32Device),
+                "BoysCuda::SingleF32<RegionBExp::kFast>",
+                GateDeviceEntryFast(boys::FitRoute::kChebyshev,
+                                    boys::EvalScheme::kSplitClenshaw,
+                                    boys::FitGranularity::kCoarsest,
+                                    boys::PackAxis::kArguments),
+                ref.xf,
+                ref.vf,
+                false);
+
+            // The same member through the surface's other group: the in-kernel entry,
+            // called from a kernel of this gate's own. A handle the card would not take
+            // is a reason for the arm not to run rather than a set of values judged
+            // under the launch's name, and it is stated here beside the call.
+            boys::BoysDeviceTables fastDeviceTables;
+
+            if (boys::BoysCuda::DeviceTables(&fastDeviceTables) == boys::BoysStatus::kSuccess)
+            {
+                // The handle is this file's, because the translation unit that holds the
+                // kernel may include the device header and not the host one; and the
+                // launcher answers its status as an int for the same reason, so the two
+                // are made one call shape here rather than in either file.
+                const auto fastDeviceEntry = [&fastDeviceTables](const int* n, const double* x,
+                                                                 float* out, std::size_t count,
+                                                                 void* stream,
+                                                                 boys::DivisionForm form) {
+                    return BoysGateFastDeviceSingleF32(&fastDeviceTables, n, x, out, count, stream,
+                                                       form) == 0
+                               ? boys::BoysStatus::kSuccess
+                               : boys::BoysStatus::kDeviceError;
+                };
+
+                combDeviceFastMember.template operator()<double, float>(
+                    static_cast<int>(boys::Precision::kFp32Device),
+                    "BoysDeviceSingleF32<kForm, RegionBExp::kFast>",
+                    fastDeviceEntry,
+                    ref.xf,
+                    ref.vf,
+                    false);
+            }
+            else
+            {
+                std::printf("  the fp32-device lane's fast member, in the caller's own kernel: "
+                            "the device handle this arm's kernels read could not be filled "
+                            "(BoysCuda::DeviceTables), so the in-kernel entry's cells are "
+                            "measured by no cell here\n");
+                failed = true;
+            }
+        }
+
+        if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp64Device)] &&
+            combDeviceLaneFastArmed[static_cast<std::size_t>(boys::Precision::kFp64Device)])
+        {
+            combDeviceFastMember.template operator()<double, double>(
+                static_cast<int>(boys::Precision::kFp64Device),
+                "BoysCuda::SingleF64Fast",
+                GateDeviceEntryF64Fast(boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::FitGranularity::kCoarsest,
+                                       boys::PackAxis::kArguments),
+                ref.x,
+                ref.v,
+                false);
+        }
+
+#ifdef BOYS_GATE_FP16
+        if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp16Device)])
+        {
+            std::vector<boys::F16> fastHalfArgs(ref.count);
+
+            for (std::size_t i = 0; i < ref.count; ++i)
+            {
+                fastHalfArgs[i] = boys::F16(static_cast<float>(ref.x[i]));
+            }
+
+            combDeviceFastMember.template operator()<boys::F16, boys::F16>(
+                static_cast<int>(boys::Precision::kFp16Device),
+                "BoysCuda::SingleF16Fast",
+                GateDeviceEntryF16Fast(boys::FitRoute::kChebyshev,
+                                       boys::EvalScheme::kSplitClenshaw,
+                                       boys::FitGranularity::kCoarsest,
+                                       boys::PackAxis::kArguments),
+                fastHalfArgs,
+                ref.v16,
+                true);
+        }
+#endif
+    }
+
+    if (!combDeviceLaneFastArmed[static_cast<std::size_t>(boys::Precision::kFp64Device)])
+    {
+        std::size_t fp64FastRows = 0;
+
+        for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
+        {
+            if (row.precision == boys::DeviceOptionPrecision::kFp64 &&
+                row.regionBExp == boys::RegionBExp::kFast)
+            {
+                ++fp64FastRows;
+            }
+        }
+
+        std::printf("  the fp64-device lane's fast member: this build's table carries %zu row(s) of "
+                    "that lane at RegionBExp::kFast and none of them is a built launched "
+                    "single-order row, which is the entry this gate reaches that member through - "
+                    "so the member's cells are measured by no cell here rather than judged at the "
+                    "accurate member's figure\n",
+                    fp64FastRows);
+    }
 #endif // BOYS_GATE_CUDA
 
     // Whether each device lane was measured here, and the sentence its members
@@ -12265,13 +12841,34 @@ int main(int argc, char** argv) {
                         // base form. A build whose default is the plain
                         // reciprocal moved this answer and not the bound,
                         // and the check below read that as a disagreement.
+                        //
+                        // The region-B member is named for the reason the form
+                        // is: a device lane's rows are read at the member its
+                        // launched all-orders entries name, so the accessor is
+                        // asked for the member the row was read at and the two
+                        // are one number - on fp32-device 1.5e-07, where the
+                        // build's default member answers 2.3e-07 and the check
+                        // below read that as a disagreement. A host lane's rows
+                        // are read at both members and the two answer one figure
+                        // there (the term beside the base is 0.0), so the
+                        // build's own default is the member those rows stand for.
+#ifdef BOYS_GATE_CUDA
+                        // The member the device arm read this row at, which is the member
+                        // its figure was taken at (kCombDeviceRowMember above). A build
+                        // without the lane has no arm and no member read: its device rows
+                        // are counted apart under the build's own default.
+                        const boys::RegionBExp rowExp = kCombDeviceRowMember;
+#else
+                        const boys::RegionBExp rowExp = boys::kDefaultHostRegionBExp;
+#endif
                         const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
                             route,
                             scheme,
                             axisRow.axis,
                             partition.granularity,
-                            boys::DivisionForm::kRefinedReciprocal);
+                            boys::DivisionForm::kRefinedReciprocal,
+                            rowExp);
                         // The same figure for the form this build's unnamed
                         // calls divide in, which is what the two entries
                         // below answer for: neither BoysAccuracyDelivered nor
@@ -12300,7 +12897,8 @@ int main(int argc, char** argv) {
                             scheme,
                             axisRow.axis,
                             partition.granularity,
-                            boys::DivisionForm::kPlainReciprocal);
+                            boys::DivisionForm::kPlainReciprocal,
+                            rowExp);
                         const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
                             static_cast<boys::Precision>(lane),
                             route,
@@ -13150,12 +13748,68 @@ int main(int argc, char** argv) {
                     "boys::BoysCuda::SingleF32<...> and\n  boys::BoysCuda::AllNF32<...> and the "
                     "other lanes' beside them - and the arm that\n  would measure them through "
                     "them is not built in this gate: a work item on this\n  gate, not a limit of "
-                    "the library. The member axis is not crossed on the device\n  lanes either, "
-                    "for the same reason: the two region-B members of a device lane\n  are two "
-                    "entries of the surface rather than two policies of one entry, so\n  reading "
-                    "the second needs the arm this gate does not have. Every device cell\n  this "
-                    "run does carry is counted in the row book above and judged against the\n"
-                    "  figure its own lane publishes.\n");
+                    "the library. The region-B member those arms read is\nthe one the launched "
+                    "all-orders rows of their lane name, and each cell is\n  judged at the figure "
+                    "the accessor answers for that member: the table below\n  names it per lane "
+                    "and the other member of these families is a device-\n  callable entry this "
+                    "host-only gate has no kernel to run. Every device cell\n  this run does "
+                    "carry is counted in the row book above and judged against the\n  figure its "
+                    "own lane publishes for the member it read.\n");
+
+#ifdef BOYS_GATE_CUDA
+        // The member those device arms read, and the figure that follows from it.
+        // It is read off the library's own option table and not written here: each
+        // arm launches an entry of the launched all-orders family its map names,
+        // and those rows state the member they run (boys/boys_cuda_options.hpp,
+        // DeviceOptionInfo::regionBExp), so the member a lane's family names is the
+        // member its arm read. The figure moves with it, because a lane row's term
+        // beside the base belongs to the member that row names
+        // (LaneContractInfo::additiveMember, src/boys.cpp): a lane whose two members
+        // answer different figures is judged at the figure of the member its entry
+        // runs, which is the claim that entry's own row publishes.
+        std::printf("  the region-B member the device arms above read, off the library's own\n"
+                    "  option table: each of them launches an entry of the launched all-orders\n"
+                    "  family its map names, and those rows state the member they run\n"
+                    "  (boys/boys_cuda_options.hpp, DeviceOptionInfo::regionBExp)\n");
+
+        for (int lane = 0; lane < combLaneCount; ++lane)
+        {
+            if (!combIsDeviceLane(lane))
+            {
+                continue;
+            }
+
+            const std::size_t rows = combDeviceLaneMemberRows[static_cast<std::size_t>(lane)];
+            const char* memberName = "unnamed member";
+
+            for (const boys::RegionBExpInfo& memberRow : combMemberRows)
+            {
+                if (memberRow.exp == kCombDeviceRowMember)
+                {
+                    memberName = memberRow.name;
+                }
+            }
+
+            const double judged =
+                combLaneRows[static_cast<std::size_t>(lane)].bound +
+                combDeviceLaneMemberAdd[static_cast<std::size_t>(lane)];
+
+            std::printf("    %-26s %6zu  %-14s  %.6g\n",
+                        combLaneRows[static_cast<std::size_t>(lane)].name,
+                        rows,
+                        memberName,
+                        judged);
+        }
+
+        std::printf("    the figure column is the lane's base plus the term its row states under\n"
+                    "    the member named, which is the member the three device maps launch and\n"
+                    "    the member these rows are judged at; the half lane adds half a\n"
+                    "    representable digit of each returned value beside it, as its own row\n"
+                    "    states. The row count is the launched all-orders rows of the lane in\n"
+                    "    BoysDeviceOptions(), and that family names a second member where this\n"
+                    "    build carries one: those rows are read by the fast-member arm, which\n"
+                    "    measures the member rather than folding it into these rows.\n");
+#endif // BOYS_GATE_CUDA
     }
 
     // ---- the member book: the region-B axis, both of its members ---------------

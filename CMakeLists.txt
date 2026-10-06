@@ -577,9 +577,15 @@ if (BOYS_BUILD_TESTS)
     # include directories (PUBLIC on that target) and the CUDA runtime the
     # target's own objects are linked against - so nothing about the toolkit is
     # repeated here.
+    # The device-callable half of that arm (tests/boys_accuracy_gate_fast_device.cu) is
+    # a translation unit of its own because a kernel that calls a __device__ entry may
+    # only be compiled as CUDA, and the gate's own extension is not. It is added here
+    # in the same configuration the two lines above state, so a build without the lane
+    # is a build with no kernel in this target and one compilation language fewer.
     if (BUILD_CUDA)
         target_link_libraries(boys-accuracy-gate PRIVATE boys-cuda)
         target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_CUDA=1)
+        target_sources(boys-accuracy-gate PRIVATE tests/boys_accuracy_gate_fast_device.cu)
     endif()
 
     # The route-refusal probe. The many-argument and fixed-order entries do not
@@ -1245,6 +1251,24 @@ if (BUILD_CUDA)
             BoysGateRevision="${BOYS_GATE_REVISION}")
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
+
+        # The axis-sensitivity check: for every row of BoysDeviceOptions(), does the entry the
+        # row names read the axes the row states? It runs the members of each axis a row carries
+        # more than one of, over the tables' own argument range and at the top orders each shape
+        # carries, and fails when two members that claim to differ deliver identical values - the
+        # shape a row whose entry ignores one of its stated axes has. Two translation units,
+        # because the rows split that way: the host half includes <boys/boys_cuda.hpp> and reads
+        # the option table, and tests/boys_cuda_axis_sensitivity_device.cu holds the in-kernel
+        # entries, which a host translation unit cannot call. A device is needed to run it, as
+        # for the gate above; `--collapse=<axis>` is its deliberate-defect control and exits 1.
+        add_executable(boys-cuda-axis-sensitivity
+            tests/boys_cuda_axis_sensitivity.cpp
+            tests/boys_cuda_axis_sensitivity_device.cu)
+        target_link_libraries(boys-cuda-axis-sensitivity PRIVATE boys-cuda boys)
+        target_include_directories(boys-cuda-axis-sensitivity PRIVATE src)
+        target_compile_features(boys-cuda-axis-sensitivity PRIVATE cxx_std_23)
+        boys_strict_warnings(boys-cuda-axis-sensitivity)
+        add_test(NAME boys-cuda-axis-sensitivity COMMAND boys-cuda-axis-sensitivity)
 
         # The CUDA consumer's own check of the lane's default, in two
         # translation units because the lane's headers split that way: the host
