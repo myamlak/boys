@@ -42,6 +42,20 @@ that declares a mode this reader cannot name is a finding rather than a check ca
 invocation of it, and every script the reading puts in no check at all is named in the report,
 with the steps that invoke it, on every run.
 
+THE CHECKS NO LEG ARMS. A check whose input no leg can produce is not a check to wire, and the
+alternative to saying so is a step that runs it to no purpose. Those checks are held in `UNARMED`
+below, each with the reason it is there and what would arm it, so the reason a check is not armed
+is stated rather than left to be read off a silence. The list is not a place to park a red check,
+and it is checked against that: an entry fails this run when it names no check this reading
+carries, when it states no reason, and when a step does invoke the check after all - a list that
+can go quiet on a wired check is a licence and not a record. Every entry is printed on every run.
+
+An entry may name a check this reading could not classify as well as one it carries. The harm
+behind the unclassified verdict is that every invocation of the check reads as carried, and no
+invocation of a check nothing runs is - so the entry states the reading and the check's own mode
+question is not asked of it. What is not given up is the net: a `check_*.py` whose mode this
+reader cannot name and which no entry accounts for is still a finding.
+
 Usage:
   python3 tools/check_required_checks_are_armed.py
   python3 tools/check_required_checks_are_armed.py --required <file> --workflow <file>
@@ -89,6 +103,36 @@ CLAUSE = re.compile(r"^matrix\.([A-Za-z0-9_]+)\s*==\s*'([^']*)'$")
 STATUS_FUNCTION = re.compile(r"^(always|success|failure|cancelled)\(\)$")
 
 LEG_ARG = re.compile(r'--leg\s+"([^"]*)"')
+
+# The checks this tree carries and no leg of the workflow arms: file name -> why, and what would
+# arm it. Every reason is a fact about the check's INPUT - a report a leg cannot produce, a record
+# a leg cannot re-make, a build of the check's own - and never its cost, because cost is work and a
+# check that is merely slow is a check to arm and measure. `unarmed_reasons` holds the list to
+# those terms on every run.
+UNARMED = {
+    "check_class_combinations.py": (
+        "its input is the option probe's report, and a probe report is a timing taken on one "
+        "machine - this workflow takes no timing anywhere by design, so no leg can produce it "
+        "(measured: exit 2 without --report, which is what a leg without one gets). Armed by a leg "
+        "that could run the host option probe, or by a committed report the check is pointed at"
+    ),
+    "check_gate_covers_combinations.py": (
+        "it judges the accuracy gate's committed recorded run, which is a record of one build on "
+        "one machine that no leg can re-make. It fails against that record at both revisions it "
+        "can be read at - 72 of 1008 combinations unmeasured with the gate at HEAD, and 216 with "
+        "the gate at the run's own revision - so the record does not carry the coverage this check "
+        "demands and a step would be red on committed content (measured: exit 1, both ways). Armed "
+        "by a re-made record, or by a device report covering the lanes a CPU run's table leaves out"
+    ),
+    "check_combination_bounds.py": (
+        "its input is a figure its own driver reads from the library at a revision, so it needs a "
+        "build of its own rather than a file the leg has already made, and that build did not "
+        "deliver on the development host: exit 1 after 329.7 s, the compiler refusing the driver "
+        "(MSVC C1128, section limit). Whether it passes on a leg is not established, and a step is "
+        "not armed on a guess. Armed by a leg that builds its driver, with that leg's exit code "
+        "measured"
+    ),
+}
 
 
 def platform_tool():
@@ -403,6 +447,51 @@ def check_leg_arguments(workflow: dict, platform) -> list[str]:
     return failures
 
 
+def unarmed_reasons(found: Inventory, steps: list[tuple[str, str, str, dict]]) -> list[str]:
+    """How the `UNARMED` list can itself be wrong, one failure per way.
+
+    Three ways, and none of them is a difference of opinion about the library. An entry naming no
+    check this reading carries outlives the check it was written for, and the next check to take
+    that name inherits an exemption nobody gave it. An entry stating no reason is a decision with
+    its reason dropped, which is the shape a suppression list arrives in. And an entry whose check
+    a step does invoke is a licence to leave the check unarmed that the workflow has already
+    outgrown - so it is a finding rather than a quiet no-op.
+
+    An entry may name a check this reading could not classify as well as one it carries. The
+    verdict that makes an unclassified check a finding is that every invocation of it reads as a
+    check carried, and a check no step invokes is carried by no invocation - so the ambiguity
+    that verdict reports has no consequence for a check that is not armed, and the entry carries
+    the reading instead of the finding.
+    """
+    failures: list[str] = []
+    known = set(found.checks) | set(found.unclear)
+
+    for name, reason in sorted(UNARMED.items()):
+        if name not in known:
+            failures.append(
+                f"UNARMED names {name!r}, and this reading carries no check under that name - the "
+                f"entry outlives the check it was written for, and a check that later takes the "
+                f"name inherits an exemption nobody gave it"
+            )
+
+        if not reason.strip():
+            failures.append(
+                f"UNARMED names {name!r} and states no reason. A check left unarmed is a decision, "
+                f"and a decision with its reason dropped is a suppression list"
+            )
+
+        invoked = sorted({step for step, _, _ in carried(steps, name, ())})
+
+        if invoked:
+            failures.append(
+                f"UNARMED names {name!r} and the step(s) {invoked} do invoke it - a step was added "
+                f"and the entry was not removed, so the list would go quiet on a check the "
+                f"workflow arms"
+            )
+
+    return failures
+
+
 def listing(rows: list[tuple[str, str, str]], required_legs: set[str]) -> str:
     """`n` leg(s), with a couple of names, for a one-line report of where a check runs."""
     legs_here = sorted({leg for _, leg, _ in rows})
@@ -501,7 +590,9 @@ def main() -> int:
 
         print(f"    {label}\n        {detail}")
 
-        if not rows_here:
+        if not rows_here and name in UNARMED:
+            print(f"        NOT ARMED: {UNARMED[name]}")
+        elif not rows_here:
             failures.append(
                 f"{label} is a check this tree carries, and no step of {args.workflow.name} "
                 f"invokes it - a check nothing runs stops no merge"
@@ -516,6 +607,16 @@ def main() -> int:
         else:
             print(f"        run by {steps_here}")
             print(f"        {listing(rows_here, required_legs)}")
+
+    # --- The checks no leg arms, held to their own terms --------------------------------------
+    # The reasons above are the tree's claim about why a check is not armed, so they are checked
+    # here rather than trusted: an entry that has outlived its check, lost its reason, or been
+    # overtaken by a step is the list failing rather than the list working.
+    print()
+
+    for failure in unarmed_reasons(found, steps):
+        failures.append(failure)
+        print(f"    {failure}")
 
     # --- What this reading will not call a check ----------------------------------------------
     # Two verdicts, and only the first is a gate. A script named a check by its own name whose
@@ -533,6 +634,10 @@ def main() -> int:
         print()
 
     for name, modes in sorted(found.unclear.items()):
+        if name in UNARMED:
+            print(f"    {TOOLS.name}/{name}\n        NOT ARMED: {UNARMED[name]}")
+            continue
+
         failures.append(
             f"{TOOLS.name}/{name} is named a check by its own name and declares {modes}, and none "
             f"of them says a run of it exits non-zero - this reader cannot say which invocation of "
@@ -568,7 +673,8 @@ def main() -> int:
     print(
         f"check_required_checks_are_armed: every one of the {len(required)} required name(s) "
         f"renders to a leg, and every one of the {len(checks) + 1} check(s) this tree carries runs "
-        f"on at least one of them"
+        f"on at least one of them, or is one of the {len(UNARMED)} declared not armed with its "
+        f"reason printed above"
     )
 
     return 0

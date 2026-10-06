@@ -911,6 +911,23 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_device_class_surface.py --check
+      # The three steps above walk the device surface cell by cell and every one of them reads a
+      # list this tree wrote. This step walks the SPACE: it takes the axis combinations the
+      # library's own surfaces can express - read from the DeviceEntry enumeration, the option
+      # table, the two device headers and the library's own axis enumerations, never listed in the
+      # tool - and says of each whether an entry implements it. It exists to count what the space
+      # admits and the table does not carry, which is the half no list can report about itself.
+      #
+      # Its three states have no fourth: an implemented combination, an unimplemented one the
+      # library's own words prove impossible (the sentence is quoted with its file and line and the
+      # quotation is checked to occur verbatim), and an unimplemented one with no impossibility
+      # stated, which is a defect by default - "not written yet" is a defect and not an
+      # explanation. It reads the tree at a resolved revision and nothing else - no CUDA build, no
+      # compiler, no card - so the CUDA lane's absence from this leg does not leave it unrun.
+      - name: Device (the option space, class by class)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/device_kernel_surface.py --check
       # The defaults table is the third hand-written list read against the entries
       # themselves, and until this step nothing read it: a row for a class no entry
       # reaches is a default a caller cannot ask for, and it is invisible - the
@@ -930,6 +947,41 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_default_rows_have_entries.py
+      # The defaults table books a class, and the entry it names decides that a caller can reach
+      # it - but neither half says the combination can be written as a DEFAULT, which is the fourth
+      # thing a combination the library serves has to survive before it can be handed to a
+      # consumer. The seam's key is a row format with a cell per axis, and a class the key has no
+      # row for, or an axis of a class's policy with no cell in that format, is a combination the
+      # library serves, measures and probes, and no caller can name.
+      #
+      # The seam carries a fold the check is written to see: one engine serves both half formats,
+      # so one lane's tables answer for both, while the seam's own key gives each half format a
+      # class of its own - and only one of the two rows can be a consumer's default. The check
+      # reads that fold off the probe's own source and, when a run's report is handed in, holds it
+      # to the report's verdict; without one it reports the claim the tree carries and says that is
+      # what it did. No probe is run and nothing is built: every reading is textual.
+      - name: Defaults (every class a consumer can be given as a default)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_default_capturability.py --check
+      # The host probe measures the host entries, and its report is read as an account of the
+      # library - so an entry the header declares and the probe never calls is a class whose row
+      # says "no option of this precision and shape produced a figure on this run", a sentence
+      # about the probe wearing the clothes of a sentence about the library. Five entries went
+      # unmeasured that way, and the five seam rows for their classes were written from the file's
+      # own names instead of from a measurement.
+      #
+      # The unit is the declaration and not the name: BoysAllN declares two entries that differ by
+      # their last parameter, one taking a workspace and one taking BoysSortedArgs, and a reading
+      # keyed on the name sees one entry where the surface declares two. An entry the probe may not
+      # measure is named in the tool's own EXCLUDED with a reason, and a reason there has to be a
+      # fact about the question rather than about the work. It reads the public header and the
+      # probe's translation unit and nothing else - no build, no compiler, no card - so it is
+      # scoped to this combination like the gates above it.
+      - name: Host (every declared entry the probe calls)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_measures_every_entry.py
       # The option space closes in three places and only one of them is a property
       # this checkout can settle on its own: the host space closes from the
       # accuracy gate's recorded run, which is committed, while the device and

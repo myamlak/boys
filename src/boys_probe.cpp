@@ -3012,7 +3012,7 @@ void StopOnLaneThisBuildDoesNotCarry(const Option& option) {
 /// would read as a class this build measured and found empty.
 ///
 /// \param option the cell that named it
-void StopOnShapeThisLaneDoesNotCarry(const Option& option) {
+[[maybe_unused]] void StopOnShapeThisLaneDoesNotCarry(const Option& option) {
     std::fprintf(stderr,
                  "boys-probe: %s names a shape this build's library declares no entry for in that "
                  "lane\n",
