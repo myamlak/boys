@@ -1082,16 +1082,15 @@ def main() -> int:
 
     one_order_tokens = {name[1:].lower() for name in one_order}
 
-    # The seam in force. An emitted one is the build's own; otherwise the committed file is what
-    # every build that replaces nothing compiles.
-    emitted = root / ".claude" / "lane-status" / "probes" / "host-defaults-emitted.hpp"
-
+    # The seam in force: the committed one, read at the revision, and an emitted file only where a
+    # caller names it. A scratch seam that happens to lie in the working tree is not this tree's
+    # default and must not be read as one - it is the output of a run, and a run's own seam is a
+    # different question from the one this check asks. Reading it here once turned a device class
+    # the committed seam carries into "the seam in force carries no row for it", which is a finding
+    # about the file that lay on disk and not about the library.
     if arguments.defaults:
         seam_text = pathlib.Path(arguments.defaults).read_text(encoding="utf-8", errors="replace")
         seam_origin = str(pathlib.Path(arguments.defaults))
-    elif emitted.exists():
-        seam_text = emitted.read_text(encoding="utf-8", errors="replace")
-        seam_origin = str(emitted)
     else:
         seam_text = reader.text("include/boys/boys_build_defaults.hpp")
         seam_origin = f"{arguments.rev}:include/boys/boys_build_defaults.hpp"

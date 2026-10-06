@@ -255,11 +255,12 @@ def device_space() -> tuple[str, list[str], bool]:
     refuses the closure the same way a stale host run does.
     """
     carrying = []
-    for directory in (os.path.join(REPO, ".claude", "tmp"),
-                      os.path.join(REPO, ".claude", "lane-status")):
-        # os.walk, not listdir: a lane files its transcripts under
-        # .claude/lane-status/<lane>/, so the closures are one level deeper than the directory the
-        # first version of this searched. It reported the space ABSENT while the closure was on disk.
+    # The tree's own reports, and not a scratch directory. A closure read out of .claude/ is a
+    # closure of whatever run last wrote there: this tool read a superseded device run from a
+    # lane's scratch path while the committed report said something else, and printed the scratch
+    # one. The device probe's report is committed beside the host probe's, and the newest file on
+    # disk is not a fact about this tree.
+    for directory in (os.path.join(REPO, "tests", "data"),):
         for root, _dirs, names in os.walk(directory):
             for name in names:
                 path = os.path.join(root, name)
@@ -280,10 +281,11 @@ def device_space() -> tuple[str, list[str], bool]:
                     carrying.append(path)
 
     if not carrying:
-        return ("ABSENT: no file under .claude/tmp or .claude/lane-status carries a whole closure",
+        return ("ABSENT: no committed report carries a whole device closure",
                 ["  the probe prints a closure (MEMBERS / the arithmetic / the space's own total /",
-                 "  the verdict) and no file on disk carries all four, so the device space cannot",
-                 "  be closed from what is here. Re-run the probe."], False)
+                 "  the verdict) and no report under tests/data carries all four, so the device",
+                 "  space cannot be closed from what this tree carries. Owed: the probe's report,",
+                 "  committed - tests/data/boys_device_probe_report.txt."], False)
 
     newest = max(carrying, key=os.path.getmtime)
     text = read(newest)
@@ -387,11 +389,11 @@ def probe_space() -> tuple[str, list[str], bool]:
     # which space its arithmetic is over. Reading "the newest whole closure" printed the option
     # book's 720 as this space's answer once; this reads the probe's own header instead.
     runs = []
-    for root, dirs, names in os.walk(os.path.join(REPO, ".claude")):
-        # Other lanes' worktrees are whole build trees: walking them reached a locked object file
-        # and this tool died with a PermissionError rather than reporting a status. Nothing this
-        # reader needs is in there - a probe run lands in .claude/tmp or .claude/lane-status.
-        dirs[:] = [d for d in dirs if d != "worktrees"]
+    # The tree's own reports. The probe's run is committed at
+    # tests/data/boys_option_probe_report.txt, and a run read out of a scratch directory is a run
+    # of whatever last wrote there - this tool printed a lane's superseded host run once, and
+    # "newest file on disk" is not a fact about this tree.
+    for root, _dirs, names in os.walk(os.path.join(REPO, "tests", "data")):
         for name in names:
             path = os.path.join(root, name)
             try:
@@ -405,10 +407,11 @@ def probe_space() -> tuple[str, list[str], bool]:
                 runs.append(path)
 
     if not runs:
-        return ("ABSENT: no file under .claude is a probe run (none starts with the probe's own header)",
+        return ("ABSENT: no committed report is a probe run (none starts with the probe's own header)",
                 ["  the probe stamps its first line `boys option probe | started ... | verdict ...`;",
-                 "  nothing on disk carries it, so this space is printed as a hole rather than left",
-                 "  out of the status entirely. Owed: a probe run."], False)
+                 "  no report under tests/data carries it, so this space is printed as a hole rather",
+                 "  than left out of the status entirely. Owed: the probe's report, committed."],
+                False)
 
     newest = max(runs, key=os.path.getmtime)
     with open(newest, encoding="utf-8", errors="replace") as handle:
