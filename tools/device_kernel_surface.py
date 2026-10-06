@@ -590,14 +590,24 @@ def read_half_formats(half: Source, options: Source, rows: list[Row]) -> tuple[H
 
     Every name here is read from the library. The tokens are `f16.hpp`'s own aliases for the
     two types a half row stores through, so a lane that renames them renames this search with
-    them. The labels are the format words the precision member's own comment writes, taken as
-    the words that carry the lane's `16`. A token and a word are the two spellings of one
-    format when the option table reads them off the same rows, which is what pairs them: the
-    rows of the format this build serves witness it whichever way round the two lists happen
-    to be written, and a format no row spells on either side is left over and takes the other
-    leftover. The two sides must leave as many leftovers as each other or the run fails, and
-    one format must be witnessed at all - a table spelling none of them cannot say which the
-    build serves, and pairing its tokens to its words would be an ordering and not a reading.
+    them. The labels are the format words the precision axis's own comments write, taken as the
+    words that carry the lane's `16`, and the two sides must name as many as each other: a
+    format whose storage type the header declares and whose word no member writes is a format
+    this reading cannot spell. A token and a word are the two spellings of one format when the
+    option table reads them off the same rows, which is what pairs them: the rows of the format
+    this build serves witness it whichever way round the two lists happen to be written, and a
+    format no row spells on either side is left over and takes the other leftover. The two sides
+    must leave as many leftovers as each other or the run fails, and one format must be witnessed
+    at all - a table spelling none of them cannot say which the build serves, and pairing its
+    tokens to its words would be an ordering and not a reading.
+
+    **A format's precision member is read from its rows.** The class key of this surface is a
+    (precision, question) cross, so which member a format's rows are booked in IS the class that
+    format's combinations belong to, and reading it from the rows keeps that a fact of the table
+    rather than a second statement here - which is what it was while the half lane's two stores
+    were booked into one member, and what the split into two members makes accountable. A format
+    no row spells yet takes the member whose comment writes its word, so a format the lane owes
+    is still keyed to the class it would be booked in.
 
     That is the whole of the sense in which this is derived: a lane that writes the rows the
     header says it owes is credited without this tool having been taught the new name, and a
@@ -612,18 +622,21 @@ def read_half_formats(half: Source, options: Source, rows: list[Row]) -> tuple[H
                          f"the token a row of the half lane spells its format in cannot be read "
                          f"from the library")
 
-    carrying = [(name, re.findall(r"\b[a-z]+16\b", comment))
-                for name, comment in read_member_comments(options.text,
-                                                          "DeviceOptionPrecision").items()]
-    carrying = [(name, words) for name, words in carrying if len(words) == len(aliases)]
+    carrying = [(name, word) for name, comment in
+                read_member_comments(options.text, "DeviceOptionPrecision").items()
+                for word in re.findall(r"\b[a-z]+16\b", comment)]
 
-    if len(carrying) != 1:
-        raise SystemExit(f"device_kernel_surface: {len(carrying)} precision members name "
-                         f"{len(aliases)} formats in their own comment, and the member the half "
-                         f"lane's formats belong to is the one whose comment names them: "
-                         f"{[name for name, _ in carrying]}")
+    if len(carrying) != len(aliases):
+        raise SystemExit(f"device_kernel_surface: the precision members name "
+                         f"{len(carrying)} format word(s) in their own comments - "
+                         f"{[word for _, word in carrying]} - and {half.path} declares "
+                         f"{len(aliases)} half-format alias(es) ({aliases}). The two are the two "
+                         f"sides of one lane: a format whose storage type is declared and whose "
+                         f"word no member writes is a format this reading cannot spell, and one "
+                         f"written twice would be two words for one type")
 
-    precision, labels = carrying[0]
+    labels = [word for _, word in carrying]
+    word_member = {word: name for name, word in carrying}
     by_token = {token: frozenset(row.entry for row in rows if token in row.entry)
                 for token in aliases}
     by_word = {label: frozenset(row.entry for row in rows if label in row.printed)
@@ -660,7 +673,30 @@ def read_half_formats(half: Source, options: Source, rows: list[Row]) -> tuple[H
                          f"build serves and pairing a token to a name would be an ordering and "
                          f"not a reading")
 
-    return tuple(HalfFormat(label, precision, (token, label)) for label, token in pairs)
+    def member_of(label: str, token: str) -> str:
+        """The precision member the rows spelling this format are booked in."""
+        members = {row.precision for row in rows if token in row.entry or label in row.printed}
+
+        if len(members) > 1:
+            raise SystemExit(f"device_kernel_surface: the rows spelling {label!r} carry "
+                             f"{len(members)} precision members ({sorted(members)}), so the format "
+                             f"is booked in no one class of the cross and its combinations cannot "
+                             f"be counted")
+
+        if members:
+            return members.pop()
+
+        fallback = word_member.get(label, "")
+
+        if not fallback:
+            raise SystemExit(f"device_kernel_surface: no row spells {label!r} and no precision "
+                             f"member writes its word, so the class its combinations belong to "
+                             f"cannot be read from the library")
+
+        return fallback
+
+    return tuple(HalfFormat(label, member_of(label, token), (token, label))
+                 for label, token in pairs)
 
 
 class Combination(NamedTuple):
@@ -757,8 +793,15 @@ def main() -> int:
     # tool keeps beside the table.
     half_formats = read_half_formats(sources[HALF_TYPES], options, rows)
     by_format = {fmt.label: fmt for fmt in half_formats}
-    formats = {fmt.precision: tuple(other.label for other in half_formats)
-               for fmt in half_formats}
+
+    # The formats each precision member carries, which is one per half member and none for a
+    # member of the lane's other precisions: the member is the class the format's rows are
+    # booked in, so a member carrying both stores would be a class the table keys two formats
+    # into, and the class loop below would count each format's combinations twice.
+    formats: dict[str, list[str]] = collections.OrderedDict()
+
+    for fmt in half_formats:
+        formats.setdefault(fmt.precision, []).append(fmt.label)
 
     def format_rows(label: str) -> int:
         """How many rows of the option table carry this format.

@@ -786,7 +786,7 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // the two forms that divide exactly deliver 1.78813934e-07 and 1.1920929e-07
     // there, so the plain form's extra rounding is 5.39e-8 over the base and 1e-7
     // bounds it.
-    static const std::array<LaneContractInfo, 7> rows = {{
+    static const std::array<LaneContractInfo, 8> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
         {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
@@ -893,6 +893,34 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
          "boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at "
          "n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this "
          "lane's too, before the format's own half digit is added to it"},
+        // This lane runs the device fp16 lane's bodies at that lane's budget and differs
+        // from it in the format it stores, so the base and the plain form's term are that
+        // lane's and the digit the sentence carries is this format's own. The row stands
+        // here rather than folded into the fp16-device one because a class is keyed by the
+        // format a return carries (boys/boys_build_defaults.hpp writes each class's row),
+        // and it is a device row and not the host bf16 row beside the host lanes: the
+        // lane's own entries are the device's.
+        {Precision::kBf16Device, "bf16-device", 1e-7, 0.0, 1e-7, RegionBExp::kFast,
+         "plus half of the last representable digit of the returned value, which in this format "
+         "is 2^-8 = 3.90625e-03, and claimed only where the value exceeds the sum. The half ULP "
+         "is this format's and the constant part is the figure the device lane's own bfloat16 "
+         "entries publish (boys/boys_cuda.hpp, SingleBf16 and AllOrdersBf16, which state "
+         "\"|error| <= 1e-7 + 1/2 ULP of the returned value\"). The lane computes in the float "
+         "lane's bodies and stores what they return, so it cannot be more accurate than the "
+         "format it stores in: a bar below that figure is one no conforming device can keep. It "
+         "is the fp16-device lane's figure on this format's store and not that lane's class: the "
+         "two are two classes of one lane, each stating its own format's half digit, and this "
+         "format's is the coarser of the two - 2^-8 against 2^-11, where that lane's sentence "
+         "says \"half of the last representable digit of the returned value\" and this one names "
+         "its number. The lane carries the division axis like the other device lanes, and the "
+         "accuracy gate reads every cell of its rows at each of the three forms, judging each "
+         "against the figure this row states for it",
+         "every region under the plain reciprocal: the term beside the base is the fp16-device "
+         "lane's own measurement of that form, 1.53895485e-07 at worst at n = 32, "
+         "x = 11.9453125, where the two forms that divide exactly are inside the base at 2.5e-8 "
+         "and 3.5e-8 from the value - so the plain form's extra rounding is 5.39e-8 over the base "
+         "and the 1e-7 term bounds it. This lane runs those bodies, so the term is this lane's "
+         "too, before this format's own half digit is added to it"},
     }};
 
     return rows;
@@ -1141,6 +1169,11 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
         case Precision::kFp64Device:
             return CarriesDeviceF64(route, scheme, axis, granularity);
         case Precision::kFp16Device:
+        case Precision::kBf16Device:
+            // The two formats of the device half lane are one arithmetic and two classes:
+            // the bodies the second store's entries run are the first's (boys_cuda_device.hpp,
+            // BoysDeviceSingleBf16 and its siblings), so which combinations the lane carries
+            // is one answer for both.
             return CarriesDeviceF16(route, scheme, axis, granularity);
         case Precision::kFp32:
         case Precision::kFp16:
@@ -1265,7 +1298,7 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
     // value in each of the two host formats, which is why the sentence below names the
     // lanes and not one format.
     if (precision == Precision::kFp16 || precision == Precision::kFp16Device ||
-        precision == Precision::kBf16)
+        precision == Precision::kBf16 || precision == Precision::kBf16Device)
     {
         figure.available = false;
         figure.reason =

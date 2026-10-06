@@ -847,7 +847,8 @@ TEST(BoysAccuracyTest, Bf16MeetsTheHalfBudget) {
 // enumeration (`detail::GuaranteeAxesAreEnumerators`). Nothing in this repository
 // instantiated it, and one bound in that assertion sat one member behind its
 // enumeration - `Precision` bounded at `kFp16Device` while the enumeration had
-// grown to `kBf16` - with every suite green: the entry was refused at compile time
+// grown to `kBf16`, and again when `kBf16Device` was appended - with every suite green:
+// the entry was refused at compile time
 // for a tuple the run-time accessor served. The checks below hold the two sides
 // against each other, and they fail in both directions: a bound left behind by a
 // member appended to an enumeration is a compile error here, and a boundary this
@@ -883,11 +884,11 @@ TEST(BoysAccuracyTest, Bf16MeetsTheHalfBudget) {
 // ---------------------------------------------------------------------------
 
 // The last member of each axis, named by the enumeration that carries it. Each is
-// the value the assertion's own bound is stated against - `Precision::kBf16` is
-// what `GuaranteeAxesAreEnumerators` bounds `Precision` at - so this is where the
+// the value the assertion's own bound is stated against - `Precision::kBf16Device`
+// is what `GuaranteeAxesAreEnumerators` bounds `Precision` at - so this is where the
 // boundary the entry is supposed to have is written down, and the rows the run-time
 // accessor reads are what hold it to the library's carried set.
-constexpr std::size_t kLastPrecision = static_cast<std::size_t>(boys::Precision::kBf16);
+constexpr std::size_t kLastPrecision = static_cast<std::size_t>(boys::Precision::kBf16Device);
 constexpr std::size_t kLastRoute = static_cast<std::size_t>(boys::FitRoute::kRationalMinimax);
 constexpr std::size_t kLastScheme = static_cast<std::size_t>(boys::EvalScheme::kHorner);
 constexpr std::size_t kLastAxis = static_cast<std::size_t>(boys::PackAxis::kOrders);
@@ -963,7 +964,8 @@ constexpr bool ExpIsAnEnumerator() noexcept {
 static_assert(PrecisionIsAnEnumerator<static_cast<boys::Precision>(kLastPrecision)>(),
               "GuaranteeAxesAreEnumerators refuses the last member of Precision: its bound sits "
               "behind the enumeration it bounds, which is the defect that stood at kFp16Device "
-              "while the enumeration had grown to kBf16");
+              "while the enumeration had grown to kBf16, and at kBf16 while it had grown to "
+              "kBf16Device");
 static_assert(!PrecisionIsAnEnumerator<static_cast<boys::Precision>(kLastPrecision + 1)>(),
               "GuaranteeAxesAreEnumerators takes a Precision one past the last member: a bound "
               "that accepts everything bounds nothing");
@@ -1115,8 +1117,8 @@ constexpr std::size_t kGranularityCount = kLastGranularity + 1;
 constexpr std::size_t kFormCount = kLastForm + 1;
 constexpr std::size_t kExpCount = kLastExp + 1;
 
-// Every combination of every axis: 7 lanes x 2 fit routes x 2 schemes x 2 packing
-// axes x 3 partitions x 3 division forms x 2 region-B exponentials = 1008 cells,
+// Every combination of every axis: 8 lanes x 2 fit routes x 2 schemes x 2 packing
+// axes x 3 partitions x 3 division forms x 2 region-B exponentials = 1152 cells,
 // each one instantiated at compile time and each one held to the run-time accessor
 // at the same seven axes. The product is written as a product and printed by the
 // test, so the count is the compiler's arithmetic and the run's own, not this

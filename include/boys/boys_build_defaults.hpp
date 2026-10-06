@@ -97,7 +97,7 @@
 /// **EVERY CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one is a
 /// build error rather than a call answered by something else: `boys::DefaultPolicyFor`
 /// refuses the class it is asked for, and `tests/boys_build_defaults_test.cpp` asks
-/// for each of the nine device classes by name.
+/// for each of the twelve device classes by name.
 /// `boys-option-probe --emit-defaults` and `boys-device-probe --emit-defaults` are
 /// what write them all.
 ///
@@ -206,7 +206,7 @@
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
-    /* a choice, not a measurement: no device run stands, so each of these nine
+    /* a choice, not a measurement: no device run stands, so each of these twelve
        rows states the fallback names above at its own lane's budget */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
@@ -233,6 +233,15 @@
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate)\
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate)\
 

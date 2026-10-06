@@ -1279,14 +1279,15 @@ fits. A caller evaluating there should expect that, and should not read the 5.5e
 
 The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an
 interval partition and a packing axis, and the library offers the product of
-all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 7 lanes — 168 combinations.** Each of
+all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 8 lanes — 192 combinations.** Each of
 them is a cell the accuracy gate counts: certified and published, refused with the library's own
-reason and owed, or a device cell this host cannot run. The seven lanes are the host's double, single,
-half and bfloat16 lanes and the device's own `kFp64Device`, `kFp32Device` and `kFp16Device`, which are
-the three precisions the CUDA surface's entries are built at; `BoysLaneContracts()` publishes one row
-per lane and the count above is that list's seven rows by the twenty-four combinations the four axes
+reason and owed, or a device cell this host cannot run. The eight lanes are the host's double, single,
+half and bfloat16 lanes and the device's own `kFp64Device`, `kFp32Device`, `kFp16Device` and
+`kBf16Device`, which are the four precisions the CUDA surface's entries are built at;
+`BoysLaneContracts()` publishes one row per lane and the count above is that list's eight rows by the
+twenty-four combinations the four axes
 offer, and no row of it is folded into another. A device class of the default-policy table
-is one of those three by a question.
+is one of those four by a question.
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
 combination meets the error it needs, and which members of the space this revision does not carry.
@@ -1302,19 +1303,23 @@ the bound is here.
 | double | 5.5e-14 | — | `Precision::kFp64` |
 | float | 1.5e-7 | — | `Precision::kFp32` |
 | half, fp16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; the format's digit is 2^-11 | `Precision::kFp16` |
-| half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-9, the coarser of the two | `Precision::kBf16` |
+| half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-8 = 3.90625e-03, the coarser of the two | `Precision::kBf16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
 | double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
 | half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
+| bfloat16 on a device | 1e-7 | the same base at this store's own digit — 2^-8 = 3.90625e-03, the coarser of the half lane's two — and the plain reciprocal's 1e-7 beside it, which is the fp16-device lane's own measurement of that form on the bodies this store runs | `Precision::kBf16Device` |
 
-The host's two half lanes are two rows and not one, as the device's three are three: the seam — the
+The host's two half lanes are two rows and not one, as the device's half lane's two stores are two:
+the seam — the
 build-defaults header `include/boys/boys_build_defaults.hpp`, and the `BOYS_BUILD_DEFAULTS` CMake
-option a build points at its own replacement — keys a class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and the
-two rows state one base at two formats' digits — `DefaultPolicy<Precision::kBf16, Shape>` resolves the
-bfloat16 class and not the fp16 one. What the two rows do not do is impose a lane on a class: a
+option a build points at its own replacement — keys a class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and
+`Precision::kBf16Device` is that class's device counterpart, and the
+pairs state one base at two formats' digits — `DefaultPolicy<Precision::kBf16, Shape>` resolves the
+bfloat16 class and not the fp16 one, on the device half as on the host. What the two rows do not do
+is impose a lane on a class: a
 bf16 entry that names no policy is answered by the bf16 row.
 
-The device's three lanes are three rows and not one: each is its own precision of the CUDA surface
+The device's four lanes are four rows and not one: each is its own precision of the CUDA surface
 (`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
 own entries publish — `boys/boys_cuda.hpp` states 5.5e-14 for the double entries and `1e-7 + ½ ULP`
 for the half ones, which is tighter than the host half lane's 1.5e-7 + ½ ULP because the device's
@@ -1501,8 +1506,9 @@ The gate's own lines for the tolerance question, as that recorded run has them:
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-This revision's option space is one lane larger than that run's: seven lanes by the twenty-four
-combinations the four axes offer is **168 combinations**, the bf16 lane's twenty-four added to the
+This revision's option space is two lanes larger than that run's: eight lanes by the twenty-four
+combinations the four axes offer is **192 combinations**, the host bf16 lane's twenty-four and the
+device bf16 lane's twenty-four added to the
 recorded run's 144, and no run of this revision is quoted on this page — the block above is the
 comparison as the six-lane revision took it, and a green block here would be a claim of this tree's
 gate rather than of the run the file records. The 144 rows are every member of that revision's option space, and the block

@@ -333,12 +333,13 @@ constexpr bool kCoarsestFiveInForce =
 // Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
 // the table carries no row for is not a class this question is about: DefaultPolicyFor
 // asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the committed table composes. The committed table carries
-// twenty-four classes in both of its shapes: the committed list's fifteen host rows beside
-// the device half's nine, and the same fifteen and nine that the five names compose into.
-// This guard names all twenty-four and reads them whichever is in force; one a replacement
-// does not carry answers true below. A class this table does not name is no evidence that
-// the replacement chose nothing, so it answers true here.
+// carry fewer classes than the committed table composes. This guard names twenty-seven of
+// them - the committed list's fifteen host classes beside the device half's twelve - and
+// reads them whichever is in force; one a replacement does not carry answers true below. A
+// class this table does not name is no evidence that the replacement chose nothing, so it
+// answers true here. The host lanes' bf16 classes are not among the fifteen: the committed
+// file's bf16 rows are measured ones and name another combination, which is one of the two
+// ways a build states it has chosen something.
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
 constexpr bool ClassIsTheCommittedCombination() noexcept
 {
@@ -382,7 +383,7 @@ constexpr bool kCoarsestClassTableInForce =
     ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllN>() &&
     ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>() &&
     ClassIsTheCommittedCombination<boys::Precision::kFp16, boys::Shape::kAllOrders>() &&
-    // The device half, the same nine classes the seam's own list carries: the three device
+    // The device half, the same twelve classes the seam's own list carries: the four device
     // lanes by the three questions a device entry answers. A replacement that left these at
     // the committed combination has chosen nothing for them, which is what this reads.
     ClassIsTheCommittedCombination<boys::Precision::kFp64Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
@@ -393,7 +394,10 @@ constexpr bool kCoarsestClassTableInForce =
     ClassIsTheCommittedCombination<boys::Precision::kFp32Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
     ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
     ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
-    ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>();
+    ClassIsTheCommittedCombination<boys::Precision::kFp16Device, boys::Shape::kAllN, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kBf16Device, boys::Shape::kSingle, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kBf16Device, boys::Shape::kAllOrders, boys::Device::kDevice>() &&
+    ClassIsTheCommittedCombination<boys::Precision::kBf16Device, boys::Shape::kAllN, boys::Device::kDevice>();
 
 static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
               "the defaults header in force names all five committed values and answers every class "

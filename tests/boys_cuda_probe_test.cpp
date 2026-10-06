@@ -1291,6 +1291,8 @@ const char* PrecisionSpelling(boys::DeviceOptionPrecision precision) {
             return "fp32";
         case boys::DeviceOptionPrecision::kFp16:
             return "fp16";
+        case boys::DeviceOptionPrecision::kBf16:
+            return "bf16";
         case boys::DeviceOptionPrecision::kCount:
             break;
     }

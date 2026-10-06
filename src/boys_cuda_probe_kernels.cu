@@ -2115,8 +2115,8 @@ int BoysCudaLaunchAllOrdersF16NarrowOrdersRatFast(
     int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllNF16Fast(int, int, const void*, void*, std::size_t, void*);
 // The bfloat16 lane's launched launchers, one per symbol the rows above reach.
-int BoysCudaLaunchAllNBf16(int, const int*, const void*, void*, std::size_t, void*);
-int BoysCudaLaunchAllNBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllNBf16(int, int, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllNBf16Fast(int, int, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersBf16(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersBf16Mono(int, const int*, const void*, void*, std::size_t, void*);
@@ -2157,8 +2157,10 @@ int BoysCudaLaunchAllOrdersBf16Uniform(int, const int*, const void*, void*, std:
 int BoysCudaLaunchAllOrdersBf16UniformHorner(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersBf16UniformRat(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersBf16UniformRatHorner(int, const int*, const void*, void*, std::size_t, void*);
-int BoysCudaLaunchEachOrderBf16(int, const int*, const void*, void*, std::size_t, void*);
-int BoysCudaLaunchEachOrderBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderBf16(
+    int, const int*, const void*, const int*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderBf16Fast(
+    int, const int*, const void*, const int*, void*, std::size_t, void*);
 int BoysCudaLaunchSingleBf16(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchSingleBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
 #endif // BoysFp16
@@ -3345,7 +3347,12 @@ int LaunchLaunched(boys::DivisionForm form,
             BoysCudaLaunchAllOrdersBf16OrdersUniformRatHorner(static_cast<int>(form), n, xb, out, count, stream);
             break;
         case ProbeEntry::kAllNBf16:
-            BoysCudaLaunchAllNBf16(static_cast<int>(form), n, xb, out, count, stream);
+            BoysCudaLaunchAllNBf16(static_cast<int>(form),
+                                   nmax,
+                                   xb,
+                                   out,
+                                   count,
+                                   stream);
             break;
         case ProbeEntry::kAllOrdersBf16Mono:
             BoysCudaLaunchAllOrdersBf16Mono(static_cast<int>(form), n, xb, out, count, stream);
@@ -3356,12 +3363,28 @@ int LaunchLaunched(boys::DivisionForm form,
         case ProbeEntry::kSingleBf16Fast:
             BoysCudaLaunchSingleBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
             break;
-        case ProbeEntry::kEachOrderBf16:
-            BoysCudaLaunchEachOrderBf16(static_cast<int>(form), n, xb, out, count, stream);
+        case ProbeEntry::kEachOrderBf16: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderBf16(
+                    static_cast<int>(form), n, xb, offset, out, count, stream);
+            }
+
             break;
-        case ProbeEntry::kEachOrderBf16Fast:
-            BoysCudaLaunchEachOrderBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+        }
+        case ProbeEntry::kEachOrderBf16Fast: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderBf16Fast(
+                    static_cast<int>(form), n, xb, offset, out, count, stream);
+            }
+
             break;
+        }
         case ProbeEntry::kAllOrdersBf16Fast:
             BoysCudaLaunchAllOrdersBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
             break;
@@ -3411,7 +3434,12 @@ int LaunchLaunched(boys::DivisionForm form,
             BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast(static_cast<int>(form), n, xb, out, count, stream);
             break;
         case ProbeEntry::kAllNBf16Fast:
-            BoysCudaLaunchAllNBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+            BoysCudaLaunchAllNBf16Fast(static_cast<int>(form),
+                                       nmax,
+                                       xb,
+                                       out,
+                                       count,
+                                       stream);
             break;
 #else
         // As in LaunchInKernel: with the seam closed the fp16 arms are the only

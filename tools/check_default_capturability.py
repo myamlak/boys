@@ -216,7 +216,7 @@ def find_macro(text: str, name: str) -> tuple[str, int] | None:
     inside a definition may span lines without one, and the seam uses that - the block noting that
     the half lane is one lane for both formats is written across four lines with a backslash only
     on the last, and a reader that stopped at the first of them would lose the nine device rows
-    that follow it and report a seam of fifteen classes for a seam of twenty-four.
+    that follow it and report a seam of fifteen classes for a seam of thirty-two.
     """
     match = re.search(r"^#define\s+" + re.escape(name) + r"\s*\(", text, re.M)
     if match is None:
@@ -1070,7 +1070,7 @@ def main() -> int:
           f"{form_count} parameter default(s) = {form_name}, {exp_count} template default(s) = "
           f"{exp_name}, and {policy_count} policy parameter(s)")
     if policy_count == 0:
-        print("  no device entry defaults a policy: the nine device rows are reached by naming "
+        print("  no device entry defaults a policy: the twelve device rows are reached by naming "
               "DefaultPolicy<..., Device::kDevice> (and by DefaultGuarantee), not by an entry")
     device_rows = [row for row in rows if row.cells and row.cells[0] == "kDevice"]
     differing_forms = [row.klass for row in device_rows

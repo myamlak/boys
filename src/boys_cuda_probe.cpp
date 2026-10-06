@@ -520,6 +520,8 @@ constexpr const char* PrecisionName(DeviceOptionPrecision precision) noexcept {
             return "fp32";
         case DeviceOptionPrecision::kFp16:
             return "fp16";
+        case DeviceOptionPrecision::kBf16:
+            return "bf16";
         case DeviceOptionPrecision::kCount:
             break;
     }
@@ -4333,13 +4335,18 @@ constexpr const char* SeamExpCell(RegionBExp exp) noexcept {
 /// The precision cell of a row: the lane the class runs in, as the default-policy table spells
 /// it.
 ///
-/// The device's three precisions are three lanes of the table and not one lane named three
-/// ways: a row is keyed by (device, precision, shape), so a table that gave the device half one
-/// precision cell would carry one class per shape and none of the other two precisions' shapes.
-/// The nine classes the probe ranks - three precisions by three shapes - need the three cells
-/// below, and each names the lane whose entries that class's winner is an entry of
+/// The device's four precisions are four lanes of the table and not one lane named four ways: a
+/// row is keyed by (device, precision, shape), so a table that gave the device half one
+/// precision cell would carry one class per shape and none of the other three precisions'
+/// shapes. The twelve classes the probe ranks - four precisions by three shapes - need the four
+/// cells below, and each names the lane whose entries that class's winner is an entry of
 /// (boys/boys_device_tables.hpp, \c BoysDeviceLane, which is where the device's own lanes are
 /// enumerated).
+///
+/// The half lane's two stores are two cells for the reason the host's two are two classes: the
+/// class is keyed by the format a return carries, so an fp16 recommendation and a bf16 one are
+/// two answers and a table that folded them into one cell would write a bf16 entry's name into
+/// the fp16 class's row - the defect this key exists to make impossible.
 ///
 /// \param precision the class's precision, as the probe's option table names it
 ///
@@ -4355,6 +4362,8 @@ constexpr const char* SeamPrecisionCell(DeviceOptionPrecision precision) noexcep
             return "kFp32Device";
         case DeviceOptionPrecision::kFp16:
             return "kFp16Device";
+        case DeviceOptionPrecision::kBf16:
+            return "kBf16Device";
         case DeviceOptionPrecision::kCount:
             break;
     }
@@ -4369,18 +4378,19 @@ template <DeviceOptionPrecision Precision> constexpr bool PrecisionCellIsNamed()
 
 static_assert(PrecisionCellIsNamed<DeviceOptionPrecision::kFp64>() &&
                   PrecisionCellIsNamed<DeviceOptionPrecision::kFp32>() &&
-                  PrecisionCellIsNamed<DeviceOptionPrecision::kFp16>(),
+                  PrecisionCellIsNamed<DeviceOptionPrecision::kFp16>() &&
+                  PrecisionCellIsNamed<DeviceOptionPrecision::kBf16>(),
               "an enumerator of DeviceOptionPrecision names no cell: name it in "
               "SeamPrecisionCell (src/boys_cuda_probe.cpp)");
 
 /// The budget cell of a row: the budget the class's lane carries, which is the axis
 /// \c BoysBudget names and the one \c LaneFallbackBudget (boys/boys.hpp) states for that lane.
 ///
-/// The half lane is the one that moves it: the fp16 device entries run the float lane's bodies
-/// under the half budget, whose degree tables are not the float lane's, and every other device
-/// lane carries the float budget. The cell is read from the lane rather than chosen here, and a
-/// lane added to the device without a statement of its budget is a compile error below rather
-/// than a row that carries the float budget by accident.
+/// The half lane is the one that moves it: the fp16 and bf16 device entries run the float
+/// lane's bodies under the half budget, whose degree tables are not the float lane's, and every
+/// other device lane carries the float budget. The cell is read from the lane rather than chosen
+/// here, and a lane added to the device without a statement of its budget is a compile error
+/// below rather than a row that carries the float budget by accident.
 constexpr const char* SeamBudgetCell(DeviceOptionPrecision precision) noexcept {
     switch (precision)
     {
@@ -4388,6 +4398,7 @@ constexpr const char* SeamBudgetCell(DeviceOptionPrecision precision) noexcept {
         case DeviceOptionPrecision::kFp32:
             return "BoysBudget::kFloat";
         case DeviceOptionPrecision::kFp16:
+        case DeviceOptionPrecision::kBf16:
             return "BoysBudget::kFp16";
         case DeviceOptionPrecision::kCount:
             break;
@@ -4403,7 +4414,8 @@ template <DeviceOptionPrecision Precision> constexpr bool BudgetCellIsNamed() no
 
 static_assert(BudgetCellIsNamed<DeviceOptionPrecision::kFp64>() &&
                   BudgetCellIsNamed<DeviceOptionPrecision::kFp32>() &&
-                  BudgetCellIsNamed<DeviceOptionPrecision::kFp16>(),
+                  BudgetCellIsNamed<DeviceOptionPrecision::kFp16>() &&
+                  BudgetCellIsNamed<DeviceOptionPrecision::kBf16>(),
               "an enumerator of DeviceOptionPrecision names no budget cell: name it in "
               "SeamBudgetCell (src/boys_cuda_probe.cpp)");
 
@@ -4508,7 +4520,8 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 
     constexpr DeviceOptionPrecision kPrecisions[] = {DeviceOptionPrecision::kFp64,
                                                      DeviceOptionPrecision::kFp32,
-                                                     DeviceOptionPrecision::kFp16};
+                                                     DeviceOptionPrecision::kFp16,
+                                                     DeviceOptionPrecision::kBf16};
     constexpr DeviceOptionQuestion kQuestions[] = {DeviceOptionQuestion::kSingle,
                                                    DeviceOptionQuestion::kAllOrders,
                                                    DeviceOptionQuestion::kAllN};
@@ -4538,10 +4551,11 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
         return false;
     };
 
-    // One row per class the probe ranks: the three device precisions by the three questions, in
-    // the table's own order. A class is a (device, precision, shape) triple, so the nine rows
-    // below are the nine classes of the device half of the seam - one class per shape would be
-    // the fp32 lane's three alone.
+    // One row per class the probe ranks: the four device precisions by the three questions, in
+    // the table's own order. A class is a (device, precision, shape) triple, so the twelve rows
+    // below are the twelve classes of the device half of the seam - one class per shape would be
+    // the fp32 lane's three alone, and one class for the half lane's two stores would be a row
+    // whose entry was measured at the other format's store.
     for (const DeviceOptionPrecision precision : kPrecisions)
     {
         for (const DeviceOptionQuestion question : kQuestions)
@@ -4784,17 +4798,19 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     }
 
     text += "/// **One row per class, and a class is a (device, precision, shape) triple.** The rows\n";
-    text += "/// below are the nine classes of the device half: `kFp64Device`, `kFp32Device` and\n";
-    text += "/// `kFp16Device` - the three precisions this lane's entries are built at - by the three\n";
-    text += "/// questions the probe ranks. A table keyed by the triple holds the nine; one keyed by a\n";
-    text += "/// single device precision cell holds one of them per shape.\n";
+    text += "/// below are the twelve classes of the device half: `kFp64Device`, `kFp32Device`,\n";
+    text += "/// `kFp16Device` and `kBf16Device` - the four precisions this lane's entries are built\n";
+    text += "/// at - by the three questions the probe ranks. A table keyed by the triple holds the\n";
+    text += "/// twelve; one keyed by a single device precision cell holds one of them per shape, and\n";
+    text += "/// one that folded the half lane's two stores into one cell would write a bf16 entry's\n";
+    text += "/// name into the fp16 class's row.\n";
     text += "///\n";
     text += "/// **What a device row's cells are.** The route, the scheme and the packing are the\n";
     text += "/// entry's own (`DeviceEntryAxesOf`, boys_cuda_options.hpp), read from the lane and the\n";
     text += "/// body its kernels name; the granularity is the partition it reads; the budget is the\n";
-    text += "/// lane's - the float budget on fp64 and fp32, the half budget on fp16, whose degree\n";
-    text += "/// tables are not the float lane's. The packing cell is the entry's own reading of region\n";
-    text += "/// A in the axis `PackAxis`: the ladder - the top order's fit seeded and every lower\n";
+    text += "/// lane's - the float budget on fp64 and fp32, the half budget on fp16 and bf16, whose\n";
+    text += "/// degree tables are not the float lane's. The packing cell is the entry's own reading of\n";
+    text += "/// region A in the axis `PackAxis`: the ladder - the top order's fit seeded and every lower\n";
     text += "/// order brought back down the recurrence, the per-argument reading - is\n";
     text += "/// `PackAxis::kArguments`; the per-order reading is `PackAxis::kOrders`, and a\n";
     text += "/// single-order class carries the arguments axis, because a call that produces one order\n";

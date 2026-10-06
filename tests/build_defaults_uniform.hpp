@@ -256,6 +256,19 @@
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
       DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    /* a choice, not a measurement: the run this file reproduces ranked no bf16 device class, so
+       these three rows are the committed seam's own for them - the same five names at the class's
+       half budget and the device lane's own two cells - transcribed cell for cell and carrying no
+       figure of this file */\
+    X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
     /* A device row's cells are the winning entry's own axes, at the arithmetic the figure beside it
        was measured at: the route, the scheme, the packing axis and the granularity are the body the
        entry's kernels name, read from the lane's own option table (`boys/boys_cuda_options.hpp`),

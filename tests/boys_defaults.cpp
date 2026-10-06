@@ -181,7 +181,7 @@ constexpr const char* BudgetName(BoysBudget budget) noexcept {
 // refusal rather than a class this report quietly omits.
 #define BOYS_DEFAULTS_DEVICES(X) X(kHost) X(kDevice)
 #define BOYS_DEFAULTS_PRECISIONS(X)                                                               \
-    X(kFp64) X(kFp32) X(kFp16) X(kBf16) X(kFp32Device) X(kFp64Device) X(kFp16Device)
+    X(kFp64) X(kFp32) X(kFp16) X(kBf16) X(kFp32Device) X(kFp64Device) X(kFp16Device) X(kBf16Device)
 #define BOYS_DEFAULTS_SHAPES(X) X(kSingle) X(kAllOrders) X(kFixedN) X(kAllN) X(kAllNAtOrders)
 
 /// One enumerator of \c Device that \c DeviceName spells no name for.
@@ -205,7 +205,7 @@ constexpr std::array<Device, 2> kDevices{BOYS_DEFAULTS_DEVICES(BOYS_DEFAULTS_DEV
 #undef BOYS_DEFAULTS_DEVICE_ENTRY
 
 #define BOYS_DEFAULTS_PRECISION_ENTRY(Enumerator) Precision::Enumerator,
-constexpr std::array<Precision, 7> kEnumerationLanes{
+constexpr std::array<Precision, 8> kEnumerationLanes{
     BOYS_DEFAULTS_PRECISIONS(BOYS_DEFAULTS_PRECISION_ENTRY)};
 #undef BOYS_DEFAULTS_PRECISION_ENTRY
 

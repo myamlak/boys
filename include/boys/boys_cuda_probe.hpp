@@ -988,11 +988,14 @@ struct DeviceProbeRanking {
 ///
 /// \ingroup boys
 struct DeviceProbeClass {
-    /// \c "fp64", \c "fp32" or \c "fp16": the arithmetic every entry of this
-    /// class runs, and the first of its two key members. How far the fp64 class
-    /// sits behind the fp32 one is the card's own ratio of single- to
+    /// \c "fp64", \c "fp32", \c "fp16" or \c "bf16": the arithmetic every entry
+    /// of this class runs, and the first of its two key members. How far the
+    /// fp64 class sits behind the fp32 one is the card's own ratio of single- to
     /// double-precision throughput, which is a property of the card and not of
-    /// the library.
+    /// the library. The two half classes are the one lane's two stores and not
+    /// one class (\c DeviceOptionPrecision, boys_cuda_options.hpp): a bf16 entry
+    /// is not an alternative to an fp16 one, so the two are keyed apart and a
+    /// class's winner is an entry of its own format.
     std::string precision;
 
     /// \c "single", \c "all-orders" or \c "all-n": which question the entries of
@@ -1350,14 +1353,16 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report);
 /// its entry fixes (\c DeviceEntryAxesOf, boys_cuda_options.hpp) a device row would have
 /// carried cells nobody could check.
 ///
-/// **One row per class the table keys on, and the device half of that key is three cells
+/// **One row per class the table keys on, and the device half of that key is four cells
 /// wide.** A class is `kDevice` with the lane the entry runs in and the shape, one per question
-/// the probe ranks; the device's own three precisions are three lanes, so the rows below are the
-/// nine classes of the device half - \c Precision::kFp64Device, \c kFp32Device and
-/// \c kFp16Device, which are the three precisions the device surface's entries are built at
-/// (\c BoysDeviceLane, boys_device_tables.hpp). A table that gave the device half one precision
-/// cell could carry one of those nine per shape and no row for the other six, which is the
-/// keying this file's own list is written to be able to state.
+/// the probe ranks; the device's own four precisions are four lanes, so the rows below are the
+/// twelve classes of the device half - \c Precision::kFp64Device, \c kFp32Device,
+/// \c kFp16Device and \c kBf16Device, which are the four precisions the device surface's entries
+/// are built at (\c BoysDeviceLane, boys_device_tables.hpp). A table that gave the device half one
+/// precision cell could carry one of those twelve per shape and no row for the other nine, and
+/// one that folded the half lane's two stores into one cell would write a bf16 entry's name into
+/// the fp16 class's row - which is the keying this file's own list is written to be able to
+/// state.
 ///
 /// The route, the scheme and the packing axis of a row are the entry's own
 /// (\c DeviceEntryAxesOf), the granularity is the partition it reads, and the packing cell is

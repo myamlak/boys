@@ -394,12 +394,13 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept;
 /// bfloat16 one - and the two formats' winning combinations are not one
 /// combination, which the option probe states by keying a class per format.
 ///
-/// \c kFp64Device, \c kFp32Device and \c kFp16Device are the device lane's own
-/// three, whose entries a host without a CUDA device cannot run. They are three
-/// lanes and not one lane named three ways: the device surface declares a double
-/// lane, a float lane and a half lane (boys/boys_device_tables.hpp,
+/// \c kFp64Device, \c kFp32Device, \c kFp16Device and \c kBf16Device are the
+/// device lane's own, whose entries a host without a CUDA device cannot run.
+/// They are four lanes and not one lane named four ways: the device surface
+/// declares a double lane, a float lane and a half lane (boys/boys_device_tables.hpp,
 /// \c BoysDeviceLane), which read different degree tables and are built at
-/// different budgets.
+/// different budgets, and the half lane's two stores are two classes of it for
+/// the reason the host's \c kFp16 and \c kBf16 are two.
 ///
 /// The members are appended, so every value this enumeration has had keeps the
 /// value it has; \c kFp32Device in particular is read by name in the accuracy
@@ -414,8 +415,9 @@ enum class Precision : std::uint8_t {
     kFp16, ///< the binary16 half lane: the fp16 entries, whose figure carries the format's 2^-11 digit
     kFp32Device, ///< single precision as the device lane runs it: the float lane, under the fast exponential's term
     kFp64Device, ///< the device's double lane: the double pieces, region A read by the seeded recurrence
-    kFp16Device, ///< the device's half lane: the float lane's bodies, stored half and under the half budget
+    kFp16Device, ///< the device's binary16 half lane: the float lane's bodies, stored half and under the half budget
     kBf16, ///< the bfloat16 half lane: the same engine and budget as kFp16, stored in this format, whose figure carries 2^-8
+    kBf16Device, ///< the device's bfloat16 half lane: kFp16Device's bodies, stored in this format, whose figure carries 2^-8
 };
 
 /// The device a call runs on: the first key of the default-policy table.
@@ -469,12 +471,12 @@ constexpr BoysBudget LaneFallbackBudget() noexcept
     static_assert(kLane == Precision::kFp64 || kLane == Precision::kFp32 ||
                       kLane == Precision::kFp16 || kLane == Precision::kFp32Device ||
                       kLane == Precision::kFp64Device || kLane == Precision::kFp16Device ||
-                      kLane == Precision::kBf16,
+                      kLane == Precision::kBf16 || kLane == Precision::kBf16Device,
                   "no budget: the library carries one for each enumerator of Precision and for "
                   "none besides");
 
     if constexpr (kLane == Precision::kFp16 || kLane == Precision::kFp16Device ||
-                  kLane == Precision::kBf16)
+                  kLane == Precision::kBf16 || kLane == Precision::kBf16Device)
     {
         return BoysBudget::kFp16;
     }
@@ -557,7 +559,7 @@ BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 // (device, precision, shape) triple, so a table carrying the host's classes alone
 // would leave every device class with no default in this build. The rows are the
 // four host choices above at each device lane's budget, one per class of each of
-// the three device lanes, and they take the device's own names for the two
+// the four device lanes, and they take the device's own names for the two
 // choices its entries make rather than the host's: the division form its entries
 // take and the region-B exponential its tables read
 // (boys/boys_build_defaults.hpp, where the two lanes' published figures are two
@@ -571,7 +573,8 @@ BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(X)                                                    \
     X(kFp64Device, kSingle) X(kFp64Device, kAllOrders) X(kFp64Device, kAllN)                        \
     X(kFp32Device, kSingle) X(kFp32Device, kAllOrders) X(kFp32Device, kAllN)                        \
-    X(kFp16Device, kSingle) X(kFp16Device, kAllOrders) X(kFp16Device, kAllN)
+    X(kFp16Device, kSingle) X(kFp16Device, kAllOrders) X(kFp16Device, kAllN)                        \
+    X(kBf16Device, kSingle) X(kBf16Device, kAllOrders) X(kBf16Device, kAllN)
 BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW
@@ -781,7 +784,8 @@ template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kA
           FitGranularity kGranularity, DivisionForm kForm, RegionBExp kExp>
 constexpr bool GuaranteeAxesAreEnumerators() noexcept
 {
-    return static_cast<std::size_t>(kPrecision) <= static_cast<std::size_t>(Precision::kBf16) &&
+    return static_cast<std::size_t>(kPrecision) <=
+               static_cast<std::size_t>(Precision::kBf16Device) &&
            static_cast<std::size_t>(kRoute) <= static_cast<std::size_t>(FitRoute::kRationalMinimax) &&
            static_cast<std::size_t>(kScheme) <= static_cast<std::size_t>(EvalScheme::kHorner) &&
            static_cast<std::size_t>(kAxis) <= static_cast<std::size_t>(PackAxis::kOrders) &&

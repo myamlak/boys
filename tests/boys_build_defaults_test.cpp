@@ -275,21 +275,22 @@ static_assert(boys::DefaultPolicyBf16::kRoute == kSeamFitRoute &&
                   boys::DefaultPolicyBf16::kDivision == kSeamDivisionForm,
               "DefaultPolicyBf16 does not carry the seam's five values");
 
-// --- Link four: the nine device classes, asked for by name --------------------
+// --- Link four: the twelve device classes, asked for by name ------------------
 //
 // A class is a (device, precision, shape) triple, and the device half of the table
-// is nine of them: the three device lanes - the precisions a device entry is
-// built at, which are lanes of Precision and not formats of one - by the three
-// questions a device entry answers. Each of the nine is asked for here the way a
+// is twelve of them: the four device lanes - the precisions a device entry is
+// built at, two of which are one lane's two stores and not one format named
+// twice - by the three questions a device entry answers. Each of the twelve is
+// asked for here the way a
 // caller asks: by the class's own default policy, which is the name an unnamed
 // call resolves through (include/boys/boys.hpp, DefaultPolicyFor).
 //
 // THE ASK IS THE CHECK. The seam's rule for a class with no row is a static_assert
 // in DefaultPolicyFor, and an assertion fires only where something asks for the
-// class: a device row dropped from the list in force leaves one of the nine names
+// class: a device row dropped from the list in force leaves one of the twelve names
 // below unanswered and this file stops compiling, with the seam's own message -
 // "this build's default-policy table carries no row for this class". A list that
-// stopped carrying one of the nine is what this link exists for, because a table
+// stopped carrying one of the twelve is what this link exists for, because a table
 // whose device half went missing reads complete from the file it is written in.
 //
 // The two shapes the host lanes carry these beside - kFixedN and kAllNAtOrders -
@@ -316,6 +317,12 @@ using DeviceFp16Single = boys::DefaultPolicy<boys::Precision::kFp16Device, boys:
 using DeviceFp16Orders = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::Shape::kAllOrders,
                                              boys::Device::kDevice>;
 using DeviceFp16AllN = boys::DefaultPolicy<boys::Precision::kFp16Device, boys::Shape::kAllN,
+                                           boys::Device::kDevice>;
+using DeviceBf16Single = boys::DefaultPolicy<boys::Precision::kBf16Device, boys::Shape::kSingle,
+                                             boys::Device::kDevice>;
+using DeviceBf16Orders = boys::DefaultPolicy<boys::Precision::kBf16Device,
+                                             boys::Shape::kAllOrders, boys::Device::kDevice>;
+using DeviceBf16AllN = boys::DefaultPolicy<boys::Precision::kBf16Device, boys::Shape::kAllN,
                                            boys::Device::kDevice>;
 
 // Which of the two the file in force is: the committed header defines
@@ -360,7 +367,7 @@ const char* BudgetName(boys::BoysBudget budget) {
     return "unknown";
 }
 
-// One device class of the nine, as a report prints it: the class, and the row the name it was
+// One device class of the twelve, as a report prints it: the class, and the row the name it was
 // asked for by resolved to. The policy is a template parameter, so the row printed is the one
 // the compiler selected for the class - a class this build carries no row for has no policy to
 // pass here, and the ask is what refuses it rather than this printer.
@@ -718,7 +725,8 @@ TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
 }
 
 // The device half printed: one row per class, holding the row that class resolves to. It is the
-// run-time reading of Link four - the nine names are instantiated above whether or not this test
+// run-time reading of Link four - the twelve names are instantiated above whether or not this
+// test
 // is run, so what the print adds is which row each name resolved to rather than whether it
 // resolved at all: a class the table carries no row for stops the build at Link four, and a class
 // whose row moved prints the row it moved to.
@@ -743,6 +751,9 @@ TEST(BuildDefaultsTest, TheDeviceClassesPrintTheRowEachResolvesTo) {
     PrintDeviceClass<DeviceFp16Single>("fp16 device", "single");
     PrintDeviceClass<DeviceFp16Orders>("fp16 device", "all-orders");
     PrintDeviceClass<DeviceFp16AllN>("fp16 device", "all-n");
+    PrintDeviceClass<DeviceBf16Single>("bf16 device", "single");
+    PrintDeviceClass<DeviceBf16Orders>("bf16 device", "all-orders");
+    PrintDeviceClass<DeviceBf16AllN>("bf16 device", "all-n");
 }
 
 namespace {

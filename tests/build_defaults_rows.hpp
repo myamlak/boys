@@ -114,6 +114,15 @@
       DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+    X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
       DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)
 
 // Committed: the device lane's own two names, which this fixture does not move. A device class

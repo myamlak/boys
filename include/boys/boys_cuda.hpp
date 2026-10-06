@@ -1850,8 +1850,10 @@ public:
     ///
     /// The figure they answer at is \c Precision::kFp16Device's own row of
     /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
-    /// digit of the returned value. It is not the float lane's \c 1.5e-7: the
-    /// return is stored half, and the store is this lane's.
+    /// digit of the returned value, which in this format is 2^-11. It is not the
+    /// float lane's \c 1.5e-7, and it is not the bf16 class's 1e-7 + 2^-8: the
+    /// two stores are two classes of this lane (boys/boys_build_defaults.hpp) and
+    /// the store is this format's.
     ///
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, >= 0
@@ -2924,10 +2926,12 @@ public:
     /// takes the ordering precondition: that belongs to the uniform-order shapes
     /// (\c AllNBf16), and every entry here carries a per-element order array.
     ///
-    /// The figure they answer at is \c Precision::kFp16Device's own row of
+    /// The figure they answer at is \c Precision::kBf16Device's own row of
     /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
-    /// digit of the returned value. It is not the float lane's \c 1.5e-7: the
-    /// return is stored half, and the store is this lane's.
+    /// digit of the returned value, which in this format is 2^-8 = 3.90625e-03.
+    /// It is not the float lane's \c 1.5e-7, and it is not the fp16 class's
+    /// 1e-7 + 2^-11 either: the two stores are two classes of this lane
+    /// (boys/boys_build_defaults.hpp) and the store is this format's.
     ///
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of bfloat16 arguments, >= 0

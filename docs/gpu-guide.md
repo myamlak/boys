@@ -347,24 +347,31 @@ entry's own name would make that name an overload set, and the address of an ove
 taken where the pointer type is deduced — a use the shipped tests make. With the suffix every entry
 stays the one function of its name.
 
-### The nine classes
+### The twelve classes
 
-A class is a precision crossed with the shape of your question. The three precisions of this
-surface are `Precision::kFp64Device`, `Precision::kFp32Device` and `Precision::kFp16Device`, and the
+A class is a precision crossed with the shape of your question. The four precisions of this
+surface are `Precision::kFp64Device`, `Precision::kFp32Device`, `Precision::kFp16Device` and
+`Precision::kBf16Device`, and the
 three shapes are `Shape::kSingle`, `Shape::kAllOrders` and `Shape::kAllN`. Every cell of that cross
 has a member of the policy layer, and a policy for one is written
 `DefaultPolicy<Precision, Shape, Device::kDevice>` — exactly as the declaration above spells it.
 
-**Every one of the nine has a row in the committed default seam**, in
+The half lane's two stores are two of those precisions and not one: the class is keyed by the format
+your return is stored in, so `kBf16Device` is the class a bfloat16 call resolves and `kFp16Device`
+the one an fp16 call does. They are one arithmetic at one budget and two classes, and the two carry
+different half digits — 2^-8 against 2^-11 — which is why the library keys them apart rather than
+giving one of them the other's figure.
+
+**Every one of the twelve has a row in the committed default seam**, in
 `include/boys/boys_build_defaults.hpp`, so `BoysCuda::AllOrdersF64WithPolicy<>` with a policy
 argument left out reaches the combination this build wrote for that class. Read that file's own
-words about where those nine rows came from before you treat one as tuned:
+words about where those twelve rows came from before you treat one as tuned:
 
-> a choice, not a measurement: no device run stands, so each of these nine rows states the fallback
+> a choice, not a measurement: no device run stands, so each of these twelve rows states the fallback
 > names above at its own lane's budget
 
 **That is worth pausing on.** The host's rows in that same file carry a measured figure beside them
-— `measured: ... ns per argument on this host`. The nine device rows do not, and the file states the
+— `measured: ... ns per argument on this host`. The twelve device rows do not, and the file states the
 reason rather than leaving you to guess it: no device run stands. The reason is one this library
 applies everywhere: a device figure is a card's, and a gate built with CUDA on that card is where it
 is taken. So the device default rows are the library's fallback names at the class's own budget, and
@@ -408,9 +415,10 @@ entries report the three statuses above, and a refused call writes nothing.
 The library's accuracy contract is a **bound**, not an observation: for every supported `n`, `x`,
 lane and region the returned value satisfies `|F̂_n(x) − F_n(x)| ≤ B` at a published `B`.
 
-**The bound is per lane, and a lane is not a precision.** On this surface the three device classes
-`Precision::kFp64Device`, `kFp32Device` and `kFp16Device` are three lanes with three rows and not
-one row in three spellings — the device's half lane is not the host's, and its double lane's figure
+**The bound is per lane, and a lane is not a precision.** On this surface the four device classes
+`Precision::kFp64Device`, `kFp32Device`, `kFp16Device` and `kBf16Device` are four lanes with four rows
+and not one row in four spellings — the device's half lane is not the host's, its two stores are two
+lanes of their own with a figure each, and its double lane's figure
 is its own statement rather than the host's row read across. `boys::BoysLaneContracts()` publishes
 one row per lane, and the entry that answers "what does this combination guarantee" is
 `boys::BoysAccuracyGuaranteed`, which takes the whole combination and returns an `AccuracyFigure`:
@@ -429,13 +437,13 @@ Its `reading` field says whether you are looking at the guaranteed figure or the
 neither can be read as the other.
 
 **Where the figures are written down.** [The per-lane contract](lane-contract.md) carries the
-per-lane bound tables, the three device rows among them, and
+per-lane bound tables, the four device rows among them, and
 [the API reference's contract table](mainpage.md) states the CUDA rows. Both are documents. The
 authority behind them is a program, and this is the part to take away:
 
 **The device half carries no certified per-class accuracy figure of its own at this revision.**
 There is no valid device run standing behind one, which is the same fact the seam file states about
-its nine rows and the header states about the lane's coverage. So this page quotes you no device
+its twelve rows and the header states about the lane's coverage. So this page quotes you no device
 accuracy number: it would be a number no program printed, which is exactly the defect this library's
 documentation exists to avoid. What it tells you instead is where the number lives, and how to get
 the one that is true for your card.

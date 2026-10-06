@@ -103,6 +103,31 @@ int BoysCudaLaunchAllOrdersF16RatHornerFast(int, const int*, const void*, void*,
 int BoysCudaLaunchAllOrdersF16OrdersRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowOrdersRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
+// The launched bfloat16 half's launchers, one per symbol the wrappers below reach: the
+// same read as the declarations above, from the definitions in boys_cuda.cu.
+int BoysCudaLaunchAllNBf16(int form, int nmax, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16Mono(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16Narrow(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowMono(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowOrders(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersMono(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRat(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowRat(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16NarrowRatHornerFast(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16Orders(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16OrdersMono(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16OrdersRat(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16OrdersRatHornerFast(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16Rat(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16RatHornerFast(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16Uniform(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16UniformHorner(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchAllOrdersBf16UniformRat(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchEachOrderBf16(int form, const int* n, const void* x, const int* offset, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchEachOrderBf16Fast(int form, const int* n, const void* x, const int* offset, void* out, std::size_t count, void* stream);
+int BoysCudaLaunchSingleBf16(int form, const int* n, const void* x, void* out, std::size_t count, void* stream);
 int BoysCudaLaunchSingleF64(
     int form, const int* n, const double* x, double* out, std::size_t count, void* stream);
 int BoysCudaLaunchAllOrdersF64(
@@ -2290,6 +2315,383 @@ BoysStatus BoysCuda::SingleBf16Fast(
     return RunLaunch(BoysCudaLaunchSingleBf16Fast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
 }
 
+// The launched bfloat16 half, the fp16 wrappers above with the format's own store: each is the
+// entry of its own name in the lane's other format, over the kernel and the launcher the fp16 row
+// of that name runs. The row list beside them books them (src/boys_cuda.cpp, kDeviceOptions, the
+// launched bfloat16 block), the kernels are in boys_cuda.cu and the wrappers are what was missing
+// between the two: a declaration on the public surface (include/boys/boys_cuda.hpp) with no
+// definition here is an entry a caller can name and cannot link.
+
+BoysStatus BoysCuda::SingleBf16(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleBf16, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllNBf16(
+    int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNBf16, nmax, x, out, count, stream, form);
+}
+
+template <RegionBExp kExp>
+BoysStatus BoysCuda::EachOrderBf16(const int* n,
+                                   const Bf16* x,
+                                   const int* offset,
+                                   Bf16* out,
+                                   std::size_t count,
+                                   void* stream,
+                                   DivisionForm form) {
+    // The float each-order entry above in this lane's store, at the same two readings of the
+    // region-B exponential.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderBf16Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderBf16, n, x, offset, out, count, stream, form);
+    }
+}
+
+BoysStatus BoysCuda::AllOrdersBf16Narrow(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Narrow, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16Uniform(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Uniform, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16UniformHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformHorner, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16Rat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route's pair is stored in one form, so the two scheme names a caller may use reach this
+    // one kernel and the twin below forwards here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Rat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16RatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair: both names reach one kernel
+    // and one arithmetic.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16Rat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16NarrowRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16UniformRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16UniformRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16UniformRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16Orders(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Orders, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowOrders(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrders, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16OrdersRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16NarrowOrdersRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersUniform(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's packing axis has one member, so this entry and its float counterpart run the
+    // per-argument kernel of the grid rather than a gather of their own.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Uniform, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersUniformHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's monomial blocks, the same kernel AllOrdersBf16UniformHorner launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformHorner, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersUniformRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's rational route, one pair per interval and no second packing: the same kernel
+    // AllOrdersBf16UniformRat launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformRat, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersUniformRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16OrdersUniformRat(n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16Mono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store, as every half-lane ladder row is.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Mono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersMono, n, x, out, count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16RatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16RatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16OrdersRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
 BoysStatus BoysCuda::AllOrdersF32RatHornerFast(
     const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
@@ -2431,14 +2833,26 @@ constexpr const char* kFormF64Fast = "5.5e-14";
 constexpr const char* kFormF32 = "1.5e-7";
 constexpr const char* kFormF32Fast = "1.5e-7 + 8e-8";
 constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
+// The half lane's other store, whose form names the digit the sentence above leaves in words: the
+// half ULP is the FORMAT's and the two formats of this lane do not carry one, 2^-11 for a binary16
+// return against 2^-8 for a bfloat16 one. The library states that digit once, on the host row the
+// bf16 class reads (src/boys.cpp, BoysLaneContracts, "which in this format is 2^-8 = 3.90625e-03"),
+// and a bf16 row left with the fp16 form would print one figure for two arithmetic.
+constexpr const char* kFormBf16 =
+    "1e-7 + half an ULP of the returned value, which in this format is 2^-8 = 3.90625e-03";
 
-// The figures, with any term a returned value decides dropped, which is the
-// fp16 half ULP and nothing else: every other form is a number here.
+// The figures, with any term a returned value decides dropped, which is the half ULP and nothing
+// else: every other form is a number here. The half lane's constant part is the lane's and not the
+// format's - the CUDA surface publishes 1e-7 for the entries of both stores (boys/boys_cuda.hpp,
+// SingleF16, SingleBf16 and their siblings) - so the two constants below hold one number, stated
+// per format because the form beside each is that format's and a reader taking one for the other
+// would be reading a bound the other class does not carry.
 constexpr double kBoundF64 = 5.5e-14;
 constexpr double kBoundF64Fast = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;
 constexpr double kBoundF32Fast = 1.5e-7 + 8e-8;
 constexpr double kBoundF16 = 1e-7;
+constexpr double kBoundBf16 = 1e-7;
 
 constexpr DeviceOptionInfo kDeviceOptions[] = {
     {DeviceEntry::kSingleF64, "single-fp64", DeviceOptionGroup::kLaunched,
@@ -4078,513 +4492,519 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      true, nullptr},
     // The half lane's second store, appended with its enumerators: each row is the fp16 row
     // of its own name with the format's spelling in the printed name. The lane is one lane,
-    // so the precision, the figure and the build-time seam are the fp16 rows'.
+    // but the class is not: the precision cell is kBf16, because a class is keyed by the
+    // format a return carries and booking these into kFp16 is what made a class whose own
+    // report ranks a bf16 entry first name an fp16 one. The figure is this format's form,
+    // whose half ULP is 2^-8 and not the 2^-11 the rows above carry. The build-time seam is
+    // the half lane's and so is the same flag: both stores' rows stand behind BoysFp16.
     {DeviceEntry::kDeviceSingleBf16, "device-single-bfloat16",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16, "device-all-orders-bfloat16",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllNBf16, "device-all-n-bfloat16",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceEachOrderBf16, "device-each-order-bfloat16",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Orders, "device-all-orders-bfloat16-orders",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPacking,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Narrow, "device-all-orders-bfloat16-narrow",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrders, "device-all-orders-bfloat16-narrow-orders",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPacking,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Uniform, "device-all-orders-bfloat16-uniform",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowMono, "device-all-orders-bfloat16-narrow-mono",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersMono, "device-all-orders-bfloat16-narrow-orders-mono",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16UniformHorner, "device-all-orders-bfloat16-uniform-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Rat, "device-all-orders-bfloat16-rat",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersRat, "device-all-orders-bfloat16-orders-rat",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowRat, "device-all-orders-bfloat16-narrow-rat",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRat, "device-all-orders-bfloat16-narrow-orders-rat",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16UniformRat, "device-all-orders-bfloat16-uniform-rat",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16RatHorner, "device-all-orders-bfloat16-rat-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersRatHorner, "device-all-orders-bfloat16-orders-rat-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowRatHorner, "device-all-orders-bfloat16-narrow-rat-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatHorner, "device-all-orders-bfloat16-narrow-orders-rat-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16UniformRatHorner, "device-all-orders-bfloat16-uniform-rat-horner",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceSingleBf16Fast, "device-single-bfloat16-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Fast, "device-all-orders-bfloat16-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersFast, "device-all-orders-bfloat16-orders-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16RatFast, "device-all-orders-bfloat16-rat-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersRatFast, "device-all-orders-bfloat16-orders-rat-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16RatHornerFast, "device-all-orders-bfloat16-rat-horner-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersRatHornerFast, "device-all-orders-bfloat16-orders-rat-horner-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowFast, "device-all-orders-bfloat16-narrow-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersFast, "device-all-orders-bfloat16-narrow-orders-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowMonoFast, "device-all-orders-bfloat16-narrow-mono-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersMonoFast, "device-all-orders-bfloat16-narrow-orders-mono-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowRatFast, "device-all-orders-bfloat16-narrow-rat-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatFast, "device-all-orders-bfloat16-narrow-orders-rat-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowRatHornerFast, "device-all-orders-bfloat16-narrow-rat-horner-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatHornerFast, "device-all-orders-bfloat16-narrow-orders-rat-horner-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceAllNBf16Fast, "device-all-n-bfloat16-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kDeviceEachOrderBf16Fast, "device-each-order-bfloat16-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     // The half lane's other store, launched, appended with its enumerators: each row is
     // the fp16 row of its own name with the format's spelling in the printed name. The lane
-    // is one lane, so the precision, the figure and the build-time seam are the fp16 rows'.
+    // is one lane and the class is this format's, for the reason the device-callable block
+    // of the same store states above: the precision cell is kBf16 and the figure is
+    // kFormBf16, whose half ULP is this format's 2^-8.
     {DeviceEntry::kSingleBf16, "single-bfloat16",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16, "all-orders-bfloat16",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Narrow, "all-orders-bfloat16-narrow",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowMono, "all-orders-bfloat16-narrow-mono",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Uniform, "all-orders-bfloat16-uniform",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16UniformHorner, "all-orders-bfloat16-uniform-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Rat, "all-orders-bfloat16-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16RatHorner, "all-orders-bfloat16-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowRat, "all-orders-bfloat16-narrow-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowRatHorner, "all-orders-bfloat16-narrow-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16UniformRat, "all-orders-bfloat16-uniform-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16UniformRatHorner, "all-orders-bfloat16-uniform-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Orders, "all-orders-bfloat16-orders",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPacking,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrders, "all-orders-bfloat16-narrow-orders",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPacking,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersMono, "all-orders-bfloat16-narrow-orders-mono",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersRat, "all-orders-bfloat16-orders-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersRatHorner, "all-orders-bfloat16-orders-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersRat, "all-orders-bfloat16-narrow-orders-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersRatHorner, "all-orders-bfloat16-narrow-orders-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersUniform, "all-orders-bfloat16-orders-uniform",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kPartition,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersUniformHorner, "all-orders-bfloat16-orders-uniform-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersUniformRat, "all-orders-bfloat16-orders-uniform-rat",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersUniformRatHorner, "all-orders-bfloat16-orders-uniform-rat-horner",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllNBf16, "all-n-bfloat16",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kNone,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Mono, "all-orders-bfloat16-mono",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersMono, "all-orders-bfloat16-orders-mono",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kSingleBf16Fast, "single-bfloat16-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kEachOrderBf16, "each-order-bfloat16",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kEachOrderBf16Fast, "each-order-bfloat16-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kEachOrder, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16Fast, "all-orders-bfloat16-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersFast, "all-orders-bfloat16-orders-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowFast, "all-orders-bfloat16-narrow-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersFast, "all-orders-bfloat16-narrow-orders-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16MonoFast, "all-orders-bfloat16-mono-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersMonoFast, "all-orders-bfloat16-orders-mono-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowMonoFast, "all-orders-bfloat16-narrow-mono-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersMonoFast, "all-orders-bfloat16-narrow-orders-mono-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16RatFast, "all-orders-bfloat16-rat-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16RatHornerFast, "all-orders-bfloat16-rat-horner-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersRatFast, "all-orders-bfloat16-orders-rat-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16OrdersRatHornerFast, "all-orders-bfloat16-orders-rat-horner-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowRatFast, "all-orders-bfloat16-narrow-rat-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowRatHornerFast, "all-orders-bfloat16-narrow-rat-horner-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersRatFast, "all-orders-bfloat16-narrow-orders-rat-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllOrdersBf16NarrowOrdersRatHornerFast, "all-orders-bfloat16-narrow-orders-rat-horner-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     {DeviceEntry::kAllNBf16Fast, "all-n-bfloat16-fast",
-     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllN, DeviceOptionQuestion::kAllN,
      DeviceOptionAxis::kRegionBExp,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
     // The coarsest partition's monomial entries, from a caller's own kernel, appended
     // with their enumerators: each row states the shape, the question and the axis of the
@@ -4662,28 +5082,28 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16,
      kFp16Served, kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16Mono, "device-all-orders-bfloat16-mono",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16,
      kFp16Served, kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16MonoFast, "device-all-orders-bfloat16-mono-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16,
      kFp16Served, kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersMono, "device-all-orders-bfloat16-orders-mono",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16,
+     RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16,
      kFp16Served, kFp16Refusal},
     {DeviceEntry::kDeviceAllOrdersBf16OrdersMonoFast, "device-all-orders-bfloat16-orders-mono-fast",
-     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp16,
+     DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme,
-     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16,
+     RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16,
      kFp16Served, kFp16Refusal},
 };
 

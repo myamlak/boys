@@ -1524,6 +1524,118 @@ constexpr auto GateDeviceEntryF16(boys::FitRoute route,
 
     return nullptr;
 }
+
+/// The same map for the half lane's other store: the bfloat16 entries of the same
+/// option table, one name per member, read at each entry's own default policy.
+///
+/// It is the map above with every entry name's \c F16 spelled \c Bf16, which is the
+/// relation between the two surfaces themselves (boys_cuda_options.hpp, the bfloat16
+/// block: "each of these is the same spelling with F16 -> Bf16"). The lane is one
+/// lane and the class is not: the members are the lane's 24 and the entries are this
+/// store's, so a cell of this class judged through the map above would be judged on
+/// an entry that returns the other format.
+///
+/// The one collapse in the map is the option table's and not this gate's: the
+/// half lane's coarsest partition is one row for both scheme names, its
+/// per-argument row and its orders-axis counterpart alike (boys_cuda_options.hpp,
+/// "the coarsest partition's row is one row for both scheme names as
+/// kAllOrdersBf16 is"), where the double table's same route carries a second row
+/// per axis on kScheme (src/boys_cuda.cpp, all-orders-fp64-mono and
+/// all-orders-fp64-orders-mono). So both scheme names of this cross reach that
+/// one row's entry, and the map returns it for both. Everywhere else the two
+/// scheme names are two rows, and the map returns the name its own scheme
+/// names; on the rational route those two names are one kernel, the Horner name
+/// a forwarder to the other (boys_cuda.hpp, AllOrdersBf16Rat: "both scheme names
+/// reach this one entry", and AllOrdersBf16RatHorner: "A forwarder and not a
+/// second arithmetic").
+///
+/// \param route     the member's fit route: the Chebyshev pieces or the
+///                  rational pair over the same pieces and intervals
+/// \param scheme    the member's summation; where the library stores one
+///                  arithmetic under both names the second name reaches it too
+/// \param partition the member's partition: the shipped ladder, the narrow
+///                  pieces or the uniform grid
+/// \param axis      the member's packing axis: per argument or across orders
+///
+/// \returns the launched entry that serves the member, or \c nullptr for a
+///          member this lane's surface has no entry for
+constexpr auto GateDeviceEntryBf16(boys::FitRoute route,
+                                  boys::EvalScheme scheme,
+                                  boys::FitGranularity partition,
+                                  boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const boys::Bf16*, boys::Bf16*, std::size_t, void*,
+                            boys::DivisionForm) {
+    const bool orders = axis == boys::PackAxis::kOrders;
+    const bool horner = scheme == boys::EvalScheme::kHorner;
+    const bool rational = route == boys::FitRoute::kRationalMinimax;
+
+    if (partition == boys::FitGranularity::kCoarsest)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersBf16OrdersRatHorner
+                              : &boys::BoysCuda::AllOrdersBf16OrdersRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersBf16RatHorner
+                          : &boys::BoysCuda::AllOrdersBf16Rat;
+        }
+
+        return orders ? &boys::BoysCuda::AllOrdersBf16Orders : &boys::BoysCuda::AllOrdersBf16;
+    }
+
+    if (partition == boys::FitGranularity::kNarrow)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersBf16NarrowOrdersRatHorner
+                              : &boys::BoysCuda::AllOrdersBf16NarrowOrdersRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersBf16NarrowRatHorner
+                          : &boys::BoysCuda::AllOrdersBf16NarrowRat;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersBf16NarrowOrdersMono
+                          : &boys::BoysCuda::AllOrdersBf16NarrowOrders;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersBf16NarrowMono
+                      : &boys::BoysCuda::AllOrdersBf16Narrow;
+    }
+
+    if (partition == boys::FitGranularity::kUniform)
+    {
+        if (rational)
+        {
+            if (orders)
+            {
+                return horner ? &boys::BoysCuda::AllOrdersBf16OrdersUniformRatHorner
+                              : &boys::BoysCuda::AllOrdersBf16OrdersUniformRat;
+            }
+
+            return horner ? &boys::BoysCuda::AllOrdersBf16UniformRatHorner
+                          : &boys::BoysCuda::AllOrdersBf16UniformRat;
+        }
+
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersBf16OrdersUniformHorner
+                          : &boys::BoysCuda::AllOrdersBf16OrdersUniform;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersBf16UniformHorner
+                      : &boys::BoysCuda::AllOrdersBf16Uniform;
+    }
+
+    return nullptr;
+}
 #endif // BOYS_GATE_FP16
 
 /// The launched entry the fast member of the float device lane is measured through.
@@ -1617,6 +1729,35 @@ constexpr auto GateDeviceEntryF16Fast(boys::FitRoute route,
     (void)axis;
 
     return &boys::BoysCuda::SingleF16Fast;
+}
+
+/// The half lane's other store's launched entry at the other region-B exponential: the
+/// same member of this class, whose parameter list takes bfloat16 arguments and whose
+/// name is the format's (`BoysCuda::SingleBf16Fast`, boys/boys_cuda.hpp). The lane's
+/// table carries it at that member for the reason the fp16 class's does, and the class
+/// is the one this arm's cells are judged for.
+///
+/// The four parameters are unused for the reason the float lane's map states above:
+/// this member's launch is one arithmetic of the lane and not one per cell.
+///
+/// \param route     the member's fit route, which selects no part of this entry
+/// \param scheme    the member's summation, which selects no part of this entry
+/// \param partition the member's partition, which selects no part of this entry
+/// \param axis      the member's packing axis, which selects no part of this entry
+///
+/// \returns the launched entry the half lane runs at \c RegionBExp::kFast
+constexpr auto GateDeviceEntryBf16Fast(boys::FitRoute route,
+                                      boys::EvalScheme scheme,
+                                      boys::FitGranularity partition,
+                                      boys::PackAxis axis) noexcept
+    -> boys::BoysStatus (*)(const int*, const boys::Bf16*, boys::Bf16*, std::size_t, void*,
+                            boys::DivisionForm) {
+    (void)route;
+    (void)scheme;
+    (void)partition;
+    (void)axis;
+
+    return &boys::BoysCuda::SingleBf16Fast;
 }
 #endif // BOYS_GATE_FP16
 
@@ -10578,10 +10719,12 @@ int main(int argc, char** argv) {
         double formWorstX[kCombForms] = {};
     };
 
-    // The lanes, in the order BoysLaneContracts() reports them. Three of them are the device's -
-    // kFp64Device, kFp32Device and kFp16Device (boys/boys.hpp, Precision) - and the arms below
-    // launch all three: a device cell is counted apart where nothing here could run it, which
-    // off a CUDA build is every cell of all three lanes.
+    // The lanes, in the order BoysLaneContracts() reports them. Four of them are the device's -
+    // kFp64Device, kFp32Device, kFp16Device and kBf16Device (boys/boys.hpp, Precision) - and the
+    // arms below launch all four: a device cell is counted apart where nothing here could run it,
+    // which off a CUDA build is every cell of all four lanes. The half lane's two stores are two
+    // lanes here for the reason they are two classes in the seam: an arm of the fp16 lane cannot
+    // measure a cell of the bf16 one, because the entry it launches returns the other format.
     const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
     const int combLaneCount = static_cast<int>(combLaneRows.size());
     // maybe_unused: only the CUDA arms below read this one, and a build with
@@ -10589,13 +10732,14 @@ int main(int argc, char** argv) {
     [[maybe_unused]] const int combDeviceLane = static_cast<int>(boys::Precision::kFp32Device);
     const int combHalfLane = static_cast<int>(boys::Precision::kFp16);
 
-    /// Whether a lane is one of the device's three, which are the three precisions the device
+    /// Whether a lane is one of the device's four, which are the four precisions the device
     /// surface's entries are built at (boys/boys_device_tables.hpp, BoysDeviceLane). A cell of
-    /// one of them is a cell no host entry answers, so the three are classified together.
+    /// one of them is a cell no host entry answers, so the four are classified together.
     const auto combIsDeviceLane = [](int lane) {
         return lane == static_cast<int>(boys::Precision::kFp32Device) ||
                lane == static_cast<int>(boys::Precision::kFp64Device) ||
-               lane == static_cast<int>(boys::Precision::kFp16Device);
+               lane == static_cast<int>(boys::Precision::kFp16Device) ||
+               lane == static_cast<int>(boys::Precision::kBf16Device);
     };
 
     // Each lane's route axis: the distinct routes that lane's own report names,
@@ -10607,7 +10751,8 @@ int main(int argc, char** argv) {
         return lane == static_cast<int>(boys::Precision::kFp64) ||
                        lane == static_cast<int>(boys::Precision::kFp32Device) ||
                        lane == static_cast<int>(boys::Precision::kFp64Device) ||
-                       lane == static_cast<int>(boys::Precision::kFp16Device)
+                       lane == static_cast<int>(boys::Precision::kFp16Device) ||
+                       lane == static_cast<int>(boys::Precision::kBf16Device)
                    ? boys::BoysFitRoutes()
                    : boys::BoysFitRoutesF32();
     };
@@ -10904,7 +11049,7 @@ int main(int argc, char** argv) {
     // differently, so a reader asking whether the exponential changes an answer
     // reads a count rather than an assurance.
     //
-    // The three device lanes cross this axis as far as their surface carries it and
+    // The four device lanes cross this axis as far as their surface carries it and
     // no further: their arms launch entries of the launched all-orders family,
     // those rows state one member each (BoysDeviceOptions()), and each cell is
     // judged at the figure the accessor answers for that member - on fp32-device
@@ -11650,7 +11795,7 @@ int main(int argc, char** argv) {
                                       boys::PackAxis::kOrders,
                                       boys::FitGranularity::kUniform>();
 
-    // Which of the three device lanes an arm of this build measured here, and
+    // Which of the four device lanes an arm of this build measured here, and
     // the sentence a member of a lane is counted apart with where none did.
     // Held per lane and not per build: a lane whose arm ran on this host, and
     // which holds no cell for a member of its cross, is the hole the cross
@@ -11685,6 +11830,8 @@ int main(int argc, char** argv) {
             return boys::DeviceOptionPrecision::kFp32;
         case boys::Precision::kFp16Device:
             return boys::DeviceOptionPrecision::kFp16;
+        case boys::Precision::kBf16Device:
+            return boys::DeviceOptionPrecision::kBf16;
         case boys::Precision::kFp64:
         case boys::Precision::kFp32:
         case boys::Precision::kFp16:
@@ -11731,9 +11878,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The region-B member the cross's device rows are read at: the member the three maps
+    // The region-B member the cross's device rows are read at: the member the four maps
     // above launch. Every one of them names a launched all-orders entry of the accurate
-    // family (GateDeviceEntry, GateDeviceEntryF64, GateDeviceEntryF16), so the figure
+    // family (GateDeviceEntry, GateDeviceEntryF64, GateDeviceEntryF16, GateDeviceEntryBf16),
+    // so the figure
     // these rows are judged at is that member's - on fp32-device 1.5e-07, where the
     // family's other member is 2.3e-07. The family's second member is read by the
     // fast-member arm below and not by these rows: a row judged at two members would be
@@ -11767,9 +11915,9 @@ int main(int argc, char** argv) {
 
     // ---- the device lanes' arms ---------------------------------------------
     //
-    // The three device lanes' reading, taken on the card this build was compiled
-    // for: kFp32Device, kFp64Device and kFp16Device. It is the reading the three
-    // arms above take - the committed grid, cell by cell, each value judged
+    // The four device lanes' reading, taken on the card this build was compiled
+    // for: kFp32Device, kFp64Device, kFp16Device and kBf16Device. It is the reading
+    // the four arms above take - the committed grid, cell by cell, each value judged
     // against the figure this row of the cross is claimed at - and it is taken
     // through the lanes' own entries, because these lanes have no host entry to
     // call: the CUDA surface is device pointers and a stream, and the figure
@@ -11795,10 +11943,16 @@ int main(int argc, char** argv) {
     //    base plus half an ULP of the value the entry returned, and a cell
     //    whose reference value is at or below that bar is counted below it
     //    rather than judged (tests/boys_gate_reference.hpp, HalfBound, which
-    //    the half lanes above read the same way).
+    //    the half lanes above read the same way);
+    //  * the half lane's other store is handed the bfloat16 the same column's
+    //    value rounds to and judged against `v16` at its own bar, which is the
+    //    half lane's bar: the two stores are two classes of one lane and the
+    //    figure each is held to carries its own format's digit (src/boys.cpp,
+    //    the kBf16 and kBf16Device rows), so the coarser store is judged at
+    //    the coarser digit and neither class is judged at the other's.
     //
     // A host that answers no device, or whose device cannot be opened, measures
-    // no member of any of the three: no arm runs, the cross counts their
+    // no member of any of the four: no arm runs, the cross counts their
     // members apart, and the sentence they are counted apart with is this
     // host's own, recorded here and not a statement about the library or about
     // a CUDA build in general.
@@ -11843,7 +11997,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The device answered: every one of the three lanes' arms is armed, and
+    // The device answered: every one of the four lanes' arms is armed, and
     // each of them clears its own flag if its own allocations or its own entry
     // turn out not to run. A lane that is not armed is counted apart with this
     // host's reason, which is why the two are written together here.
@@ -11895,7 +12049,8 @@ int main(int argc, char** argv) {
                 }
 
 #ifdef BOYS_GATE_FP16
-                if (lane == static_cast<int>(boys::Precision::kFp16Device))
+                if (lane == static_cast<int>(boys::Precision::kFp16Device) ||
+                    lane == static_cast<int>(boys::Precision::kBf16Device))
                 {
                     armed[static_cast<std::size_t>(lane)] = 1;
                 }
@@ -11920,10 +12075,11 @@ int main(int argc, char** argv) {
         }
 
 #ifndef BOYS_GATE_FP16
-        // The half lane's entries are behind the seam this build has closed, so
-        // its family holds no built row here and the lane is counted apart below
-        // with that sentence rather than failed on for it.
-        if (lane == static_cast<int>(boys::Precision::kFp16Device))
+        // The half lane's two stores' entries are behind the seam this build has
+        // closed, so their families hold no built row here and the two lanes are
+        // counted apart below with that sentence rather than failed on for it.
+        if (lane == static_cast<int>(boys::Precision::kFp16Device) ||
+            lane == static_cast<int>(boys::Precision::kBf16Device))
         {
             continue;
         }
@@ -12504,6 +12660,30 @@ int main(int argc, char** argv) {
             ref.v16,
             true);
     }
+
+    // The half lane's other store: the same argument and the same reference column, in
+    // this format's own type. The value the reference holds is the exact one and the
+    // store is the class's - `v16` is the reference's half column and this arm judges a
+    // bfloat16 return against it, which is the coarse store judged against the finer
+    // column the same way the fp16 arm judges its own narrower store - so the class's
+    // figure, the one this lane's row of BoysLaneContracts states with 2^-8 in it, is
+    // what its cells are held to.
+    if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)])
+    {
+        std::vector<boys::Bf16> bf16Args(ref.count);
+
+        for (std::size_t i = 0; i < ref.count; ++i)
+        {
+            bf16Args[i] = boys::Bf16(static_cast<float>(ref.x[i]));
+        }
+
+        combDeviceRunLane.template operator()<boys::Bf16>(
+            static_cast<int>(boys::Precision::kBf16Device),
+            GateDeviceEntryBf16,
+            bf16Args,
+            ref.v16,
+            true);
+    }
 #else
     // The CUDA surface's fp16 entries are declared behind the BoysFp16 seam
     // (include/boys/boys_cuda.hpp), which this build has closed: the lane's one
@@ -12517,6 +12697,11 @@ int main(int argc, char** argv) {
     combDeviceLaneReason[static_cast<std::size_t>(boys::Precision::kFp16Device)] =
         "this build's CUDA surface carries its fp16 entries behind the BoysFp16 seam, which this "
         "build has closed, so the half lane's carried member has no entry in this binary to "
+        "measure; a build with the seam open measures that member on the card";
+    combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)] = 0;
+    combDeviceLaneReason[static_cast<std::size_t>(boys::Precision::kBf16Device)] =
+        "this build's CUDA surface carries its bfloat16 entries behind the BoysFp16 seam, which "
+        "this build has closed, so the half lane's other store has no entry in this binary to "
         "measure; a build with the seam open measures that member on the card";
 #endif // BOYS_GATE_FP16
 
@@ -12742,6 +12927,27 @@ int main(int argc, char** argv) {
                 ref.v16,
                 true);
         }
+
+        if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)])
+        {
+            std::vector<boys::Bf16> fastBf16Args(ref.count);
+
+            for (std::size_t i = 0; i < ref.count; ++i)
+            {
+                fastBf16Args[i] = boys::Bf16(static_cast<float>(ref.x[i]));
+            }
+
+            combDeviceFastMember.template operator()<boys::Bf16, boys::Bf16>(
+                static_cast<int>(boys::Precision::kBf16Device),
+                "BoysCuda::SingleBf16Fast",
+                GateDeviceEntryBf16Fast(boys::FitRoute::kChebyshev,
+                                        boys::EvalScheme::kSplitClenshaw,
+                                        boys::FitGranularity::kCoarsest,
+                                        boys::PackAxis::kArguments),
+                fastBf16Args,
+                ref.v16,
+                true);
+        }
 #endif
     }
 
@@ -12773,7 +12979,7 @@ int main(int argc, char** argv) {
     // of a device lane is either a row this run measured on the card, or it is
     // counted apart for a reason this build and this host can be asked about,
     // and never for the lane's identity. A build whose CUDA surface is absent
-    // altogether states that once for all three lanes, because the reason is
+    // altogether states that once for all four lanes, because the reason is
     // one fact.
 #ifndef BOYS_GATE_CUDA
     const char* const combDeviceLaneAbsent =
@@ -13802,7 +14008,7 @@ int main(int argc, char** argv) {
         }
 
         std::printf("    the figure column is the lane's base plus the term its row states under\n"
-                    "    the member named, which is the member the three device maps launch and\n"
+                    "    the member named, which is the member the four device maps launch and\n"
                     "    the member these rows are judged at; the half lane adds half a\n"
                     "    representable digit of each returned value beside it, as its own row\n"
                     "    states. The row count is the launched all-orders rows of the lane in\n"

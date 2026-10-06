@@ -6439,6 +6439,11 @@ constexpr const char* PrecisionToken(Precision lane) noexcept {
         // lane the enumeration gains is a spelling here rather than the fall-through below,
         // which names no lane at all.
         return "kBf16";
+    case Precision::kBf16Device:
+        // The same reading on the device half: the two stores are two cells of that key as
+        // they are of the host's, and folding them here would make this function the place
+        // the device half's two classes were read as one.
+        return "kBf16Device";
     }
 
     return "(a lane this probe names no cell for)";
@@ -6565,6 +6570,8 @@ constexpr const char* LaneSpelling(Precision lane) noexcept {
         // is a name here rather than "unknown", which is a lane this report would print
         // without saying it could not name it.
         return "bf16";
+    case Precision::kBf16Device:
+        return "bf16-device";
     }
 
     return "unknown";
@@ -6793,7 +6800,7 @@ struct SeamLaneBudget {
     Device device; ///< the device that lane runs on: the seam's first key
 };
 
-/// The seam lanes, in the order the library enumerates them: the four host lanes and the three
+/// The seam lanes, in the order the library enumerates them: the four host lanes and the four
 /// device ones.
 ///
 /// The two half formats are one engine at one budget and two classes - the library keys a class
@@ -6813,6 +6820,8 @@ constexpr SeamLaneBudget kSeamLaneBudgets[] = {
     {Precision::kFp16Device, detail::LaneFallbackBudget<Precision::kFp16Device>(),
      Device::kDevice},
     {Precision::kBf16, detail::LaneFallbackBudget<Precision::kBf16>(), Device::kHost},
+    {Precision::kBf16Device, detail::LaneFallbackBudget<Precision::kBf16Device>(),
+     Device::kDevice},
 };
 
 /// The `X(...)` call as the seam writes it: the cells in the seam's own order, broken after

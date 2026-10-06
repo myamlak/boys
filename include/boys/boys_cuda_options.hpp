@@ -580,33 +580,29 @@ enum class DeviceOptionGroup : int {
 /// from the accuracy their calculation needs.
 ///
 /// A bound never trades one of these for another — a row of a looser bound is a faster
-/// way to compute the precision it names, not a different precision — and the two half
-/// formats share one member, because both round a 32-bit engine's result to their
-/// format at the boundary instead of computing in it. That is the CPU lane's own
-/// reading of the same axis, whose \c Precision::kFp16 is "the fp16 and bfloat16
-/// entries", so the member means one thing on both lanes: the half lane, whose
-/// arithmetic is the float lane's and whose figure carries a term of the format it
-/// stores.
+/// way to compute the precision it names, not a different precision — and the half
+/// lane's two formats are two members, because both round a 32-bit engine's result to
+/// their format at the boundary instead of computing in it and each carries its own
+/// format's digit. That is the CPU lane's own reading of the same axis, whose
+/// \c Precision carries \c kFp16 and \c kBf16 as two classes for that reason, so a
+/// member means one thing on both lanes: the half lane in one format, whose arithmetic
+/// is the float lane's and whose figure carries a term of the format it stores.
 ///
-/// **This build serves that lane's two stores through one surface.** A bf16 row is a
-/// row over this lane's existing tables rather than new arithmetic — the same float
-/// engine's value stored into bf16 — and the device half of the lane now carries one,
+/// **This build serves that lane's two stores through one surface, two classes.** A bf16
+/// row is a row over this lane's existing tables rather than new arithmetic — the same
+/// float engine's value stored into bf16 — and the device half of the lane carries one,
 /// entry for entry: every fp16 device body of `boys_cuda_device.hpp` has a
 /// `BoysDevice<X>Bf16<Y>` sibling that differs in the store and in nothing else, and
-/// every one of those is booked here.
-///
-/// **What is still fp16's alone is the launched half.** The bf16 entries a caller
-/// reaches by a launch of this library's — the each-order, all-orders, all-N and
-/// single shapes of `BoysCuda` — have no kernel and no surface yet, so those
-/// combinations are unbuilt work and not a property of the lane. That is the remainder
-/// of this member's debt, and the gate's half-precision block for the second store is
-/// the piece beside it.
+/// every one of those is booked here. Booking them into one member would key them into
+/// the fp16 class, and a class whose own report ranks a bf16 entry first would print an
+/// fp16 recommendation beside it — which is the report a reader compares bounds off.
 ///
 /// \ingroup boys
 enum class DeviceOptionPrecision : int {
     kFp64 = 0, ///< the double lane
     kFp32, ///< the float lane
-    kFp16, ///< the half lane: the fp16 entries this build serves, and the bfloat16 ones it owes
+    kFp16, ///< the half lane's fp16 class: the entries that store the float engine's value in it
+    kBf16, ///< the half lane's bfloat16 class: the same bodies, storing that value in this format
 
     kCount, ///< precisions this report defines; one past the last
 };

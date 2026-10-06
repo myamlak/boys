@@ -117,7 +117,7 @@
 ///
 /// ## The default of a class is the seam's row
 ///
-/// `Policy` defaults to `DefaultPolicy<Precision::kFp64Device|kFp32Device|kFp16Device,
+/// `Policy` defaults to `DefaultPolicy<Precision::kFp64Device|kFp32Device|kFp16Device|kBf16Device,
 /// Shape::kSingle|kAllOrders|kAllN, Device::kDevice>`: the device half of the
 /// default-policy table (`include/boys/boys_build_defaults.hpp`), whose cells are the
 /// build's own names - of which `kDefaultDeviceDivisionForm` and
