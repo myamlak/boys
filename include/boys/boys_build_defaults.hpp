@@ -108,13 +108,14 @@
 /// argument. A row is a property of the machine it was measured on, so a build on
 /// another host has its own winners and the probe is what finds them.
 ///
-/// **The device rows are a choice and not a measurement: no device run stands.**
-/// Each states the seven fallback names above at its own lane's budget, so a
-/// device class resolves to a combination this file already names rather than to
-/// one nothing chose. The one device run there has been - a Quadro T1000, on
-/// 2026-10-04 - found every pass wider than its own canary's alarm and was
-/// withdrawn rather than published, so what replaces this paragraph is a run on a
-/// quiet card once the device surface stops moving.
+/// **The device rows are a run's own winners.** Every member of the space - the
+/// library's 352 device option rows crossed with its three division forms - was
+/// measured on a Quadro T1000 on 2026-10-06 and published, 1056 of 1056, none
+/// refused. The run measured that no entry of a class beats the entry its row
+/// names; it could not order the fastest entries of a class against each other,
+/// so each row is one of the entries that class measured as equally fast and the
+/// report states the resolution it reached beside it. A row belongs to the card
+/// it was measured on, so another card has its own winners.
 ///
 /// A row's marker says which of the two it is: a measurement, with the figure the
 /// class's winner took and how it was reached; or a choice, where the run ranked
@@ -206,43 +207,53 @@
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
-    /* a choice, not a measurement: no device run stands, so each of these twelve
-       rows states the fallback names above at its own lane's budget */\
-    X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-single-fp64-fast', in its class's fastest group */\
+    X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
+    /* measured: 'device-single-fp32', in its class's fastest group */\
+    X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate)\
-    X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-single-fp16-fast-exact-division', in its class's fastest group */\
+    X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
+      RegionBExp::kFast)\
+    /* measured: 'device-all-orders-fp64-narrow-plain-reciprocal', in its class's fastest group */\
+    X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
-    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-all-orders-fp32-rat-horner-exact-division', in its class's fastest group */\
+    X(kDevice, kFp32Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
       RegionBExp::kAccurate)\
-    X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
-    X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
-    X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
-    X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
+    /* measured: 'device-all-orders-fp16-uniform-horner-exact-division', in its class's fastest group */\
     X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kExactDivision,\
       RegionBExp::kAccurate)\
-    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-all-n-fp64', in its class's fastest group */\
+    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate)\
-    X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'all-n-fp32-fast-plain-reciprocal', in its class's fastest group */\
+    X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
+      RegionBExp::kFast)\
+    /* measured: 'device-all-n-fp16-fast', in its class's fastest group */\
+    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast)\
+    /* measured: 'device-single-bfloat16-exact-division', in its class's fastest group */\
+    X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
       RegionBExp::kAccurate)\
-    X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-all-orders-bfloat16-uniform-rat-horner-plain-reciprocal', in its class's fastest group */\
+    X(kDevice, kBf16Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
-    X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+    /* measured: 'device-all-n-bfloat16-plain-reciprocal', in its class's fastest group */\
+    X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate)\
 
 /// Which of the two files this is: the committed one defines it, a replacement
