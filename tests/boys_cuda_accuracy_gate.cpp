@@ -3875,11 +3875,20 @@ struct PartitionCarriageRow {
 /// two bodies at fp32, where the arm's rows name float bodies and the lane's
 /// own format is the coarser of the two - recorded only there, the float and
 /// double lanes' references being read at their own resolution.
+///
+/// An arm's rows name a body on each of the arm's two packing axes, so the half
+/// lane records the pair twice: `differ`/`bodies` are the arguments axis's
+/// reading of the two bodies and `ordersDiffer`/`ordersBodies` the orders
+/// axis's. The two axes are two kernels over the same stored fits, so neither
+/// axis's counts are recorded as a figure for the other.
 struct PartitionCarriageRef {
     std::string axes;
     std::array<std::size_t, 4> differ{};
     std::array<std::size_t, 4> bodies{};
     bool bodiesRecorded = false;
+    std::array<std::size_t, 4> ordersDiffer{};
+    std::array<std::size_t, 4> ordersBodies{};
+    bool ordersRecorded = false;
 };
 
 std::vector<PartitionCarriageRow>& PartitionCarriageRows() {
@@ -4006,11 +4015,17 @@ std::array<std::size_t, 4> F16Separation(const Reference& ref) {
 /// separation was measured at, which is what the line names it by, and - on the
 /// half lane - the same two bodies' separation where the reference is measured
 /// at the lane's own resolution rather than at the bodies'.
+///
+/// `ordersDiffer` and `ordersBodies` are the half lane's second axis and are
+/// given together or not at all: an arm whose rows span both packing axes has no
+/// one figure for them, and the arm's two readings are recorded as two.
 void RecordPartitionCarriageRef(const char* precision,
                                 boys::FitRoute route,
                                 boys::EvalScheme scheme,
                                 const std::array<std::size_t, 4>& differ,
-                                const std::array<std::size_t, 4>* bodies = nullptr) {
+                                const std::array<std::size_t, 4>* bodies = nullptr,
+                                const std::array<std::size_t, 4>* ordersDiffer = nullptr,
+                                const std::array<std::size_t, 4>* ordersBodies = nullptr) {
     PartitionCarriageRef reference;
     reference.axes = (std::string(precision) + ", " + RouteName(route) + ", "
                       + boys::EvalSchemeName(scheme));
@@ -4019,6 +4034,12 @@ void RecordPartitionCarriageRef(const char* precision,
     if (bodies != nullptr) {
         reference.bodies = *bodies;
         reference.bodiesRecorded = true;
+    }
+
+    if (ordersDiffer != nullptr && ordersBodies != nullptr) {
+        reference.ordersDiffer = *ordersDiffer;
+        reference.ordersBodies = *ordersBodies;
+        reference.ordersRecorded = true;
     }
 
     PartitionCarriageRefs().push_back(reference);
@@ -4209,7 +4230,9 @@ void PartitionCarriageDemoRows(const Reference& ref,
 ///
 /// On the half lane the two bodies the rows name are handed in with the arm:
 /// each row is read against the body it names rather than against the narrow
-/// member's row, and the bodies' own separation is recorded with the reference.
+/// member's row, and the bodies' own separation is recorded with the reference -
+/// the arguments axis's pair and, with it, the orders axis's, the arm's rows
+/// naming a body on each of the two.
 template <typename Value, typename Arg, boys::FitRoute kRoute, boys::EvalScheme kScheme>
 void PartitionCarriageArm(const char* precision,
                           const Reference& ref,
@@ -4231,8 +4254,11 @@ void PartitionCarriageArm(const char* precision,
                           DemoAt<Value> narrowDemoLaunch,
                           const std::vector<Value>* uniformArgsBody = nullptr,
                           const std::vector<Value>* uniformOrdersBody = nullptr,
-                          const std::array<std::size_t, 4>* bodies = nullptr) {
-    RecordPartitionCarriageRef(precision, kRoute, kScheme, refDiffer, bodies);
+                          const std::array<std::size_t, 4>* bodies = nullptr,
+                          const std::array<std::size_t, 4>* ordersDiffer = nullptr,
+                          const std::array<std::size_t, 4>* ordersBodies = nullptr) {
+    RecordPartitionCarriageRef(
+        precision, kRoute, kScheme, refDiffer, bodies, ordersDiffer, ordersBodies);
 
     PartitionCarriageLaunchedRows<Value, Arg>(ref,
                                               grid,
@@ -4573,7 +4599,9 @@ void PartitionCarriageHalfArm(const Reference& ref,
                                   nullptr,
                                   &argsImage,
                                   &ordersImage,
-                                  &argsBodies.bodies);
+                                  &argsBodies.bodies,
+                                  &ordersBodies.halves,
+                                  &ordersBodies.bodies);
 }
 
 /// The fp16 lane's, at the same four arms: the launched row on each packing
@@ -4731,17 +4759,19 @@ std::size_t PrintPartitionCarriage() {
     std::printf("\n  the half lane's rows are not two fits read against each other: each names "
                 "a float\n  body of the lane that stores half values with half I/O, and is held "
                 "to the body it\n  names, cell for cell, at the half lane's own arguments. The "
-                "two bodies an arm's rows\n  name, and the cells where a row answering from the "
-                "other member's fits would part\n  from the body it names - the half format "
-                "tells apart only what the half store still\n  carries, and the count at fp32 "
-                "beside it is what the float lane's own rows hold:\n");
+                "two bodies an arm's rows\n  name on each of the arm's two packing axes, and the "
+                "cells where a row answering\n  from the other member's fits would part from the "
+                "body it names - the half format\n  tells apart only what the half store still "
+                "carries, and the count at fp32 beside it is\n  what the float lane's own rows "
+                "hold. The two axes read the same fits through two\n  kernels, so each axis is "
+                "printed its own:\n");
 
     for (const PartitionCarriageRef& armRef : PartitionCarriageRefs()) {
         if (!armRef.bodiesRecorded) {
             continue;
         }
 
-        std::printf("    %-40s A %zu, band %zu, B %zu, C %zu cell(s) at fp32,\n",
+        std::printf("    %-40s arguments axis A %zu, band %zu, B %zu, C %zu cell(s) at fp32,\n",
                     armRef.axes.c_str(),
                     armRef.bodies[0],
                     armRef.bodies[1],
@@ -4754,6 +4784,24 @@ std::size_t PrintPartitionCarriage() {
                     armRef.differ[1],
                     armRef.differ[2],
                     armRef.differ[3]);
+
+        if (!armRef.ordersRecorded) {
+            continue;
+        }
+
+        std::printf("    %-40s orders axis    A %zu, band %zu, B %zu, C %zu cell(s) at fp32,\n",
+                    "",
+                    armRef.ordersBodies[0],
+                    armRef.ordersBodies[1],
+                    armRef.ordersBodies[2],
+                    armRef.ordersBodies[3]);
+        std::printf("    %-40s of which the half format tells A %zu, band %zu, B %zu, C %zu "
+                    "apart\n",
+                    "",
+                    armRef.ordersDiffer[0],
+                    armRef.ordersDiffer[1],
+                    armRef.ordersDiffer[2],
+                    armRef.ordersDiffer[3]);
     }
 
     std::printf("  %-58s %9s %9s  %-20s %s\n",

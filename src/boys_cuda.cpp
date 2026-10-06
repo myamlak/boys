@@ -2385,6 +2385,17 @@ BoysStatus BoysCuda::EachOrderBf16(const int* n,
     }
 }
 
+// The each-order shape is this lane's second templated entry, so the two readings it offers are
+// spelled out here as the fp16 lane's are: the definition above emits no symbol for a call in
+// another translation unit until an instantiation names it.
+
+template BoysStatus BoysCuda::EachOrderBf16<RegionBExp::kAccurate>(
+    const int* n, const Bf16* x, const int* offset, Bf16* out, std::size_t count,
+    void* stream, DivisionForm form);
+template BoysStatus BoysCuda::EachOrderBf16<RegionBExp::kFast>(
+    const int* n, const Bf16* x, const int* offset, Bf16* out, std::size_t count,
+    void* stream, DivisionForm form);
+
 BoysStatus BoysCuda::AllOrdersBf16Narrow(
     const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
     if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
