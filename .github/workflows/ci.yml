@@ -417,10 +417,11 @@ jobs:
     runs-on: ubuntu-latest
     # One leg of this job carries the generator, which re-derives the committed
     # tables at full precision and is by far the longest step anywhere in the
-    # matrix - the rest of this leg is about seventy seconds. A ceiling that
-    # truncates it would report a real check as a failure, so this job's limit
-    # is set above what that step costs rather than at the round number the
-    # other jobs share.
+    # matrix, and that same leg carries the step that reads every combination's
+    # figure, which compiles a driver against the revision's own sources; the rest
+    # of this leg is about seventy seconds. A ceiling that truncates either of the
+    # two would report a real check as a failure, so this job's limit is set above
+    # what they cost rather than at the round number the other jobs share.
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -735,6 +736,31 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_recorded_run.py
+      # The step above asks whether the record still belongs to this tree. It does
+      # not ask what the record covers, and the two are different questions: a
+      # record can be this tree's own and still be one build's, and a build that
+      # carries no CUDA lane measures the host's four lanes and prints a row for
+      # the device's four saying so - so 576 of the space's 1152 cells are
+      # answered by no row at all, and the accessor still claims the library
+      # carries them.
+      #
+      # This step is that reading. It crosses the space the library's own tables
+      # state against the rows the record carries, per lane and per region-B
+      # member, and fails when a combination is measured by no row - which is the
+      # state the record was in until the device half of the run was made, and the
+      # reason the space is now measured rather than merely counted.
+      #
+      # It reads the record, the gate and `git show` of the revision the record
+      # names, and nothing else - no build, no compiler, no CUDA, no network - so
+      # it is scoped to one combination like the gates above it, and it is as fast
+      # as reading five files. It is NOT re-made here: the record is one build's
+      # output on one host, and a leg that made its own would be comparing this
+      # leg's tree against a run of it rather than against the committed record
+      # every other consumer reads.
+      - name: Docs (the combinations the recorded run covers)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_gate_covers_combinations.py --check
       # The two consumer documents quote what the examples print, and nothing read those runs back:
       # the ctest legs run every example (`boys-example-*`) and compare nothing, and no tool read an
       # example's stdout at all - so a change that moved a printed digit left README.md and
@@ -1019,6 +1045,49 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_host_space_closes.py
+      # The step above reads the half of the closure that is a precondition. This
+      # one reads the other half: the class-by-class counts of the host option
+      # probe's report, each held to the number of combinations the class can be
+      # instantiated at. Nothing saw that before, because a class the report
+      # states with one measured combination reads as a class that has one - which
+      # is false for every class whose entry is policy-templated, and the reason
+      # the probe enumerates its space per class rather than per lane.
+      #
+      # The report is the committed one, and that is the remedy the check's own
+      # reason names: a probe report is a timing taken on one machine and this
+      # workflow takes no timing anywhere by design, so no leg can produce it, and
+      # a report a check reads belongs in the tree rather than in a scratch
+      # directory. What the step adds is that the counts are held to the library
+      # read at this revision - the classes, the entries the headers declare, and
+      # the one-order exclusion, which the check proves by compiling rather than
+      # by quoting. The compiler is the host's, which is why this step is scoped
+      # to the leg whose CXX is g++ rather than to the leg whose CXX is cl.
+      - name: Host (the classes the probe's report measured, against this revision)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_class_combinations.py --check --report tests/data/boys_option_probe_report.txt
+      # Every class every combination of whose axes the library can be
+      # instantiated at owes a figure, and the figure owes the code that keeps it.
+      # Nothing checked either: a combination the library carries and states no
+      # bound for, and a bound the code it ships does not honour, read as fine to
+      # every other gate, because those gates read the space rather than the
+      # figures over it.
+      #
+      # The figures are the library's own - the accessor's table read, not a
+      # measurement: the check compiles one driver against the revision's own
+      # sources and runs it once, and it evaluates no F_n and times nothing. The
+      # compile is the slow part. It was not armed before because that build did
+      # not deliver: the development host's compiler refused it, C1128, the
+      # section limit on one object file - a limit the library's own build file
+      # answers with /bigobj on the translation unit that passes it, and one the
+      # ELF tools do not have at all. This leg has g++ and no cl, and the
+      # compiler the check builds with is read from the host rather than written
+      # into the check, so the driver builds here and the step carries a measured
+      # exit code instead of a guess.
+      - name: Bounds (every combination's figure, and the code that keeps it)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_combination_bounds.py --check
       # A conditional that opens a construct and closes it outside its own branch
       # compiles on the configuration its author is building and fails on every
       # other one: an `#if` around a `namespace {` that closes after the `#endif`

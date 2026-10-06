@@ -19,16 +19,22 @@ What a class offers is read from the library here and not written down:
   * that a one-order shape really cannot take the orders packing axis is not assumed: the check
     compiles one instantiation of each one-order shape at that axis value and requires it to FAIL,
     and one without it and requires it to PASS. A check that could not fail would be a decoration.
+    The compiler is the host's - MSVC where this host has Visual Studio, and otherwise the first
+    of ``CXX``, ``c++``, ``g++`` and ``clang++`` - so the control runs on the leg that runs this
+    check and not only on the machine it was written on.
 
 usage:
   check_class_combinations.py --report <report.txt> [--root DIR] [--no-compile]
+  check_class_combinations.py --check --report <report.txt>   # what CI runs
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -105,6 +111,14 @@ ORDERS_AXIS = "kOrders"
 # carries `= 0`, so the initialiser is optional here.
 SHAPE_ENUM = re.compile(r"^\s*(k[A-Za-z0-9]+)\s*(?:=\s*\d+)?\s*,?\s*///<\s*(.*)$", re.M)
 ONE_ORDER = re.compile(r"\bone order\b", re.I)
+
+# The installer's own index of the MSVC it installed, and the environment script a host that has
+# no index keeps its copy of. `tools/check_combination_bounds.py` carries the same pair for the
+# same reason: the control has to run on the leg the check is armed on and not on this machine.
+VSWHERE = pathlib.Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / \
+    "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+VCVARS_FALLBACK = (r"C:\Program Files\Microsoft Visual Studio\18\Community"
+                   r"\VC\Auxiliary\Build\vcvars64.bat")
 
 # One class line of the report's accuracy-classes section:
 #   "  fp64 all-orders       possible 144 = 144 served + 0 refused | 144 measured | fastest
@@ -353,6 +367,56 @@ def build_definitions(tree: pathlib.Path) -> tuple[list[str], list[str]]:
     return carried, skipped
 
 
+def vcvars() -> str | None:
+    """The `vcvars64.bat` of the newest MSVC this host has, or None where it has none.
+
+    vswhere is the installer's own record of what it put on the disk, so a host that installed
+    Visual Studio somewhere else is read rather than assumed away - the path used to be written
+    out here, and a written path is a claim about the machine this check was written on. The
+    constant is the fallback for a host that carries no index.
+    """
+    if VSWHERE.exists():
+        try:
+            done = subprocess.run([str(VSWHERE), "-latest", "-products", "*",
+                                   "-requires",
+                                   "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                                   "-property", "installationPath"],
+                                  capture_output=True, text=True, timeout=300)
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            done = None
+
+        found = done.stdout.strip().splitlines() if done is not None and done.returncode == 0 \
+            else []
+
+        if found:
+            script = (pathlib.Path(found[0].strip()) / "VC" / "Auxiliary" / "Build"
+                      / "vcvars64.bat")
+
+            if script.exists():
+                return str(script)
+
+    return VCVARS_FALLBACK if pathlib.Path(VCVARS_FALLBACK).exists() else None
+
+
+def compiler() -> str | None:
+    """The C++ compiler the control below runs on, or None where this host has none.
+
+    MSVC where this host has Visual Studio, and otherwise the first of `CXX`, `c++`, `g++` and
+    `clang++` on the path - the spellings the workflow's Linux and macOS legs carry. The control
+    has two halves and reads one of them in each direction, so a compiler the host does not have
+    is refused by the caller rather than answered here: both halves would read the missing
+    toolchain as a refusal.
+    """
+    if os.name == "nt":
+        return "cl" if vcvars() is not None else None
+
+    for name in (os.environ.get("CXX"), "c++", "g++", "clang++"):
+        if name and shutil.which(name):
+            return name
+
+    return None
+
+
 def compiled(tree: pathlib.Path, source: str, definitions: list[str]) -> bool:
     """Whether one scratch translation unit compiles. The negative control of this check.
 
@@ -360,24 +424,37 @@ def compiled(tree: pathlib.Path, source: str, definitions: list[str]) -> bool:
     sees another writer's half-finished edit to the library this check is asserting about, and it
     carries the definitions the library's own target publishes to its consumers, so the compiler
     sees the surface the report measured rather than a smaller one.
+
+    Both halves of the control are compiled by the same host compiler, whichever this host has:
+    `tools/check_combination_bounds.py` makes the same control and names the same two spellings.
     """
     with tempfile.TemporaryDirectory() as scratch:
         unit = pathlib.Path(scratch) / "probe.cpp"
         unit.write_text(source, encoding="utf-8")
         log = pathlib.Path(scratch) / "log.txt"
-        flags = " ".join(f"/D{definition}" for definition in definitions)
-        script = pathlib.Path(scratch) / "run.bat"
-        script.write_text(
-            "@echo off\n"
-            'call "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat" >nul 2>&1\n'
-            f'cd /d "{tree}"\n'
-            f'cl /nologo /std:c++latest /EHsc /Zs {flags} /I include "{unit}" > "{log}" 2>&1\n',
-            encoding="utf-8",
-        )
+
+        if os.name == "nt":
+            flags = " ".join(f"/D{definition}" for definition in definitions)
+            environment = vcvars()
+            script = pathlib.Path(scratch) / "run.bat"
+            script.write_text(
+                "@echo off\n"
+                + (f'call "{environment}" >nul 2>&1\n' if environment else "")
+                + f'cd /d "{tree}"\n'
+                + f'cl /nologo /std:c++latest /EHsc /Zs {flags} /I include "{unit}" '
+                  f'> "{log}" 2>&1\n',
+                encoding="utf-8",
+            )
+            command = ["cmd.exe", "/c", str(script)]
+            cwd = None
+        else:
+            flags = " ".join(f"-D{definition}" for definition in definitions)
+            command = ["bash", "-c",
+                       f'{compiler()} -std=c++23 -fsyntax-only {flags} -I include "{unit}"']
+            cwd = tree
 
         try:
-            completed = subprocess.run(["cmd.exe", "/c", str(script)], capture_output=True,
-                                       timeout=900)
+            completed = subprocess.run(command, capture_output=True, timeout=900, cwd=cwd)
         except subprocess.TimeoutExpired:
             # Not a refusal: the compiler never answered. The control reads a False in the
             # arguments-axis position as the exclusion failing, so a deadline that expired is
@@ -390,10 +467,11 @@ def compiled(tree: pathlib.Path, source: str, definitions: list[str]) -> bool:
         if completed.returncode == 0:
             return True
 
-        log_text = log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
+        log_text = (log.read_text(encoding="utf-8", errors="replace") if log.exists()
+                    else completed.stderr.decode(errors="replace"))
 
         for line in [l for l in log_text.splitlines()
-                     if " error " in l or "fatal error" in l][:2]:
+                     if " error " in l or " error:" in l or "fatal error" in l][:2]:
             print(f"      {line.strip()[:160]}")
 
         return False
@@ -427,6 +505,9 @@ def main() -> int:
                         help="the revision the library is read at (never the working tree)")
     parser.add_argument("--no-compile", action="store_true",
                         help="skip the compilation control (the check then asserts, not proves)")
+    parser.add_argument("--check", action="store_true",
+                        help="the CI spelling; a class whose measured count falls short of the "
+                             "combinations it can be instantiated at exits non-zero either way")
     arguments = parser.parse_args()
     root = pathlib.Path(arguments.root).resolve()
     reader = Reader(root, arguments.rev)
@@ -484,6 +565,12 @@ def main() -> int:
     # tree exported from the revision, so what the compiler reads is the revision and not a working
     # tree another writer may hold.
     if not arguments.no_compile:
+        if compiler() is None:
+            print("check_class_combinations: this host has no C++ compiler this check can address "
+                  "- no Visual Studio for the MSVC spelling and no c++/g++/clang++ on the path - so "
+                  "the control that proves the one-order exclusion cannot be run")
+            return 1
+
         tree = reader.export()
         definitions, not_carried = build_definitions(tree)
 

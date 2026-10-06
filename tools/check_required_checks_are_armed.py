@@ -110,27 +110,18 @@ LEG_ARG = re.compile(r'--leg\s+"([^"]*)"')
 # check that is merely slow is a check to arm and measure. `unarmed_reasons` holds the list to
 # those terms on every run.
 UNARMED = {
-    "check_class_combinations.py": (
-        "its input is the option probe's report, and a probe report is a timing taken on one "
-        "machine - this workflow takes no timing anywhere by design, so no leg can produce it "
-        "(measured: exit 2 without --report, which is what a leg without one gets). Armed by a leg "
-        "that could run the host option probe, or by a committed report the check is pointed at"
-    ),
+    # Two of the three entries that stood here are gone because the checks are armed:
+    # `check_class_combinations` is pointed at a committed report and
+    # `check_combination_bounds` builds its driver on a leg. This one is NOT armed, and
+    # its reason is kept: emptying the dictionary outright would remove the statement
+    # that this check cannot be armed yet, which is the one piece of information a
+    # reader of this tool needs about it.
     "check_gate_covers_combinations.py": (
         "it judges the accuracy gate's committed recorded run, which is a record of one build on "
-        "one machine that no leg can re-make. It fails against that record at both revisions it "
-        "can be read at - 72 of 1008 combinations unmeasured with the gate at HEAD, and 216 with "
-        "the gate at the run's own revision - so the record does not carry the coverage this check "
-        "demands and a step would be red on committed content (measured: exit 1, both ways). Armed "
-        "by a re-made record, or by a device report covering the lanes a CPU run's table leaves out"
-    ),
-    "check_combination_bounds.py": (
-        "its input is a figure its own driver reads from the library at a revision, so it needs a "
-        "build of its own rather than a file the leg has already made, and that build did not "
-        "deliver on the development host: exit 1 after 329.7 s, the compiler refusing the driver "
-        "(MSVC C1128, section limit). Whether it passes on a leg is not established, and a step is "
-        "not armed on a guess. Armed by a leg that builds its driver, with that leg's exit code "
-        "measured"
+        "one machine that no leg can re-make. It fails against that record at the revision it can "
+        "be read at - 576 of 1152 combinations measured by no row, 96 rows exercising no cell - so "
+        "the record does not carry the coverage this check demands and a step would be red on "
+        "committed content (measured: exit 1). Armed by a re-made record"
     ),
 }
 

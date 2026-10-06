@@ -44,8 +44,14 @@ it reads one. The compile is the slow part, and a compile is not a probe.
 
 The driver is a consumer translation unit - it includes ``<boys/boys.hpp>`` and nothing else of the
 library - and the library is linked beside it from ``add_library(boys ...)`` in the revision's
-``CMakeLists.txt``, read rather than written here. It compiles under the definition the target
-publishes to consumers, ``BoysFp16=1``, and under the committed default choices: ``BOYS_BUILD_DEFAULTS``
+``CMakeLists.txt``, read rather than written here. The compiler is the host's: MSVC where this is a
+host with Visual Studio, and otherwise the first of ``CXX``, ``c++``, ``g++`` and ``clang++``, which
+is what lets this check be armed on a leg that carries gcc and no ``cl``. Each toolchain gets its
+own spelling of the same build, and the one MSVC's spelling needs that the ELF tools' does not is
+``/bigobj``: the build file gives it to ``src/boys_probe.cpp`` because that translation unit's
+section count passes what a COFF object holds by default, and the driver links that source. It is
+compiled under the definition the target publishes to consumers, ``BoysFp16=1``, and under the
+committed default choices: ``BOYS_BUILD_DEFAULTS``
 is empty in a default configure, so the committed ``boys/boys_build_defaults.hpp`` is what a class's
 default policy resolves to, and the default axes are the macros of that file. A configure that names
 a ``BOYS_BUILD_DEFAULTS_DIR`` shadows that header with one of its own, which moves what
@@ -107,12 +113,38 @@ import tempfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
-# The MSVC environment the rest of this repository's tools build under.
-VCVARS = r"C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+# The installer's own index of the MSVC it installed, and the environment script a host that has
+# no index keeps its copy of. A path written here rather than read from the host is a claim about
+# the machine this check was written on: the same check on a runner, or on a colleague's checkout,
+# found no compiler and reported the one-order exclusion as failing to hold - a library defect
+# that was not one - so the script is discovered and the constant is only the fallback.
+VSWHERE = pathlib.Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / \
+    "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+VCVARS_FALLBACK = (r"C:\Program Files\Microsoft Visual Studio\18\Community"
+                   r"\VC\Auxiliary\Build\vcvars64.bat")
 
 # The definitions the library's own target publishes (CMakeLists.txt, target `boys`): the fp16
-# seam is PUBLIC, so this driver compiles under it exactly as a consumer does.
-DEFINES = ["/DBoysFp16=1"]
+# seam is PUBLIC, so this driver compiles under it exactly as a consumer does. A name and its
+# value, without a toolchain's prefix, because the prefix is the toolchain's spelling and the
+# compiler is whichever one this host has.
+DEFINES = ["BoysFp16=1"]
+
+# The MSVC spelling of one definition, and the ELF tools'. The other flag of the driver's build
+# that is a toolchain's alone is `/bigobj`: the build file gives it to `src/boys_probe.cpp`
+# because that translation unit's section count passes what a COFF object holds by default, and
+# the ELF tools carry no such ceiling and need no such flag. It is named where it is used.
+MSVC_DEFINE = "/D"
+POSIX_DEFINE = "-D"
+
+# The flags the build file gives these two translation units, and the reason it gives them: the
+# AVX2/FMA/F16C intrinsics `src/boys_simd.cpp` carries behind `BOYS_SIMD_X86` are refused by the
+# ELF tools without the flags that licence them ("target specific option mismatch"), while the
+# MSVC spelling of the same set is `/arch:AVX2`. The build file states the set through a variable
+# and pins a scalar-contract flag onto it under a configure-time decision; what this driver needs
+# is the intrinsics' half, and the arithmetic it does not pin moves no number here - every figure
+# this check reads is the accessor's table and no F_n is evaluated in it.
+SIMD_SOURCES = ("src/boys_simd.cpp", "src/boys_orders_simd.cpp")
+SIMD_FLAGS = ("-mavx2", "-mfma", "-mf16c")
 
 # The paths the driver is compiled against, and the two records it is held to. `src/` is taken
 # whole, and `CMakeLists.txt` with it, because the library's source list is read from its target
@@ -286,15 +318,71 @@ def class_rows(header: str) -> list[tuple[str, str, str]]:
     return rows
 
 
-def batch(tree: pathlib.Path, body: str, timeout: float) -> subprocess.CompletedProcess:
-    """One `cmd.exe` batch under this repository's MSVC environment, run in `tree`."""
-    script = tree / "run.bat"
-    script.write_text("@echo off\n"
-                      f'call "{VCVARS}" >nul 2>&1\n'
-                      f'cd /d "{tree}"\n' + body, encoding="utf-8")
+def vcvars() -> str | None:
+    """The `vcvars64.bat` of the newest MSVC this host has, or None where it has none.
 
-    return subprocess.run(["cmd.exe", "/c", str(script)], capture_output=True, timeout=timeout,
-                          env=dict(os.environ, MSYS_NO_PATHCONV="1"))
+    vswhere is the installer's own record of what it put on the disk, so a host that installed
+    Visual Studio somewhere else is read rather than assumed away.
+    """
+    if VSWHERE.exists():
+        try:
+            done = subprocess.run([str(VSWHERE), "-latest", "-products", "*",
+                                   "-requires",
+                                   "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                                   "-property", "installationPath"],
+                                  capture_output=True, text=True, timeout=300)
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            done = None
+
+        found = done.stdout.strip().splitlines() if done is not None and done.returncode == 0 \
+            else []
+
+        if found:
+            script = (pathlib.Path(found[0].strip()) / "VC" / "Auxiliary" / "Build"
+                      / "vcvars64.bat")
+
+            if script.exists():
+                return str(script)
+
+    return VCVARS_FALLBACK if pathlib.Path(VCVARS_FALLBACK).exists() else None
+
+
+def compiler() -> str | None:
+    """The C++ compiler every compile below runs on, or None where this host has none.
+
+    MSVC where this host has Visual Studio, and otherwise the first of `CXX`, `c++`, `g++` and
+    `clang++` on the path - the spellings the workflow's Linux and macOS legs carry. Which one is
+    used is read from the host rather than chosen here, because the driver has to build on the leg
+    that runs this check and not on the machine it was written on.
+    """
+    if os.name == "nt":
+        return "cl" if vcvars() is not None else None
+
+    for name in (os.environ.get("CXX"), "c++", "g++", "clang++"):
+        if name and shutil.which(name):
+            return name
+
+    return None
+
+
+def definitions(prefix: str) -> str:
+    """This check's definitions, spelled the way a toolchain takes them."""
+    return " ".join(f"{prefix}{definition}" for definition in DEFINES)
+
+
+def batch(tree: pathlib.Path, body: str, timeout: float) -> subprocess.CompletedProcess:
+    """One build command, run in `tree`: a batch under MSVC, a shell on the other toolchains."""
+    if os.name == "nt":
+        script = tree / "run.bat"
+        environment = vcvars()
+        script.write_text("@echo off\n"
+                          + (f'call "{environment}" >nul 2>&1\n' if environment else "")
+                          + f'cd /d "{tree}"\n' + body, encoding="utf-8")
+
+        return subprocess.run(["cmd.exe", "/c", str(script)], capture_output=True, timeout=timeout,
+                              env=dict(os.environ, MSYS_NO_PATHCONV="1"))
+
+    return subprocess.run(["bash", "-c", body], capture_output=True, timeout=timeout, cwd=tree)
 
 
 def compiled(tree: pathlib.Path, source: str, timeout: float = 900) -> bool:
@@ -307,9 +395,15 @@ def compiled(tree: pathlib.Path, source: str, timeout: float = 900) -> bool:
     unit = tree / "control.cpp"
     unit.write_text(source, encoding="utf-8")
 
+    if os.name == "nt":
+        command = (f'cl /nologo /std:c++latest /EHsc /Zs {definitions(MSVC_DEFINE)} /I include '
+                   f'"{unit}" >nul 2>&1\n')
+    else:
+        command = (f'{compiler()} -std=c++23 -fsyntax-only {definitions(POSIX_DEFINE)} '
+                   f'-I include "{unit}"')
+
     try:
-        done = batch(tree, f'cl /nologo /std:c++latest /EHsc /Zs /I include "{unit}" >nul 2>&1\n',
-                     timeout)
+        done = batch(tree, command, timeout)
     except (subprocess.TimeoutExpired, FileNotFoundError):
         return False
 
@@ -503,21 +597,49 @@ def run_driver(tree: pathlib.Path, classes: list[tuple[str, str, str]], sources:
     driver = tree / "check_combination_bounds_driver.cpp"
     driver.write_text(driver_source(classes), encoding="utf-8")
 
+    if os.name == "nt":
+        # `/bigobj` is the build file's own flag on `src/boys_probe.cpp`: that translation unit
+        # emits more sections than a COFF object holds by default, and the compiler's answer is
+        # C1128, "number of sections exceeded object file format limit". The build file states the
+        # reason beside it; this command builds the same sources and pays the same limit.
+        command = (f'cl /nologo /std:c++latest /EHsc /Od /bigobj /I include '
+                   f'{definitions(MSVC_DEFINE)} "{driver}" {" ".join(sources)} /Fe:driver.exe\n')
+        produced = tree / "driver.exe"
+    else:
+        # One flag set per invocation is all the ELF tools take, so the sources that carry the
+        # intrinsics' flags are compiled in an invocation of their own and the rest without them.
+        plain = [source for source in sources if source not in SIMD_SOURCES]
+        groups = ((plain, ()), (tuple(s for s in SIMD_SOURCES if s in sources), SIMD_FLAGS))
+        commands = []
+
+        for group, flags in groups:
+            if not group:
+                continue
+
+            commands.append(f'{compiler()} -std=c++23 -O0 -I include {definitions(POSIX_DEFINE)} '
+                            f'{" ".join(flags)} -c {" ".join(group)}')
+
+        objects = [pathlib.Path(source).with_suffix(".o").name for source in sources]
+        commands.append(f'{compiler()} -std=c++23 -O0 -I include {definitions(POSIX_DEFINE)} '
+                        f'-c "{driver}"')
+        commands.append(f'{compiler()} {pathlib.Path(driver).with_suffix(".o").name} '
+                        f'{" ".join(objects)} -o driver')
+        command = " && ".join(commands) + "\n"
+        produced = tree / "driver"
+
     try:
-        built = batch(tree, f'cl /nologo /std:c++latest /EHsc /Od /I include '
-                            f'{" ".join(DEFINES)} "{driver}" {chr(32).join(sources)} '
-                            f'/Fe:driver.exe\n', timeout)
+        built = batch(tree, command, timeout)
     except (subprocess.TimeoutExpired, FileNotFoundError) as error:
         raise SystemExit(f"check_combination_bounds: the driver did not build: {error}")
 
-    if built.returncode != 0 or not (tree / "driver.exe").exists():
+    if built.returncode != 0 or not produced.exists():
         sys.stderr.write(built.stdout.decode(errors="replace"))
         sys.stderr.write(built.stderr.decode(errors="replace"))
         raise SystemExit("check_combination_bounds: the driver did not build, so no figure was "
                          "read from the library and this run states nothing about it")
 
     try:
-        ran = subprocess.run([str(tree / "driver.exe")], capture_output=True, text=True,
+        ran = subprocess.run([str(produced)], capture_output=True, text=True,
                              timeout=600)
     except (subprocess.TimeoutExpired, FileNotFoundError) as error:
         raise SystemExit(f"check_combination_bounds: the driver did not run: {error}")
@@ -635,6 +757,9 @@ def main() -> int:
                         help="skip the control that proves the one-order exclusion by compiling")
     parser.add_argument("--show", type=int, default=0,
                         help="combination rows to print per class, 0 for the counts alone")
+    parser.add_argument("--check", action="store_true",
+                        help="the CI spelling; a combination with no bound, or one the recorded "
+                             "run leaves, exits non-zero either way")
     arguments = parser.parse_args()
 
     revision = (git("rev-parse", "--short", arguments.revision).stdout.strip()
@@ -669,6 +794,16 @@ def main() -> int:
             print("check_combination_bounds: the classes or the shapes were read as empty, so this "
                   "run states nothing about the library and its exit status is a failure rather "
                   "than a clean bill")
+            return 1
+
+        # A host with no compiler this check can address is named here rather than answered below:
+        # both halves of the control would read the missing toolchain as a refusals-and-acceptance
+        # pair, and the run would report the library's own exclusion as not holding when what it
+        # failed to find was a compiler.
+        if not arguments.no_compile and compiler() is None:
+            print("check_combination_bounds: this host has no C++ compiler this check can address "
+                  "- no Visual Studio for the MSVC spelling and no c++/g++/clang++ on the path - so "
+                  "the control that proves the one-order exclusion cannot be run")
             return 1
 
         # The control: a one-order shape cannot take the orders packing axis. One instantiation
