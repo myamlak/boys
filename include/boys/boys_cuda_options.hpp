@@ -561,6 +561,275 @@ enum class DeviceEntry : int {
     kCount, ///< rows this report defines; one past the last
 };
 
+// ---------------------------------------------------------------------------
+// The rows that are one arithmetic under two names.
+//
+// Two rows of this space can be one option. The rational route is stored in one form, so
+// its two scheme names reach one kernel, and both rows exist because a chooser naming a
+// scheme must reach the combination it named. The uniform grid's reading of region A has
+// one member, so that grid's packing rows launch one kernel as well. Such a row is a name
+// and not a second arithmetic, and a report counting rows as options counts more than the
+// space holds.
+//
+// Which rows those are is not a fact about a row. An alias pair agrees on everything a row
+// states - precision, shape, question, lane, region-B exponential, cut and bound - and so
+// does `all-orders-fp64-mono` against `all-orders-fp64`, which are two lanes and two
+// arithmetics. The entries' own bodies decide it: DeviceEntryArithmeticOf answers with the
+// row whose entry reaches the same kernel, or the same device body, as this one's, and that
+// relation is generated from those bodies by `tools/gen_entry_aliases.py` rather than
+// listed here. That tool's `--check` re-derives it, so a body that starts or stops
+// forwarding fails the check until this block says so.
+//
+// Two readers use it: a chooser placing two rows side by side reads off it that a pair is
+// one option, whose figure is not a second measurement's; and the probes' reports count the
+// space by arithmetic beside counting it by name.
+// ---------------------------------------------------------------------------
+
+// BEGIN GENERATED: the rows that are one arithmetic (tools/gen_entry_aliases.py)
+// Written from the entries' own bodies: each row below reaches the kernel (or the device
+// body) of the row on its right, and the two are one arithmetic under two names.
+// Regenerate with `python tools/gen_entry_aliases.py`; `--check` verifies this block.
+
+/// The row that is the same arithmetic as \p entry under another name, or \p entry when
+/// its name is that arithmetic's only one.
+///
+/// Two rows are one arithmetic when their entries reach one kernel (a launched row) or one
+/// device body (a device-callable one) over one lane, precision, shape, question, region-B
+/// exponential and bound. The relation is read from the library's own bodies rather than
+/// listed here: `tools/gen_entry_aliases.py` follows each row's entry to what it runs, and
+/// this block is what it found. The row an alias is of is the one whose entry reaches that
+/// arithmetic in the fewest steps, and the first such row in the enumerator order - the
+/// order a report prints its rows in.
+///
+/// \param entry the option
+///
+/// \returns the row this one is a second name of, or \p entry itself
+///
+/// \ingroup boys
+constexpr DeviceEntry DeviceEntryArithmeticOf(DeviceEntry entry) noexcept {
+    switch (entry)
+    {
+        case DeviceEntry::kAllOrdersF64RatHorner:
+            return DeviceEntry::kAllOrdersF64Rat;
+        case DeviceEntry::kAllOrdersF64OrdersRatHorner:
+            return DeviceEntry::kAllOrdersF64OrdersRat;
+        case DeviceEntry::kAllOrdersF64NarrowRatHorner:
+            return DeviceEntry::kAllOrdersF64NarrowRat;
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner:
+            return DeviceEntry::kAllOrdersF64NarrowOrdersRat;
+        case DeviceEntry::kAllOrdersF64OrdersUniform:
+            return DeviceEntry::kAllOrdersF64Uniform;
+        case DeviceEntry::kAllOrdersF64OrdersUniformHorner:
+            return DeviceEntry::kAllOrdersF64UniformHorner;
+        case DeviceEntry::kAllOrdersF64UniformRatHorner:
+            return DeviceEntry::kAllOrdersF64UniformRat;
+        case DeviceEntry::kAllOrdersF64OrdersUniformRat:
+            return DeviceEntry::kAllOrdersF64UniformRat;
+        case DeviceEntry::kAllOrdersF64OrdersUniformRatHorner:
+            return DeviceEntry::kAllOrdersF64UniformRat;
+        case DeviceEntry::kAllOrdersF32RatHorner:
+            return DeviceEntry::kAllOrdersF32Rat;
+        case DeviceEntry::kAllOrdersF32NarrowRatHorner:
+            return DeviceEntry::kAllOrdersF32NarrowRat;
+        case DeviceEntry::kAllOrdersF32UniformRatHorner:
+            return DeviceEntry::kAllOrdersF32UniformRat;
+        case DeviceEntry::kAllOrdersF32OrdersRatHorner:
+            return DeviceEntry::kAllOrdersF32OrdersRat;
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner:
+            return DeviceEntry::kAllOrdersF32NarrowOrdersRat;
+        case DeviceEntry::kAllOrdersF32OrdersUniform:
+            return DeviceEntry::kAllOrdersF32Uniform;
+        case DeviceEntry::kAllOrdersF32OrdersUniformHorner:
+            return DeviceEntry::kAllOrdersF32UniformHorner;
+        case DeviceEntry::kAllOrdersF32OrdersUniformRat:
+            return DeviceEntry::kAllOrdersF32UniformRat;
+        case DeviceEntry::kAllOrdersF32OrdersUniformRatHorner:
+            return DeviceEntry::kAllOrdersF32UniformRat;
+        case DeviceEntry::kAllOrdersF16RatHorner:
+            return DeviceEntry::kAllOrdersF16Rat;
+        case DeviceEntry::kAllOrdersF16NarrowRatHorner:
+            return DeviceEntry::kAllOrdersF16NarrowRat;
+        case DeviceEntry::kAllOrdersF16UniformRatHorner:
+            return DeviceEntry::kAllOrdersF16UniformRat;
+        case DeviceEntry::kAllOrdersF16OrdersRatHorner:
+            return DeviceEntry::kAllOrdersF16OrdersRat;
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner:
+            return DeviceEntry::kAllOrdersF16NarrowOrdersRat;
+        case DeviceEntry::kAllOrdersF16OrdersUniform:
+            return DeviceEntry::kAllOrdersF16Uniform;
+        case DeviceEntry::kAllOrdersF16OrdersUniformHorner:
+            return DeviceEntry::kAllOrdersF16UniformHorner;
+        case DeviceEntry::kAllOrdersF16OrdersUniformRat:
+            return DeviceEntry::kAllOrdersF16UniformRat;
+        case DeviceEntry::kAllOrdersF16OrdersUniformRatHorner:
+            return DeviceEntry::kAllOrdersF16UniformRat;
+        case DeviceEntry::kDeviceAllOrdersF64RatHorner:
+            return DeviceEntry::kDeviceAllOrdersF64Rat;
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF64NarrowRat;
+        case DeviceEntry::kDeviceAllOrdersF64UniformRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF64UniformRat;
+        case DeviceEntry::kDeviceAllOrdersF32RatHorner:
+            return DeviceEntry::kDeviceAllOrdersF32Rat;
+        case DeviceEntry::kDeviceAllOrdersF32NarrowRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF32NarrowRat;
+        case DeviceEntry::kDeviceAllOrdersF32UniformRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF32UniformRat;
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF64OrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF32OrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF16RatHorner:
+            return DeviceEntry::kDeviceAllOrdersF16Rat;
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF16OrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF16NarrowRat;
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRat;
+        case DeviceEntry::kDeviceAllOrdersF16UniformRatHorner:
+            return DeviceEntry::kDeviceAllOrdersF16UniformRat;
+        case DeviceEntry::kDeviceAllOrdersF32RatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF32RatFast;
+        case DeviceEntry::kDeviceAllOrdersF32OrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF32OrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersF32NarrowRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF32NarrowRatFast;
+        case DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF32NarrowOrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersF16RatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF16RatFast;
+        case DeviceEntry::kDeviceAllOrdersF16OrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF16OrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersF16NarrowRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF16NarrowRatFast;
+        case DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF16NarrowOrdersRatFast;
+        case DeviceEntry::kAllOrdersF64RatHornerFast:
+            return DeviceEntry::kAllOrdersF64RatFast;
+        case DeviceEntry::kAllOrdersF64OrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF64OrdersRatFast;
+        case DeviceEntry::kAllOrdersF64NarrowRatHornerFast:
+            return DeviceEntry::kAllOrdersF64NarrowRatFast;
+        case DeviceEntry::kAllOrdersF64NarrowOrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF64NarrowOrdersRatFast;
+        case DeviceEntry::kAllOrdersF32RatHornerFast:
+            return DeviceEntry::kAllOrdersF32RatFast;
+        case DeviceEntry::kAllOrdersF32OrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF32OrdersRatFast;
+        case DeviceEntry::kAllOrdersF32NarrowRatHornerFast:
+            return DeviceEntry::kAllOrdersF32NarrowRatFast;
+        case DeviceEntry::kAllOrdersF32NarrowOrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF32NarrowOrdersRatFast;
+        case DeviceEntry::kAllOrdersF16RatHornerFast:
+            return DeviceEntry::kAllOrdersF16RatFast;
+        case DeviceEntry::kAllOrdersF16OrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF16OrdersRatFast;
+        case DeviceEntry::kAllOrdersF16NarrowRatHornerFast:
+            return DeviceEntry::kAllOrdersF16NarrowRatFast;
+        case DeviceEntry::kAllOrdersF16NarrowOrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersF16NarrowOrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersF64RatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF64RatFast;
+        case DeviceEntry::kDeviceAllOrdersF64OrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF64OrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersF64NarrowRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF64NarrowRatFast;
+        case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersF64NarrowOrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersBf16RatHorner:
+            return DeviceEntry::kDeviceAllOrdersBf16Rat;
+        case DeviceEntry::kDeviceAllOrdersBf16OrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersBf16OrdersRat;
+        case DeviceEntry::kDeviceAllOrdersBf16NarrowRatHorner:
+            return DeviceEntry::kDeviceAllOrdersBf16NarrowRat;
+        case DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatHorner:
+            return DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRat;
+        case DeviceEntry::kDeviceAllOrdersBf16UniformRatHorner:
+            return DeviceEntry::kDeviceAllOrdersBf16UniformRat;
+        case DeviceEntry::kDeviceAllOrdersBf16RatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersBf16RatFast;
+        case DeviceEntry::kDeviceAllOrdersBf16OrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersBf16OrdersRatFast;
+        case DeviceEntry::kDeviceAllOrdersBf16NarrowRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersBf16NarrowRatFast;
+        case DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatHornerFast:
+            return DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatFast;
+        case DeviceEntry::kAllOrdersBf16RatHorner:
+            return DeviceEntry::kAllOrdersBf16Rat;
+        case DeviceEntry::kAllOrdersBf16NarrowRatHorner:
+            return DeviceEntry::kAllOrdersBf16NarrowRat;
+        case DeviceEntry::kAllOrdersBf16UniformRatHorner:
+            return DeviceEntry::kAllOrdersBf16UniformRat;
+        case DeviceEntry::kAllOrdersBf16OrdersRatHorner:
+            return DeviceEntry::kAllOrdersBf16OrdersRat;
+        case DeviceEntry::kAllOrdersBf16NarrowOrdersRatHorner:
+            return DeviceEntry::kAllOrdersBf16NarrowOrdersRat;
+        case DeviceEntry::kAllOrdersBf16OrdersUniform:
+            return DeviceEntry::kAllOrdersBf16Uniform;
+        case DeviceEntry::kAllOrdersBf16OrdersUniformHorner:
+            return DeviceEntry::kAllOrdersBf16UniformHorner;
+        case DeviceEntry::kAllOrdersBf16OrdersUniformRat:
+            return DeviceEntry::kAllOrdersBf16UniformRat;
+        case DeviceEntry::kAllOrdersBf16OrdersUniformRatHorner:
+            return DeviceEntry::kAllOrdersBf16UniformRat;
+        case DeviceEntry::kAllOrdersBf16RatHornerFast:
+            return DeviceEntry::kAllOrdersBf16RatFast;
+        case DeviceEntry::kAllOrdersBf16OrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersBf16OrdersRatFast;
+        case DeviceEntry::kAllOrdersBf16NarrowRatHornerFast:
+            return DeviceEntry::kAllOrdersBf16NarrowRatFast;
+        case DeviceEntry::kAllOrdersBf16NarrowOrdersRatHornerFast:
+            return DeviceEntry::kAllOrdersBf16NarrowOrdersRatFast;
+        default:
+            return entry;
+    }
+}
+
+/// Whether following an alias twice is following it once: the relation maps the space onto
+/// the rows that are an arithmetic of their own.
+constexpr bool DeviceEntryArithmeticsAreClosed() noexcept {
+    for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
+    {
+        const DeviceEntry arithmetic = DeviceEntryArithmeticOf(static_cast<DeviceEntry>(i));
+
+        if (DeviceEntryArithmeticOf(arithmetic) != arithmetic)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(DeviceEntryArithmeticsAreClosed(),
+              "an alias names a row that is itself an alias: the generated block in "
+              "boys_cuda_options.hpp is stale, run tools/gen_entry_aliases.py");
+
+/// How many of the space's rows are an arithmetic no other row offers.
+constexpr std::size_t DeviceEntryDistinctArithmeticCount() noexcept {
+    std::size_t distinct = 0;
+
+    for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
+    {
+        const DeviceEntry entry = static_cast<DeviceEntry>(i);
+
+        distinct += DeviceEntryArithmeticOf(entry) == entry ? std::size_t{1} : std::size_t{0};
+    }
+
+    return distinct;
+}
+
+/// How many of the space's rows are a second name for an arithmetic another row offers.
+constexpr std::size_t DeviceEntryAliasRowCount() noexcept {
+    return static_cast<std::size_t>(DeviceEntry::kCount) - DeviceEntryDistinctArithmeticCount();
+}
+// END GENERATED: the rows that are one arithmetic (tools/gen_entry_aliases.py)
+
 /// How a caller reaches an option: through a call of this library's that
 /// queues a kernel, or through a device function a caller's own kernel calls.
 ///
@@ -1928,6 +2197,15 @@ struct DeviceOptionInfo {
     /// with the arithmetic the row reports.
     FitGranularity partition = DevicePartitionOf(entry);
 
+    /// The row that is the same arithmetic as this one, where two names reach it, and this
+    /// row where its name is that arithmetic's only one.
+    ///
+    /// Two rows that are one arithmetic are one option: a count of the space's rows counts
+    /// names, and this field is what a report pairs with it to count the arithmetic those
+    /// names select. Read from \c DeviceEntryArithmeticOf, which is generated from the
+    /// entries' own bodies (tools/gen_entry_aliases.py), so a row cannot state an arithmetic
+    /// its own entry does not run.
+    DeviceEntry arithmeticOf = DeviceEntryArithmeticOf(entry);
 };
 
 /// The device option space this revision defines, one row per option, read from

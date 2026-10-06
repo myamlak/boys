@@ -4,9 +4,13 @@
 #include "boys/f16.hpp"
 #include "boys/boys_effective_degrees.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdio>
 #include <iterator>
+#include <string>
+#include <string_view>
 
 // Status layer of the CUDA lane. The kernels and the table uploads live in
 // boys_cuda.cu (C++20, CUDA-safe include list only - the C++23 headers would poison
@@ -5140,6 +5144,89 @@ static_assert(DeviceOptionsAreInEnumeratorOrder(),
               "the device option report has one row per DeviceEntry, in its enumerator order");
 std::span<const DeviceOptionInfo> BoysDeviceOptions() noexcept {
     return kDeviceOptions;
+}
+
+namespace {
+
+/// One formatted line, so the statement is built without an iostream: the probes' own idiom,
+/// local to the one place this translation unit builds text. A line longer than this would be
+/// cut mid-word, and the statement's lines are counts and two short names each.
+template <typename... Args>
+std::string Text(const char* format, Args... args) {
+    char buffer[1024];
+
+    std::snprintf(buffer, sizeof(buffer), format, args...);
+
+    return std::string(buffer);
+}
+
+} // namespace
+
+std::string FormatDeviceArithmeticStatement() {
+    const std::span<const DeviceOptionInfo> space = BoysDeviceOptions();
+    const std::size_t forms = BoysDivisionForms().size();
+    std::size_t distinct = 0;
+    std::size_t aliases = 0;
+    std::string text;
+
+    for (const DeviceOptionInfo& row : space)
+    {
+        distinct += row.arithmeticOf == row.entry ? 1u : 0u;
+        aliases += row.arithmeticOf == row.entry ? 0u : 1u;
+    }
+
+    // The row's own name, as the space states it: a reader finds the row in the table above
+    // by the name it is printed under there and not by the enumerator behind it.
+    const auto nameOf = [&space](DeviceEntry entry) -> const char* {
+        for (const DeviceOptionInfo& row : space)
+        {
+            if (row.entry == entry)
+            {
+                return row.name;
+            }
+        }
+
+        return "(no row)";
+    };
+
+    text += "the arithmetic - the rows above counted by the arithmetic each one selects, so that a\n"
+            "  name and an option are two counts rather than one\n";
+    text += Text("  (DeviceEntryArithmeticOf, include/boys/boys_cuda_options.hpp): %zu row(s) of the "
+                 "space = %zu\n  distinct arithmetic + %zu row(s) that are a second name of one of "
+                 "them; crossed with the %zu\n  division form(s) of BoysDivisionForms(): %zu "
+                 "member(s) = %zu member(s) of a distinct\n  arithmetic + %zu member(s) that are a "
+                 "second name of one counted beside them\n",
+                 space.size(),
+                 distinct,
+                 aliases,
+                 forms,
+                 space.size() * forms,
+                 distinct * forms,
+                 aliases * forms);
+    text += "  the rows that are a second name, each with the row whose arithmetic it is:\n";
+
+    // The name column is the widest name this space carries rather than a number here: a row
+    // added with a longer name would push its own arithmetic out of the column otherwise, and
+    // the two names of a pair are what a reader compares.
+    std::size_t width = 0;
+
+    for (const DeviceOptionInfo& row : space)
+    {
+        width = std::max(width, std::string_view(row.name).size());
+    }
+
+    for (const DeviceOptionInfo& row : space)
+    {
+        if (row.arithmeticOf != row.entry)
+        {
+            text += Text("    %-*s %s\n",
+                         static_cast<int>(width),
+                         row.name,
+                         nameOf(row.arithmeticOf));
+        }
+    }
+
+    return text;
 }
 
 } // namespace boys

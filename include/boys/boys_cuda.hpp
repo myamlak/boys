@@ -6,6 +6,7 @@
 #include "boys/boys_device_tables.hpp"
 
 #include <cstddef>
+#include <string>
 
 #if BoysFp16
 #include "boys/f16.hpp"
@@ -3673,6 +3674,21 @@ public:
 
 #endif // BoysFp16
 };
+
+/// The option space's rows counted by the arithmetic each one selects, as a report states
+/// it: how many names the space offers against how many distinct arithmetic they reach, and
+/// the names that are a second one of a row beside them.
+///
+/// Declared here rather than in boys_cuda_options.hpp, which is the space's own header,
+/// because it returns a string and that header is compiled by nvcc. The counts are the
+/// space's and not this function's: the rows come from \c BoysDeviceOptions and the division
+/// forms from \c BoysDivisionForms, so a row added to the space is counted here without an
+/// edit.
+///
+/// \returns the statement, one line per alias row under the counts, ending with a newline
+///
+/// \ingroup boys
+std::string FormatDeviceArithmeticStatement();
 
 } // namespace boys
 
