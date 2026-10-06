@@ -1217,12 +1217,30 @@ void AskOneCell(std::vector<CellAnswers>& answers) {
                               static_cast<boys::RegionBExp>(kExp)>());
 }
 
+// The cells are asked a chunk at a time rather than in one fold. A fold over all
+// kCombinationCount of them nests one level per cell, and clang refuses a fold
+// expression past 256 arguments (-fbracket-depth): the count is a property of the
+// library's axes, and the suite must not stop compiling when an axis grows. Chunking
+// bounds the nesting by the chunk, and the halving below adds only its logarithm.
+constexpr std::size_t kCellsPerFold = 64;
+
+template <std::size_t kFirst, std::size_t kLast>
+void AskCellRange(std::vector<CellAnswers>& answers) {
+    if constexpr (kLast - kFirst <= kCellsPerFold) {
+        [&answers]<std::size_t... kOffsets>(std::index_sequence<kOffsets...>)
+        { (AskOneCell<kFirst + kOffsets>(answers), ...); }(std::make_index_sequence<kLast - kFirst>{});
+    } else {
+        constexpr std::size_t kMiddle = kFirst + (kLast - kFirst) / 2;
+        AskCellRange<kFirst, kMiddle>(answers);
+        AskCellRange<kMiddle, kLast>(answers);
+    }
+}
+
 std::vector<CellAnswers> AskEveryCombination() {
     std::vector<CellAnswers> answers;
     answers.reserve(kCombinationCount);
 
-    [&answers]<std::size_t... kCells>(std::index_sequence<kCells...>)
-    { (AskOneCell<kCells>(answers), ...); }(std::make_index_sequence<kCombinationCount>{});
+    AskCellRange<0, kCombinationCount>(answers);
 
     return answers;
 }
