@@ -1,44 +1,24 @@
 #pragma once
 
-// The compile-time effective-degree machinery behind the accuracy-multiplier
-// parametrization. The multiplier m relaxes each lane's asserted per-region bound B_region by
-// truncating the seed fits to the effective degree
-//
+// The compile-time effective-degree tables behind the accuracy multiplier m: m relaxes a lane's
+// asserted region bound B_region by truncating the seed fits to the effective degree
 //   d'(m) = min { d' in {0,1,2,4,6,...} : Delta(d') * A <= (m-1) * B_region },
 //   Delta(d') = sum_{k=d'+1}^{d} |c_k|   (the dropped-coefficient tail),
-//
+
 // with A the path's seed-error amplification: 1 for the single-style lanes, w(b) = max(1,
 // b^n / prod(j+1/2)) at the piece's right end for the region-A batch downward recursion, and
-// prod(j+1/2)/x0^n for the region-B upward recursion (worst at x = x0). The (order, piece)
-// d' tables are compile-time constants per (m, lane role, basis), a-priori, never tuned.
-//
-// The tail must come from the table the scheme sums: a Chebyshev fit's coefficients decay
-// with the fit's accuracy, the same fit's monomial coefficients are Taylor coefficients on
-// the piece and larger by about 2^k at the high-order end, so a degree the Chebyshev tail
-// admits can drop a monomial tail orders of magnitude over budget.
-//
-// The summation's own rounding: Horner at degree d' returns sum_{k<=d'} c_k t^k
-// (1 + theta_k) with |theta_k| <= gamma_{k+1}, gamma_k = k*u/(1-ku) - the backward form,
-// the coefficient at step k carrying the perturbation of the k+1 roundings at or below it -
-// so the sum's error over the exact truncated polynomial is
-//   R(d') = sum_{k<=d'} |c_k| gamma_{k+1} <= gamma_{d'+1} sum_{k<=d'} |c_k|,
-// non-decreasing in d' - every term added is non-negative - so R(d') <= R(d) and the rung's
-// summation rounds no more than the m = 1 lane's does; it is the m = 1 lane's rounding that
-// the m = 1 base is asserted to carry, and the criterion spends nothing on the rung's.
-//
-// No constant rounding term belongs in the criterion: added to the m = 1 lane's rounding it
-// would not fall to zero at d' = d and would refuse a degree the criterion must admit - at
-// d' = d the rung runs the m = 1 summation over the same coefficients bit for bit, its
-// delivered error the m = 1 lane's, inside B_region by the contract. The shape is the m = 1
-// base, asserted and measured, plus the one term the truncation adds: Delta(d') * A.
-//
-// Delta(d) = 0, so the scan always reaches the full degree; no rung is left without an
-// admissible one, and the fallback is the m = 1 summation, whose error the rung's own bound
-// already covers.
-//
-// The fp16/bf16 lanes are I/O around the fp32 engine; their 1e-7 region budgets are the
-// fp16 bound formula's asserted base, strictly stronger than the float lanes' documented
-// 1.5e-7, and the representation half-ULP term is m-independent.
+// prod(j+1/2)/x0^n for the region-B upward recursion (worst at x = x0). The (order, piece) d'
+// tables are compile-time constants per (m, lane role, basis), a-priori, never tuned.
+
+// The tail must come from the table the scheme sums: the monomial coefficients of a Chebyshev
+// fit are Taylor coefficients on the piece, larger by about 2^k at the high-order end.
+
+// No rounding term belongs in the criterion: the truncated Horner sum's error
+// R(d') = sum_{k<=d'} |c_k| gamma_{k+1} is non-decreasing in d', so at every cut the rung
+// rounds no more than the m = 1 lane the base is asserted for.
+
+// The fp16/bf16 lanes are I/O around the fp32 engine: their 1e-7 region budgets are stricter
+// than the float lanes' documented 1.5e-7, and their half-ULP term is m-independent.
 
 /// \cond
 // Not API: the degree arithmetic the entries are compiled from.
@@ -341,19 +321,10 @@ constexpr auto NarrowRegionBDegrees() noexcept {
     }
 }
 
-// A stored rational piece is a numerator P(t) = sum_{j<=m} p_j t^j and a denominator
-// Q(t) = 1 + sum_{1<=j<=k} q_j t^j over one piece of region A's partition, and the region-B
-// seed is one such pair over the whole of region B. A lower-order pair cuts both at one
-// order d': m' = min(d', m) and k' = min(d', k). The value is a quotient, so what the cut
-// costs is not a coefficient sum - with dP = P - P' and dQ = Q - Q' the dropped parts,
-//   R - R' = dP/Q - R' * dQ/Q,   so the pairwise tail is bounded by
-//   Delta(d') = ( DP(d') + (SP / (Qlo - DQ(d'))) * DQ(d') ) / Qlo,
-// with DP/DQ the dropped tails of P and Q, SP the numerator's stored value scale and Qlo the
-// denominator's floor over the piece (DenominatorFloor) - both terms are needed, because
-// cutting the denominator moves every value the pair returns. At d' = max(m, k) the cut is
-// the whole pair, so Delta = 0 and the scan always has an admissible order: the returned
-// pair is never one the budget cannot carry, and at the full cut it returns the shipped
-// pair's value bit for bit.
+// The pair's dropped-order measure: with DP/DQ the dropped tails of P and Q, SP the numerator's
+// value scale and Qlo the denominator's floor over the piece (DenominatorFloor),
+//   Delta(d') = ( DP(d') + (SP / (Qlo - DQ(d'))) * DQ(d') ) / Qlo.
+// Both terms are needed: cutting the denominator moves every value the pair returns.
 
 /// The number of grid intervals the denominator's floor is bounded on: an
 /// a-priori constant of the criterion, not of any one piece.
