@@ -5,6 +5,7 @@
 // reported and exit 1. The closure is the report's last block and the verdict
 // it prints is the one this program returns: a member of the space in no state
 // is a failure here and not a paragraph.
+#include "boys/boys_cuda.hpp"
 #include "boys/boys_cuda_probe.hpp"
 
 #include <array>
@@ -104,6 +105,13 @@ void Usage(const boys::DeviceProbeOptions& defaults) {
                 "                     why. The file is what the CMake option\n"
                 "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
                 "                     measured no device class writes no file.\n"
+                "  --from-report=R    publish the seam from the report R an earlier run\n"
+                "                     wrote, instead of from this run: no device is opened,\n"
+                "                     no kernel is launched and no clock is read, and the\n"
+                "                     file names the card and the run that report names.\n"
+                "                     Needs --emit-defaults=F, refuses every option above\n"
+                "                     that would measure, and writes no file unless every\n"
+                "                     class of the device half is placed from the report.\n"
                 "  --help             this text\n"
                 "\n"
                 "Transfer and host submission are outside the timed region by design: the\n"
@@ -163,7 +171,19 @@ std::vector<std::string> SplitNames(const char* text) {
 int main(int argc, char** argv) {
     boys::DeviceProbeOptions options;
     std::string emitDefaults;
+    std::string fromReport;
     const std::string started = Timestamp();
+
+    // The first measuring option this command was given, where it was given one: a run told to
+    // take its rows from a report and told how to measure as well would measure nothing under a
+    // protocol it named, which is a substitution of one run for another and not a run.
+    std::string measuring;
+    const auto Measuring = [&measuring](const char* option) {
+        if (measuring.empty())
+        {
+            measuring = option;
+        }
+    };
 
     for (int i = 1; i < argc; ++i)
     {
@@ -185,41 +205,65 @@ int main(int argc, char** argv) {
             }
 
             emitDefaults = argv[++i];
+        } else if (arg.rfind("--from-report=", 0) == 0)
+        {
+            fromReport = arg.c_str() + 14;
+        } else if (arg == "--from-report")
+        {
+            if (i + 1 >= argc)
+            {
+                std::fprintf(stderr, "boys-device-probe: --from-report needs a file name\n");
+                return 2;
+            }
+
+            fromReport = argv[++i];
         } else if (arg.rfind("--device=", 0) == 0)
         {
+            Measuring("--device");
             options.device = std::atoi(arg.c_str() + 9);
         } else if (arg.rfind("--count=", 0) == 0)
         {
+            Measuring("--count");
             options.count = static_cast<std::size_t>(std::strtoull(arg.c_str() + 8, nullptr, 10));
         } else if (arg.rfind("--nmax=", 0) == 0)
         {
+            Measuring("--nmax");
             options.nmax = std::atoi(arg.c_str() + 7);
         } else if (arg.rfind("--seed=", 0) == 0)
         {
+            Measuring("--seed");
             options.seed = std::strtoull(arg.c_str() + 7, nullptr, 10);
         } else if (arg.rfind("--passes=", 0) == 0)
         {
+            Measuring("--passes");
             options.passes = std::atoi(arg.c_str() + 9);
         } else if (arg.rfind("--rounds=", 0) == 0)
         {
+            Measuring("--rounds");
             options.rounds = std::atoi(arg.c_str() + 9);
         } else if (arg.rfind("--reps=", 0) == 0)
         {
+            Measuring("--reps");
             options.repetitions = std::atoi(arg.c_str() + 7);
         } else if (arg.rfind("--pair-factor=", 0) == 0)
         {
+            Measuring("--pair-factor");
             options.countPairFactor = std::atoi(arg.c_str() + 14);
         } else if (arg.rfind("--refine-runs=", 0) == 0)
         {
+            Measuring("--refine-runs");
             options.refinementRuns = std::atoi(arg.c_str() + 14);
         } else if (arg.rfind("--refine-factor=", 0) == 0)
         {
+            Measuring("--refine-factor");
             options.refinementFactor = std::atoi(arg.c_str() + 16);
         } else if (arg.rfind("--only=", 0) == 0)
         {
+            Measuring("--only");
             options.only = SplitNames(arg.c_str() + 7);
         } else if (arg.rfind("--xrange=", 0) == 0)
         {
+            Measuring("--xrange");
             options.xLo = std::strtod(arg.c_str() + 9, nullptr);
             const char* comma = std::strchr(arg.c_str() + 9, ',');
 
@@ -238,6 +282,121 @@ int main(int argc, char** argv) {
         }
     }
 
+    // The seam file, written the one way. Both paths write the same bytes and report the same
+    // failures, so neither the format nor the reporting of it can drift from the other's. A
+    // std::ofstream and not the C stdio the option probe's writer uses: this target carries the
+    // CUDA toolkit's include directories, and there the CRT marks fopen deprecated under the
+    // tree's own /WX, so the portable C++ stream is what compiles.
+    const auto WriteDefaults = [](const std::string& path, const std::string& text) {
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-device-probe: cannot write '%s'\n", path.c_str());
+            return 3;
+        }
+
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        file.close();
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-device-probe: short write to '%s'\n", path.c_str());
+            return 3;
+        }
+
+        std::printf("defaults written: %s | %zu byte(s) | point a build at it with "
+                    "-DBOYS_BUILD_DEFAULTS=%s\n",
+                    path.c_str(), text.size(), path.c_str());
+        return 0;
+    };
+
+    // The seam a report on disk implies, where the caller asked for one. Nothing below this point
+    // runs: no device is opened, no kernel is launched, and the clock this process read to stamp
+    // its own files is not written into one.
+    if (!fromReport.empty())
+    {
+        if (emitDefaults.empty())
+        {
+            std::fprintf(stderr,
+                         "boys-device-probe: --from-report names the report the seam's rows are "
+                         "read from and --emit-defaults names the file to write; this run has no "
+                         "file to write\n");
+            return 2;
+        }
+
+        if (!measuring.empty())
+        {
+            std::fprintf(stderr,
+                         "boys-device-probe: --from-report publishes from a report and measures "
+                         "nothing, so '%s' cannot be given with it\n",
+                         measuring.c_str());
+            return 2;
+        }
+
+        std::ifstream source(fromReport, std::ios::binary);
+
+        if (!source)
+        {
+            std::fprintf(stderr, "boys-device-probe: cannot read '%s'\n", fromReport.c_str());
+            return 3;
+        }
+
+        source.seekg(0, std::ios::end);
+        const std::streamoff size = source.tellg();
+        std::string text(static_cast<std::size_t>(size < 0 ? 0 : size), '\0');
+        source.seekg(0, std::ios::beg);
+
+        if (!text.empty())
+        {
+            source.read(text.data(), static_cast<std::streamsize>(text.size()));
+
+            if (!source)
+            {
+                std::fprintf(stderr, "boys-device-probe: short read of '%s'\n",
+                             fromReport.c_str());
+                return 3;
+            }
+        }
+
+        const boys::DeviceDefaultsPublication publication =
+            boys::PublishDeviceBuildDefaults(text);
+
+        std::printf("boys device probe | publishing from %s | nothing measured\n",
+                    fromReport.c_str());
+        std::printf("\nthe seam rows that report states - one per (device, precision, shape) "
+                    "class:\n");
+
+        for (const std::string& line : publication.emission.emitted)
+        {
+            std::printf("  written: %s\n", line.c_str());
+        }
+
+        for (const std::string& line : publication.emission.overridden)
+        {
+            std::printf("  overrode: %s\n", line.c_str());
+        }
+
+        for (const std::string& line : publication.refusals)
+        {
+            std::printf("  no row:  %s\n", line.c_str());
+        }
+
+        // The whole seam or none of it: the file is read INSTEAD of the committed one, and the
+        // classes it does not carry would resolve to whatever that file says rather than to what
+        // this report states.
+        if (!publication.complete)
+        {
+            std::fprintf(stderr,
+                         "boys-device-probe: no defaults written - the report did not let every "
+                         "class of the device half be placed, and the refusals above name each "
+                         "one and what it failed to state\n");
+            return 3;
+        }
+
+        return WriteDefaults(emitDefaults, publication.emission.text);
+    }
+
     const boys::DeviceProbeReport report = boys::RunDeviceOptionProbe(options);
 
     std::printf("boys device probe | device %d | %s | count %zu | seed %llu | status %d\n",
@@ -249,6 +408,14 @@ int main(int argc, char** argv) {
 
     const std::string text = boys::FormatDeviceOptionProbe(report);
     std::fputs(text.c_str(), stdout);
+
+    // The report counts the option space's rows, and some of those rows are one arithmetic
+    // under two names: this is the space counted by arithmetic beside that count, so a reader
+    // of this run can tell how many distinct arithmetic the 352 names and 1056 members above
+    // are. Read from the library's own rows (BoysDeviceOptions), so it needs no run to be
+    // right and no edit here when a row is added.
+    const std::string arithmetic = boys::FormatDeviceArithmeticStatement();
+    std::fputs(arithmetic.c_str(), stdout);
 
     // The device half of the seam this run implies, where the caller asked for it: the
     // classes it carries a row for and the ones it refuses, then the file itself. A run
@@ -285,29 +452,10 @@ int main(int argc, char** argv) {
             return 3;
         }
 
-        // A std::ofstream and not the C stdio the option probe's writer uses: this target
-        // carries the CUDA toolkit's include directories, and there the CRT marks fopen
-        // deprecated under the tree's own /WX, so the portable C++ stream is what compiles.
-        std::ofstream file(emitDefaults, std::ios::binary | std::ios::trunc);
-
-        if (!file)
+        if (const int failure = WriteDefaults(emitDefaults, emission.text); failure != 0)
         {
-            std::fprintf(stderr, "boys-device-probe: cannot write '%s'\n", emitDefaults.c_str());
-            return 3;
+            return failure;
         }
-
-        file.write(emission.text.data(), static_cast<std::streamsize>(emission.text.size()));
-        file.close();
-
-        if (!file)
-        {
-            std::fprintf(stderr, "boys-device-probe: short write to '%s'\n", emitDefaults.c_str());
-            return 3;
-        }
-
-        std::printf("defaults written: %s | %zu byte(s) | point a build at it with "
-                    "-DBOYS_BUILD_DEFAULTS=%s\n",
-                    emitDefaults.c_str(), emission.text.size(), emitDefaults.c_str());
     }
 
     // The report's own last block, read back as the exit status: the closure holds, or

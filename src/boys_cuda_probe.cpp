@@ -1,25 +1,7 @@
-// The option probe's host side: the workload, the protocol, the folding of the rounds into figures,
-// the refusal to order noise, and the text a consumer reads.
-//
-// The clock is not here. Every timed region is a CUDA event pair this file opens and closes through
-// boys_cuda_probe_kernels.cu, because the host's own submission cost must not be in the figure and
-// the events are the only thing that keeps it out. What this file decides is what to time, how many
-// times, and what the results are allowed to say.
-//
-// The shape is the CPU option probe's (src/boys_probe.cpp): every entry is timed once in every
-// round, a comparison between two entries is the ratio of their per-round figures inside one round,
-// an entry's reported figure is the middle of its ratios to a reference entry scaled by the
-// reference's own lower-quartile cost, the canary beside each pass is a diagnostic that gates
-// nothing, the resolution is what the run measured rather than a bar chosen in advance, a rival
-// whose band does not clear one is named as unplaced instead of being ordered, and the entries a
-// shape's own rounds cannot separate are re-measured on their own and voted on. The differences are
-// all forced by the device: the instrument is a kernel and not a host spin, the card is named
-// instead of the host, and the entries that exist to run inside the caller's kernel are measured by
-// subtraction rather than launched.
-//
-// The two halves of an in-kernel row's subtraction are timed adjacent inside the *same round*, with
-// their order alternating by round, so that row's difference is a within-round pair exactly like a
-// ratio between two entries is, and a clock that drifts over the run cancels in it.
+// The option probe's host side: the workload, the protocol, the folding of the rounds into
+// figures, the refusal to order noise, and the text a consumer reads. The clock is not here -
+// every timed region is a CUDA event pair opened and closed through the kernels file, so the
+// host's submission stays out. An in-kernel row's two halves are timed adjacent, alternating.
 
 #include "boys/boys_cuda_probe.hpp"
 
@@ -731,13 +713,9 @@ std::string AxisName(const DeviceOptionInfo& option) {
         case DeviceOptionAxis::kRoute:
             break;
         default:
-            // An axis no arm above names: a value cast in from outside the enumeration, or a
-            // member a newer header carries and this revision has not been taught. The row is
-            // still printed, because a row the library carries that this probe cannot place is
-            // a fact about the space; the cell refuses to write the enumerator down as a
-            // member, because a reader can look a member of an axis up and there is nothing
-            // for this value to be looked up in. It is not printed as a number beside the
-            // named members for that reason: a number in this column reads as one of them.
+            // An axis no arm above names - a value cast in from outside the enumeration, or a member a newer
+            // header carries. The row is still printed, because a row the library carries that this probe
+            // cannot place is a fact about the space, but the cell refuses to write the value down as a member.
             text = "axis:(not one this probe names) ";
             break;
     }
@@ -1121,11 +1099,9 @@ TimedEntry TimeEntry(const EntryInfo& info,
                      bool baselineFirst = false) {
     TimedEntry timed;
 
-    // The form this row is measured at: the row's own coordinate and not a value chosen
-    // here, so the region dispatched below runs the arithmetic the row's own axes column
-    // reports. The row is an entry crossed with a form and the form is the crossed axis's
-    // member, so reading it off the entry instead would measure the default form three
-    // times under three names.
+    // The form this row is measured at: the row's own coordinate and not a value chosen here, so the
+    // region dispatched below runs the arithmetic the row's axes column reports. Reading it off the
+    // entry would measure the default form three times under three names.
     const int form = static_cast<int>(info.form);
 
     if (!info.inKernel)
@@ -1299,11 +1275,9 @@ bool RunRepetitionControl(const EntryInfo& info,
     }
 
     const double smaller = std::min(out.nsPerArgumentLow, out.nsPerArgumentHigh);
-    // A count whose readings left no figure to form - a launched row whose two readings left no
-    // positive launch term, a subtraction that resolved nothing - leaves no second figure to
-    // compare, and the one outcome that must never come out of that is agreement: the control would
-    // be passing without evidence, and this is the check the whole subtraction route rests on. The
-    // difference is infinite rather than zero, so the data says what the note says.
+    // A count whose readings left no figure to form leaves no second figure to compare, and the one
+    // outcome that must never come out of that is agreement: the control would be passing without
+    // evidence. The difference is infinite rather than zero, so the data says what the note says.
     const bool resolved = smaller > 0.0;
 
     out.difference = resolved
@@ -1643,13 +1617,10 @@ void Conclude(DeviceProbeRanking& clause,
         return;
     }
 
-    // A quartile band needs four rounds. With fewer, the lower and upper quartiles
-    // are two- and three-point order statistics, and a probe that ordered on them
-    // would be reporting a resolution it never measured. The shape is not left
-    // without an answer because of it: the entries this run read a figure for are
-    // the band it could not form, and they are what the refinement stage re-runs at
-    // a longer protocol. A shape with one such entry has nothing to vote between,
-    // and it is named by there being no alternative to it.
+    // A quartile band needs four rounds: with fewer, the quartiles are two- and three-point order
+    // statistics and a probe that ordered on them would report a resolution it never measured. The
+    // entries this run read a figure for are the band it could not form, and the refinement stage
+    // re-runs them.
     if (pairedRounds < static_cast<int>(kMinimumPairedRounds))
     {
         std::vector<const Candidate*> read;
@@ -1876,11 +1847,9 @@ void Conclude(DeviceProbeRanking& clause,
         // Nothing to say: no rival was measured, so no pair was followed.
     } else
     {
-        // The clock check, done rather than assumed. A pair whose ratio moves
-        // between the run's halves is a pair whose two entries do not carry a
-        // decaying clock alike, and the report says so instead of implying the
-        // ordering holds at any clock. A pair whose ratio held still within the
-        // run's own resolution puts no such caveat on the ordering.
+        // The clock check, done rather than assumed: a pair whose ratio moves between the run's halves
+        // does not carry a decaying clock alike, and the report says so instead of implying the ordering
+        // holds at any clock. A pair that held still within the resolution puts no caveat on the ordering.
         clause.confidence += DriftClause(driftPair, widestDrift, clause.resolution);
     }
 }
@@ -2274,11 +2243,9 @@ void RefineShape(DeviceProbeRanking& clause,
         }
     }
 
-    // The vote decides the name where it ran. The rule is that options a class cannot
-    // separate are settled by which was fastest in most runs, so the row the vote named
-    // is the default and the row this shape's own figures put first is the record of what
-    // the shorter protocol said. The name fixed above stands only where no vote was
-    // taken, which is what keeps a report from naming nothing.
+    // The vote decides the name where it ran: options a class cannot separate are settled by which was
+    // fastest in most runs, so the row the vote named is the default and the row this shape's own
+    // figures put first is the record of the shorter protocol. The name above stands only with no vote.
     const bool voted = !stage.winner.empty();
 
     if (voted)
@@ -2716,11 +2683,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     std::vector<std::vector<double>> roundAtCount;
     std::vector<std::vector<double>> roundAtPairCount;
 
-    // The degree tables, made resident before any row is timed. One upload serves every entry of
-    // this surface and the device holds it for the whole run, so it is one call and it is host work
-    // outside every timed region. A device that will not hold them measures nothing: the refusal is
-    // carried with the library's own answer, and every row stands as producing no figure rather
-    // than as costing what tables nobody uploaded would cost.
+    // The degree tables, made resident before any row is timed: one upload serves every entry of this
+    // surface, host work outside every timed region. A device that will not hold them measures nothing,
+    // and every row then stands as producing no figure rather than as costing what no table would.
     const bool tablesResident = TablesAreResident(handle);
 
     report.tablesResident = tablesResident;
@@ -2775,19 +2740,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         return report;
     }
 
-    // --- The device-side launch floor, as the diagnostic it is ---------------
-    //
-    // A kernel launched the same way that does no Boys arithmetic at all gives the cheapest launch
-    // this route can make, and the report states it per launch and as a fraction of the fastest
-    // row, so a run whose workload was too small says so instead of quietly ranking the launcher.
-    //
-    // **It is not what the figures have taken out of them.** An entry's kernel needs registers and
-    // an occupancy ramp an empty kernel never pays, so the floor is a lower bound on an entry's own
-    // launch cost and subtracting it would take out part of the term. What comes out of a figure is
-    // the entry's own launch term, fixed by that entry's readings at the two counts below.
-    //
-    // So a floor that cannot be read costs this run its diagnostic and not its figures: the
-    // measurement continues and the control says the floor was not established.
+    // A kernel launched the same way that does no Boys arithmetic gives the cheapest launch this
+    // route can make, reported per launch and as a fraction of the fastest row. It is NOT what the
+    // figures have taken out of them: an entry's kernel needs registers and an occupancy ramp an
+    // empty kernel never pays, so subtracting it would take out part of the term.
     bool floorTimed = false;
 
     {
@@ -2806,27 +2762,16 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             report.control.nsPerLaunchFloor = 0.0;
         }
 
-        // A floor of zero is a floor this run did not establish, whatever the
-        // timer said: it is the same reading the report prints as "could not be
-        // timed", and it is read here from the one value both sites print so that
-        // no line of this report can call the floor timed while another calls it
-        // missing. A region whose device time rounds away at this repetition count
-        // reads as zero and is reported as no reading rather than as a free launch.
+        // A floor of zero is a floor this run did not establish, whatever the timer said: it is read here
+        // from the one value both sites print, so no line can call the floor timed while another calls it
+        // missing. A region whose device time rounds away reads as no reading rather than a free launch.
         floorTimed = report.control.nsPerLaunchFloor > 0.0;
     }
 
-    // --- Passes --------------------------------------------------------------
-    //
     // Every pass is run and every pass is used; what the canary said beside one is reported with it
-    // and decides nothing.
-    //
-    // The visit order is shuffled once per round from the run's own seed. A fixed order would put
-    // the same entry first in every round, and whatever a position in the round is worth - the first
-    // launch touching a table the others then find warm - would enter that entry's ratio as though
-    // it were the entry's own cost. The seed keeps a run reproducible.
-    //
-    // Every row of a round is timed with the same resident tables, which is what makes the two rows
-    // of any comparison this report makes a comparison of one arithmetic.
+    // and decides nothing. The visit order is shuffled once per round from the run's own seed, so a
+    // position in the round does not enter an entry's ratio as though it were its own cost, and every
+    // row of a round is timed with the same resident tables.
     std::mt19937_64 shuffle(clamped.seed);
     std::vector<std::size_t> visit(report.measurements.size());
 
@@ -2835,11 +2780,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         visit[slot] = slot;
     }
 
-    // How many rounds of the run a launched row's own two readings left no
-    // positive launch term in, so that no figure could be extrapolated for it. A
-    // row whose every round did is a row this workload cannot measure at these
-    // counts, and the count is what tells that apart from a row that was simply
-    // never timed.
+    // How many rounds of the run a launched row's own two readings left no positive launch term in,
+    // so that no figure could be extrapolated for it: a row whose every round did is one this
+    // workload cannot measure at these counts, which the count tells apart from a row never timed.
     std::vector<int> unresolvedRounds(report.measurements.size(), 0);
 
     // How many rounds of the run both counts were actually read in. It is what
@@ -2912,13 +2855,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             // rounds instead of always on one.
             const bool baselineFirst = (round % 2) == 1;
 
-            // One timed entry reduced to its own reading at the count it was taken
-            // at, in cost per argument: a launched entry is its region, an in-kernel
-            // entry the difference between the region that held the call and the one
-            // that did not, formed inside the round both halves were timed in. Both
-            // halves are the same caller kernel launched the same number of times on
-            // the same grid, so the per-launch cost cancels in the difference
-            // exactly, whatever the count.
+            // One timed entry reduced to its own reading at the count it was taken at, in cost per argument:
+            // a launched entry is its region, an in-kernel entry the difference between the region that held
+            // the call and the one that did not, both halves being the same kernel launched the same number of
+            // times on the same grid, so the per-launch cost cancels.
             const auto Reading = [&](const TimedEntry& timed, std::size_t count) {
                 const double with = PerArgument(timed.withMs, clamped.repetitions, count);
 
@@ -2941,11 +2881,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                 const std::size_t index = visit[local];
                 const EntryInfo& info = entries[index];
 
-                // The row's own two readings, in this round and at both counts,
-                // timed adjacently so that both sit under one clock and one workload
-                // state. One reading alone cannot say how much of it is the launch;
-                // the two together can, without an empty kernel standing in for what
-                // this entry's kernel costs to start.
+                // The row's own two readings, in this round and at both counts, timed adjacently so both sit under
+                // one clock and one workload state: one reading alone cannot say how much of it is the launch, and
+                // the two together can without an empty kernel standing in for this entry's kernel cost.
                 const TimedEntry atCount =
                     TimeEntry(info, base, clamped.repetitions, baselineFirst);
                 const TimedEntry atPair =
@@ -2975,11 +2913,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
                 if (atCount.subtracted)
                 {
-                    // An in-kernel row: the difference came out at or below zero
-                    // in this round, which is the entry's arithmetic inside the
-                    // noise of its own baseline rather than a negative cost. The
-                    // cell is held at zero and the fold reads that as the row's
-                    // subtraction not having resolved at this workload.
+                    // An in-kernel row: the difference came out at or below zero in this round, which is the entry's
+                    // arithmetic inside the noise of its own baseline rather than a negative cost. The cell is held at
+                    // zero and the fold reads that as the row's subtraction not having resolved at this workload.
                     row[index] = std::max(0.0, extrapolated);
                     baseline[index] =
                         PerArgument(atCount.withoutMs, clamped.repetitions, clamped.count);
@@ -2988,13 +2924,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
                 if (!(extrapolated > 0.0))
                 {
-                    // A launched row whose two readings left no positive launch
-                    // term to take out: the pair-count reading was not the
-                    // cheaper of the two, so the asymptote is at or below zero
-                    // and this round produced no figure for the row. The cell is
-                    // left infinite and counted, and a row whose every round did
-                    // this is set aside by name below rather than printed at a
-                    // zero that reads as a free call or at a negative one.
+                    // A launched row whose two readings left no positive launch term to take out: the pair-count
+                    // reading was not the cheaper of the two, so the asymptote is at or below zero and this round
+                    // produced no figure. The cell is left infinite and counted, and a row whose every round did this
+                    // is set aside by name rather than printed at a zero that reads as a free call.
                     ++unresolvedRounds[index];
                     continue;
                 }
@@ -3053,17 +2986,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
     report.pairedRounds = static_cast<int>(roundCost.size());
 
-    // --- Fold the rounds into figures ---------------------------------------
-    //
-    // Every figure below is an aggregate of ratios taken inside a round of the table above, which
-    // is what makes it a paired comparison: two cells of one round were timed under one clock. The
-    // statistic a pair is placed by is a lower quartile - see QuantileOf and kStatisticQuantile -
-    // and a row's ratio to the reference is read at the middle (\c kFigureQuantile), so the cost is
-    // the reference entry's own lower-quartile figure scaled by that ratio.
-    //
-    // Every row is folded against the one anchor: the reference entry's own figure, which every row
-    // of the run was timed beside, so a ratio is always between two rows measured under one
-    // arithmetic.
+    // Every figure below is an aggregate of ratios taken inside a round of the table above, which is
+    // what makes it a paired comparison: two cells of one round were timed under one clock. The pair
+    // statistic is a lower quartile and a row's ratio to the reference is read at the middle, so the
+    // cost is the reference's own lower-quartile figure scaled by that ratio.
     if (!roundCost.empty())
     {
         const std::size_t reference = referenceAt;
@@ -3107,11 +3033,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
                 ratios.push_back(cost / anchor);
 
-                // The two readings the cell was formed from, on the same rounds
-                // and against the same anchor as the cell itself: the report
-                // prints them beside the figure so that what the extrapolation
-                // took out is the difference between three columns of one table
-                // rather than a number a reader has to take on trust.
+                // The two readings the cell was formed from, on the same rounds and against the same anchor: the
+                // report prints them beside the figure so that what the extrapolation took out is the difference
+                // between three columns of one table rather than a number a reader has to take on trust.
                 if (std::isfinite(roundAtCount[round][index]) &&
                     std::isfinite(roundAtPairCount[round][index]))
                 {
@@ -3119,14 +3043,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                     seconds.push_back(roundAtPairCount[round][index] / anchor);
                 }
 
-                // The peak column is the entry's own fastest single round, and a
-                // round whose cell is zero has no cost in it: for a subtracted row
-                // that cell is the floor a difference which did not clear its own
-                // baseline was held at, so taking it as the peak would print the
-                // instrument's floor as the entry's best round. The peak is the
-                // fastest round that produced a figure, which for a launched row is
-                // every round of the run. Left infinite when no round did, and the
-                // table prints a dash for that.
+                // The peak column is the entry's own fastest single round, and a round whose cell is zero has no
+                // cost in it: for a subtracted row that cell is the floor a difference which did not clear its own
+                // baseline was held at, so taking it would print the instrument's floor as the entry's best round.
                 if (cost > 0.0)
                 {
                     peak = std::min(peak, cost);
@@ -3147,12 +3066,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
             if (ratios.size() < 2 || referenceNs <= 0.0)
             {
-                // A launched row whose every round left no positive launch term has
-                // no figure at all, and is named as that wherever the report lists
-                // what a shape could not place: a row that was never timed and one
-                // the two readings could not be extrapolated from are different
-                // facts about the run, and only the second is answered by raising
-                // the counts.
+                // A launched row whose every round left no positive launch term has no figure at all, named where
+                // the report lists what a shape could not place: a row never timed and one the readings could not
+                // be extrapolated from are different facts, and only the second is answered by raising the counts.
                 measurement.extrapolationUnresolved =
                     !entries[index].inKernel && readRounds[index] > 0 &&
                     unresolvedRounds[index] == readRounds[index];
@@ -3174,19 +3090,17 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
             measurement.nsPerArgumentBaseline = QuantileOf(baselines, kStatisticQuantile);
             measurement.spread =
                 measurement.ratioLo > 0.0 ? measurement.ratioHi / measurement.ratioLo : 1.0;
-            // A launched row is not a subtraction and always carries its figure. An
-            // in-kernel row carries one only when the difference it was reduced to
-            // stands above its own baseline in the middle half of the run; a row
-            // whose figure is the zero the max() above floors it at is the row's
-            // arithmetic sitting inside its kernel's traffic at this workload.
+            // Whether the subtraction this row is came out of its own noise: an in-kernel row's difference is
+            // formed between two halves that both carry the run's clock, and a difference that is not positive
+            // at its lower quartile was not resolved, so the column reads unresolved and the class sets it aside.
             measurement.subtractionResolved =
-                !entries[index].inKernel || measurement.nsPerArgument > 0.0;
+                !entries[index].inKernel ||
+                (measurement.nsPerArgument > 0.0 && measurement.nsPerArgumentAtCount > 0.0 &&
+                 measurement.nsPerArgumentAtPairCount > 0.0);
 
-            // How far the entry's ratio to the reference moved between the run's
-            // halves. Zero means the entry and the reference kept pace as the clock
-            // moved, which is what a ratio that is genuinely the entry's own cost
-            // looks like; a value away from zero says the two do not carry the clock
-            // alike, and the report says so where it prints this entry.
+            // How far the entry's ratio to the reference moved between the run's halves: zero means the two
+            // kept pace as the clock moved, and a value away from zero says they do not carry the clock alike,
+            // which the report states where it prints this entry.
             const double firstHalf = MedianOf(early);
             const double secondHalf = MedianOf(late);
 
@@ -3263,23 +3177,14 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         (void)BoysCudaProbeSynchronize();
     }
 
-    // --- The classes, one per precision and question shape -------------------
-    //
-    // After the controls, and run to a fixed point: every row a class would recommend goes through
-    // the repetition control first, and a row that does not agree sets the class back to the next
-    // one.
-    //
-    // The class set comes from the rows this run was asked for rather than from the rows that
-    // happened to measure, so a class whose every row failed to measure is still reported with its
-    // reason. It is walked over the measurement table, which is the option table this build serves,
-    // in the book's own order.
-    /// What one class's conclusion is a function of, and the conclusion it had.
-    ///
-    /// A class is concluded from the rows it holds and from what this run's checks
-    /// have said about them, and from nothing else, so a class whose rows and flags
-    /// are unchanged reaches the same conclusion. The convergence loop below names
-    /// one row at a time, and without this it would re-run every class's refinement
-    /// — the expensive part of a conclusion — once per named row.
+        /// What one class's conclusion is a function of, and the conclusion it had.
+        ///
+        /// A class is concluded from the rows it holds and from what this run's checks have said about
+        /// them, and from nothing else, so a class whose rows and flags are unchanged reaches the same
+        /// conclusion. The convergence loop below names one row at a time, and without this it would
+        /// re-run every class's refinement - the expensive part of a conclusion - once per named row.
+        /// The class set comes from the rows this run was asked for, so a class whose every row failed
+        /// to measure is still reported with its reason.
     struct ClassMemo {
         std::string key;
         std::vector<std::size_t> live;
@@ -3389,11 +3294,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
             Conclude(ranking, live, columns, roundCost, report.pairedRounds);
 
-            // A class of a run whose tables the device would not hold measured
-            // nothing, and that is why its rows produced no figure: the residency
-            // failure is put in front of whatever the conclusion wrote, because a
-            // reader who expected the entry here would otherwise take its absence for
-            // a fact about the arithmetic rather than about this device and this run.
+            // A class of a run whose tables the device would not hold measured nothing, and that is why its
+            // rows produced no figure: the residency failure is put in front of whatever the conclusion wrote,
+            // because a reader who expected the entry would take its absence for a fact about the arithmetic.
             if (!tablesResident)
             {
                 ranking.reason = Text("the device would not hold the degree tables, so no entry of "
@@ -3403,11 +3306,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                                           "could not hold");
             }
 
-            // A launched row the two readings could not be extrapolated from was
-            // not placed and is not silently absent either: a reader who expected
-            // it in the table would take its absence for a build fact. It is named
-            // here with what its own readings did, beside the rows Conclude set
-            // aside for its own reasons.
+            // A launched row the two readings could not be extrapolated from was not placed and is not
+            // silently absent either - a reader who expected it in the table would take its absence for a build
+            // fact - so it is named here with what its own readings did.
             for (const DeviceProbeMeasurement& measurement : report.measurements)
             {
                 if (!measurement.extrapolationUnresolved ||
@@ -3430,11 +3331,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                     static_cast<int>(pairCount)));
             }
 
-            // A class whose own rounds could not place a rival behind the leader is
-            // not left without an answer: the entries they could not separate are
-            // re-run on their own at a longer protocol and voted on, and the entry
-            // the vote names is the class's recommendation with the way it was
-            // reached recorded beside it.
+            // A class whose own rounds could not place a rival behind the leader is not left without an answer:
+            // the entries they could not separate are re-run on their own at a longer protocol and voted on,
+            // and the entry the vote names is the recommendation with the way it was reached recorded beside it.
             if (!ranking.tiedEntries.empty())
             {
                 RefineShape(ranking, live, entries, base, pairBase, clamped, handle);
@@ -3488,12 +3387,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
 
         DeviceProbeRepetitionControl outcome;
 
-        // The floor belongs to the run, not to this control: the run timed it once,
-        // under its own protocol, before any row was put through a check, and the
-        // assignment below replaces the whole struct. Carrying it in here is what
-        // keeps one report from saying a floor could not be timed while a line of it
-        // prints the floor as a measured zero - the zero this struct's own default
-        // would put in the note.
+        // The floor belongs to the run, not to this control: the run timed it once before any row was put
+        // through a check, and the assignment below replaces the whole struct. Carrying it in here keeps one
+        // report from saying a floor could not be timed while a line prints the floor as a measured zero.
         if (printed != nullptr)
         {
             outcome.nsPerLaunchFloor = printed->nsPerLaunchFloor;
@@ -3519,30 +3415,19 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         return true;
     };
 
-    // --- The controls --------------------------------------------------------
-    //
-    // One check per route, both under the protocol the figures were taken under.
-    // The check is that one entry timed at two very different repetition counts
-    // gives the same per-argument figure: a cost that repeats with the launch
-    // rather than with the call is amortised over a different number of launches
-    // at each count, so a timer that had absorbed one would not agree with
-    // itself. The launched route carries the device-side floor beside its
-    // verdict as well — a kernel launched the same way that does no Boys
-    // arithmetic at all — because that route's figure has a launch inside it by
-    // construction; the floor says how much of the row's cost a bare launch
-    // accounts for, and it is a diagnostic rather than what was taken out.
+    // One check per route, both under the protocol the figures were taken under: one entry timed at two
+    // very different repetition counts must give the same per-argument figure, since a cost that
+    // repeats with the launch rather than with the call would be amortised differently at each count.
+    // The launched route carries the device-side floor beside its verdict as a diagnostic.
     {
         DeviceProbeMeasurement* fastestLaunched = nullptr;
         DeviceProbeMeasurement* fastestSubtracted = nullptr;
 
         for (DeviceProbeMeasurement& measurement : report.measurements)
         {
-            // The two printed controls are taken over the row a default is read
-            // from: that is the row whose figure a reader is most likely to quote,
-            // and running the check on some other row instead would leave the
-            // default's own figure uncontrolled. Every other row a class names is
-            // checked in its own turn by the fixed-point loop below, and its class
-            // says whether it agreed.
+            // The two printed controls are taken over the row a default is read from: that is the row a reader
+            // is most likely to quote, and running the check on some other row would leave the default's own
+            // figure uncontrolled. Every other row is checked by the fixed-point loop below.
             if (!measurement.measured)
             {
                 continue;
@@ -3584,14 +3469,9 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
                                          ? report.control.nsPerLaunchFloor / perCall
                                          : 0.0;
 
-                // The floor is the per-launch cost of a kernel that does no
-                // arithmetic, so it holds the device's launch and the host's
-                // submission of it together, and on a platform whose submission is
-                // expensive that is the larger part. **It is not the entry's own
-                // launch cost and not what came out of the figures**: an entry's
-                // kernel needs registers and an occupancy ramp the empty one never
-                // pays, so this is the cheapest launch the route can make, and a row
-                // whose whole figure is at or below it is launch-bound.
+                // The floor is the per-launch cost of a kernel that does no arithmetic, so it holds the device's
+                // launch and the host's submission of it together. It is not the entry's own launch cost: an
+                // entry's kernel needs registers and an occupancy ramp the empty one never pays.
                 const std::string floorClause =
                     !floorTimed
                         ? Text("the device-side launch floor - a kernel launched the same way that "
@@ -3663,18 +3543,10 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         }
     }
 
-    // --- The conclusions, to a fixed point -----------------------------------
-    //
-    // Every row the report names as a class's fastest or as its recommendation is
-    // put through the repetition control before the report ships, and a row that
-    // does not agree is set aside and the class falls to the next. Looped,
-    // because setting a row aside can name a new leader, which then has to be
-    // checked in its turn. Bounded by the number of rows: each round checks at
-    // least one row not checked before, and the loop leaves when there is none.
-    //
-    // The row is resolved by its own index in the option table and not by its
-    // name: the run's measurement table holds one row per entry, and a class
-    // names the row it concluded on.
+    // Every row the report names as a class's fastest or as its recommendation is put through the
+    // repetition control before the report ships, and a row that does not agree is set aside and the
+    // class falls to the next. Looped, because setting a row aside can name a new leader, and bounded
+    // by the number of rows. The row is resolved by its index in the option table, not by its name.
     for (;;)
     {
         ConcludeClasses();
@@ -4153,11 +4025,9 @@ void AppendOptionSpace(std::string& text, const DeviceProbeReport& report) {
                      option.boundForm);
     }
 
-    // The other direction: a member this run carries that the library's report is not
-    // under. The entry is what the library's table names, so the member's entry is what
-    // is looked for — its own name carries the form's segment where the row does not run
-    // the build's default form, and is deliberately not a name the library answers for.
-    // A name is looked for once: an entry missing from the report is one fact.
+    // The other direction: a member this run carries that the library's report is not under. The entry
+    // is what the library's table names - its own name carries the form's segment where the row does
+    // not run the build's default form - and a name is looked for once, one fact per missing entry.
     std::vector<std::string> unreported;
 
     for (const DeviceProbeMeasurement& place : report.measurements)
@@ -4477,12 +4347,9 @@ static_assert(PackingCellIsNamed<DevicePacking::kLadder>() &&
               "an enumerator of DevicePacking names no cell: name it in SeamPackCell "
               "(src/boys_cuda_probe.cpp)");
 
-// The one row list this run read, expanded into the table in force's own rows: each entry keeps
-// the class it carries and the row as the tokens that class's own file wrote it with - cell for
-// cell and stringized rather than re-derived, so a row of the committed file or of another
-// replacement reaches the file this run writes exactly as it arrived. The class is kept beside
-// the row because the base is written over and not beside: a class this run measured is carried
-// by this run's own row, and the base's row for it is left out below.
+// The one row list this run read, expanded into the table in force's own rows: each entry keeps the
+// class it carries and the row as the tokens that class's file wrote it with, so a row of the
+// committed file reaches the file this run writes exactly as it arrived.
 #define BOYS_DEVICE_PROBE_SEAM_ROW(device, precision, shape, route, scheme, budget, pack,          \
                                    granularity, division, exp)                                     \
     {#device, #precision, #shape,                                                                  \
@@ -4514,17 +4381,44 @@ const SeamRow kTableRows[] = {{"", "", "", ""}};
 
 } // namespace
 
+/// The classes of the device half of the seam, as the two axes the table is keyed on: the four
+/// precisions this lane's entries are built at by the three questions the probe ranks, in the
+/// table's own order. One statement of the twelve, read by the emitter and by the publisher
+/// alike, so a class this list gains or loses is a class both write.
+constexpr DeviceOptionPrecision kDevicePrecisions[] = {DeviceOptionPrecision::kFp64,
+                                                       DeviceOptionPrecision::kFp32,
+                                                       DeviceOptionPrecision::kFp16,
+                                                       DeviceOptionPrecision::kBf16};
+constexpr DeviceOptionQuestion kDeviceQuestions[] = {DeviceOptionQuestion::kSingle,
+                                                     DeviceOptionQuestion::kAllOrders,
+                                                     DeviceOptionQuestion::kAllN};
+
+/// Whether a class's fastest group holds the row the class named: the row its own figures put
+/// first, or one of the rows its rounds could not place behind that one. Nothing else in a
+/// ranking is a measurement of a row that no ordering placed first, so this is the whole of what
+/// such a row may claim - and it is one predicate rather than two, read by the emitter for the
+/// marker it writes and by the publisher for the class it places, because the claim and the check
+/// on it have to be the same statement.
+bool InFastestGroup(const DeviceProbeRanking& ranking, const std::string& name) {
+    if (name == ranking.fastestOverall)
+    {
+        return true;
+    }
+
+    for (const std::string& tied : ranking.inseparable)
+    {
+        if (name == tied)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report,
                                                  const std::string& takenAt) {
     DeviceDefaultsEmission emission;
-
-    constexpr DeviceOptionPrecision kPrecisions[] = {DeviceOptionPrecision::kFp64,
-                                                     DeviceOptionPrecision::kFp32,
-                                                     DeviceOptionPrecision::kFp16,
-                                                     DeviceOptionPrecision::kBf16};
-    constexpr DeviceOptionQuestion kQuestions[] = {DeviceOptionQuestion::kSingle,
-                                                   DeviceOptionQuestion::kAllOrders,
-                                                   DeviceOptionQuestion::kAllN};
 
     std::string rows;
     bool measured = false;
@@ -4551,25 +4445,21 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
         return false;
     };
 
-    // One row per class the probe ranks: the four device precisions by the three questions, in
-    // the table's own order. A class is a (device, precision, shape) triple, so the twelve rows
-    // below are the twelve classes of the device half of the seam - one class per shape would be
-    // the fp32 lane's three alone, and one class for the half lane's two stores would be a row
-    // whose entry was measured at the other format's store.
-    for (const DeviceOptionPrecision precision : kPrecisions)
+    // One row per class the probe ranks: the four device precisions by the three questions, in the
+    // table's own order. A class is a (device, precision, shape) triple, so the twelve rows below are
+    // the twelve classes of the device half of the seam.
+    for (const DeviceOptionPrecision precision : kDevicePrecisions)
     {
-        for (const DeviceOptionQuestion question : kQuestions)
+        for (const DeviceOptionQuestion question : kDeviceQuestions)
         {
             const char* const precisionCell = SeamPrecisionCell(precision);
             const std::string klass = Text("%s %s", precisionCell, QuestionName(question));
             const char* const shapeCell = SeamShapeCell(question);
             bool carried = false;
 
-            // The table in force is the BASE this run writes over and not a fence: a class it
-            // already carries is a class this run replaces, and one it carries that this run did
-            // not measure is written back verbatim by the header's own list. So the check here
-            // decides the marker and the list the row is reported in, never whether the row is
-            // written.
+            // The table in force is the BASE this run writes over and not a fence: a class it already carries
+            // is one this run replaces, and one it carries that this run did not measure is written back
+            // verbatim. So the check here decides the marker and the list, never whether the row is written.
             for (const SeamRow& known : kTableRows)
             {
                 carried = carried || (std::strcmp(known.device, "kDevice") == 0 &&
@@ -4619,11 +4509,9 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
-            // The row the class named: this run's own measurement of it, which is the row the
-            // ranking ordered and the row the figure beside this seam row was taken at. The name
-            // is looked up in the run's own table and not in the library's, because a winner at a
-            // form the build does not default to carries that form's segment (ProbeRowName) and is
-            // deliberately not a name the library's table answers for.
+            // The row the class named: this run's own measurement of it, the row the ranking ordered and the
+            // figure beside this seam row was taken at. The name is looked up in the run's own table and not
+            // the library's, because a winner at a non-default form carries that form's segment.
             const DeviceProbeMeasurement* won = nullptr;
 
             for (const DeviceProbeMeasurement& candidate : report.measurements)
@@ -4663,16 +4551,39 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
-            // A winner reached by being the last entry left standing is a choice and not a
-            // measurement: the seam's own header asks for the two markers to differ, and a walkover
-            // recorded as a win would be a default nobody measured.
-            const bool walkover = founder->ranking.defaultHow == DeviceProbeDefaultHow::kOnlyEntry;
+            // What a row of this class may claim, decided by how its winner was reached: an ordering placed
+            // every rival behind it and the row is the winner of a comparison; a vote over entries the class
+            // could not separate establishes less, and something; a walkover establishes neither. Three markers.
+            const DeviceProbeDefaultHow reached = founder->ranking.defaultHow;
+            const bool walkover = reached == DeviceProbeDefaultHow::kOnlyEntry;
+            const bool ordered = reached == DeviceProbeDefaultHow::kOrdered;
 
-            // The packing cell is the entry's own reading of region A, translated once here
-            // (SeamPackCell). An entry that states none is not a row this report can place:
-            // DeviceEntryAxesOf answers kUnstated only for an entry its switch has not been taught,
-            // which that header's own assertion turns into a compile error, so this arm is the
-            // reading of a value that cannot arrive rather than a case a run reaches.
+            // The class's fastest group - the row its own figures put first and every row the run
+            // could not place behind that one - is the whole of what a row reached without an
+            // ordering may claim, so a row outside it is refused rather than written with a
+            // marker no class of this run would make true of it.
+            if (!ordered && !walkover && !InFastestGroup(founder->ranking, winner))
+            {
+                emission.refused.push_back(
+                    Text("%s: the entry it named, '%s', is neither the fastest row of the class "
+                         "nor one the class could not place behind it, so no marker of this file "
+                         "is true of it%s",
+                         klass.c_str(), winner.c_str(), stands));
+                continue;
+            }
+
+            // The class's own resolution and the size of its fastest group, as the ranking states them: the two
+            // figures a row reached without an ordering is stated with, and the evidence a reader of the file
+            // has for it. Neither is recomputed here.
+            const std::size_t group = founder->ranking.inseparable.size() + 1;
+            const std::string at =
+                founder->ranking.resolution > 0.0
+                    ? Text("the %.2f%% it could order at", 100.0 * founder->ranking.resolution)
+                    : std::string("a resolution it did not measure");
+
+            // The packing cell is the entry's own reading of region A, translated once here (SeamPackCell).
+            // DeviceEntryAxesOf answers kUnstated only for an entry its switch has not been taught, which that
+            // header's own assertion turns into a compile error, so this arm reads a value that cannot arrive.
             const char* const packCell = SeamPackCell(row->packing);
 
             if (packCell == nullptr)
@@ -4684,14 +4595,9 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
-            // The division-form cell is the form the winning row was measured at
-            // (SeamDivisionCell), which is the member's own coordinate and not the entry's field:
-            // the space is one entry crossed with three forms, and the figure this seam row
-            // carries was taken at the form the winner's own row names. Reading
-            // DeviceOptionInfo::division here would write the build's default under a figure
-            // measured at another form. A row stating none is not a row this report can place, for
-            // the reason the packing cell's arm gives: the crossing above reads the axis off
-            // BoysDivisionForms, so this arm reads a value that cannot arrive.
+            // The division-form cell is the form the winning row was measured at (SeamDivisionCell), the
+            // member's own coordinate and not the entry's field: reading DeviceOptionInfo::division here would
+            // write the build's default under a figure measured at another form. A row stating none cannot arrive.
             const char* const formCell = SeamDivisionCell(won->form);
 
             if (formCell == nullptr)
@@ -4703,14 +4609,9 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                 continue;
             }
 
-            // The region-B exponential cell is the entry's own coordinate in the library's table
-            // (SeamExpCell). The member this run varies is the row's own reading, which is why it
-            // is read off the library's row for the winning entry and not off the build's default;
-            // a row of this space that varies no member of the axis carries the table's own
-            // statement for such a row, which is the lane's default member. An entry the table
-            // states no reading for is not a row this report can place, for the reason the two
-            // arms above give: the table states a member on every row it carries, so this arm
-            // reads a value that cannot arrive.
+            // The region-B exponential cell is the entry's own coordinate in the library's table (SeamExpCell),
+            // read off the library's row for the winning entry and not off the build's default. A row of this
+            // space that varies no member of the axis carries the table's own statement for it.
             const char* const expCell = SeamExpCell(row->regionBExp);
 
             if (expCell == nullptr)
@@ -4729,14 +4630,31 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             const char* const replaces =
                 carried ? "; replaces the row the table in force carries" : "";
 
-            rows += walkover
-                        ? Text("    /* a choice, not a measurement: '%s' was the last entry standing "
-                               "in this\n"
-                               "       class, so the row is an answer and not the winner of a "
-                               "comparison%s */\\\n",
-                               winner.c_str(), replaces)
-                        : Text("    /* measured: '%s', reached by %s%s */\\\n", winner.c_str(),
-                               DeviceProbeDefaultHowName(founder->ranking.defaultHow), replaces);
+            // The marker is the claim, and a consumer of the file reads it beside the row. Every line of it is a
+            // complete comment ending in the macro's own continuation, which is what the tool that splices these
+            // rows reads a marker as (tools/splice_default_rows.py): a comment left open across two lines
+            // detaches the provenance from the row.
+            if (ordered)
+            {
+                rows += Text("    /* measured: '%s', reached by ordered; this class's own rounds "
+                             "placed every rival of it behind it%s */\\\n",
+                             winner.c_str(), replaces);
+            } else if (walkover)
+            {
+                rows += Text("    /* a choice, not a measurement: '%s' was the last entry standing "
+                             "in this class */\\\n",
+                             winner.c_str());
+                rows += Text("    /* the row is an answer and not the winner of a comparison%s */\\\n",
+                             replaces);
+            } else
+            {
+                rows += Text("    /* measured: '%s', reached by %s; no entry of this class was "
+                             "measured faster than it */\\\n",
+                             winner.c_str(), DeviceProbeDefaultHowName(reached));
+                rows += Text("    /* the class could not be ordered: its %zu fastest entries could "
+                             "not be separated at %s%s */\\\n",
+                             group, at.c_str(), replaces);
+            }
 
             rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
                          "      %s, %s, %s,\\\n"
@@ -4748,15 +4666,22 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
             measured = measured || !walkover;
             writtenClasses.push_back(SeamClass{precisionCell, shapeCell});
 
+            // The emission's own list says the same thing the marker does, in the same three ways: a class the
+            // run ordered is a measurement of a comparison, a class it could not order is a measurement of what
+            // no entry beat, and a walkover is not a measurement at all.
             const std::string how =
-                Text("reached by %s, a measurement of this class's own runs",
-                     DeviceProbeDefaultHowName(founder->ranking.defaultHow));
+                ordered
+                    ? Text("reached by %s, a measurement of this class's own runs",
+                           DeviceProbeDefaultHowName(reached))
+                : walkover
+                    ? std::string("the last entry standing - written as a choice and not as a "
+                                  "measurement")
+                    : Text("reached by %s; no entry of this class was measured faster than it, and "
+                           "its %zu fastest entries could not be separated at %s",
+                           DeviceProbeDefaultHowName(reached), group, at.c_str());
 
             emission.emitted.push_back(
-                Text("%s: '%s', %s", klass.c_str(), winner.c_str(),
-                     walkover ? "the last entry standing - written as a choice and not as a "
-                                "measurement"
-                              : how.c_str()));
+                Text("%s: '%s', %s", klass.c_str(), winner.c_str(), how.c_str()));
 
             // What this row did to the table in force: a class that file already carries has had its
             // row replaced, and the replacement is listed here so the run's own edits to the shipped
@@ -4823,10 +4748,18 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// default where it varies none. Either cell written from the build's default would put a\n";
     text += "/// figure measured at another member under this row.\n";
     text += "///\n";
-    text += "/// **A row is a measurement only where an ordering placed an entry first.** A class whose\n";
-    text += "/// winner won an ordering carries the measurement marker; one whose winner was the last\n";
-    text += "/// entry standing carries the choice marker. A class this run did not measure keeps the\n";
-    text += "/// row the table in force carries, written back by the list below.\n";
+    text += "/// **A row's marker states what the class's own rounds established, and no more.**\n";
+    text += "/// Three statements are possible and the marker carries the one that is true of its\n";
+    text += "/// row. A class an ordering placed an entry first in carries the marker of a\n";
+    text += "/// comparison: every rival of the row was measured slower than it. A class whose own\n";
+    text += "/// rounds could not separate its top entries carries a marker of what WAS measured -\n";
+    text += "/// that no entry of the class was measured faster than the row named - together with\n";
+    text += "/// the size of that top group and the ratio band the class could order inside, because\n";
+    text += "/// which member of the group is fastest is what the run did not establish. A class\n";
+    text += "/// holding one entry, or one the run's own checks left alone, carries a choice and not\n";
+    text += "/// a measurement. A row whose class established none of the three is refused rather\n";
+    text += "/// than written. A class this run did not measure keeps the row the table in force\n";
+    text += "/// carries, written back by the list below.\n";
     text += "\n";
     text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
     text += "/// values, which is what this build compiled before this file existed. Five are the\n";
@@ -4891,6 +4824,572 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
 #undef BOYS_DEVICE_PROBE_STRING
 #undef BOYS_DEVICE_PROBE_SEAM_ROW
 
+namespace {
+
+/// The report's lines, with the carriage return a console redirect may leave at the end of one
+/// taken off: the report's own text is written with '\n' and this reads it back from a file, and
+/// a reader that kept the '\r' would match none of the markers below.
+std::vector<std::string> ReportLines(const std::string& text) {
+    std::vector<std::string> lines;
+    std::size_t at = 0;
+
+    for (;;)
+    {
+        const std::size_t end = text.find('\n', at);
+        std::string line = text.substr(at, end == std::string::npos ? end : end - at);
+
+        if (!line.empty() && line.back() == '\r')
+        {
+            line.pop_back();
+        }
+
+        lines.push_back(std::move(line));
+
+        if (end == std::string::npos)
+        {
+            return lines;
+        }
+
+        at = end + 1;
+    }
+}
+
+/// Whether a line opens with the report's own marker for what it states. A marker is the
+/// report's wording and not a name invented here, so a report that says something else is
+/// refused rather than matched to the nearest marker.
+bool OpensWith(const std::string& line, const char* marker) {
+    return line.rfind(marker, 0) == 0;
+}
+
+/// One class's block of the report: the lines from the `class` heading for it to the next such
+/// heading, which is where one class ends and the next begins. The report's own layout, read as
+/// it writes it rather than by counting lines.
+bool ClassBlock(const std::vector<std::string>& lines, const std::string& heading, std::size_t& first,
+                std::size_t& last) {
+    for (std::size_t at = 0; at < lines.size(); ++at)
+    {
+        if (lines[at] != heading)
+        {
+            continue;
+        }
+
+        first = at + 1;
+        last = lines.size();
+
+        for (std::size_t next = first; next < lines.size(); ++next)
+        {
+            if (OpensWith(lines[next], "class "))
+            {
+                last = next;
+                break;
+            }
+        }
+
+        return true;
+    }
+
+    return false;
+}
+
+/// Every line of a block that states what \p marker introduces, as the value the report writes
+/// after the marker. Zero, one and more than one of them are three different facts to a reader,
+/// so the count is the caller's to read and this does not collapse them.
+std::vector<std::string> StatedValues(const std::vector<std::string>& lines, std::size_t first,
+                                      std::size_t last, const char* marker) {
+    std::vector<std::string> values;
+
+    for (std::size_t at = first; at < last; ++at)
+    {
+        if (OpensWith(lines[at], marker))
+        {
+            values.push_back(lines[at].substr(std::strlen(marker)));
+        }
+    }
+
+    return values;
+}
+
+/// Several statements of what one class is wrong with, as one line.
+std::string SemicolonJoined(const std::vector<std::string>& parts) {
+    std::string joined;
+
+    for (const std::string& part : parts)
+    {
+        if (!joined.empty())
+        {
+            joined += "; ";
+        }
+
+        joined += part;
+    }
+
+    return joined;
+}
+
+/// The library's own row and division form a name the report prints belongs to.
+///
+/// The name is not taken apart: the grammar that produced it is \c ProbeRowName's, which is the
+/// one statement of what a name is, so a name is resolved by running that function over the
+/// library's own option table and form axis rather than by looking for a form's segment at the
+/// end of it. A name no row of that cross prints is a name this build does not serve, which is a
+/// refusal and not a row.
+bool RowNamed(const std::string& name, DeviceEntry& entry, DivisionForm& form) {
+    for (const DeviceOptionInfo& option : BoysDeviceOptions())
+    {
+        for (const DivisionFormInfo& member : BoysDivisionForms())
+        {
+            if (ProbeRowName(option, member.form) != name)
+            {
+                continue;
+            }
+
+            entry = option.entry;
+            form = member.form;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// The way the report says an entry was reached, as the one token it prints for it.
+///
+/// A class the refinement stage decided states the way on its `reason:` line, and it states it in
+/// the enumeration's own names (\c DeviceProbeDefaultHowName), so a token this reads is the name
+/// a writer would have written. Empty where the report states none: a class the stage never
+/// reached states its way on the `reached by:` line instead, and one whose ranking carries a
+/// value outside the enumeration states none at all.
+std::string StatedHowToken(const std::vector<std::string>& lines, std::size_t first,
+                           std::size_t last) {
+    const char* const kMarker = "named with the way it was reached - ";
+
+    for (const std::string& reason : StatedValues(lines, first, last, "    reason: "))
+    {
+        const std::size_t at = reason.find(kMarker);
+
+        if (at == std::string::npos)
+        {
+            continue;
+        }
+
+        std::string token = reason.substr(at + std::strlen(kMarker));
+        const std::size_t stop = token.find('.');
+
+        if (stop != std::string::npos)
+        {
+            token.erase(stop);
+        }
+
+        return token;
+    }
+
+    return std::string();
+}
+
+/// The card the report names, as the report's own `device:` line states it, or empty where the
+/// report names none. A row is a figure taken on one card, and the file a report is published
+/// into says which.
+std::string StatedCard(const std::vector<std::string>& lines) {
+    for (const std::string& line : lines)
+    {
+        if (OpensWith(line, "  device: "))
+        {
+            return line.substr(std::strlen("  device: "));
+        }
+    }
+
+    return std::string();
+}
+
+/// The run the report came from, as the report's own opening line states it, or empty where the
+/// report carries none.
+std::string StatedRunStart(const std::vector<std::string>& lines) {
+    for (const std::string& line : lines)
+    {
+        if (OpensWith(line, "started "))
+        {
+            return line.substr(std::strlen("started "));
+        }
+    }
+
+    return std::string();
+}
+
+/// The way one class's entry was reached, as the report states it, and where the report states
+/// none, the sentence saying so. One value and not two, because a class whose way is unstated is
+/// a class no row is written for.
+struct StatedHow {
+    DeviceProbeDefaultHow how = DeviceProbeDefaultHow::kNone;
+    std::string refusal; ///< empty where the report states a way
+};
+
+/// The report's own two statements of how a class's entry was reached, read together.
+///
+/// The report states it in one of two places and each place carries the arms the other does not:
+/// the `reached by:` line names the shape's own ordering and the lone-entry case, and a class the
+/// refinement stage decided carries that line's statement that the way is not one its vocabulary
+/// names, with the way itself on the `reason:` line. So both are read, and the two have to agree:
+/// a report whose two lines name different ways is refused rather than placed under either.
+StatedHow HowStatedBy(const std::vector<std::string>& lines, std::size_t first, std::size_t last) {
+    StatedHow stated;
+
+    const std::vector<std::string> reached = StatedValues(lines, first, last, "  reached by: ");
+
+    if (reached.size() != 1)
+    {
+        stated.refusal = reached.empty() ? "the report states no 'reached by:' line for it"
+                                         : "the report states more than one 'reached by:' line for it";
+        return stated;
+    }
+
+    const std::string& line = reached.front();
+    const std::string token = StatedHowToken(lines, first, last);
+
+    // The arms the line has, as the report's own words: the shape's own ordering, the shape holding one
+    // entry, the shape holding no rival this run could place, the refinement stage's block, and the
+    // line's own statement that the ranking carries a value its vocabulary does not name.
+    struct Arm {
+        const char* opens;         ///< how the report's line opens
+        DeviceProbeDefaultHow how; ///< the way it names, where it names one
+        bool namesIt;              ///< whether the line is itself the statement of the way
+    };
+
+    const Arm kArms[] = {
+        {"a measured ordering on this shape's own rounds", DeviceProbeDefaultHow::kOrdered, true},
+        {"the shape holding one entry.", DeviceProbeDefaultHow::kOnlyEntry, true},
+        {"the shape holding no rival this run could place.", DeviceProbeDefaultHow::kOnlyEntry, true},
+        {"the refinement stage", DeviceProbeDefaultHow::kNone, false},
+        {"(not a way this revision names)", DeviceProbeDefaultHow::kNone, false},
+    };
+
+    // The one arm that is not a way at all: the shape named no entry, so there is no name for a
+    // row to be written from whatever the class's own lines say elsewhere.
+    if (OpensWith(line, "nothing "))
+    {
+        stated.refusal = "the report says the shape named no entry";
+        return stated;
+    }
+
+    for (const Arm& arm : kArms)
+    {
+        if (!OpensWith(line, arm.opens))
+        {
+            continue;
+        }
+
+        if (arm.namesIt)
+        {
+            if (!token.empty() && token != DeviceProbeDefaultHowName(arm.how))
+            {
+                stated.refusal = Text("the report's 'reached by:' line names '%s' and its "
+                                      "'reason:' line names '%s'; the two lines disagree",
+                                      DeviceProbeDefaultHowName(arm.how), token.c_str());
+                return stated;
+            }
+
+            stated.how = arm.how;
+            return stated;
+        }
+
+        // The way is on the reason line here, and only a way the refinement stage reaches can be:
+        // a report naming one of the two the line names itself has contradicted itself.
+        if (token.empty())
+        {
+            stated.refusal =
+                Text("the report states no way its entry was reached: the 'reached by:' line "
+                     "names none this revision defines and the 'reason:' line names none either");
+            return stated;
+        }
+
+        for (int at = 0; at < static_cast<int>(DeviceProbeDefaultHow::kCount); ++at)
+        {
+            const DeviceProbeDefaultHow candidate = static_cast<DeviceProbeDefaultHow>(at);
+
+            if (token != DeviceProbeDefaultHowName(candidate))
+            {
+                continue;
+            }
+
+            if (candidate != DeviceProbeDefaultHow::kRefined &&
+                candidate != DeviceProbeDefaultHow::kVote &&
+                candidate != DeviceProbeDefaultHow::kChosenAmongEquals)
+            {
+                stated.refusal = Text("the report's 'reached by:' line names no way this revision "
+                                      "defines and its 'reason:' line names '%s'; the two lines "
+                                      "disagree",
+                                      token.c_str());
+                return stated;
+            }
+
+            stated.how = candidate;
+            return stated;
+        }
+
+        stated.refusal = Text("the report names '%s' as the way its entry was reached, and this "
+                              "revision's enumeration defines no way of that name",
+                              token.c_str());
+        return stated;
+    }
+
+    stated.refusal = Text("the report's 'reached by:' line states no way this revision defines: it "
+                          "reads '%s'",
+                          line.c_str());
+    return stated;
+}
+
+/// What one class states about the rows its own rounds could not order: the band it could not
+/// order inside, the rows it lists as ones it left unplaced, and where the block states neither,
+/// the sentence saying why it could not be read.
+struct StatedResolution {
+    double fraction = 0.0;             ///< the band's width as a fraction of a cost
+    std::vector<std::string> unplaced; ///< the rows it left unplaced, as the report states them
+    std::string refusal;               ///< empty where the block could be read
+};
+
+/// The report's own two statements of what a class could not order.
+///
+/// A class that measured a resolution prints it as a percentage of a ratio band, and states one
+/// `not separable:` line per row its own rounds left unplaced against its leader. A class whose
+/// resolution was too short to measure states no percentage, and that is not a fault: the marker
+/// says the same thing either way. Two percentages are: one block states one class, and two bands
+/// would leave a reader unable to tell which of them the row beside them was written under.
+StatedResolution ResolutionStatedBy(const std::vector<std::string>& lines, std::size_t first,
+                                    std::size_t last) {
+    const char* const kBand =
+        "    resolution: entries whose within-round ratio band is narrower than ";
+
+    StatedResolution stated;
+    const std::vector<std::string> bands = StatedValues(lines, first, last, kBand);
+
+    if (bands.size() > 1)
+    {
+        stated.refusal = Text("the report states %zu 'resolution:' lines for it", bands.size());
+        return stated;
+    }
+
+    if (bands.size() == 1)
+    {
+        stated.fraction = std::strtod(bands.front().c_str(), nullptr) / 100.0;
+    }
+
+    stated.unplaced = StatedValues(lines, first, last, "    not separable: ");
+
+    return stated;
+}
+
+} // namespace
+
+DeviceDefaultsPublication PublishDeviceBuildDefaults(const std::string& reportText) {
+    DeviceDefaultsPublication publication;
+
+    const std::vector<std::string> lines = ReportLines(reportText);
+
+    // The card and the run the report names, and not this process's moment: the rows of the file
+    // are that run's, and dating them to their publishing would name a run that measured nothing.
+    const std::string card = StatedCard(lines);
+    const std::string started = StatedRunStart(lines);
+    const std::string takenAt =
+        card.empty() ? started : (started.empty() ? card : card + ", " + started);
+
+    DeviceProbeReport report;
+
+    for (const DeviceOptionPrecision precision : kDevicePrecisions)
+    {
+        for (const DeviceOptionQuestion question : kDeviceQuestions)
+        {
+            const std::string klass = Text("%s %s", SeamPrecisionCell(precision),
+                                           QuestionName(question));
+            const std::string key =
+                Text("%s, %s", PrecisionName(precision), QuestionName(question));
+            std::vector<std::string> faults;
+            std::size_t first = 0;
+            std::size_t last = 0;
+
+            // The heading the report writes for a class is the library's own key for it, so a
+            // report of this revision's classes is read without a name being invented here.
+            if (!ClassBlock(lines, Text("class %s", key.c_str()), first, last))
+            {
+                faults.push_back(Text("the report states no '%s' class", key.c_str()));
+            }
+
+            std::string recommended;
+
+            if (faults.empty())
+            {
+                const std::vector<std::string> named =
+                    StatedValues(lines, first, last, "    recommended entry: ");
+
+                if (named.size() != 1)
+                {
+                    faults.push_back(
+                        named.empty()
+                            ? "the report states no 'recommended entry:' line for it"
+                            : Text("the report states %zu 'recommended entry:' lines for it",
+                                   named.size()));
+                }
+                else
+                {
+                    recommended = named.front();
+                }
+            }
+
+            DeviceProbeDefaultHow how = DeviceProbeDefaultHow::kNone;
+
+            if (faults.empty())
+            {
+                // The verdict the class's own ranking reached, which a row is written from only
+                // where the run recommended one: a block stating CANNOT DETERMINE prints the name
+                // it could not act on beside it, and a row written from that name would be a
+                // default the run declined to name.
+                const std::vector<std::string> verdicts =
+                    StatedValues(lines, first, last, "    verdict: ");
+
+                if (verdicts.size() != 1)
+                {
+                    faults.push_back(verdicts.empty()
+                                         ? "the report states no 'verdict:' line for it"
+                                         : Text("the report states %zu 'verdict:' lines for it",
+                                                verdicts.size()));
+                }
+                else if (verdicts.front() != "RECOMMEND")
+                {
+                    faults.push_back(Text("the report's verdict for it is '%s', so the class named "
+                                          "no entry the run recommended",
+                                          verdicts.front().c_str()));
+                }
+            }
+
+            if (faults.empty())
+            {
+                const StatedHow stated = HowStatedBy(lines, first, last);
+
+                if (stated.refusal.empty())
+                {
+                    how = stated.how;
+                } else
+                {
+                    faults.push_back(stated.refusal);
+                }
+            }
+
+            DeviceEntry entry = DeviceEntry::kSingleF64;
+            DivisionForm form = kDefaultDivisionForm;
+            StatedResolution resolution;
+            std::string fastestMeasured;
+
+            if (faults.empty())
+            {
+                resolution = ResolutionStatedBy(lines, first, last);
+
+                if (!resolution.refusal.empty())
+                {
+                    faults.push_back(resolution.refusal);
+                }
+            }
+
+            if (faults.empty())
+            {
+                // The row the class's own figures put first, as the report states it: a row reached without an
+                // ordering is written with a claim about this row and the group it leads, and the claim has to be
+                // checkable against the report rather than assumed of it.
+                const std::vector<std::string> fastest =
+                    StatedValues(lines, first, last, "    fastest measured: ");
+
+                if (fastest.size() > 1)
+                {
+                    faults.push_back(
+                        Text("the report states %zu 'fastest measured:' lines for it",
+                             fastest.size()));
+                }
+                else if (fastest.size() == 1)
+                {
+                    fastestMeasured = fastest.front();
+                }
+            }
+
+            if (faults.empty() && !RowNamed(recommended, entry, form))
+            {
+                faults.push_back(Text("'%s' is no row of the library's own option space at any "
+                                      "division form this build carries",
+                                      recommended.c_str()));
+            }
+
+            if (!faults.empty())
+            {
+                publication.refusals.push_back(Text("%s (the report's '%s' class): %s", klass.c_str(),
+                                                    key.c_str(), SemicolonJoined(faults).c_str()));
+                continue;
+            }
+
+            DeviceProbeClass clause;
+            clause.precision = PrecisionName(precision);
+            clause.question = QuestionName(question);
+            clause.ranking.recommended = recommended;
+            clause.ranking.defaultHow = how;
+            clause.ranking.verdict = DeviceProbeVerdict::kRecommend;
+
+            // What the class states it could not order, and the row its own figures put first,
+            // carried into the ranking: the marker a row reached without an ordering is written
+            // with claims about those, and both are read from the report's own lines rather than
+            // recomputed here.
+            clause.ranking.fastestOverall = fastestMeasured;
+            clause.ranking.resolution = resolution.fraction;
+            clause.ranking.inseparable = resolution.unplaced;
+
+            // The membership that marker claims, checked against the report rather than assumed
+            // of it: a report naming a default that neither its own fastest row leads nor its own
+            // rounds left unplaced states no row this file could write a true marker for.
+            if (how != DeviceProbeDefaultHow::kOrdered && how != DeviceProbeDefaultHow::kOnlyEntry &&
+                !InFastestGroup(clause.ranking, recommended))
+            {
+                publication.refusals.push_back(
+                    Text("%s (the report's '%s' class): its 'recommended entry:' line names '%s', "
+                         "which is neither the row its 'fastest measured:' line names nor one of "
+                         "the rows its own rounds left unplaced, so no marker of the seam is true "
+                         "of it",
+                         klass.c_str(), key.c_str(), recommended.c_str()));
+                continue;
+            }
+
+            report.classes.push_back(std::move(clause));
+
+            // The one row of the run's own table the emitter reads, filled from the name: the
+            // entry and the form it was resolved to, so the seam's cells are the entry's own and
+            // the division-form cell is the form the row the report ranked was measured at.
+            DeviceProbeMeasurement row;
+            row.name = recommended;
+            row.precision = PrecisionName(precision);
+            row.question = QuestionName(question);
+            row.entry = entry;
+            row.form = form;
+            report.measurements.push_back(std::move(row));
+        }
+    }
+
+    // Published whole or not at all. The file is read INSTEAD of the committed seam, so one that
+    // carried eleven rows would leave the twelfth class resolving to a row this report did not
+    // state; the splice the consumer runs refuses the same file for the same reason, by position.
+    if (!publication.refusals.empty())
+    {
+        return publication;
+    }
+
+    publication.emission = FormatDeviceBuildDefaults(report, takenAt);
+
+    // The emitter's own refusals, which a report that placed every class reaches only where an
+    // axis the seam names carries a member this revision's tables answer nothing for. Nothing is
+    // written for as long as one of those stands either.
+    if (!publication.emission.refused.empty())
+    {
+        publication.refusals = publication.emission.refused;
+        publication.emission = DeviceDefaultsEmission{};
+        return publication;
+    }
+
+    publication.complete = true;
+    return publication;
+}
+
 std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     std::string text;
 
@@ -4927,11 +5426,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             text += Text("  refused by the library: %s\n", name.c_str());
         }
 
-        // The space is a fact about the option the entry names and not about
-        // this host, so it is stated even when no figure could be taken: a
-        // reader of a failed run learns which options exist, which this build
-        // refuses and which cells of the space they are, and what is missing is
-        // the measurement.
+        // The space is a fact about the option the entry names and not about this host, so it is stated even
+        // when no figure could be taken: a reader of a failed run learns which options exist and what is
+        // missing is the measurement.
         AppendOptionSpace(text, report);
         // And counted, which is where a failed run's coverage stands: the members
         // this run did not present to the device are in no state, and the verdict
@@ -5304,7 +5801,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             "drift common to\n  the round cancels in it. Both columns are then aggregated over "
             "the same rounds. A\n  launched row has no minus column because nothing was "
             "subtracted from it. The ns/arg\n  column reads unresolved for an in-kernel row whose "
-            "difference did not clear its own\n  baseline.\n";
+            "difference is not positive at\nthe lower quartile of its own rounds - the quantile "
+            "the two readings beside it are\n  stated at - because what such a row would print "
+            "there is the instrument's floor\n  and not a cost.\n";
 
     if (!report.unoffered.empty())
     {
@@ -5341,10 +5840,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             "and read at the bound each of them states.\n";
 
     // --- The controls --------------------------------------------------------
-    //
-    // One per route, since the two routes are two methods and a check of one
-    // says nothing about the other. The floor is the launched route's own: a
-    // subtraction has no launch of this library's inside either half.
+    // One per route, since the two routes are two methods and a check of one says nothing about the
+    // other. The floor is the launched route's own: a subtraction has no launch of this library's inside
+    // either half.
     const auto AppendControl = [&text, &report](const char* heading,
                                                 const DeviceProbeRepetitionControl& control,
                                                 bool withFloor) {
@@ -5418,11 +5916,8 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
     AppendControl("subtraction control", report.deviceCallControl, false);
 
     // --- The rankings --------------------------------------------------------
-    //
-    // One class per precision and question shape: neither is traded for speed here,
-    // and what varies inside a class is what the library picks on the caller's behalf
-    // plus the division form, which the caller may name and the build's default
-    // supplies when they do not.
+    // One class per precision and question shape: neither is traded for speed here, and what varies
+    // inside a class is what the library picks on the caller's behalf plus the division form.
     if (!report.classes.empty())
     {
         text += Text("\nrankings - one class per precision and question shape.\n"
@@ -5503,15 +5998,21 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
                         "no figure, so the entry\n    named is the one it had left to name — an "
                         "answer, and not the winner of a\n    comparison\n";
                 return;
-            default:
-                // A value no case above names: a member a newer header carries and this revision
-                // has not been taught, or a value cast in from outside the enumeration. The lines
-                // below state a stage, the entries it re-ran and how its vote came out, and a
-                // ranking whose way of being reached is not one the enumeration names has none of
-                // those to state.
+            case DeviceProbeDefaultHow::kRefined:
+            case DeviceProbeDefaultHow::kVote:
+            case DeviceProbeDefaultHow::kChosenAmongEquals:
+                // The three ways the refinement stage reaches, and ways this revision names: the block below the
+                // switch is their statement. Falling through to it is the whole of this arm - every class the stage
+                // decided took the arm below instead and had its way withheld from a reader.
+                break;
+            case DeviceProbeDefaultHow::kNone:
+            case DeviceProbeDefaultHow::kCount:
+                // The two values no stage reaches: the enumeration's own value for a shape that reached nothing,
+                // which the empty-name line above already answers, and the enumerator that closes the enumeration.
+                // A value cast in from outside arrives here too.
                 text += "\n  reached by: (not a way this revision names) — this shape's ranking "
-                        "carries a value\n    outside the enumeration, so how its entry was "
-                        "reached cannot be stated here\n";
+                        "names no way\n    its entry was reached, so how it was reached cannot be "
+                        "stated here\n";
                 return;
         }
 
@@ -5591,11 +6092,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
             text += Text("\n  every entry here was asked for %s\n", ranking.asked.c_str());
 
-            // The question's name is the grouping key and the shape column of a
-            // row need not spell it the same way — the ladder to each argument's
-            // own order is produced by one all-orders call or by one call per
-            // order — so the shapes the rows of this ranking carry are stated
-            // where the two are not the same word.
+            // The question's name is the grouping key and the shape column of a row need not spell it the same
+            // way - the ladder to each argument's own order is produced by one all-orders call or by one call per
+            // order - so the shapes the rows carry are stated where the two are not the same word.
             std::vector<std::string> rowShapes;
 
             for (const DeviceProbeMeasurement* row : rows)
@@ -5626,11 +6125,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
             if (ranking.fastestOverall.empty())
             {
-                // Nothing here is ordered, and the two ways that happens are not
-                // the same fact: a shape whose every row failed to measure has no
-                // figures at all, and a shape whose rows all failed a gate has
-                // figures that this run would not place. The rows' own lines in
-                // the table say which, and so do the set-aside reasons below.
+                // Nothing here is ordered, and the two ways that happens are not the same fact: a shape whose every
+                // row failed to measure has no figures at all, and a shape whose rows all failed a gate has figures
+                // this run would not place.
                 std::size_t measuredRows = 0;
 
                 for (const DeviceProbeMeasurement* row : rows)
@@ -5660,12 +6157,9 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
 
             text += Text("    fastest measured: %s\n", ranking.fastestOverall.c_str());
 
-            // A resolution is a distance between two order statistics of the run's
-            // ratios, and a run with fewer paired rounds than a quartile band needs
-            // has none: the widest band it showed is a band of two or three
-            // readings, printed beside a refusal for being too short, and a reader
-            // would take it for what this run can order. The field is not printed
-            // there, and the line says which count is missing instead.
+            // A resolution is a distance between two order statistics of the run's ratios, and a run with fewer
+            // paired rounds than a quartile band needs has none: the field is not printed there, and the line
+            // says which count is missing instead.
             if (ranking.resolution > 0.0 &&
                 ranking.rounds >= static_cast<int>(kMinimumPairedRounds))
             {
