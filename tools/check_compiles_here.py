@@ -195,6 +195,7 @@ def is_cuda(command: list[str]) -> bool:
 
 def check_command(command: list[str], compiler: str | None) -> list[str]:
     """The build's own command, retargeted at `compiler` and made a syntax check."""
+    cuda = is_cuda(command)
     checked: list[str] = []
     index = 0
     while index < len(command):
@@ -206,15 +207,25 @@ def check_command(command: list[str], compiler: str | None) -> list[str]:
         elif word.startswith("-o") and len(word) > 2:
             pass
         elif word in ("-c", "--compile"):
-            pass
+            # nvcc has no -fsyntax-only - it answers `Unknown option` and exits 1 - so a
+            # CUDA source is checked by compiling it. The -c stays and the object is sent
+            # to the null device below. Dropping -c makes nvcc link, and a translation unit
+            # with no main dies on `undefined reference to 'main'`: a failure of this
+            # command line, read as a failure of the source, which is why no .cu change
+            # could be committed while this was the behaviour.
+            if cuda:
+                checked.append(word)
         else:
             checked.append(word)
         index += 1
 
+    if cuda:
+        checked.extend(["-o", os.devnull])
+
     if compiler is not None:
         checked.extend(CI_LIMITS.get(Path(compiler).name, ()))
 
-    if "-fsyntax-only" not in checked and not is_cuda(command):
+    if "-fsyntax-only" not in checked and not cuda:
         checked.append("-fsyntax-only")
     return checked
 
