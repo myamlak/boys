@@ -1,10 +1,8 @@
 #pragma once
 
-// The seam between the two translation units that own arithmetic: the scalar
-// entries are written where the scalar kernels live (src/boys.cpp) and the
-// packed ones are appended from here, because a contraction fact belongs to the
-// flag context its arithmetic is compiled in. This header is the only thing the
-// two units share.
+// The seam between the two translation units that own arithmetic: the scalar entries are written
+// where the scalar kernels live (src/boys.cpp) and the packed ones are appended from here. This
+// header is the only thing the two units share.
 
 #include "boys/backend.hpp"
 

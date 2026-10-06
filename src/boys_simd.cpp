@@ -9,24 +9,10 @@
 #include <cstdint>
 #include <cstring>
 
-// --- Architecture guard -----------------------------------------------------
-//
-// The AVX2 tier is x86_64-only *by construction*: the kernels are AVX2/FMA
-// intrinsics and CMake compiles this TU with /arch:AVX2 (MSVC) or
-// -mavx2 -mfma -mf16c (GCC/Clang). Everything below the #if is that tier.
-//
-// BOYS_SIMD_X86 answers one question - does this TU compile the vector tier?
-// CMake derives it from a configure-time probe and states it on the `boys`
-// target; when nobody states it the guard detects it from the same two
-// predefines, which is the case for a consumer compiling this source itself.
-//
-// Unstated and not x86_64 is an #error rather than a quiet 0: this TU cannot
-// tell a real non-x86 target from an x86 target whose predefines it has not
-// been taught, and answering 0 on an x86_64 target would compile the intrinsics
-// out, soft-skip every SIMD test and leave CI green.
-//
-// On a non-x86 target the same entry points are defined against the certified
-// scalar lanes instead - same signatures, same contracts, same numerics.
+// The AVX2 tier is x86_64-only by construction: AVX2/FMA intrinsics, compiled /arch:AVX2 (MSVC)
+// or -mavx2 -mfma -mf16c. BOYS_SIMD_X86 answers whether this TU compiles that tier - a CMake
+// configure-time probe states it, and the guard detects it from the two predefines otherwise.
+// Unstated and not x86_64 is an #error rather than a quiet 0. A non-x86 target gets scalar lanes.
 #ifdef BOYS_SIMD_X86
 
 // The build answered; nothing to detect.
@@ -58,16 +44,9 @@
 #include <cpuid.h>
 #endif
 
-// AVX2 region-sorted lanes. The engine pattern (region-first): partition the
-// arguments by region FIRST so every 4-lane vector is homogeneous; the unsorted
-// variant pays a measured 2.3x divergence penalty.
-//
-// Callers must check BoysAvx2Available() before invoking these; the kernels are
-// FMA chains, so the predicate requires the FMA feature bit as well.
-//
-// Every region entry runs the full-accuracy body: the per-piece and
-// per-order effective degrees are read from the tables the fits were certified
-// at, so the Clenshaw variants below read them directly.
+// AVX2 region-sorted lanes, region-first: partition the arguments by region so every 4-lane
+// vector is homogeneous - the unsorted variant pays a measured 2.3x divergence penalty. Callers
+// must check BoysAvx2Available() first; the FMA chains require the FMA feature bit too.
 
 namespace boys::detail {
 namespace {
@@ -118,20 +97,10 @@ bool DetectAvx2() noexcept {
 #endif
 }
 
-// ---------------------------------------------------------------------------
-// e^{-x} on [0, 30]: a degree-4 Taylor table, one row per grid abscissa
-// x_i = i * kStep, rows padded to 8 doubles so the gathers can use the legal
-// scale 8. Worst absolute error 1.83e-17.
-//
-// A row holds the quartic Taylor polynomial of e^{-x} at x_i in the monomial
-// basis of the ABSOLUTE argument x, so Eval4 is a plain Horner chain: splitting
-// e^{-x} = e^{-x_i} e^{-h} at h = x - x_i gives, for the coefficient of x^k,
-//
-//     a_k = e^{-x_i} * (-1)^k * S_{4-k} / k!,   S_m = sum_{j=0..m} x_i^j / j!.
-//
-// The row stores (-1)^k a_k, i.e. the alternating sign is folded into the table
-// and taken back out by the sign pattern of Eval4's FMA chain.
-// ---------------------------------------------------------------------------
+// e^{-x} on [0, 30]: a degree-4 Taylor table, one row per abscissa x_i = i * kStep, padded to 8
+// doubles for the gathers' legal scale 8; worst absolute error 1.83e-17. A row holds the quartic
+// Taylor polynomial at x_i in the monomial basis of the ABSOLUTE argument - a_k = e^{-x_i} *
+// (-1)^k * S_{4-k} / k! - and stores (-1)^k a_k, the sign taken back out by Eval4's FMA chain.
 class ExpTable {
 public:
     static constexpr double kStep = 0.01;
@@ -191,14 +160,9 @@ private:
     double _coefficients[kNumPoints + 1][8]{};
 };
 
-// Split Clenshaw (even/odd), packed, half-depth FMA chains:
-// T_{2j+1}(t) = t * D_j(v) with the D recurrence.
-//
-// One body for every packed width and precision: which multiply-add a step
-// uses, and how many roundings it makes, is the backend's, and the body below
-// is written once against it. What stays here is the mapped argument, in the
-// packed lanes' own form - the interval reached through one multiply-add of the
-// backend's route, rather than the scaled division the scalar lane forms it with.
+// Split Clenshaw (even/odd), packed, half-depth FMA chains: T_{2j+1}(t) = t * D_j(v) with the D
+// recurrence. One body for every packed width and precision - which multiply-add a step uses is
+// the backend's. What stays here is the mapped argument, in the packed lanes' own form.
 template <backend::ArithmeticBackend B, typename Piece>
 typename B::Packed RegionAClenshaw(const typename B::Value* c,
                                    const Piece& piece,
@@ -242,12 +206,9 @@ inline __m256d ClenshawB4(__m256d xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp64<>, detail::kBDeg>(detail::kBcoeffs.data(), 0, xv);
 }
 
-// 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop
-// only; the data-dependent loop is not inlined.
-//
-// The library instantiates the SIMD region entries at m = 1 only, so in this TU
-// that caller sits in the discarded arm of an `if constexpr` and GCC/Clang see
-// a defined-but-unused internal function; a relaxed instantiation would use it.
+// 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop only. The library
+// instantiates the SIMD region entries at m = 1 only, so here that caller sits in the discarded
+// arm of an `if constexpr` and GCC/Clang see a defined-but-unused internal function.
 [[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp64<>, -1>(detail::kBcoeffs.data(), deg, xv);
 }
@@ -299,12 +260,9 @@ void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane; its callers are the tests and the benchmark. It
-// takes no policy, only the multiplier, so a caller cannot name it with a division
-// form and wiring it is a signature change. Its vector body forms 1/x once and
-// multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
-// the entries default to - so wired as it stands it would divide in a form no caller
-// named.
+// No entry point calls this lane; its callers are the tests and the benchmark. It takes no
+// policy, only the multiplier, so a caller cannot name it with a division form, and its vector
+// body forms 1/x once - the plain reciprocal, not the kRefinedReciprocal the entries default to.
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -342,15 +300,10 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane either, and unlike region B it holds its bound - C
-// lands 5.0e-14 against the 5.5e-14 the contract table states - so the omission is
-// not an accuracy one. This definition records no reason for it; the tree's one
-// remark on the choice is the batch entry's note that region C runs scalar there.
-//
-// It takes no policy, only the multiplier, so a caller cannot name it with a division
-// form and wiring it is a signature change, and its vector body forms 1/x once and
-// multiplies it through the ladder - the plain reciprocal, not the kRefinedReciprocal
-// the entries default to.
+// No entry point calls this lane either, and unlike region B it holds its bound - C lands 5.0e-14
+// against the 5.5e-14 the contract table states - so the omission is not an accuracy one. The
+// tree's one remark on the choice is the batch entry's note that region C runs scalar there. It
+// takes no policy and forms 1/x once, the plain reciprocal.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -376,12 +329,9 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 }
 
 #if BoysFp16
-// ---------------------------------------------------------------------------
-// fp16 / bf16 lanes, AVX2 scope (8 lanes; the fp32 engine, F16C/bit-trick I/O).
-// Same region-partitioned engine pattern as the F64 lanes above, around the
-// certified fp32 fits of detail::f32. The relaxed branches use the fp16
-// computation budget (1e-7) with the F32 piece tables.
-// ---------------------------------------------------------------------------
+// fp16 / bf16 lanes, AVX2 scope (8 lanes; the fp32 engine, F16C/bit-trick I/O): the same
+// region-partitioned engine pattern as the F64 lanes, around the certified fp32 fits of
+// detail::f32. The relaxed branches use the fp16 budget (1e-7) with the F32 piece tables.
 bool DetectF16c() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
@@ -553,11 +503,9 @@ void RegionBSimdHalf(int n,
 
             for (int l = 0; l < n; ++l)
             {
-                // Divide by x rather than multiply by the rounded 1/x: the
-                // upward recurrence amplifies a relative perturbation by
-                // ((l + 1/2)/x) per step, so past l = x that factor exceeds one
-                // and the reciprocal's 6e-8 rounding compounds to tens of per
-                // cent at the highest orders. The certified scalar lane divides.
+                // Divide by x rather than multiply by the rounded 1/x: the upward recurrence amplifies a relative
+                // perturbation by ((l + 1/2)/x) per step, so past l = x the 6e-8 reciprocal rounding compounds to
+                // tens of per cent at the highest orders. The certified scalar lane divides.
                 f = _mm256_div_ps(
                     _mm256_fmadd_ps(_mm256_set1_ps(static_cast<float>(l) + 0.5f),
                                     f,
@@ -734,15 +682,10 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 
 #else // BOYS_SIMD_X86
 
-// ---------------------------------------------------------------------------
-// Non-x86 targets: the same entry points, defined against the certified scalar
-// lanes. The vector engine does not exist here, so BoysAvx2Available() is false
-// and no entry asserts it; the region contract stays a sufficient precondition,
-// just not a required one. The bodies mirror, element for element, the scalar
-// tails the x86 entries run for their last count % 4 elements, so a caller gets
-// the same numbers it would from the x86 entry; region B keeps its transposed
-// layout out[l * count + i].
-// ---------------------------------------------------------------------------
+// Non-x86 targets: the same entry points, defined against the certified scalar lanes. The vector
+// engine does not exist here, so BoysAvx2Available() is false and no entry asserts it; the region
+// contract stays a sufficient precondition, just not a required one. The bodies mirror the scalar
+// tails the x86 entries run for their last count % 4 elements.
 namespace boys::detail {
 
 } // namespace boys::detail
@@ -879,18 +822,10 @@ namespace boys::detail {
 
 } // namespace boys::detail
 
-// The packed half of the backend table. This unit's flags are what make its
-// contraction answer different from the scalar one, so the pair is measured
-// here; it is listed only where the tier is both compiled in and available at
-// run time, because the probe executes the instructions it measures.
-//
-// The route reported is the instantiation's own, and here it is the selection
-// unfiltered by the contraction question: the packed steps name two
-// instructions where the scalar separate route names a bare expression, so a
-// build that contracts is still a build whose packed lanes make the two
-// roundings the separate route promises. Filtering this through the
-// contraction answer, as the scalar pair does through RouteInForce(), would
-// report an arithmetic these kernels do not run.
+// The packed half of the backend table: this unit's flags are what make its contraction answer
+// differ from the scalar one, so the pair is measured here, and it is listed only where the tier
+// is both compiled in and available at run time. The route reported is the instantiation's own,
+// unfiltered by the contraction question: the packed steps name two instructions.
 namespace boys::backend {
 namespace detail {
 

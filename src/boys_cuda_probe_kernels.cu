@@ -1,21 +1,7 @@
-// Device side of the option probe: the timed regions, the kernels of this
-// library's entries are launched into, and the subtraction kernels the
-// device-callable entries are measured through.
-//
-// The host side (boys_cuda_probe.cpp) owns the protocol - which entry, how many
-// passes and rounds, how a spread folds into a figure. This file owns the clock:
-// a timed region here opens with a CUDA event, queues the launches back to back
-// into buffers that are already resident, closes with a second event and
-// synchronises on it, so what the elapsed time reports is the device timeline
-// rather than the host's submission. C++20 with a CUDA-safe include list only,
-// as the lane's own .cu is: the library's C++23 headers would poison this
-// translation unit.
-//
-// The device-callable entries are measured as a difference, not as a launch. A
-// caller-shaped kernel forms x per thread and calls the entry; the same kernel
-// with the call removed writes the same slots with the same traffic. The host
-// subtracts one bracket from the other, which leaves the arithmetic with the
-// launch, the indexing and the memory passes already cancelled.
+// Device side of the option probe: the timed regions, the kernels the library's entries are
+// launched into, and the subtraction kernels the device-callable entries are measured through.
+// The host side owns the protocol; this file owns the clock - a CUDA event pair around launches
+// into resident buffers. C++20 and a CUDA-safe include list only: C++23 headers poison this TU.
 
 #include "boys_cuda_probe_entries.hpp"
 
@@ -88,15 +74,10 @@ __global__ void CanaryKernel(unsigned long long seed, unsigned long long* sink) 
     }
 }
 
-// The floor: a kernel launched exactly as the entries are - same grid, same
-// repetition count, same event pair - that does no work at all. Its device time
-// per launch is the part of every launched figure that is getting a kernel
-// started rather than evaluating anything: the host's submission of the launch,
-// the runtime's own launch, and the grid's ramp.
-//
-// It keeps no memory traffic, because the traffic is what the subtraction
-// kernel's own baseline half is for: mixing the two here would measure the
-// memory of a kernel that is not the caller's.
+// The floor: a kernel launched exactly as the entries are - same grid, same repetition count,
+// same event pair - that does no work. Its device time per launch is the part of every launched
+// figure that is getting a kernel started rather than evaluating anything. It keeps no memory
+// traffic: that is the subtraction kernel's own baseline half, which measures the caller's.
 __global__ void FloorKernel(int* touched) {
     if (blockIdx.x == 0 && threadIdx.x == 0 && touched != nullptr)
     {
@@ -104,17 +85,10 @@ __global__ void FloorKernel(int* touched) {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The subtraction kernel.
-//
-// One body per precision, with the four shapes written out at their own call
-// sites: a run-time branch between the precisions would compile every lane's
-// arithmetic into every kernel and measure the wrong one.
-//
-// The division form is a template argument of every call below for the same
-// reason: the forms a kernel is not run at must be absent from it rather than
-// merely untaken.
-// ---------------------------------------------------------------------------
+// The subtraction kernel. One body per precision, with the four shapes written out at their own
+// call sites: a run-time branch between the precisions would compile every lane's arithmetic into
+// every kernel and measure the wrong one. The division form is a template argument of every call
+// below for the same reason: the forms a kernel is not run at must be absent from it.
 
 /// The double lane's four entries, and the cheap stand-in the removed-call half
 /// writes in their place.
@@ -274,17 +248,10 @@ struct Dev16 {
 };
 #endif // BoysFp16
 
-// The partition and route axes of the ladder shape, one policy per entry.
-//
-// Each is the all-orders ladder the policies above reach, over another
-// partition, another route or the other stored form of the one it is already on;
-// only that member is written, because that is the shape these entries have — a
-// kernel instantiated at another shape with one of them does not compile, which
-// is what says so.
-//
-// One policy per entry rather than one per axis, because the two names a pair
-// carries are two entries and two rows of the space: measuring one of them would
-// leave the other reported as a row this run carried no figure for.
+// The partition and route axes of the ladder shape, one policy per entry: each is the all-orders
+// ladder the policies above reach, over another partition, another route or the other stored form
+// of the one it is already on. One policy per entry rather than per axis, because the two names a
+// pair carries are two entries and two rows of the space.
 #define BOYS_PROBE_LADDER_POLICY(NAME, VALUE, ENTRY) \
     struct NAME { \
         using Value = VALUE; \
@@ -355,12 +322,9 @@ BOYS_PROBE_LADDER_POLICY(
 
 #undef BOYS_PROBE_LADDER_POLICY
 
-// The fast region-B reading's rows over the same axes: one policy per row, over
-// the same body the row's accurate sibling names, at the one template argument
-// the row's own name carries. It is a second macro rather than a fourth field of
-// the one above because the accurate reading is what an invocation that says
-// nothing means, so a field would have to be spelled at all twenty-four accurate
-// call sites to leave the default here.
+// The fast region-B reading's rows over the same axes: one policy per row, over the same body the
+// row's accurate sibling names. It is a second macro rather than a fourth field of the one above
+// because the accurate reading is what an invocation saying nothing means.
 #define BOYS_PROBE_LADDER_POLICY_FAST(NAME, VALUE, ENTRY) \
     struct NAME { \
         using Value = VALUE; \
@@ -1099,12 +1063,9 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH(Dev32OrdersMonoFast, float, kAllOrders, xf);
                 break;
 #if BoysFp16
-            // The half lane's rows of those same axes, one arm per row of the
-            // option table that names one, with the lane: the entries they name
-            // are behind the same seam, so a build without them has no such
-            // enumerator to be asked for and no half array to read. A row such a
-            // build is without is refused before this switch is reached, so the
-            // arm it loses had nothing to measure.
+            // The half lane's rows of those same axes, one arm per row, with the lane behind the same seam: a
+            // build without those entries has no enumerator to be asked for and no half array to read, and a
+            // row such a build is without is refused before this switch is reached.
             case ProbeEntry::kDeviceAllOrdersF16Narrow:
                 BOYS_PROBE_LAUNCH(Dev16Narrow, __half, kAllOrders, xh);
                 break;
@@ -1162,11 +1123,9 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH(Dev16Fast, __half, kSingle, xh);
                 break;
 #endif // BoysFp16
-            // The fast region-B reading's rows, in the enumeration's own order:
-            // the same bodies as the arms above, at the one template argument the
-            // row's own name carries. The enumeration holds them after the four
-            // shapes and the axes they share their bodies with, one lane at a
-            // time, and so they are armed here.
+            // The fast region-B reading's rows, in the enumeration's own order: the same bodies as the arms
+            // above, at the one template argument the row's own name carries, and armed here because the
+            // enumeration holds them after the shapes and axes they share their bodies with.
             case ProbeEntry::kDeviceAllOrdersF32Fast:
                 BOYS_PROBE_LAUNCH(Dev32Fast, float, kAllOrders, xf);
                 break;
@@ -1267,11 +1226,9 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceEachOrderF16Fast:
                 BOYS_PROBE_LAUNCH(Dev16Fast, __half, kEachOrder, xh);
                 break;
-            // The bfloat16 lane's rows, in the enumeration's own order: the same
-            // bodies as the fp16 arms above, reading this lane's argument array.
-            // It is a second array rather than a reinterpretation of xh - the two
-            // formats are 5/10 and 8/7 over the same sixteen bits, so reading one
-            // as the other would hand every entry a different number.
+            // The bfloat16 lane's rows, in the enumeration's own order: the same bodies as the fp16 arms
+            // above, reading this lane's argument array. A second array rather than a reinterpretation of xh -
+            // the two formats are 5/10 and 8/7 over the same sixteen bits.
             case ProbeEntry::kDeviceSingleBf16:
                 BOYS_PROBE_LAUNCH(DevBf16, __nv_bfloat16, kSingle, xb);
                 break;
@@ -2166,15 +2123,10 @@ int BoysCudaLaunchSingleBf16Fast(int, const int*, const void*, void*, std::size_
 #endif // BoysFp16
 }
 
-// The each-order arms' placement array. The launched each-order shape takes the index each
-// argument's ladder starts at from the caller, and this is the probe's own choice of it rather
-// than the library's: two passes behind a prefix sum, or a placement the probe can build without
-// one. It builds one without one - offset[i] = i * (kMaxBoysOrder + 1) - which is the placement
-// the padded all-orders rows write, so the ladders do not overlap and every one of them lands
-// inside the out block the arms are already handed. That the shape can also pack them is the
-// caller's gain and not a different arithmetic, so a cost figure taken at this placement is the
-// entry's.
-// The buffer is allocated once and reused: it is count ints and the probe runs one count.
+// The each-order arms' placement array: the index each argument's ladder starts at, which is the
+// probe's own choice rather than the library's. It builds one without a prefix sum -
+// offset[i] = i * (kMaxBoysOrder + 1) - which is the placement the padded all-orders rows write, so
+// the ladders do not overlap and each lands inside the out block the arms are handed.
 int* EachOrderOffsets(std::size_t count) {
     static int* offsets = nullptr;
     static std::size_t capacity = 0;
@@ -2503,15 +2455,9 @@ int LaunchLaunched(boys::DivisionForm form,
                                                       count,
                                                       stream);
             break;
-        // The uniform route's four rows, whose table is stored at one degree for
-        // every order and every interval: the route has one arithmetic and no
-        // shorter image of it to read.
-        //
-        // The four names are two launchers: the scheme axis is a real choice on
-        // this route (the Chebyshev image against the monomial one) and the
-        // packing axis is the route's own single reading, so the pair of rows
-        // naming it launches the kernel of the scheme it carries; the same arms
-        // the fit route's pairs have, for the same reason.
+        // The uniform route's four rows, whose table is stored at one degree for every order and every
+        // interval: the route has one arithmetic and no shorter image of it. The four names are two
+        // launchers - the scheme axis is a real choice on this route and the packing axis is not.
         case ProbeEntry::kAllOrdersF64Uniform:
         case ProbeEntry::kAllOrdersF64OrdersUniform:
             // One degree for every order and every interval, so the stored table
@@ -3207,14 +3153,9 @@ int LaunchLaunched(boys::DivisionForm form,
 
             break;
         }
-        // The lane's partition and route bodies, one arm per entry of the
-        // option table that names one, in the table's own order. Two entries a
-        // scheme pair reaches share a launcher as they share a kernel: the
-        // forwarding entry's arm names the launcher its sibling names, so what
-        // is timed is the arithmetic the entry runs rather than a second name
-        // for it. The uniform grid's packing axis has one member, so its
-        // orders-axis entries run the per-argument kernel the table's own
-        // comment records.
+        // The lane's partition and route bodies, one arm per entry of the option table that names one, in
+        // the table's own order. Two entries a scheme pair reaches share a launcher as they share a
+        // kernel, so what is timed is the arithmetic the entry runs rather than a second name for it.
         case ProbeEntry::kAllOrdersF16Narrow:
             BoysCudaLaunchAllOrdersF16Narrow(static_cast<int>(form), n, xh, out, count, stream);
             break;

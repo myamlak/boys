@@ -1,30 +1,9 @@
 #pragma once
 
-// The across-orders packed lane: one argument's orders in a single pass, four
-// orders to a vector.
-//
-// It is the companion of the across-arguments lane in boys_simd.cpp, not a
-// replacement for it. That lane vectorises four ARGUMENTS of one order, which
-// is the shape BoysFixedN and the plane entry's region body ask for; this one
-// vectorises four ORDERS of one argument, which is the shape
-// BoysAllOrders(nmax, x, out) asks for. On that shape the across-arguments
-// lane has no argument to put in a vector and runs at width one, while the
-// across-orders axis is nmax + 1 wide.
-//
-// Private to the library, like the packed backends and for the same reason:
-// the intrinsics' header is not part of the public surface. The lane itself is
-// reachable from outside through the entries that carry the orders axis
-// (PackAxis::kOrders), which dispatch to BoysAllOrdersPacked below.
-//
-// The derived routes' region A only (argument below kX0), where the per-order
-// piecewise fits are stored. The other two regions evaluate one seed and reach
-// every order from it by recursion, which is one fit for all of them; the fits
-// are the cost this lane exists to spread over a vector.
-//
-// The uniform partition is the exception to the interval and not to the shape:
-// its table is one fixed grid over the whole fitted domain rather than a cut of
-// region A, so the lane reads it to that grid's own end, which is above kX0,
-// and falls to the certified scalar lane past it.
+// The across-orders packed lane: one argument's orders in a single pass, four orders to a vector.
+// It is the companion of the across-arguments lane in boys_simd.cpp, not a replacement: that lane
+// vectorises four ARGUMENTS of one order, this one four ORDERS of one argument - the shape
+// BoysAllOrders asks for. Private to the library, reachable through the orders axis entries.
 
 #include "boys/backend.hpp"
 
@@ -91,30 +70,10 @@ void BoysAllOrdersSimd(
 void BoysAllOrdersSimdComposed(
     OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) noexcept;
 
-// --- The single-precision lane -------------------------------------------------
-//
-// The same axis where a register holds eight floats rather than four doubles,
-// and one premise weaker. The double lane rests on every order's region-A fit
-// being cut at the same boundaries to the same degree, which makes a fixed x
-// select one piece index, one mapped argument and one stride for the whole
-// vector. The float lane's table gives each order its own cover - order 0 is cut
-// into two pieces where order 14 is cut into three, and a break is not shared
-// between orders - so a fixed x selects a different piece in each lane and the
-// offset from one lane's coefficients to the next is not a stride at all. The
-// vector therefore carries the per-lane geometry: one mapped argument and one
-// coefficient base per lane, fetched per lane rather than stepped.
-//
-// What the eight lanes do share is the DEGREE the group is summed at, because
-// the split Clenshaw's even/odd structure belongs to the degree rather than to a
-// coefficient. The group runs at its lanes' largest degree and a lane whose own
-// cut is below it reads zeros above that cut. Reading zeros above a cut is the
-// lane's own polynomial, and down the recurrence it is the lane's own
-// arithmetic: the extra top step has an exact zero for both terms. That is what
-// keeps the packed value the per-order value bit for bit rather than near it.
-//
-// Each entry below is one group width and one fetch, and the fetch is a
-// template argument rather than a decision taken here because it is a property
-// of the machine and not of the algorithm - see the double lane's pair above.
+// The same axis where a register holds eight floats rather than four doubles, and one premise
+// weaker: the double lane rests on every order's region-A fit being cut at the same boundaries,
+// where the float table gives each order its own cover, so a fixed x selects a different piece per
+// lane and the offset is not a stride. What the lanes share is the DEGREE the group is summed at.
 
 /// Fills out[l] with F_l(x) for l = 0..nmax in single precision, eight orders to
 /// a vector, with the eight coefficient bases gathered one instruction per step.

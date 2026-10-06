@@ -1,12 +1,8 @@
 #pragma once
 
-// The option space the device-cost probe measures, shared by its host
-// translation unit (boys_cuda_probe.cpp) and its device one
-// (boys_cuda_probe_kernels.cu), so that the two cannot disagree about which
-// options exist.
-//
-// It includes one library header and it is CUDA-header-free, so the nvcc
-// translation unit's include list (see the .cu preamble) can hold it.
+// The option space the device-cost probe measures, shared by its host translation unit
+// (boys_cuda_probe.cpp) and its device one (boys_cuda_probe_kernels.cu), so that the two cannot
+// disagree about which options exist. It is CUDA-header-free, so nvcc's TU can include it.
 
 #include "boys/boys_cuda_options.hpp"
 

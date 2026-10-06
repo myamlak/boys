@@ -1,27 +1,9 @@
 #pragma once
 
-// The packed arithmetic backends of the AVX2 + FMA tier.
-//
-// Private to the library: the intrinsics' header is not part of the public
-// surface, so the packed backends are named here and reported through
-// boys::backend::BoysBackends rather than declared in include/boys/backend.hpp.
-//
-// Every step names its instruction, so the two arithmetics are told apart in
-// the source. They are not told apart on every build, and the compiler decides:
-// a compiler that contracts a bare product-plus-add contracts
-// `_mm256_add_ps(_mm256_mul_ps(a, b), c)` to the fused instruction as well (g++
-// 15.2.0, -O2 -mfma, both widths), and the separate route then delivers the
-// fused route's values. What Contracts() reports for them is the separate
-// question of whether a bare product-plus-add in this arithmetic would fuse.
-//
-// Each carries its route as a template parameter rather than as a constant, so
-// one build instantiates either arithmetic and a test holds the two against
-// each other. The default is the build's selection, which is where the scalar
-// pair reads its route from too, so a call site that names none gets the
-// arithmetic the library reports. Where the compiler contracts, the separate
-// route here is the fused arithmetic whatever the selection says, and
-// `-ffp-contract=off` is the setting that makes the separate spelling two
-// roundings.
+// The packed arithmetic backends of the AVX2 + FMA tier. Private to the library: the intrinsics'
+// header is not part of the public surface, so they are named here and reported through
+// boys::backend::BoysBackends. Every step names its instruction, so the two arithmetics are told
+// apart in the source - though not on every build: a bare product-plus-add contracts the pair too.
 
 #include "boys/backend.hpp"
 
@@ -141,11 +123,9 @@ struct Avx2Fp32 {
     static bool Contracts() noexcept;
 };
 
-// A bare product-plus-add fuses by value type, target and flags, not by width:
-// the same measurement answers for both backends of one precision. The answer
-// is a property of the translation unit that asks, and both routes share it,
-// because what it measures is a bare expression rather than what these kernels
-// are written with.
+// A bare product-plus-add fuses by value type, target and flags rather than by width, so the same
+// measurement answers for both backends of one precision. The answer is a property of the
+// translation unit that asks, and both routes share it.
 template <MulAddRoute Route>
 inline bool Avx2Fp64<Route>::Contracts() noexcept {
     return detail::MeasureContraction<double>();
