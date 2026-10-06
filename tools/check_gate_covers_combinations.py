@@ -143,6 +143,9 @@ Usage:
     python tools/check_gate_covers_combinations.py --full
     python tools/check_gate_covers_combinations.py --compile
 
+`--check` is accepted for the invocation the workflow uses uniformly. It is not a mode: this
+tool has no other one, so a gap exits non-zero with or without it.
+
 Exit status is 0 only when every combination the library carries is measured by the recorded
 run, and 1 otherwise - when one is unmeasured, when the run names no revision, when a
 revision cannot be resolved, when this check's own read came back empty, or when a read the
@@ -1418,6 +1421,10 @@ def main() -> int:
     parser.add_argument("--compile", action="store_true",
                         help="run the compile control: it proves the one-order exclusion rather than "
                              "asserting it, and costs minutes per instantiation on this machine")
+    parser.add_argument("--check", action="store_true",
+                        help="accepted for the invocation the workflow uses uniformly; this tool has "
+                             "no other mode, so a combination the run does not measure exits "
+                             "non-zero with or without it")
     args = parser.parse_args()
 
     findings: list[str] = []

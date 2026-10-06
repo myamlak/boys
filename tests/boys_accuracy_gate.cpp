@@ -11798,14 +11798,18 @@ int main(int argc, char** argv) {
 
 #ifdef BOYS_GATE_CUDA
 
-    // Half of the last representable digit of the returned value: the term the
-    // half-precision lane's own figure carries beside its base.
-    const auto halfUlp = [](double value) {
+    // Half of the last representable digit of the returned value: the term a
+    // half lane's own figure carries beside its base. The digit is the format's,
+    // so it is not one number for both half lanes: binary16 has ten significand
+    // bits, which puts a digit of it at 2^-11 of the binade, and bfloat16 has
+    // seven, which puts its at 2^-8 (src/boys.cpp, the kFp16Device and kBf16Device
+    // rows, the second naming that figure as 2^-8 = 3.90625e-03).
+    const auto halfUlp = [](double value, int mantissaBits) {
         const int exponent = std::ilogb(value);
 
         return exponent == FP_ILOGB0 || exponent == FP_ILOGBNAN || exponent < -1074
                    ? 0.0
-                   : std::ldexp(1.0, exponent - 11);
+                   : std::ldexp(1.0, exponent - mantissaBits - 1);
     };
     // The region-B member each device lane's arms read, read off the library's own
     // option table rather than transcribed here, and the term the figure carries
@@ -12420,9 +12424,15 @@ int main(int argc, char** argv) {
     //                 returned, with the cells at or below that bar counted
     //                 below it rather than judged, which is how the half lane's
     //                 own arm above reads its cells
+    // \param mantissaBits the significand width of the format the lane stores
+    //                 in: half a digit of the returned value is 2^(ilogb(value)
+    //                 - mantissaBits - 1). Passed beside halfLane because the
+    //                 two half lanes of this surface are two formats, and one
+    //                 term spelled for both holds one of them to the other's
     const auto combDeviceRunLane =
         [&]<typename TVal>(int lane, auto entryOf, const auto& args,
-                           const std::vector<double>& want, bool halfLane) {
+                           const std::vector<double>& want, bool halfLane,
+                           int mantissaBits) {
             using TArg = typename std::decay_t<decltype(args)>::value_type;
 
             const char* const laneName = combLaneRows[static_cast<std::size_t>(lane)].name;
@@ -12578,9 +12588,9 @@ int main(int argc, char** argv) {
                                         static_cast<double>(laneOut[1][e]),
                                         static_cast<double>(laneOut[2][e])};
                                     const double ulp[kCombForms] = {
-                                        halfLane ? halfUlp(got[0]) : 0.0,
-                                        halfLane ? halfUlp(got[1]) : 0.0,
-                                        halfLane ? halfUlp(got[2]) : 0.0};
+                                        halfLane ? halfUlp(got[0], mantissaBits) : 0.0,
+                                        halfLane ? halfUlp(got[1], mantissaBits) : 0.0,
+                                        halfLane ? halfUlp(got[2], mantissaBits) : 0.0};
 
                                     a.addAtForms(n,
                                                  static_cast<double>(args[i]),
@@ -12636,7 +12646,8 @@ int main(int argc, char** argv) {
             GateDeviceEntryF64,
             ref.x,
             ref.v,
-            false);
+            false,
+            0);
     }
 
     // The half lane: the argument is the half the reference's `x16` column is
@@ -12659,16 +12670,19 @@ int main(int argc, char** argv) {
             GateDeviceEntryF16,
             halfArgs,
             ref.v16,
-            true);
+            true,
+            kF16MantissaBits);
     }
 
-    // The half lane's other store: the same argument and the same reference column, in
-    // this format's own type. The value the reference holds is the exact one and the
-    // store is the class's - `v16` is the reference's half column and this arm judges a
-    // bfloat16 return against it, which is the coarse store judged against the finer
-    // column the same way the fp16 arm judges its own narrower store - so the class's
-    // figure, the one this lane's row of BoysLaneContracts states with 2^-8 in it, is
-    // what its cells are held to.
+    // The half lane's other store: the argument rounded to this format, judged
+    // against the reference column that goes with it. The arm below hands its
+    // entries `xb`, so what it owes them is `vb`, F_n at that argument - which is
+    // the pair every other bf16 arm of this gate reads (the host bf16 lane's, and
+    // the device classes' own book). The finer column's `v16` belongs to `x16`, and
+    // judging this arm against it charges the lane for the distance between two
+    // arguments rather than for the error of its call. The class's figure, the one
+    // this lane's row of BoysLaneContracts states with 2^-8 in it, is what its cells
+    // are held to.
     if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)])
     {
         std::vector<boys::Bf16> bf16Args(ref.count);
@@ -12682,8 +12696,9 @@ int main(int argc, char** argv) {
             static_cast<int>(boys::Precision::kBf16Device),
             GateDeviceEntryBf16,
             bf16Args,
-            ref.v16,
-            true);
+            ref.vb,
+            true,
+            kBf16MantissaBits);
     }
 #else
     // The CUDA surface's fp16 entries are declared behind the BoysFp16 seam
@@ -12736,10 +12751,14 @@ int main(int argc, char** argv) {
     // forms, read through the entry's own layout: a single-order entry answers one value
     // per argument, so the sweep names one order for the whole batch per launch and
     // reads the grid's column for that order.
+    // `mantissaBits` is the argument `combDeviceRunLane` takes and the same fact:
+    // a half lane's per-value term is half a digit of the format it stores in, so
+    // the two stores of this surface are each judged at their own format's digit.
     const auto combDeviceFastMember =
         [&]<typename TArg, typename TVal>(int lane, const char* entryName, auto entry,
                                           const std::vector<TArg>& args,
-                                          const std::vector<double>& want, bool halfLane) {
+                                          const std::vector<double>& want, bool halfLane,
+                                          int mantissaBits) {
             const boys::LaneContractInfo& laneRow = combLaneRows[static_cast<std::size_t>(lane)];
             const double laneBound = laneRow.bound;
             const double memberAdd =
@@ -12812,7 +12831,7 @@ int main(int argc, char** argv) {
                               static_cast<double>(args[i]),
                               got,
                               want[ref.Index(n, i)],
-                              halfLane ? halfUlp(got) : 0.0,
+                              halfLane ? halfUlp(got, mantissaBits) : 0.0,
                               static_cast<int>(f));
                     }
                 }
@@ -12850,7 +12869,8 @@ int main(int argc, char** argv) {
                                     boys::PackAxis::kArguments),
                 ref.xf,
                 ref.vf,
-                false);
+                false,
+                0);
 
             // The same member through the surface's other group: the in-kernel entry,
             // called from a kernel of this gate's own. A handle the card would not take
@@ -12880,7 +12900,8 @@ int main(int argc, char** argv) {
                     fastDeviceEntry,
                     ref.xf,
                     ref.vf,
-                    false);
+                    false,
+                    0);
             }
             else
             {
@@ -12904,7 +12925,8 @@ int main(int argc, char** argv) {
                                        boys::PackAxis::kArguments),
                 ref.x,
                 ref.v,
-                false);
+                false,
+                0);
         }
 
 #ifdef BOYS_GATE_FP16
@@ -12926,7 +12948,8 @@ int main(int argc, char** argv) {
                                        boys::PackAxis::kArguments),
                 fastHalfArgs,
                 ref.v16,
-                true);
+                true,
+                kF16MantissaBits);
         }
 
         if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)])
@@ -12946,8 +12969,9 @@ int main(int argc, char** argv) {
                                         boys::FitGranularity::kCoarsest,
                                         boys::PackAxis::kArguments),
                 fastBf16Args,
-                ref.v16,
-                true);
+                ref.vb,
+                true,
+                kBf16MantissaBits);
         }
 #endif
     }
