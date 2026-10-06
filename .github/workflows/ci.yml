@@ -866,6 +866,30 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_device_entry_bijection.py --check
+      # The step above asks whether the name a row books is DECLARED, and the linker
+      # only asks whether what a caller calls is defined - and neither asks the
+      # question in the middle: is the surface a row books one this library defines.
+      # A row booking a member that is declared and never given a body a caller can
+      # reach compiles nothing, links nothing until something calls it, and is
+      # reported, counted and probed as an option a caller can name. That shape has
+      # reached this tree four times, each time through a different spelling:
+      # BoysCuda::SingleF64Fast, then forty-one members of the same kind, then the
+      # thirty-one bf16 members the device half keyed and the class did not declare,
+      # then BoysCuda::EachOrderBf16 - declared, written as a template in a .cpp and
+      # instantiated nowhere.
+      #
+      # This step reads the three sets side by side - the surfaces the enumeration
+      # books, the members the two headers declare, and the bodies the class's own
+      # translation unit defines, with the explicit instantiation a member template
+      # needs beside its body - and it reads the rows of the library's own option
+      # table against the enumeration, so a row naming an entry no row books is a
+      # row naming no surface at all. It reads files and nothing else: no build, no
+      # compiler, no CUDA toolkit, so it is scoped to this combination like the
+      # steps around it.
+      - name: Device (every surface a row books is declared and defined)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_booked_surface.py --check
       # The host surface had the same exposure one layer up, and no step read it:
       # the names three headers declare and the shapes tools/host-shapes.json
       # places them in were both written by hand and nothing reconciled them, so a
