@@ -131,6 +131,7 @@ constexpr const char* kNativeHalfAbsent =
 // - and its cross counts the device members apart with the build's own reason
 // rather than with a claim about this host.
 #ifdef BOYS_GATE_CUDA
+
 #include <boys/boys_cuda.hpp>
 #endif
 
@@ -10989,16 +10990,6 @@ int main(int argc, char** argv) {
         }
     };
 
-    // Half of the last representable digit of the returned value: the term the
-    // half-precision lane's own figure carries beside its base.
-    const auto halfUlp = [](double value) {
-        const int exponent = std::ilogb(value);
-
-        return exponent == FP_ILOGB0 || exponent == FP_ILOGBNAN || exponent < -1074
-                   ? 0.0
-                   : std::ldexp(1.0, exponent - 11);
-    };
-
     // ---- the host lanes' cross: every class, every member -------------------
     //
     // One row per (lane, route, scheme, axis, partition), as before - the row book
@@ -11806,6 +11797,16 @@ int main(int argc, char** argv) {
     std::vector<std::string> combDeviceLaneReason(static_cast<std::size_t>(combLaneCount));
 
 #ifdef BOYS_GATE_CUDA
+
+    // Half of the last representable digit of the returned value: the term the
+    // half-precision lane's own figure carries beside its base.
+    const auto halfUlp = [](double value) {
+        const int exponent = std::ilogb(value);
+
+        return exponent == FP_ILOGB0 || exponent == FP_ILOGBNAN || exponent < -1074
+                   ? 0.0
+                   : std::ldexp(1.0, exponent - 11);
+    };
     // The region-B member each device lane's arms read, read off the library's own
     // option table rather than transcribed here, and the term the figure carries
     // for it. Every device arm below launches an entry of the launched all-orders
