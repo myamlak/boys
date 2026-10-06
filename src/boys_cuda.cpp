@@ -12,13 +12,10 @@
 #include <string>
 #include <string_view>
 
-// Status layer of the CUDA lane. The kernels and the table uploads live in
-// boys_cuda.cu (C++20, CUDA-safe include list only - the C++23 headers would poison
-// the nvcc translation unit); this file wraps the exported plain functions in
-// BoysStatus.
-//
-// Upload/launch return codes (boys_cuda.cu): 0 = success, 1 = internal table-layout
-// error, otherwise a cudaError_t from the launch or the sync.
+// Status layer of the CUDA lane. The kernels and the table uploads live in boys_cuda.cu (C++20,
+// CUDA-safe include list only - the C++23 headers would poison the nvcc translation unit); this
+// file wraps the exported plain functions in BoysStatus. Return codes (boys_cuda.cu): 0 = success,
+// 1 = internal table-layout error, otherwise a cudaError_t from the launch or the sync.
 
 extern "C" {
 int BoysCudaUploadTables();
@@ -359,11 +356,10 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
         return BoysStatus::kInvalidArgument;
     }
 
-    // The address order BoysCudaDeviceTableAddresses fills, one slot per symbol: the double
-    // lane's pieceStart, offset, a, b, deg, coeffs and region-B seed, then the float lane's
-    // seven, then three reserved slots the export fills with null, then the uniform grid's four
-    // pools. Both sides state the order; the .cu cannot name this type and this file cannot
-    // name a symbol.
+    // The address order BoysCudaDeviceTableAddresses fills, one slot per symbol: the double lane's
+    // pieceStart, offset, a, b, deg, coeffs and region-B seed, then the float lane's seven, then
+    // three reserved slots the export fills with null, then the uniform grid's four pools. Both
+    // sides state the order; the .cu cannot name this type and this file cannot name a symbol.
     void* addresses[21] = {};
     const BoysStatus status = FromLaunchCode(BoysCudaDeviceTableAddresses(addresses));
 
@@ -411,19 +407,10 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.flatCoeffs32 = static_cast<const float*>(addresses[19]);
     tables.flatMonoCoeffs32 = static_cast<const float*>(addresses[20]);
 
-    // The narrow partition's and the fit route's tables, in the order the tail export fills
-    // them: the partition's double lane (slots 0 to 13), its float lane (14 to 23), the route on
-    // the coarsest partition and then on the narrow one (24 to 34 and 35 to 45), and the route's
-    // region-B pair in the float lane (46 to 49).
-    //
-    // The export fills the handles' *Relaxed* slots with null - those fields are read by no
-    // entry of this revision - and they are assigned here all the same, because the slot order
-    // is the one thing these two files have to state twice.
-    //
-    // A handle that carried none of these refused every call that reads one with
-    // kTablesNotReady, the entries and the tables they read both existing. The names are the
-    // handle's own fields and the slots are the order's positions - the .cu cannot name this
-    // type and this file cannot name a symbol.
+    // The narrow partition's and the fit route's tables, in the order the tail export fills them,
+    // which is the handle's field order. The *Relaxed* slots come back null and no entry of this
+    // revision reads them, but they are assigned all the same: the slot order is the one thing
+    // these two files have to state twice.
     tables.narrowPieceStart = static_cast<const int*>(tail[0]);
     tables.narrowPieceOffset = static_cast<const int*>(tail[1]);
     tables.narrowPieceA = static_cast<const double*>(tail[2]);
@@ -479,21 +466,19 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.ratRelaxedDegB32 = static_cast<const int*>(tail[52]);
     tables.narrowRatRelaxedDegB32 = static_cast<const int*>(tail[53]);
 
-    // The same grid's two per-interval tables per lane, which its bodies address a cell with:
-    // one degree and one block start per interval. They come out of the tail export's last four
-    // slots, the group the handle's own constant names, and they are handed over with the
-    // coefficients they describe - a handle carrying the pools without these would be read at a
-    // block length the table does not have, which is what the route's readiness test refuses.
+    // The same grid's two per-interval tables per lane, which its bodies address a cell with: one
+    // degree and one block start per interval, out of the tail export's last four slots. They are
+    // handed over with the coefficients they describe, since a handle carrying the pools without
+    // these would be read at a block length the table does not have.
     tables.flatDegs = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid]);
     tables.flatOffsets = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 1]);
     tables.flatDegs32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 2]);
     tables.flatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 3]);
 
-    // The same two grids on their rational route, out of the two groups appended after that
-    // one: the pool and the four columns one row is addressed with. Handed over together for
-    // the reason the Chebyshev grid's are - the pool alone is a table no reader can step,
-    // because this route's stride is the interval's own stored count and not a constant of the
-    // grid - and the readiness test of that route is what a handle missing one of them fails.
+    // The same two grids on their rational route, out of the two groups appended after that one:
+    // the pool and the four columns one row is addressed with, handed over together for the reason
+    // the Chebyshev grid's are - the pool alone is a table no reader can step, since this route's
+    // stride is the interval's own stored count, and a handle missing one fails its readiness test.
     tables.flatRatCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailRatGrid]);
     tables.flatRatNumDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 1]);
     tables.flatRatDenDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 2]);
@@ -506,11 +491,10 @@ BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
     tables.flatRatStored32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 3]);
     tables.flatRatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 4]);
 
-    // The coarsest partition's monomial tables, out of the group appended after the grid's: the
-    // two pools that lane's other stored form is read from, one per lane. The pieces, their edges,
-    // their degrees and the piece index base are the Chebyshev tables above, so these are the
-    // whole of what an entry that sums a piece by Horner reads beside them - the mono entries'
-    // readiness test is what a handle carrying the Chebyshev pool without these fails.
+    // The coarsest partition's monomial tables, out of the group appended after the grid's: the two
+    // pools that lane's other stored form is read from, one per lane. The pieces, edges, degrees
+    // and the piece index base are the Chebyshev tables above, so these are the whole of what an
+    // entry that sums a piece by Horner reads beside them.
     tables.monoCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailMono]);
     tables.monoBSeedCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailMono + 1]);
     tables.monoCoeffs32 = static_cast<const float*>(tail[kBoysDeviceTablesTailMono + 2]);
@@ -1673,27 +1657,19 @@ BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner(
 }
 
 
-// ---------------------------------------------------------------------------
-// The one templated entry of this lane: the f32 single entry's compile-time choice
-// of region-B exponential. The entry definitions live in this TU (the header stays
-// CUDA-runtime-free), so call sites in other TUs link the instantiations spelled out
-// here; every other entry of this lane is a plain function defined above.
-// ---------------------------------------------------------------------------
+// The one templated entry of this lane: the f32 single entry's compile-time choice of region-B
+// exponential. Its definitions live in this TU (the header stays CUDA-runtime-free), so call sites
+// in other TUs link the instantiations spelled out here; every other entry of this lane is a plain
+// function defined above.
 template BoysStatus BoysCuda::SingleF32<RegionBExp::kAccurate>(
     const int*, const double*, float*, std::size_t, void*, DivisionForm);
 template BoysStatus BoysCuda::SingleF32<RegionBExp::kFast>(
     const int*, const double*, float*, std::size_t, void*, DivisionForm);
 
-// ---------------------------------------------------------------------------
-// The appended rows: the combinations these lanes already had a kernel and a
-// launcher for, whose option row and surface were not written.
-//
-// Nothing here is new arithmetic and none of these needs a launcher of its own:
-// each calls the launcher of the float row of the same name, or the half lane's
-// fast single, all of which the CUDA lane has exported since the row it belongs to
-// was written. What was missing was the way in - a call a chooser can name and a row
-// a report can print.
-// ---------------------------------------------------------------------------
+// The appended rows: the combinations these lanes already had a kernel and a launcher for, whose
+// option row and surface were not written. Nothing here is new arithmetic and none needs one of its
+// own - each calls the launcher of the float row of the same name, or the half lane's fast single -
+// so what was missing was the way in: a call a chooser can name and a row a report prints.
 BoysStatus BoysCuda::AllOrdersF32Mono(
     const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
     // The other form of the coarsest partition, as AllOrdersF32NarrowMono is of the narrow
@@ -2319,12 +2295,10 @@ BoysStatus BoysCuda::SingleBf16Fast(
     return RunLaunch(BoysCudaLaunchSingleBf16Fast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
 }
 
-// The launched bfloat16 half, the fp16 wrappers above with the format's own store: each is the
-// entry of its own name in the lane's other format, over the kernel and the launcher the fp16 row
-// of that name runs. The row list beside them books them (src/boys_cuda.cpp, kDeviceOptions, the
-// launched bfloat16 block), the kernels are in boys_cuda.cu and the wrappers are what was missing
-// between the two: a declaration on the public surface (include/boys/boys_cuda.hpp) with no
-// definition here is an entry a caller can name and cannot link.
+// The launched bfloat16 half: the fp16 wrappers above with the format's own store, each over the
+// kernel and the launcher the fp16 row of that name runs. The row list beside them books them
+// (kDeviceOptions, the launched bfloat16 block); the kernels are in boys_cuda.cu, and a declaration
+// on the public surface with no definition here is an entry a caller can name and cannot link.
 
 BoysStatus BoysCuda::SingleBf16(
     const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
@@ -2811,17 +2785,10 @@ BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRatHornerFast(
     return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
 }
 
-// ---------------------------------------------------------------------------
-// The device option space.
-//
-// One row per option, read from the entries above rather than from a list kept beside them: a
-// name here is the name an entry is documented and reported under, a bound is the bound that
-// entry states, and the degree lane is the lane its own documentation names.
-//
-// The fp16 rows are the build-time case of an unserved option: they are here whatever the seam
-// is set to, with the reason when it is closed, so the space this revision defines is one
-// number in every configuration.
-// ---------------------------------------------------------------------------
+// The device option space: one row per option, read from the entries above rather than from a list
+// kept beside them - the name an entry is documented under, the bound it states, the lane its
+// documentation names. The fp16 rows are the build-time case of an unserved option: present
+// whatever the seam is set to, with the reason when it is closed, so the space is one number.
 
 #if BoysFp16
 constexpr bool kFp16Served = true;
@@ -2836,32 +2803,25 @@ constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (Boy
 // seed contribution and the fp16 lane's half ULP are terms a report must state and cannot fold
 // into one figure.
 constexpr const char* kFormF64 = "5.5e-14";
-// The double lane reads the fast member at the lane's own figure, and the sentence that says so is
-// the library's: the device's double fast member is the host's arithmetic ported rather than
-// re-derived, because the members are named once and a device figure that differed from the host's
-// for one name would be a second bound for that name (boys_cuda_arithmetic.hpp, DeviceRegionBExp),
-// and the host's own documentation of that member is that the polynomial's 8.336e-11 relative sits
-// inside the ladder's requirement below the member's cut - "So no published figure moves on that
-// lane either" (boys/accuracy.hpp, kDefaultHostRegionBExp). The float lane's 8e-8 is that lane's
-// fast member's own contribution and is not a term the double lane's carries.
+// The double lane reads the fast member at the lane's own figure: the device's double fast member
+// is the host's arithmetic ported rather than re-derived (boys_cuda_arithmetic.hpp,
+// DeviceRegionBExp), and the host's documentation of it is that the polynomial's 8.336e-11 relative
+// sits inside the ladder's requirement below its cut, so no published figure moves on that lane.
 constexpr const char* kFormF64Fast = "5.5e-14";
 constexpr const char* kFormF32 = "1.5e-7";
 constexpr const char* kFormF32Fast = "1.5e-7 + 8e-8";
 constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 // The half lane's other store, whose form names the digit the sentence above leaves in words: the
-// half ULP is the FORMAT's and the two formats of this lane do not carry one, 2^-11 for a binary16
-// return against 2^-8 for a bfloat16 one. The library states that digit once, on the host row the
-// bf16 class reads (src/boys.cpp, BoysLaneContracts, "which in this format is 2^-8 = 3.90625e-03"),
-// and a bf16 row left with the fp16 form would print one figure for two arithmetic.
+// half ULP is the FORMAT's - 2^-11 for a binary16 return against 2^-8 for a bfloat16 one - and the
+// library states that digit once, on the host row the bf16 class reads (src/boys.cpp,
+// BoysLaneContracts). A bf16 row left with the fp16 form would print one figure for two arithmetic.
 constexpr const char* kFormBf16 =
     "1e-7 + half an ULP of the returned value, which in this format is 2^-8 = 3.90625e-03";
 
-// The figures, with any term a returned value decides dropped, which is the half ULP and nothing
-// else: every other form is a number here. The half lane's constant part is the lane's and not the
-// format's - the CUDA surface publishes 1e-7 for the entries of both stores (boys/boys_cuda.hpp,
-// SingleF16, SingleBf16 and their siblings) - so the two constants below hold one number, stated
-// per format because the form beside each is that format's and a reader taking one for the other
-// would be reading a bound the other class does not carry.
+// The figures, with any term a returned value decides dropped - the half ULP and nothing else:
+// every other form is a number here. The half lane's constant part is the lane's and not the
+// format's (the CUDA surface publishes 1e-7 for both stores, boys/boys_cuda.hpp), so the two
+// constants below hold one number, stated per format because the form beside each is that format's.
 constexpr double kBoundF64 = 5.5e-14;
 constexpr double kBoundF64Fast = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;
@@ -2966,21 +2926,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
      BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
-    // The uniform route's four rows. One route and not four: the table stores both forms of
-    // every fit and both are certified (the two rows of kFlatRows), and it stores one fit per
-    // order per interval, which is the packing axis's per-order member.
-    //
-    // So the four rows are two readings and four names. The scheme axis is a real choice - the
-    // Chebyshev image summed by a split Clenshaw against the monomial image summed by Horner -
-    // and the packing axis is not: a grid with one fit per order and interval has no seeded
-    // ladder to step and the route's fit refuses a band source at compile time, so the two rows
-    // naming that axis run the route's own kernel. A report that named two arithmetics where the
-    // lane has one would be a report a chooser cannot act on.
-    //
-    // Each row's \c bound is the lane's, not the table's own: a bound is what the entry
-    // guarantees over the whole argument range it serves, and above kFlatHi this route runs the
-    // same asymptotic every other double entry runs, so the figure a caller places it by is the
-    // double batch lane's.
+    // The uniform route's four rows are two readings and four names: the table stores both forms of
+    // every fit, both certified, one fit per order per interval. The scheme axis is a real choice;
+    // the packing axis is not, since a grid of one fit per order and interval has no seeded ladder
+    // to step, and both its rows run one kernel. Each row's bound is the lane's, not the table's.
     {DeviceEntry::kAllOrdersF64Uniform, "all-orders-fp64-uniform",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
@@ -2998,11 +2947,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
-    // The same grid on its RATIONAL route, the four rows the enumerators above name. The pair is
-    // stored in the monomial form the family is stored in everywhere, so both scheme names reach
-    // one arithmetic and each pair below runs one kernel. The bound is the double batch lane's
-    // for the reason the Chebyshev grid's rows state; the partition is already named by the rows
-    // above, so what these add is the family of fit over the grid.
+    // The same grid on its RATIONAL route, the four rows the enumerators above name: the pair is
+    // stored in the monomial form the family uses everywhere, so both scheme names reach one
+    // arithmetic. The bound is the double batch lane's for the reason the Chebyshev grid's rows
+    // state; the partition is already named above, so what these add is the family of fit.
     {DeviceEntry::kAllOrdersF64UniformRat, "all-orders-fp64-uniform-rat",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
@@ -3020,14 +2968,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute, RegionBExp::kAccurate,
      BoysDeviceLane::kF64Batch, kBoundF64, kFormF64, true, nullptr},
 
-    // The float lane's own partition and its own grid, which the device lane had no row for. Both
-    // are the lane's tables and not a re-cut of the double lane's: the narrow pieces are the float
+    // The float lane's own partition and its own grid, which the device lane had no row for: both
+    // are the lane's tables and not a re-cut of the double lane's - the narrow pieces are the float
     // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 245
-    // intervals at degree 4.
-    //
-    // The grid's rows read the table's one degree per order and interval. The narrow
-    // partition's two rows each carry their own basis: the Chebyshev table for the row above,
-    // the monomial one for the row below.
+    // intervals at degree 4. The grid's rows read the table's one degree per order and interval.
     {DeviceEntry::kAllOrdersF32Narrow, "all-orders-fp32-narrow",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,
@@ -3046,14 +2990,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
 
-    // The float lane's rational route, one pair of rows per partition. The route is a family
-    // and not a basis, so its pair is stored in one form and both scheme names reach the one
-    // arithmetic - a numerator and a denominator read by Horner - and each pair of rows below
-    // runs one kernel and reports one delivered figure. The double lane's route carries the same
-    // two pairs, and this lane's rows carry the float lane's region-B seed: the region-A seed is
-    // the double lane's pair at the same partition, which is what the entry's own contract
-    // states. The bound is the float lane's, because the region-B seed and the ladder above it
-    // are the float lane's.
+    // The float lane's rational route, one pair of rows per partition. The route is a family and
+    // not a basis, so its pair is stored in one form, both scheme names reach the one arithmetic,
+    // and each pair runs one kernel. This lane's rows carry the float lane's region-B seed - the
+    // region-A seed is the double lane's pair at the same partition, as its contract states.
     {DeviceEntry::kAllOrdersF32Rat, "all-orders-fp32-rat", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRoute, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
@@ -3297,11 +3237,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      RegionBExp::kAccurate, BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served,
      kFp16Refusal},
 
-    // The partition and route axes reached from the caller's own kernel. Each of these is the
-    // option its launched row above names, in the group a caller reaches through the handle
-    // instead of through a launch: precision, shape, question, axis, scheme, route, lane and
-    // bound are that row's, because the arithmetic is that row's, and the two rows differ in the
-    // group and the name.
+    // The partition and route axes reached from a caller's own kernel: each row is the option its
+    // launched row above names, in the group a caller reaches through the handle instead of a
+    // launch. Precision, shape, question, axis, scheme, route, lane and bound are that row's,
+    // because the arithmetic is, and the two rows differ in the group and the name.
     {DeviceEntry::kDeviceAllOrdersF64Narrow, "device-all-orders-fp64-narrow",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kFp64,
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition,
@@ -3389,17 +3328,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kRoute,
      RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32, kFormF32, true, nullptr},
 
-    // The appended block, the rows of the entries appended to the enumeration. Each is a
-    // combination the class already ran - the kernel, the lane and the launcher are the ones
-    // the row beside it names - and none of them changes an arithmetic: the mono rows read the
-    // monomial basis at the coarsest and the orders partitions, and the half lane's fast single
-    // is the float lane's fast reading with the half store, which is what the kernel states.
-    //
-    // The half lane's fast single carries the half lane's figure and not the float lane's fast
-    // pair: this lane answers at kFp16Device's own contract row, 1e-7 plus half of the last
-    // representable digit of the returned value, and that digit is the store's. The fast
-    // reading's 8e-8 is a term of the float lane's figure, and the half store's digit is three
-    // orders above it, so the term does not reach this lane's sentence.
+    // The appended block: the rows of the entries appended to the enumeration, each a combination
+    // the class already ran, so none changes an arithmetic. The half lane's fast single carries the
+    // half lane's figure and not the float lane's fast pair: this lane answers 1e-7 plus the half
+    // store's own last digit, three orders above the fast reading's 8e-8, which does not reach it.
     {DeviceEntry::kAllOrdersF32Mono, "all-orders-fp32-mono", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kScheme, RegionBExp::kAccurate, BoysDeviceLane::kF32Batch, kBoundF32,
@@ -3416,13 +3348,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp16, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kScheme, RegionBExp::kAccurate,
      BoysDeviceLane::kF16Batch, kBoundF16, kFormF16, kFp16Served, kFp16Refusal},
-    // The orders reading of every partition, and the half lane's rows of the whole ladder
-    // family, in the caller's own kernel. Each is the twin of the launched row above it: one
-    // arithmetic reached two ways, so a chooser reading the pair reads one partition, one route,
-    // one scheme and one bound. The orders rows carry the packing axis and no other change; the
-    // half lane's rows are the float lane's bodies with this lane's store around them, and its
-    // fast single carries the fp16 lane's own figure and form, as the launched row of that
-    // arithmetic does (kFp16Served, kFp16Refusal).
+    // The orders reading of every partition, and the half lane's rows of the whole ladder family,
+    // in the caller's own kernel. Each is the twin of the launched row above it - one arithmetic
+    // reached two ways - so a chooser reading the pair reads one partition, one route, one scheme
+    // and one bound; the orders rows carry the packing axis, the half lane's rows its own store.
     {DeviceEntry::kDeviceAllOrdersF64Orders,
      "device-all-orders-fp64-orders",
      DeviceOptionGroup::kDeviceCallable,
@@ -4254,12 +4183,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionPrecision::kFp64, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast,
      kFormF64Fast, true, nullptr},
-    // The float and half lanes' ladders at the other region-B exponential, appended with
-    // their entries: the row of its own name above at the second member of the axis, over
-    // the same tables, so the partition, the route, the scheme and the packing the row above
-    // states are this row's. The half lane's rows carry that lane's figure, as its accurate
-    // rows do: the fast reading's own contribution is a term of the float lane's sentence
-    // and the half store's digit is three orders above it.
+    // The float and half lanes' ladders at the other region-B exponential, appended with their
+    // entries: the row of its own name above at the second member of the axis, over the same
+    // tables, so the partition, route, scheme and packing the row above states are this row's.
+    // The half lane's rows carry that lane's figure, whose store digit is three orders above 8e-8.
     {DeviceEntry::kAllOrdersF32Fast, "all-orders-fp32-fast", DeviceOptionGroup::kLaunched,
      DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders, DeviceOptionQuestion::kAllOrders,
      DeviceOptionAxis::kRegionBExp, RegionBExp::kFast, BoysDeviceLane::kF32Batch, kBoundF32Fast,
@@ -4505,13 +4432,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionAxis::kRoute,
      RegionBExp::kFast, BoysDeviceLane::kF64Batch, kBoundF64Fast, kFormF64Fast,
      true, nullptr},
-    // The half lane's second store, appended with its enumerators: each row is the fp16 row
-    // of its own name with the format's spelling in the printed name. The lane is one lane,
-    // but the class is not: the precision cell is kBf16, because a class is keyed by the
-    // format a return carries and booking these into kFp16 is what made a class whose own
-    // report ranks a bf16 entry first name an fp16 one. The figure is this format's form,
-    // whose half ULP is 2^-8 and not the 2^-11 the rows above carry. The build-time seam is
-    // the half lane's and so is the same flag: both stores' rows stand behind BoysFp16.
+    // The half lane's second store, appended with its enumerators: each row is the fp16 row of its
+    // own name with the format's spelling in the printed name. The lane is one lane; the class is
+    // not, since a class is keyed by the format a return carries: the precision cell is kBf16, and
+    // booking these into kFp16 made a report rank a bf16 entry first while naming an fp16 one.
     {DeviceEntry::kDeviceSingleBf16, "device-single-bfloat16",
      DeviceOptionGroup::kDeviceCallable, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
@@ -4740,11 +4664,10 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
      DeviceOptionAxis::kRegionBExp,
      RegionBExp::kFast, BoysDeviceLane::kF16Batch, kBoundBf16, kFormBf16, kFp16Served,
      kFp16Refusal},
-    // The half lane's other store, launched, appended with its enumerators: each row is
-    // the fp16 row of its own name with the format's spelling in the printed name. The lane
-    // is one lane and the class is this format's, for the reason the device-callable block
-    // of the same store states above: the precision cell is kBf16 and the figure is
-    // kFormBf16, whose half ULP is this format's 2^-8.
+    // The half lane's other store, launched, appended with its enumerators: each row is the fp16
+    // row of its own name with the format's spelling in the printed name. The lane is one lane and
+    // the class is this format's, for the reason the device-callable block of the same store states
+    // above - the precision cell is kBf16 and the figure is kFormBf16.
     {DeviceEntry::kSingleBf16, "single-bfloat16",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kBf16,
      DeviceOptionShape::kSingle, DeviceOptionQuestion::kSingle,
