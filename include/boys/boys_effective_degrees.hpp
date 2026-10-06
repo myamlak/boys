@@ -1,55 +1,44 @@
 #pragma once
 
 // The compile-time effective-degree machinery behind the accuracy-multiplier
-// parametrization. The multiplier m relaxes each lane's asserted per-region
-// bound B_region by truncating the seed fits to the effective degree
+// parametrization. The multiplier m relaxes each lane's asserted per-region bound B_region by
+// truncating the seed fits to the effective degree
 //
 //   d'(m) = min { d' in {0,1,2,4,6,...} : Delta(d') * A <= (m-1) * B_region },
 //   Delta(d') = sum_{k=d'+1}^{d} |c_k|   (the dropped-coefficient tail),
 //
-// with A the path's seed-error amplification: 1 for the single-style lanes,
-// w(b) = max(1, b^n / prod(j+1/2)) at the piece's right end for the region-A
-// batch downward recursion, and prod(j+1/2)/x0^n for the region-B upward
-// recursion (worst at x = x0). The per-(order, piece) d' tables are
-// compile-time constants per (m, lane role, basis), a-priori, never tuned.
+// with A the path's seed-error amplification: 1 for the single-style lanes, w(b) = max(1,
+// b^n / prod(j+1/2)) at the piece's right end for the region-A batch downward recursion, and
+// prod(j+1/2)/x0^n for the region-B upward recursion (worst at x = x0). The (order, piece)
+// d' tables are compile-time constants per (m, lane role, basis), a-priori, never tuned.
 //
-// The tail must come from the table the scheme sums. A fit is carried as a
-// Chebyshev table and a monomial table over the same pieces, and the two hold
-// different numbers describing it: a Chebyshev fit's coefficients decay with
-// the fit's accuracy, while the same fit's monomial coefficients are its
-// Taylor coefficients on the piece and their high-order end is larger by about
-// 2^k. A degree the Chebyshev tail admits can drop a monomial tail several
-// orders of magnitude over budget. TailBasis names which table a scan reads.
+// The tail must come from the table the scheme sums: a Chebyshev fit's coefficients decay
+// with the fit's accuracy, the same fit's monomial coefficients are Taylor coefficients on
+// the piece and larger by about 2^k at the high-order end, so a degree the Chebyshev tail
+// admits can drop a monomial tail orders of magnitude over budget.
 //
-// The summation's own rounding. Horner at degree d' returns
-// sum_{k<=d'} c_k t^k (1 + theta_k) with |theta_k| <= gamma_{k+1},
-// gamma_k = k*u/(1-ku): the backward form, in which the coefficient at step k
-// carries the perturbation of the k+1 roundings at or below it. So the sum's
-// error over the exact truncated polynomial is at most
-//   R(d') = sum_{k<=d'} |c_k| gamma_{k+1} <= gamma_{d'+1} sum_{k<=d'} |c_k|.
-// R(d') is non-decreasing in d' - every term added is non-negative - so
-// R(d') <= R(d) and the rung's summation rounds no more than the m = 1 lane's
-// does. It is the m = 1 lane's rounding that the m = 1 base is asserted to
-// carry, and the criterion spends nothing on the rung's.
+// The summation's own rounding: Horner at degree d' returns sum_{k<=d'} c_k t^k
+// (1 + theta_k) with |theta_k| <= gamma_{k+1}, gamma_k = k*u/(1-ku) - the backward form,
+// the coefficient at step k carrying the perturbation of the k+1 roundings at or below it -
+// so the sum's error over the exact truncated polynomial is
+//   R(d') = sum_{k<=d'} |c_k| gamma_{k+1} <= gamma_{d'+1} sum_{k<=d'} |c_k|,
+// non-decreasing in d' - every term added is non-negative - so R(d') <= R(d) and the rung's
+// summation rounds no more than the m = 1 lane's does; it is the m = 1 lane's rounding that
+// the m = 1 base is asserted to carry, and the criterion spends nothing on the rung's.
 //
-// Why no constant rounding term belongs in the criterion. Bounding the rung's
-// rounding and the m = 1 lane's independently and adding both would put a term
-// in the criterion that does not fall to zero at d' = d, and such a criterion
-// would refuse the full degree - which is provably wrong, because at d' = d
-// the rung runs the m = 1 summation over the same coefficients bit for bit,
-// and its delivered error is the m = 1 lane's, inside B_region by the
-// contract. A criterion that can refuse a degree it must admit is not a
-// criterion. So the shape is the m = 1 base, asserted and measured, plus the
-// one term the truncation adds: Delta(d') * A.
+// No constant rounding term belongs in the criterion: added to the m = 1 lane's rounding it
+// would not fall to zero at d' = d and would refuse a degree the criterion must admit - at
+// d' = d the rung runs the m = 1 summation over the same coefficients bit for bit, its
+// delivered error the m = 1 lane's, inside B_region by the contract. The shape is the m = 1
+// base, asserted and measured, plus the one term the truncation adds: Delta(d') * A.
 //
-// Delta(d) = 0, so the scan always reaches the full degree: no rung is left
-// without an admissible one, and the fallback is the m = 1 summation, whose
-// error the rung's own bound already covers.
+// Delta(d) = 0, so the scan always reaches the full degree; no rung is left without an
+// admissible one, and the fallback is the m = 1 summation, whose error the rung's own bound
+// already covers.
 //
-// The fp16/bf16 lanes are I/O around the fp32 engine; their 1e-7 region budgets
-// are the fp16 bound formula's asserted base, strictly stronger than the float
-// lanes' documented 1.5e-7, and the representation half-ULP term is
-// m-independent.
+// The fp16/bf16 lanes are I/O around the fp32 engine; their 1e-7 region budgets are the
+// fp16 bound formula's asserted base, strictly stronger than the float lanes' documented
+// 1.5e-7, and the representation half-ULP term is m-independent.
 
 /// \cond
 // Not API: the degree arithmetic the entries are compiled from.
@@ -237,13 +226,13 @@ constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) n
     return (kBasis == TailBasis::kChebyshev) ? chebyshev : monomial;
 }
 
-// The narrow partition's own effective-degree tables. The narrow pieces carry
-// their own coefficients, so the criterion applies to them unchanged: the tail a
-// rung drops from *this* piece's stored coefficients, times the path's
-// amplification, against the rung's budget. Region A's pieces are cut per order,
-// so the table is flat over kNarrowAPieces as the shipped one is over kPieces;
-// which lane's narrow table a role scans follows the same split as
-// RegionADegrees' two branches (RoleUsesDoubleTables).
+/// The narrow partition's own effective-degree tables. The narrow pieces carry
+/// their own coefficients, so the criterion applies to them unchanged: the tail a
+/// rung drops from *this* piece's stored coefficients, times the path's
+/// amplification, against the rung's budget. Region A's pieces are cut per order,
+/// so the table is flat over kNarrowAPieces as the shipped one is over kPieces;
+/// which lane's narrow table a role scans follows the same split as
+/// RegionADegrees' two branches (RoleUsesDoubleTables).
 template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
@@ -298,13 +287,13 @@ constexpr auto NarrowRegionADegrees() noexcept {
     }
 }
 
-// The narrow partition of region B. Its seed is one polynomial per piece, so a
-// row is the pair (piece, order): flat, indexed
-// piece * (kMaxOrder + 1) + order, as the other tables are flat. The gain is the
-// shipped region B one, A_B(n), because the seed is carried up the same
-// recursion either partition feeds. The split is by precision and not by the
-// region-A rule above: a float return is a float seed, cut at the float
-// budget.
+/// The narrow partition of region B. Its seed is one polynomial per piece, so a
+/// row is the pair (piece, order): flat, indexed
+/// piece * (kMaxOrder + 1) + order, as the other tables are flat. The gain is the
+/// shipped region B one, A_B(n), because the seed is carried up the same
+/// recursion either partition feeds. The split is by precision and not by the
+/// region-A rule above: a float return is a float seed, cut at the float
+/// budget.
 template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
@@ -352,30 +341,19 @@ constexpr auto NarrowRegionBDegrees() noexcept {
     }
 }
 
-// ---------------------------------------------------------------------------
-// The rational pair's own truncation
-// ---------------------------------------------------------------------------
-// A stored rational piece is a numerator P(t) = sum_{j<=m} p_j t^j and a
-// denominator Q(t) = 1 + sum_{1<=j<=k} q_j t^j over one piece of region A's
-// partition, and the region-B seed is one such pair over the whole of region B.
-// A lower-order pair cuts both at one order d': m' = min(d', m) and
-// k' = min(d', k). The value is a quotient, so what the cut costs is not a
-// coefficient sum. With dP = P - P' and dQ = Q - Q' the dropped parts,
-//
-//   R - R' = dP/Q - R' * dQ/Q,
-//
-// and the pairwise tail is bounded by
-//
+// A stored rational piece is a numerator P(t) = sum_{j<=m} p_j t^j and a denominator
+// Q(t) = 1 + sum_{1<=j<=k} q_j t^j over one piece of region A's partition, and the region-B
+// seed is one such pair over the whole of region B. A lower-order pair cuts both at one
+// order d': m' = min(d', m) and k' = min(d', k). The value is a quotient, so what the cut
+// costs is not a coefficient sum - with dP = P - P' and dQ = Q - Q' the dropped parts,
+//   R - R' = dP/Q - R' * dQ/Q,   so the pairwise tail is bounded by
 //   Delta(d') = ( DP(d') + (SP / (Qlo - DQ(d'))) * DQ(d') ) / Qlo,
-//
-// with DP/DQ the dropped tails of P and Q, SP the numerator's stored value scale
-// and Qlo the denominator's floor over the piece (DenominatorFloor). Both
-// terms are needed because cutting the denominator moves every value the pair
-// returns.
-//
-// At d' = max(m, k) the cut is the whole pair, so Delta = 0 and the scan always
-// has an admissible order: the returned pair is never one the budget cannot
-// carry, and at the full cut it returns the shipped pair's value bit for bit.
+// with DP/DQ the dropped tails of P and Q, SP the numerator's stored value scale and Qlo the
+// denominator's floor over the piece (DenominatorFloor) - both terms are needed, because
+// cutting the denominator moves every value the pair returns. At d' = max(m, k) the cut is
+// the whole pair, so Delta = 0 and the scan always has an admissible order: the returned
+// pair is never one the budget cannot carry, and at the full cut it returns the shipped
+// pair's value bit for bit.
 
 /// The number of grid intervals the denominator's floor is bounded on: an
 /// a-priori constant of the criterion, not of any one piece.
@@ -561,15 +539,15 @@ constexpr void RationalPairCut(const NumArray& num,
 }
 
 #if !defined(__CUDACC__)
-// The per-(m, role, basis) compile-time d' tables. The degree tables are flat
-// std::array<int, ...> (one entry per region-A piece / per order for region B;
-// the flat form keeps the tables constexpr on MSVC). The NTTP forms are
-// instantiation-local constants - zero mutable state on the CPU path.
-//
-// The region-A degrees of one role and one basis: the branch below is which
-// lane's stored piece table the role reads, and the basis picks the form within
-// it - the Chebyshev coefficients ClenshawSplit reads, or the monomial ones
-// HornerMono reads, over the same pieces at the same degrees.
+/// The per-(m, role, basis) compile-time d' tables. The degree tables are flat
+/// std::array<int, ...> (one entry per region-A piece / per order for region B;
+/// the flat form keeps the tables constexpr on MSVC). The NTTP forms are
+/// instantiation-local constants - zero mutable state on the CPU path.
+///
+/// The region-A degrees of one role and one basis: the branch below is which
+/// lane's stored piece table the role reads, and the basis picks the form within
+/// it - the Chebyshev coefficients ClenshawSplit reads, or the monomial ones
+/// HornerMono reads, over the same pieces at the same degrees.
 template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
@@ -655,16 +633,16 @@ constexpr auto RegionBDegrees() noexcept {
     }
 }
 
-// The rational pair tables at a rung: per region-A piece and per region-B
-// order, the numerator and denominator degree the pair criterion certifies. Two
-// flat int arrays rather than one of pairs, for the same reason the polynomial
-// tables are flat.
-//
-// The amplification each region's cut pays is the path's own: region A reads one
-// piece per order and nothing amplifies the cut, so A = 1 rather than the batch
-// role's w(b); region B reads its seed at order 0 and carries it up, so its cut
-// pays the shipped table's A_B(n). The budget is the batch role's at both, since
-// the tier the rung is named by documents m * 5.5e-14 in every region.
+/// The rational pair tables at a rung: per region-A piece and per region-B
+/// order, the numerator and denominator degree the pair criterion certifies. Two
+/// flat int arrays rather than one of pairs, for the same reason the polynomial
+/// tables are flat.
+///
+/// The amplification each region's cut pays is the path's own: region A reads one
+/// piece per order and nothing amplifies the cut, so A = 1 rather than the batch
+/// role's w(b); region B reads its seed at order 0 and carries it up, so its cut
+/// pays the shipped table's A_B(n). The budget is the batch role's at both, since
+/// the tier the rung is named by documents m * 5.5e-14 in every region.
 struct RationalRegionAPairs {
     std::array<int, std::size(kPieces)> num{};
     std::array<int, std::size(kPieces)> den{};
@@ -675,11 +653,11 @@ struct RationalRegionBPairs {
     std::array<int, kMaxOrder + 1> den{};
 };
 
-// One order's row of the double lane's stored region-A pairs: the pieces are
-// grouped by order, so a row is the order's own pieces. It is cut in a constant
-// expression of its own rather than inside the assembly's single evaluation,
-// because a compiler's step budget is spent per evaluation; the rows hold the
-// same cuts either way.
+/// One order's row of the double lane's stored region-A pairs: the pieces are
+/// grouped by order, so a row is the order's own pieces. It is cut in a constant
+/// expression of its own rather than inside the assembly's single evaluation,
+/// because a compiler's step budget is spent per evaluation; the rows hold the
+/// same cuts either way.
 template <int kOrder, bool kSeedReading> struct RationalARow {
     static constexpr int kFirst = kPieceStart[kOrder];
     static constexpr int kCount = kPieceStart[kOrder + 1] - kFirst;
@@ -776,17 +754,14 @@ constexpr RationalRegionBPairs RationalRegionBDegrees() noexcept {
     return pairs;
 }
 
-// ---------------------------------------------------------------------------
-// The narrow partition's own pairs at a rung
-// ---------------------------------------------------------------------------
-// The narrow partition carries its own stored numerator/denominator pairs - a
-// different cover, a different fit, different roundings from the shipped
-// partition's over the same domain - so a rung of it is a cut of THESE pairs.
-// The criterion and the reading are the shipped ones: region A's piece is the
-// order's value and nothing amplifies the cut, so A = 1; region B's seed is one
-// evaluation carried up from order 0, so its cut is judged at A_B(0) = 1. Both
-// spend the batch role's region budget, a property of the region and the
-// recursion rather than of the entry that reads the rung.
+/// The narrow partition carries its own stored numerator/denominator pairs - a
+/// different cover, a different fit, different roundings from the shipped
+/// partition's over the same domain - so a rung of it is a cut of THESE pairs.
+/// The criterion and the reading are the shipped ones: region A's piece is the
+/// order's value and nothing amplifies the cut, so A = 1; region B's seed is one
+/// evaluation carried up from order 0, so its cut is judged at A_B(0) = 1. Both
+/// spend the batch role's region budget, a property of the region and the
+/// recursion rather than of the entry that reads the rung.
 struct NarrowRationalRegionAPairs {
     std::array<int, std::size(kNarrowAPieces)> num{};
     std::array<int, std::size(kNarrowAPieces)> den{};
@@ -883,14 +858,11 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowSeedDegrees() noexcept
     return pairs;
 }
 
-// ---------------------------------------------------------------------------
-// The rational pair at a batch seed's reading
-// ---------------------------------------------------------------------------
-// The cut is the same pair over the same pieces as the per-order reading, but
-// judged at the batch amplification: an engine that seeds a batch from the top
-// order's piece and recurses down pays w(b) at that piece's right end. The pair
-// is the double lane's stored one - an engine that needs a batch seed's
-// precision reads this lane's rational fit, not the float lane's own pair.
+/// The cut is the same pair over the same pieces as the per-order reading, but
+/// judged at the batch amplification: an engine that seeds a batch from the top
+/// order's piece and recurses down pays w(b) at that piece's right end. The pair
+/// is the double lane's stored one - an engine that needs a batch seed's
+/// precision reads this lane's rational fit, not the float lane's own pair.
 template <BoysRole kRole>
 constexpr RationalRegionAPairs RationalRegionASeedDegrees() noexcept {
     static_assert(RoleUsesBatchAmplification(kRole),
@@ -984,14 +956,11 @@ constexpr NarrowRationalRegionAPairs NarrowRationalRegionASeedDegrees() noexcept
         std::make_index_sequence<kMaxOrder + 1>{});
 }
 
-// ---------------------------------------------------------------------------
-// The single-precision lane's own rational pairs at a rung
-// ---------------------------------------------------------------------------
-// The float lane carries the rational family as its own stored tables, so a rung
-// of this family on this lane is a cut of THESE, by the same pair criterion and
-// at the role's own budget. Region A's reading is the single-order one, A = 1;
-// the float lane's batch seeds from the double lane's pair above and not from
-// this table.
+/// The float lane carries the rational family as its own stored tables, so a rung
+/// of this family on this lane is a cut of THESE, by the same pair criterion and
+/// at the role's own budget. Region A's reading is the single-order one, A = 1;
+/// the float lane's batch seeds from the double lane's pair above and not from
+/// this table.
 struct RationalRegionAF32Pairs {
     std::array<int, std::size(f32::kRatAPieces)> num{};
     std::array<int, std::size(f32::kRatAPieces)> den{};
@@ -1171,15 +1140,13 @@ constexpr NarrowRationalRegionBF32Pairs NarrowRationalRegionBF32Degrees() noexce
 #endif // !defined(__CUDACC__)
 
 
-// ---------------------------------------------------------------------------
-// The same tables under the names the device lane's entries read them by
-// ---------------------------------------------------------------------------
-// The narrow partition's own pairs, cut by the criterion above: same layout,
-// same criterion, different stored numbers, and a degree certified for one
-// table's fit is not a degree certified for the other's. Region A's two readings
-// are the shipped route's two - a per-order reading pays A = 1 and a batch seed
-// the piece's own w(b) - and region B's seed is one pair per narrow piece,
-// judged at order 0 as the shipped route's is.
+/// The same tables under the names the device lane's entries read them by
+/// The narrow partition's own pairs, cut by the criterion above: same layout,
+/// same criterion, different stored numbers, and a degree certified for one
+/// table's fit is not a degree certified for the other's. Region A's two readings
+/// are the shipped route's two - a per-order reading pays A = 1 and a batch seed
+/// the piece's own w(b) - and region B's seed is one pair per narrow piece,
+/// judged at order 0 as the shipped route's is.
 struct RationalNarrowRegionAPairs {
     std::array<int, std::size(kNarrowAPieces)> num{};
     std::array<int, std::size(kNarrowAPieces)> den{};

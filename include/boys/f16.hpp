@@ -16,12 +16,10 @@
 #include <bit>
 #include <cstdint>
 
-// `stdfloat` is a C++23 header ([stdfloat.syn]); below C++23 its contents do
-// not exist, and the MSVC STL says so on every C++20 translation unit of this
-// tree (STL4038). The include is therefore gated on the language level as
-// well as availability: at C++20 the wrappers below are the only half types
-// that exist anyway, and the gate keeps a warnings-as-errors build free of a
-// diagnostic this library cannot act on.
+// `stdfloat` is C++23 ([stdfloat.syn]): below that its contents do not exist, and the MSVC
+// STL reports STL4038 on every C++20 translation unit of this tree, where the wrappers below
+// are the only half types anyway. The gate is on the language level as well as availability,
+// keeping warnings-as-errors builds free of a diagnostic this library cannot act on.
 #if __has_include(<stdfloat>) && \
     (__cplusplus > 202002L || (defined(_MSVC_LANG) && _MSVC_LANG > 202002L))
 #include <stdfloat>

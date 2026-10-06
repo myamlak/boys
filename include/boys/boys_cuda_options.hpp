@@ -561,29 +561,10 @@ enum class DeviceEntry : int {
     kCount, ///< rows this report defines; one past the last
 };
 
-// ---------------------------------------------------------------------------
-// The rows that are one arithmetic under two names.
-//
-// Two rows of this space can be one option. The rational route is stored in one form, so
-// its two scheme names reach one kernel, and both rows exist because a chooser naming a
-// scheme must reach the combination it named. The uniform grid's reading of region A has
-// one member, so that grid's packing rows launch one kernel as well. Such a row is a name
-// and not a second arithmetic, and a report counting rows as options counts more than the
-// space holds.
-//
-// Which rows those are is not a fact about a row. An alias pair agrees on everything a row
-// states - precision, shape, question, lane, region-B exponential, cut and bound - and so
-// does `all-orders-fp64-mono` against `all-orders-fp64`, which are two lanes and two
-// arithmetics. The entries' own bodies decide it: DeviceEntryArithmeticOf answers with the
-// row whose entry reaches the same kernel, or the same device body, as this one's, and that
-// relation is generated from those bodies by `tools/gen_entry_aliases.py` rather than
-// listed here. That tool's `--check` re-derives it, so a body that starts or stops
-// forwarding fails the check until this block says so.
-//
-// Two readers use it: a chooser placing two rows side by side reads off it that a pair is
-// one option, whose figure is not a second measurement's; and the probes' reports count the
-// space by arithmetic beside counting it by name.
-// ---------------------------------------------------------------------------
+// Two rows of this space can be one option, so a report counting rows as options counts more than
+// the space holds: agreement on everything a row states does not make one arithmetic, and
+// `all-orders-fp64-mono` against `all-orders-fp64` agrees while running two lanes and two
+// arithmetics. The entries' bodies decide it - the block below is `tools/gen_entry_aliases.py`'s.
 
 // BEGIN GENERATED: the rows that are one arithmetic (tools/gen_entry_aliases.py)
 // Written from the entries' own bodies: each row below reaches the kernel (or the device
@@ -1179,13 +1160,10 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kDeviceAllOrdersBf16NarrowOrdersRatHornerFast:
             return FitGranularity::kNarrow;
 
-        // The entries whose row carries no partition axis, and which read the shipped
-        // cut: the single entries and the batch generics are the coarsest fit read whole,
-        // the coarsest partition's own ladders are that cut's pieces, and the all-N and
-        // each-order shapes seed the coarsest ladder at one top order. Naming kUniform or
-        // kNarrow for any of these would state a cut the entry does not read; the shipped
-        // cut is the one it does, and the device-callable generics reach it through the
-        // handle they were given (boys_cuda_device.hpp, TableLane64).
+        // The entries whose row carries no partition axis read the shipped cut: the single entries,
+        // the coarsest partition's own ladders, the all-N and each-order shapes and the device-
+        // callable generics, which reach it through their handle's own lanes (boys_cuda_device.hpp,
+        // TableLane64). kNarrow or kUniform would state a cut none of them reads.
         case DeviceEntry::kSingleF64:
         case DeviceEntry::kSingleF64Fast:
         case DeviceEntry::kSingleF32:
@@ -1378,15 +1356,10 @@ constexpr FitGranularity DevicePartitionOf(DeviceEntry entry) noexcept {
         case DeviceEntry::kEachOrderBf16Fast:
             return FitGranularity::kCoarsest;
 
-        // The sentinel one past the last row this report defines, and not a row a call
-        // can name, so no partition member is owed for it. It is named rather than left
-        // to a default arm: a default would swallow the next enumerator as quietly as it
-        // swallows this one. Nothing else here catches that row: gcc and clang
-        // warn for an unhandled enumerator through -Wswitch, but only while the
-        // switch has no `default` arm. This tree builds on MSVC at /W4, which emits
-        // nothing for one either way. The assertion below the switch is what fails
-        // the build for a row this switch has not been taught, and on MSVC it is the
-        // only thing that does.
+        // kCount is one past the last row, not a row a call can name, so no cut is owed it. Naming
+        // it beats a default arm, which would swallow the next enumerator as quietly as this one.
+        // `-Wswitch` catches an unhandled enumerator on gcc and clang only while the switch has no
+        // default arm, and MSVC at /W4 emits nothing either way: the assertion below is the guard.
         case DeviceEntry::kCount:
             break;
     }
@@ -1589,15 +1562,10 @@ struct DeviceEntryAxes {
 constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
     switch (entry)
     {
-        // The single-order shapes: one order asked for, one fit answering it, so no
-        // ladder is read and the packing axis has no member here. The route and the
-        // scheme are the coarsest lane's on both lanes and in both formats: every one
-        // of these kernels hands its body Lane64Full or Lane32Full, which sums the
-        // Chebyshev pieces by the split Clenshaw recurrence (src/boys_cuda.cu,
-        // BoysSingleF64Kernel and BoysSingleF32Kernel; the fp16 entry runs the float
-        // lane's body, BoysSingleF16Kernel), and the device-callable four hand it the
-        // handle's own lanes, TableLane64 and TableLane32
-        // (include/boys/boys_cuda_device.hpp, BoysDeviceSingleF64 and its siblings).
+        // The single-order shapes: one order asked for, one fit answering it, so no ladder is read
+        // and the packing axis has no member here. Each hands its body Lane64Full or Lane32Full,
+        // which sums the Chebyshev pieces by split Clenshaw (src/boys_cuda.cu, BoysSingleF64Kernel);
+        // the device-callable four hand it the handle's own lanes TableLane64 and TableLane32.
         case DeviceEntry::kSingleF64:
         case DeviceEntry::kSingleF64Fast:
         case DeviceEntry::kSingleF32:
@@ -1622,12 +1590,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kNotApplicable,
                     kDefaultDeviceDivisionForm};
 
-        // The ladder read on the Chebyshev pieces: the coarsest partition's ladders on
-        // both lanes and in both formats, the all-N and each-order shapes, the
-        // device-callable generics, and the narrow partition's two. Every kernel of
-        // them hands DeviceAllOrdersF64 or DeviceAllOrdersF32 a lane of the Chebyshev
-        // family, and what differs between them is the partition the lane reads, which
-        // DevicePartitionName states and this switch does not.
+        // The ladder read on the Chebyshev pieces: the all-N and each-order shapes seed the
+        // coarsest ladder at one top order, and every kernel hands DeviceAllOrdersF64 or
+        // DeviceAllOrdersF32 a Chebyshev lane; what differs is the partition, which
+        // DevicePartitionName states, not this.
         case DeviceEntry::kAllOrdersF64:
         case DeviceEntry::kAllOrdersF64Fast:
         case DeviceEntry::kAllOrdersF32:
@@ -1819,12 +1785,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
-        // The uniform grid, whose every block is one order's own fit at the interval's
-        // own degree: every order is read from its own block and none is built from
-        // another's, which is the per-order member of the packing axis, and the grid
-        // has no ladder to read (boys_cuda_arithmetic.hpp, DeviceAllOrdersF64Flat).
-        // The route's rows of that axis run this same body: a grid stored per order and
-        // per interval has no seeded ladder for a second reading to be.
+        // The uniform grid, whose every block is one order's own fit at the interval's own degree:
+        // each order is read from its own block and none from another's - the per-order member of
+        // the packing axis - and the grid has no ladder to read (boys_cuda_arithmetic.hpp,
+        // DeviceAllOrdersF64Flat). The route's rows run this body too: no second ladder to be.
         case DeviceEntry::kAllOrdersF64Uniform:
         case DeviceEntry::kAllOrdersF64OrdersUniform:
         case DeviceEntry::kAllOrdersF32Uniform:
@@ -1859,20 +1823,15 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kChebyshev, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
-        // The grid reads no exponential at any argument: below the join every order is
-        // summed from its own stored block, and above it the call falls to the
-        // asymptote, whose seed is the reciprocal square root. The region-B walk, and
-        // the exponential that seeds it, are two of the walks this partition replaces
-        // with a table, so RegionBExp has no member at FitGranularity::kUniform.
+        // The grid reads no exponential at any argument: below the join every order is summed from
+        // its own stored block, and above it the call falls to the asymptote, whose seed is the
+        // reciprocal square root. The region-B walk and the exponential that seeds it are what this
+        // partition replaces with a table, so RegionBExp has no member at FitGranularity::kUniform.
 
-        // The fit route: the same partitions, region structure and shapes with a piece
-        // stored as a numerator and a denominator, which is a family of its own and the
-        // lane's kRational member (boys_cuda_arithmetic.hpp, DeviceRatSum). Its pair is
-        // stored once - in the monomial form the family is stored in - so the two scheme
-        // names a caller may use reach one kernel and each row states the name it was
-        // reached by: the plain name is kSplitClenshaw and its -Horner twin is kHorner,
-        // which is the whole of what separates those two rows (src/boys_cuda.cu,
-        // BoysAllOrdersF64RatKernel and the launcher comment over its twins).
+        // The same partitions, region structure and shapes with a piece stored as a numerator and
+        // a denominator - the lane's kRational member (boys_cuda_arithmetic.hpp, DeviceRatSum).
+        // Its pair is stored once, in the monomial form, so both scheme names reach one kernel:
+        // kSplitClenshaw plain and kHorner its twin (src/boys_cuda.cu, BoysAllOrdersF64RatKernel).
         case DeviceEntry::kAllOrdersF64Rat:
         case DeviceEntry::kAllOrdersF64RatFast:
         case DeviceEntry::kAllOrdersF64NarrowRat:
@@ -2063,12 +2022,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kRationalMinimax, EvalScheme::kHorner, DevicePacking::kPerOrder,
                     kDefaultDeviceDivisionForm};
 
-        // The each-order shape, launched: the ladder of the all-orders rows above, written from the
-        // caller's own offsets rather than into planes. The lane and the body are the ones the row
-        // of that name in the arm above states - the coarsest ladder of this lane's Chebyshev
-        // pieces, read by the split Clenshaw recurrence - and the offset a sink indexes by is the
-        // kernel's and not the arithmetic's, so the two rows of a lane differ in nothing but the
-        // region-B exponential the kernel is instantiated at.
+        // The each-order shape, launched: the all-orders rows' ladder above, written from the
+        // caller's own offsets rather than into planes - the lane and body are that name's row in
+        // the arm above. The sink's offset is the kernel's and not the arithmetic's, so two rows
+        // of a lane differ in nothing but the region-B exponential the kernel is instantiated at.
         case DeviceEntry::kEachOrderF64:
         case DeviceEntry::kEachOrderF64Fast:
         case DeviceEntry::kEachOrderF32:
@@ -2080,11 +2037,10 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
             return {FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, DevicePacking::kLadder,
                     kDefaultDeviceDivisionForm};
 
-        // The sentinel one past the last row this report defines, and not a row a call
-        // can name. It is named rather than left to a default arm for the reason
-        // DevicePartitionOf's kCount arm gives: a default would swallow the next
-        // enumerator as quietly as it swallows this one, and the assertion below is what
-        // fails the build for a row this switch has not been taught.
+        // The sentinel one past the last row this report defines, and not a row a call can name.
+        // It is named rather than left to a default arm for the reason DevicePartitionOf's kCount
+        // arm gives: a default would swallow the next enumerator as quietly as this one, and
+        // the assertion below is what fails the build for a row this switch has not been taught.
         case DeviceEntry::kCount:
             break;
     }

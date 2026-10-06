@@ -36,19 +36,10 @@ enum class BoysStatus {
     kDeviceError, ///< a CUDA operation failed
 };
 
-// ---------------------------------------------------------------------------
-// The device option space.
-//
-// One row per option of the surface below, with what a chooser needs to place
-// it, in boys_cuda_options.hpp. The rows are declared there and not here
-// because they are one table with two readers: this header's entries are one,
-// and the device translation units that implement the entries of
-// boys_cuda_device.hpp are the other — those are compiled by nvcc, which cannot
-// take this header (it pulls in the whole library through boys.hpp). The
-// enumerators, the row struct and BoysDeviceOptions() are therefore in the
-// small header, and it is included here so that a caller who reads this surface
-// has the space in the same include.
-// ---------------------------------------------------------------------------
+// The device option space's rows, one per option of the surface below, are in boys_cuda_options.hpp
+// and not here: the table has two readers, this header's entries and the nvcc-compiled units of
+// boys_cuda_device.hpp, which cannot take this header (it pulls in the whole library through
+// boys.hpp). Its enumerators, row struct and BoysDeviceOptions() live there, included here.
 
 /// Device-side Boys evaluation over arrays of (n, x) inputs.
 ///
@@ -3692,10 +3683,8 @@ std::string FormatDeviceArithmeticStatement();
 
 } // namespace boys
 
-// The policy-templated members declared above - each class's entry under the name
-// <Entry>WithPolicy - their definitions, and the rule
-// they dispatch by. Last, because a definition of a class member needs the class
-// complete, and here so that a translation unit that includes this header gets
-// the layer with the surface it belongs to. The other order works too - the
-// policy header includes this one at its top for a caller who names it first.
+// The policy-templated members declared above - each class's entry named <Entry>WithPolicy - their
+// definitions and the dispatch rule live in boys_cuda_policy.hpp, included last so a member's
+// definition sees its class complete. A unit including this header gets the layer with its surface,
+// and a caller who names the policy header first gets the same.
 #include "boys/boys_cuda_policy.hpp"

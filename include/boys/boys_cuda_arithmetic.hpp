@@ -64,30 +64,20 @@ inline constexpr double kHalfSqrtPi = 0.886226925452758014;
 // the multiply-add route
 // ---------------------------------------------------------------------------
 
-// The two routes of the multiply-add, as the device spells them, and the
-// selection the bodies below read (boys_cuda_muladd.hpp).
-//
-// **Both are written out, so neither is left to the compiler's contraction
-// setting.** The fused step is the round-to-nearest fused intrinsic: one
-// rounding, and the value every device figure in this tree was measured at. The
-// separate step is a product rounded once and then summed, which rounds twice.
-//
-// The separate step is spelled as a fused step with a zero addend rather than as
-// a bare `a * b + c`, and for the reason the host's own two-rounding operations
-// are spelled that way (backend.hpp, MulSub): a bare product-plus-add is a
-// licence the device compiler takes up by default, so the "separate" route
-// written that way would be the fused one. A fused step with a zero addend is
-// the product and nothing else, and it is one instruction rather than a call, so
-// the extra rounding costs one multiply-add per piece step.
-//
-// A compiler that folded `fma(a, b, 0)` to a bare product would still leave the
-// following add outside the fold only if it did not then contract it. That is a
-// property of a toolchain rather than of this source, so it is measured rather
-// than assumed: tests/boys_cuda_route_test.cu evaluates this step's separate
-// route on the device against `round(round(a * b) + c)` computed exactly on the
-// host, over a fixed value set, and it evaluates the fused route against the
-// single-rounding reference the same way. A toolchain that fused the two would
-// fail that check rather than quietly deliver the other route.
+// The two routes of the multiply-add as the device spells them, and the selection the bodies below
+// read (boys_cuda_muladd.hpp): both written out, not left to the compiler's contraction setting.
+// The fused step is the round-to-nearest intrinsic, one rounding and the value every device figure
+// in this tree was measured at; the separate step is a product rounded once and then summed, which
+// rounds twice, spelled as a fused step with a zero addend rather than a bare `a * b + c` - as the
+// host's own two-rounding operations are (backend.hpp, MulSub) - because a bare product-plus-add is
+// a contraction licence the device compiler takes up by default, so that spelling would be the
+// fused route. The zero addend is the product and nothing else, one instruction and not a call, so
+// the extra rounding costs one multiply-add per piece step. That a toolchain does not fold it away
+// and contract the add is a property of the toolchain and not of this source, so it is measured
+// rather than assumed: tests/boys_cuda_route_test.cu evaluates the separate route on the device
+// against `round(round(a * b) + c)` computed exactly on the host over a fixed value set, and the
+// fused route against the single-rounding reference, so a fusing toolchain would fail the check
+// rather than quietly deliver the other route.
 template <typename T>
 __device__ __forceinline__ T DeviceFusedMulAdd(T a, T b, T c) {
     if constexpr (std::is_same_v<T, float>)
@@ -231,11 +221,10 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
     return DeviceMulAdd<kRoute>(t, odd, even);
 }
 
-// The monomial scheme's summation: the same fit in the other basis, at the same
-// offsets and degrees as the Chebyshev one, summed by Horner in ascending order.
-// One multiply-add per coefficient against the split Clenshaw's two, so the scheme
-// is a cost choice at equal degree; each form's delivered accuracy is its own
-// certified row.
+// The monomial scheme's summation: the same fit in the other basis, at the same offsets and degrees
+// as the Chebyshev one, Horner in ascending order. One multiply-add per coefficient against the
+// split Clenshaw's two, so the scheme is a cost choice at equal degree, and each form's delivered
+// accuracy is its own certified row.
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, double t) {
     double acc = c[deg];
@@ -248,12 +237,10 @@ __device__ __forceinline__ double DeviceHornerMono(const double* c, int deg, dou
     return acc;
 }
 
-// The float lanes' form of the same summation: one walk, in the lane's own
-// arithmetic and with the same fused step, so a float piece's two forms are summed
-// the way the two certified rows of their table were measured (kNarrowARowsF32,
-// kFlatRowsF32, boys_coefficients.hpp). The double helper above would read a float
-// table through a double pointer and sum a double polynomial, which is a different
-// arithmetic and a different rounding.
+// The float lanes' form of the same summation, in the lane's own arithmetic, so a float piece's two
+// forms are summed the way the certified rows of their table were measured (kNarrowARowsF32,
+// kFlatRowsF32, boys_coefficients.hpp); the double helper above would sum a double polynomial read
+// through a float pointer, a different arithmetic and rounding.
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, float t) {
     float acc = c[deg];
@@ -266,14 +253,10 @@ __device__ __forceinline__ float DeviceHornerMono32(const float* c, int deg, flo
     return acc;
 }
 
-// The rational route's summation: a piece is a numerator and a denominator, both
-// stored ascending, both summed by Horner, divided once. The denominator's constant
-// term is held at one, so its sum ends in a multiply-add against that one rather
-// than carrying a coefficient for it; a pair whose denominator degree is zero has no
-// denominator at all and the numerator is the value. It is the kernel's reading of
-// the stored form, coefficient for coefficient the same as the host lane's piece and
-// seed evaluations (boys_impl.hpp RationalPieceAtCut, RationalSeedAtCut), so the two
-// lanes' figures are comparable.
+// The rational route's summation: both blocks stored ascending, both Horner, divided once, with the
+// denominator's held-at-one constant written as the final multiply-add; a pair whose denominator
+// degree is zero has no denominator. The reading is coefficient for coefficient the host lane's own
+// (boys_impl.hpp, RationalPieceAtCut, RationalSeedAtCut), so the two lanes' figures are comparable.
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ double DeviceRatSum(const double* num,
                                                int numDeg,
@@ -302,15 +285,10 @@ __device__ __forceinline__ double DeviceRatSum(const double* num,
     return numerator / DeviceMulAdd<kRoute>(denominator, t, 1.0);
 }
 
-// The float lanes' form of that summation: the same two Horner sums, the same held
-// denominator constant, the same one division, with every step fused. It reads the
-// same stored form as the host lane's own float rational evaluation, so the two
-// lanes' figures are comparable.
-//
-// The two coefficient blocks are the caller's to place: the float lane's shipped
-// region-B seed stores its numerator and denominator in two arrays and its narrow
-// partition stores them in one pool with the denominator above the numerator, and
-// both are named by a pointer rather than computed here.
+// The float lanes' form of that summation, every step fused, reading the same stored form as the
+// host lane's own float rational evaluation, so the two lanes' figures are comparable. The two
+// blocks are the caller's to place: the shipped region-B seed in two arrays, the narrow partition
+// in one pool, its denominator above the numerator.
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
 __device__ __forceinline__ float DeviceRatSum32(const float* num,
                                                 int numDeg,
@@ -339,13 +317,10 @@ __device__ __forceinline__ float DeviceRatSum32(const float* num,
     return numerator / DeviceMulAdd<kRoute>(denominator, t, 1.0f);
 }
 
-// Which basis a lane's coefficients are stored in. A lane that reads the
-// monomial pool states so with a kMonomial member, and the trait reads its
-// value rather than its presence: a form that shares its geometry with the
-// other form of the same table states false here, and the bodies below then
-// take the Chebyshev arm, which is the pool that form reads. So the scheme axis
-// is this trait and the summation below it, and every body above stays one body
-// per (precision, shape).
+// Which basis a lane's coefficients are stored in: a lane reading the monomial pool states so with
+// a kMonomial member, and the trait reads its value rather than its presence - a form sharing its
+// geometry with the other form of the same table states false here and the bodies below take the
+// Chebyshev arm, which is the pool that form reads.
 template <typename Lane, typename = void>
 struct LaneMonomial : std::false_type {};
 
@@ -353,11 +328,10 @@ template <typename Lane>
 struct LaneMonomial<Lane, std::void_t<decltype(Lane::kMonomial)>>
     : std::bool_constant<Lane::kMonomial> {};
 
-// A lane whose pieces are rational pairs rather than polynomials: it carries a
-// kRational member and names its two coefficient blocks and their two degrees in
-// place of Deg. The route is a family of its own and not a basis, so the trait is
-// beside the scheme's rather than under it - a rational piece has no Chebyshev
-// form and no monomial one, and neither scheme changes the numbers it reads.
+// A lane whose pieces are rational pairs rather than polynomials: it carries a kRational member
+// and names its two coefficient blocks and their two degrees in place of Deg. A rational piece has
+// neither Chebyshev nor monomial form and neither scheme changes its numbers, so the route is a
+// family of its own and the trait sits beside the scheme's rather than under it.
 template <typename Lane, typename = void>
 struct LaneRational : std::false_type {};
 
@@ -383,11 +357,10 @@ __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
 // seeds
 // ---------------------------------------------------------------------------
 
-// The piece a value falls in: the pieces of an order are ascending and their
-// upper edges partition the order's fitted range, so the first edge above x
-// names the piece (and the last piece holds everything above the topmost
-// edge). The scan is linear — a binary search would not pay for its branches
-// until the rows are much longer than the twelve pieces a lane may have.
+// The piece a value falls in: the pieces of an order ascend and their upper edges partition the
+// order's fitted range, so the first edge above x names the piece and the last piece holds
+// everything above the topmost edge. The scan is linear - a binary search would not pay for its
+// branches until the rows are much longer than the twelve pieces a lane may have.
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double x) {
     const int count = lane.Count(order);
@@ -441,34 +414,24 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // the region-B exponential
 // ---------------------------------------------------------------------------
 
-// The arithmetic the region-B seed's t = e^{-x}/2 takes, at the member the option
-// names (RegionBExp, boys/accuracy.hpp) and per the device the lane runs on. This is
-// the one factor of the region-B path a caller can trade accuracy for speed on.
-//
-// Float lane:
-//  - kFastExp is the hardware approximation with its argument-scaling residual
-//    removed: __expf(y) evaluates 2^fl(y log2 e), and that one rounding is the term
-//    that grows with |y|. The residual fma(y, log2 e, -t) of that product is exact,
-//    and 2^(t + d) = 2^t 2^d ~= 2^t (1 + d ln 2), so two fused steps take the error
-//    back to the approximation's own few ulp, flat in the argument.
-//  - otherwise the library routine, which is what the batch bodies compute.
-//
-// Double lane: both members are the host's own (boys_impl.hpp, RegionBHalfExp), and
-// they are ported rather than re-derived because the members are named once and a
-// device figure that differed from the host's for one name would be a second bound
-// for that name.
-//  - kFastExp is the reduced-argument polynomial below, the host's arithmetic
-//    term for term.
-//  - otherwise the library routine, as on the host.
+// The arithmetic the region-B seed's t = e^{-x}/2 takes, at the member the option names
+// (RegionBExp, boys/accuracy.hpp) and per the device: the one factor of the region-B path a caller
+// can trade accuracy for speed on. The float lane's kFastExp removes the hardware approximation's
+// argument-scaling residual: __expf(y) evaluates 2^fl(y log2 e), whose rounding grows with |y|,
+// and fma(y, log2 e, -t) is exact, so 2^(t + d) ~= 2^t (1 + d ln 2) restores the approximation's
+// own few ulp in two fused steps, flat in the argument; its other member is the library routine
+// the batch bodies compute. The double lane's two members are the host's own (boys_impl.hpp,
+// RegionBHalfExp), ported rather than re-derived so that a name has one bound and not two:
+// kFastExp is the reduced-argument polynomial below, term for term the host's arithmetic, the
+// other the library routine as on the host.
 
-// The host's constants for the double lane's fast member, at the device's own names
-// so that a reader of either can see there is one statement of each number and not
-// two. kDeviceRegionBExpReduced is e^{-r} on |r| <= ln 2/2, degree 7, Chebyshev fit,
-// 8.336e-11 relative; kDeviceRegionBExpCheapFrom is the smallest x whose ladder
-// requirement reaches ten times that error, solved from T(32, x) (boys_impl.hpp,
-// kRegionBExpCheapFrom). The coefficients are a device object because the sum indexes
-// them at a loop variable's value, which is an odr-use the device compiler needs a
-// device copy for; the scalars beside it are folded as values and need none.
+// The host's constants for the double lane's fast member, at the device's own names so that a
+// reader of either sees one statement of each number and not two. kDeviceRegionBExpReduced is
+// e^{-r} on |r| <= ln 2/2, degree 7, Chebyshev fit, 8.336e-11 relative; kDeviceRegionBExpCheapFrom
+// is the smallest x whose ladder requirement reaches ten times that error, solved from T(32, x)
+// (boys_impl.hpp, kRegionBExpCheapFrom). The coefficients are a device object because the sum
+// indexes them at a loop variable's value, an odr-use the device compiler needs a device copy for;
+// the scalars beside them fold as values and need none.
 inline constexpr double kDeviceRegionBExpCheapFrom = 16.173039304440838;
 __device__ constexpr double kDeviceRegionBExpReduced[8] = {
     0.9999999999190966,
@@ -484,22 +447,18 @@ inline constexpr double kDeviceRegionBExpLog2e = 1.44269504088896340735992468100
 inline constexpr double kDeviceRegionBExpLn2 = 0.6931471805599453094172321214581766;
 inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
 
-// The double fast member's reduction is the textbook one - x = k ln 2 + r with
-// |r| <= ln 2/2, so e^{-x} = 2^{-k} e^{-r} - with k out of the magic constant rather
-// than a libm rounding call and 2^{-k} out of the exponent field rather than ldexp;
-// __longlong_as_double is the device's spelling of the bit reinterpretation the host
-// writes std::bit_cast. Over region B k is in [25, 42], far from the exponent field's
-// ends, so the scale is exact. Below kDeviceRegionBExpCheapFrom the ladder's own
-// requirement on this term - |delta| <= 1.0e-14 / T(N, x), the bar the host states as
-// kRegionBExpBar - is tighter than the polynomial's error, and this member reads the
-// library routine there: that arm is part of the member rather than a fallback,
-// because the polynomial alone would fail a bound over a band interior to region B.
-//
-// The two steps of the reduction and the seven of the Horner sum run at the lane's
-// multiply-add route, so what the build selected is what the member runs: at the
-// separate route they are the host's own two-rounding spellings, and at the fused
-// route each step rounds once more than the host's - a difference four orders below
-// the 8.336e-11 the polynomial itself carries.
+// The double fast member's reduction is the textbook x = k ln 2 + r, |r| <= ln 2/2, so e^{-x} =
+// 2^{-k} e^{-r}, with k out of the magic constant rather than a libm rounding call and 2^{-k} out
+// of the exponent field rather than ldexp (__longlong_as_double, the device's spelling of the
+// host's std::bit_cast). Over region B k is in [25, 42], far from the exponent field's ends, so the
+// scale is exact. Below kDeviceRegionBExpCheapFrom the ladder's own requirement on this term -
+// |delta| <= 1.0e-14 / T(N, x), the bar the host states as kRegionBExpBar - is tighter than the
+// polynomial's error, and this member reads the library routine there: that arm is part of the
+// member rather than a fallback, the polynomial alone failing a bound over a band interior to
+// region B. The reduction's two steps and the Horner sum's seven run at the lane's multiply-add
+// route, so what the build selected is what the member runs: the host's two-rounding spellings at
+// the separate route, each fused step rounding once more, four orders below the 8.336e-11 the
+// polynomial carries.
 template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
 __device__ __forceinline__ T DeviceRegionBExp(T xx) {
     if constexpr (std::is_same_v<T, float>)
@@ -549,20 +508,14 @@ __device__ __forceinline__ T DeviceRegionBExp(T xx) {
 // the division form
 // ---------------------------------------------------------------------------
 
-// The three forms of a ladder step's division, as the host's bodies spell them
-// (boys_impl.hpp, DivideStep and the two helpers beside it). The device runs the
-// same three arithmetics on the same values: a quotient is correctly rounded, a
-// product by a rounded reciprocal rounds twice, and the refinement recovers the
-// correctly rounded quotient from the product with one fused multiply-add per
-// step.
-//
-// **The form is a template argument and never a run-time branch.** The option probe
-// times these bodies one form at a time, and a branch would compile all three forms
-// into every kernel it times - measuring the branch rather than the form
-// (src/boys_cuda_probe_kernels.cu, the preamble over its two dispatches). Every
-// body below therefore takes the form as a template argument with no default, so a
-// call site that has not stated the form it runs does not compile rather than
-// silently running the build's.
+// The three forms of a ladder step's division, as the host's bodies spell them (boys_impl.hpp,
+// DivideStep and the two helpers beside it); the device runs the same three arithmetics on the same
+// values: correctly rounded, a product by a rounded reciprocal that rounds twice, and the
+// refinement that recovers the correctly rounded quotient with one fused multiply-add per step. The
+// form is a template argument and never a run-time branch - the probe times one form at a time and
+// a branch would compile all three into every kernel it times (src/boys_cuda_probe_kernels.cu, the
+// preamble over its two dispatches) - so every body below takes it with no default, and a call site
+// that has not stated the form it runs does not compile rather than silently running the build's.
 
 // The two fused multiply-adds, named per value type: the refinement is only the
 // correctly rounded quotient when the step is one instruction, so both are the
@@ -593,13 +546,11 @@ __device__ __forceinline__ T DeviceDividePlain(T a, T invx) {
     return a * invx;
 }
 
-// The refined form: the plain product, then the classical refinement. An infinite
-// divisor is the one argument where the recovery cannot run - the residual is
-// `a - quotient * x` and `quotient` is a signed zero there, so the first fused
-// multiply-add hands back a NaN the second spreads - and the branch costs nothing,
-// since a finite numerator over an infinite divisor is exactly the signed zero the
-// product already is (boys_impl.hpp, DivideByReciprocal, states the same guard for
-// the host's own steps).
+// The refined form: the plain product, then the classical refinement. An infinite divisor is the
+// one argument where the recovery cannot run - the residual `a - quotient * x` is zero there, so
+// the first fused multiply-add hands back a NaN the second spreads - and the branch costs
+// nothing, a finite numerator over an infinite divisor being exactly the signed zero the product
+// already is (boys_impl.hpp, DivideByReciprocal, states the same guard for the host's steps).
 template <typename T>
 __device__ __forceinline__ T DeviceDivideByReciprocal(T a, T x, T invx) {
     const T quotient = a * invx;
@@ -646,20 +597,15 @@ __device__ __forceinline__ T DeviceStepReciprocal(T x) {
     }
 }
 
-// The downward step's divisor, l + 1/2, as a table of its reciprocals: the constant
-// is exact in both value types for every order the recurrences run to, so its
-// reciprocal is a compile-time constant and the trade the axis names is available on
-// the downward ladder as it is on the steps that divide by the argument
-// (boys_impl.hpp, kDownwardReciprocals).
-// The table is a raw member array of a device variable, and not a std::array of a
-// host one, for the three things the device compiler refuses in turn: std::array's
-// element access is a constexpr HOST function, which a __device__ body may not call
-// ("calling a constexpr __host__ function(\"operator[]\") from a __device__ function
-// (...) is not allowed"); a host constexpr variable read from device code is an
-// identifier "undefined in device code"; and a __device__ variable TEMPLATE may not
-// have a const-qualified type on Windows. The subscript below is the built-in one,
-// which no host function stands between, and the two objects are named rather than
-// templated so the declaration is one the device compiler takes.
+// The downward step's divisor l + 1/2, as a table of its reciprocals: the constant is exact in both
+// value types for every order the recurrences run to, so its reciprocal is a compile-time constant
+// and the trade the axis names is available here as on the steps that divide by the argument
+// (boys_impl.hpp, kDownwardReciprocals). The table is a raw member array of a device variable and
+// not a std::array of a host one, for three things the device compiler refuses: std::array's
+// element access is a constexpr HOST function a __device__ body may not call, a host constexpr
+// variable read from device code is "undefined in device code", and a __device__ variable template
+// may not have a const-qualified type on Windows. The subscript is the built-in one and the two
+// objects are named rather than templated, so the device compiler takes the declaration.
 template <typename T>
 struct DeviceDownwardReciprocalTable {
     T values[static_cast<std::size_t>(kMaxBoysOrder) + 1];
@@ -720,13 +666,10 @@ __device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
 // one order at one argument
 // ---------------------------------------------------------------------------
 
-// Region A asks the fit for the order directly; the higher regions seed F_0
-// and recur upward once per order, since a fit of every order over the whole
-// range would cost more table than the recursion costs work.
-//
-// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp) and
-// touches nothing else: region A is not region B, so its own 0.5 * exp(-xx) is the
-// accurate member at every value of kFastExp.
+// Region A asks the fit for the order directly; the higher regions seed F_0 and recur upward once
+// per order - a fit of every order over the whole range would cost more table than the recursion
+// costs work. kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp) and nothing
+// else: region A is not region B, so its own 0.5 * exp(-xx) is the accurate member.
 template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, double xx) {
     if (xx < kX0)
@@ -798,16 +741,12 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
 // every order at one argument
 // ---------------------------------------------------------------------------
 
-// `store(int order, double value)` is called once per order, in the order the
-// recursion produces it, so a batch kernel can write each value straight to
-// its plane and a caller can keep the ladder in registers. Region A descends,
-// so its stores arrive high order first and the value in the register chain
-// is the one the downward recursion carries.
-//
-// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp) and
-// touches nothing else: region A is not region B, so its own 0.5 * exp(-xx) is the
-// accurate member at every value of kFastExp, exactly as it is in the single body
-// above.
+// `store(int order, double value)` is called once per order, in the order the recursion produces
+// it, so a batch kernel writes each value straight to its plane and a caller keeps the ladder in
+// registers; region A descends, so its stores arrive high order first and the value in the
+// register chain is the one the downward recursion carries. kFastExp selects the region-B
+// exponential (RegionBExp, boys/accuracy.hpp) and nothing else: region A is not region B, so its
+// own 0.5 * exp(-xx) is the accurate member at every value of kFastExp, as in the single body.
 template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
@@ -853,16 +792,12 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
     }
 }
 
-// The float lane's all-orders body and the fp16 lane's. The region-A seed is
-// the DOUBLE piece table even on the float lanes: the downward recursion
-// amplifies a float seed error past the float budget, so the seed is computed
-// in double and rounded once on entry to the recursion. That is what the
-// second lane argument is, and it is why this body takes two of them.
-//
-// kFastExp selects the region-B exponential (RegionBExp, boys/accuracy.hpp)
-// and touches nothing else: region A is not region B, so its own 0.5*expf(-xx)
-// is the accurate member at every value of kFastExp, exactly as it is in the
-// single body above.
+// The float lane's all-orders body and the fp16 lane's. The region-A seed is the DOUBLE piece table
+// even on the float lanes - the downward recursion amplifies a float seed error past the float
+// budget - so it is computed in double and rounded once on entry to the recursion: that is what the
+// second lane argument is. kFastExp selects the region-B exponential (RegionBExp,
+// boys/accuracy.hpp) and nothing else, region A's own 0.5*expf(-xx) staying the accurate member, as
+// in the single body.
 template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename SeedLane, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
@@ -913,24 +848,18 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 // every order at one argument, from one uniform grid
 // ---------------------------------------------------------------------------
 
-// The route whose fit is one table of equal intervals over [0, kFlatHi) rather than
-// pieces cut where the function needs them: every order's block sits at a fixed
-// offset inside its interval's, so the interval an argument falls in is one multiply
-// and a truncation and the degree is a property of the stored table rather than of
-// the argument. The geometry is compile-time, so these bodies take the two
-// coefficient pools and nothing else: there are no per-interval edges or degrees to
-// supply, and a lane object would be a pair of pointers with no behaviour behind it.
-//
-// The pools are the two stored forms of one fit, and kMonomial selects the reader and
-// nothing else: the index arithmetic, the join at kFlatHi and the asymptotic arm above
-// it are one spelling for both forms, so the two cannot come to disagree about which
-// interval an argument falls in or where the table stops.
-//
-// Above kFlatHi no fit reaches and the call falls to the one-term asymptotic and its
-// own upward recurrence — the arm region C runs elsewhere, read from the same
-// prefactor and stepping by the same (l + 1/2)/x. The join needs no interpolation:
-// kFlatHi is above kX1, so an argument the table does not serve is one the asymptotic
-// already served.
+// The route whose fit is one table of equal intervals over [0, kFlatHi) rather than pieces cut
+// where the function needs them: an interval is one multiply and a truncation, and the degree is
+// a property of the stored table rather than of the argument. The geometry is compile-time, so
+// these bodies take the two pools and nothing else - no per-interval edges or degrees to supply,
+// and a lane object would be a pair of pointers with no behaviour. The pools are the two stored
+// forms of one fit, and kMonomial selects the reader and nothing else: the index arithmetic, the
+// join at kFlatHi and the asymptotic arm above it are one spelling for both forms, so the two
+// cannot disagree about which interval an argument falls in or where the table stops. Above
+// kFlatHi no fit reaches and the call falls to the one-term asymptotic and its own upward
+// recurrence - the arm region C runs elsewhere, from the same prefactor and the same (l + 1/2)/x
+// step - and the join needs no interpolation: kFlatHi is above kX1, so an argument the table
+// does not serve is one the asymptotic already served.
 
 // The uniform route's ladder, in double.
 template <DivisionForm kForm, bool kMonomial, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
@@ -956,11 +885,10 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
         return;
     }
 
-    // The interval index is the argument times the reciprocal of the stored interval
-    // width, truncated, so the product is the interval's own boundary and not a
-    // rounding of it: the reciprocal is exact here, and the two assertions below hold
-    // the factor and the grid to the stored width. The clamp is unreachable below the
-    // join and is kept as the guard the host's own spelling of this map keeps.
+    // The interval index is the argument times the reciprocal of the stored width, truncated;
+    // the reciprocal is exact here, so the product is the interval's own boundary and not a
+    // rounding of it, and the two assertions below hold the factor and the grid to the stored
+    // width. The clamp is unreachable below the join, kept as the guard the host map keeps.
     constexpr double kPerUnit = 1.0 / kFlatWidth;
     static_assert(kFlatWidth * kPerUnit == 1.0,
                   "the uniform grid's index factor must be the reciprocal of its stored width: "
@@ -979,12 +907,10 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
 
     const double t = 2.0 * (u - static_cast<double>(iv)) - 1.0;
 
-    // The interval's own block at the interval's own degree, both read per interval
-    // because the grid's cells do not all carry the same count: each was given the
-    // smallest admissible even degree its own truncation bound holds it to, so a
-    // block is (its degree + 1) coefficients per order and the table has no stride a
-    // reader could assume. A reader that assumed one would sum a neighbouring cell's
-    // polynomial, which no check of the coefficients alone would report.
+    // The interval's own block at the interval's own degree, read per interval because the cells
+    // do not all carry the same count: each holds the smallest admissible even degree its own
+    // truncation bound allows, so the table has no stride a reader could assume. Assuming one
+    // would sum a neighbouring cell's polynomial, which no check of the coefficients reports.
     const int deg = degs[iv];
     const double* interval = (kMonomial ? mono : cheb) + static_cast<std::size_t>(offsets[iv]);
 
@@ -1005,27 +931,18 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
     }
 }
 
-// The double lane's uniform grid on its RATIONAL route: one numerator/
-// denominator pair per interval of the same grid, read at the same mapped
-// argument DeviceAllOrdersF64Flat builds and at the interval's own pair, in the
-// stored form DeviceRatSum reads - the numerator ascending, then the
-// denominator's q_1..q_k with q_0 held at 1.
-//
-// A body of its own rather than a mode of the Chebyshev one above: the two routes
-// store different things, and an interval's block is addressed at the interval's own
-// pair and its own stored count instead of at one degree. The locate is the one
-// above, spelled again because a shared helper would be a third spelling of the same
-// index arithmetic in the one place it must not be - the double lane's own host
-// reader states the same hazard (boys_impl.hpp, FlatLocate).
-//
-// The four per-interval tables are the emitter's (tools/gen_boys_coefficients.py,
-// flat_rat_block_lines): the numerator's degree, the denominator's, the stored count
-// of one row, and where the interval's block starts. A reader that assumed one stride
-// for the whole table would read a neighbouring interval's pair, which no check of
-// the coefficients alone would report.
-//
-// The summation is DeviceRatSum, the same two Horner sums and the same held
-// denominator constant the host reader performs, so the figures the host gate
+// The double lane's uniform grid on its RATIONAL route: one numerator/denominator pair per interval
+// of the same grid, read at the mapped argument DeviceAllOrdersF64Flat builds and at the interval's
+// own pair, in the stored form DeviceRatSum reads - the numerator ascending, then the denominator's
+// q_1..q_k with q_0 held at 1. A body of its own rather than a mode of the Chebyshev one above,
+// because the two routes store different things: a block is addressed at its own pair and its own
+// stored count, not at one degree, and the locate is spelled again because a shared helper would be
+// a third spelling of the same index arithmetic in the one place it must not be (boys_impl.hpp,
+// FlatLocate, the same hazard). The four per-interval tables are the emitter's
+// (tools/gen_boys_coefficients.py, flat_rat_block_lines): the two degrees, the stored count of one
+// row, and where the block starts; assume one stride and a reader takes a neighbouring interval's
+// pair, which no check of the coefficients alone would report. The summation is DeviceRatSum, the
+// host reader's own two Horner sums and held denominator constant, so the figures the host gate
 // certifies are the figures this entry delivers.
 template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
@@ -1083,16 +1000,14 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
     }
 }
 
-// The float lane's uniform ladder. The mapped argument is this lane's own spelling
-// and not the double body's: the double lane maps x by the exact product x * kPerUnit
-// truncated, while the float lane maps by 2 (x - a)/(b - a) - 1 with a and b the
-// interval's own edges. That is the map the lane's fits were read at when they were
-// measured (tools/gen_boys_coefficients.py, f32_map) and the map its narrow pieces are
-// read with (boys_impl.hpp, ChebyshevValueF32): one map for the lane. The edges are
-// the grid's own boundaries as the generator fitted on them
-// (tools/gen_boys_coefficients.py, flat_order_f32: a = iv * width, b = a + width) and
-// not a scan of stored edges, so the interval an argument is mapped inside is the one
-// the fit was measured in.
+// The float lane's uniform ladder. The map is this lane's own, not the double body's: the double
+// lane maps x by the exact product x * kPerUnit truncated, this one by 2 (x - a)/(b - a) - 1 with a
+// and b the interval's own edges (a = iv * width, b = a + width), the map its fits were read at
+// when they were measured (tools/gen_boys_coefficients.py, f32_map) and the map its narrow pieces
+// are read with (boys_impl.hpp, ChebyshevValueF32): one map for the lane. Those edges are the
+// grid's own boundaries as the generator fitted on them (tools/gen_boys_coefficients.py,
+// flat_order_f32), not a scan of stored edges, so the interval an argument is mapped inside is the
+// one the fit was measured in.
 template <DivisionForm kForm, bool kMonomial, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
                                                        const float* mono,
@@ -1163,12 +1078,10 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
     }
 }
 
-// The float lane's uniform grid on its RATIONAL route: the double body above at this
-// lane's width, its own grid, its own tables and DeviceRatSum32. Every figure the host
-// gate certifies for this member was measured on the mapping this locate builds
-// (tools/gen_boys_coefficients.py, f32_map), at BOTH multiply-add routes, and the two
-// routes reach this body's summation too, so the figures it delivers are inside what
-// was certified rather than beside it.
+// The float lane's uniform grid on its RATIONAL route: the double body above at this lane's
+// own width, grid and tables, with DeviceRatSum32. Every figure the host gate certifies here
+// was measured on the mapping this locate builds (tools/gen_boys_coefficients.py, f32_map) at
+// BOTH multiply-add routes, which reach this summation too.
 template <DivisionForm kForm, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
 __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
                                                           const int* numDegs,
@@ -1231,19 +1144,13 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
 // every order at one argument, each from its own fit
 // ---------------------------------------------------------------------------
 
-// The same ladder as the body above with region A read the other way: every
-// order's own piece is located and its own fit summed, so no value here came
-// down a recurrence from a higher order's fit. The two agree to the fit's own
-// accuracy and differ in where the rounding happens, which is the whole of
-// what the choice between them buys.
-//
-// The axis covers region A and nothing else — past kX0 the body is the
-// certified one above, which is also where the region-A fit it replaces ends.
-// Outside region A the two bodies are one body, so a row that carries this
-// axis names its interval as region A rather than claiming the rest.
-//
-// kFastExp is the body above's own parameter, carried through: past kX0 this body
-// is that one, and it takes the same region-B exponential the option named.
+// The same ladder as the body above with region A read the other way: every order's own piece is
+// located and its own fit summed, so no value here came down a recurrence from a higher order's
+// fit. The two agree to the fit's own accuracy and differ in where the rounding happens, which is
+// the whole of what the choice buys. The axis covers region A and nothing else: past kX0 this body
+// is the certified one above, also where the region-A fit it replaces ends, so a row carrying the
+// axis names its interval as region A and not the rest. kFastExp is that body's own parameter,
+// carried through.
 template <DivisionForm kForm, bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane, typename Store>
 __device__ __forceinline__ void DeviceOrdersF64(
     const Lane& lane, int order, double xx, Store store) {

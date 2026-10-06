@@ -194,9 +194,6 @@ extern template void BoysRegionAProduct<ProductMode::kFp16>(
 // multiplier a caller names is instantiable at the call site.
 namespace detail {
 
-// ---------------------------------------------------------------------------
-// Operand formats
-// ---------------------------------------------------------------------------
 /// Round v to `bits` significant bits (round-half-to-even): the significand the
 /// format would store. frexp and ldexp are exact and nearbyint is a single
 /// rounding, so this is correctly rounded at every exponent.
@@ -308,9 +305,6 @@ template <> struct PolicyOf<ProductMode::kFp16> {
     using Type = Fp16Policy;
 };
 
-// ---------------------------------------------------------------------------
-// The two bands
-// ---------------------------------------------------------------------------
 /// One band of region A: the interval its fits' mapped argument runs over and
 /// the degree every order's fit in it has.
 struct BandSpec {
@@ -406,9 +400,6 @@ template <int kIndex> constexpr int BandDegree() noexcept {
     return spec.degree;
 }
 
-// ---------------------------------------------------------------------------
-// The product
-// ---------------------------------------------------------------------------
 /// The batch tile. The result does not depend on it - no accumulator is ever
 /// split across tiles - so it bounds only the stack the entry uses.
 inline constexpr std::size_t kProductTile = 32;

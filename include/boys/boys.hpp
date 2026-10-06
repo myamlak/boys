@@ -503,19 +503,9 @@ struct DefaultPolicyRow {
     static constexpr bool kCarried = false;
 };
 
-// The seam's rows, one explicit specialization per row. The cells are names the
-// compiler resolves against the enumerators of the axes they belong to at this
-// point, so a cell naming an enumerator another axis owns is an error here
-// rather than a default that is read as something else.
-//
-// ONE CELL PER AXIS OF THE POLICY, AND THE COUNT IS WHAT ENFORCES IT. Every
-// parameter of \c EvalPolicy carries a default, so a row that names six of the
-// seven axes would compile and the seventh would be filled in by a default the
-// row never chose - a row read as a combination someone decided, with the axis
-// it left out unnamed. The macro therefore takes all seven cells, and
-// \c StatedEvalPolicy carries no parameter default, so a cell a row leaves out
-// has nothing to fall back on and the error is the class's rather than the
-// list's. A cell added to that class owes the same treatment here.
+// The macro takes all seven cells because EvalPolicy's parameters carry defaults and
+// StatedEvalPolicy's do not: a row naming six compiles the seventh from a default it never
+// chose, and a cell left out fails in the class rather than the list - a cell added owes the same.
 /// \cond
 #define BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack,  \
                                 kGranularity, kDivision, kExp)                                 \
@@ -532,39 +522,39 @@ struct DefaultPolicyRow {
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
-// A build that names only the five axes - a fixture overriding one of them,
-// say - carries the table those five make: one row per class the host's entries
-// reach, the device half's nine below them, and no row besides, every cell the
-// build's own choice. This is not a fallback for a class a table omits: the rows
-// are written out by this list rather than looked up, and a build that writes
-// its own table and omits a class still fails to compile for it.
-//
-// THE TWENTY ARE THE ENTRIES' OWN CLASSES. Every host entry's policy parameter
-// defaults to its own class's DefaultPolicy, and the twenty below are exactly
-// the (precision, shape) pairs those defaults name: each lane's five shapes -
-// single, fixed-N, all-N, all-N-at-orders and all-orders (boys/boys.hpp and
-// boys/boys_span.hpp are where the entries are declared) - on the double lane,
-// the float lane and the two half lanes. The two half formats are one engine at
-// one budget and two classes, because a class is keyed by the format a return is
-// stored in. A row for a class no entry names is a combination nothing asks for,
-// and an entry added at a class this list does not carry fails to compile until
-// its row is written.
+/// A build that names only the five axes - a fixture overriding one of them,
+/// say - carries the table those five make: one row per class the host's entries
+/// reach, the device half's nine below them, and no row besides, every cell the
+/// build's own choice. This is not a fallback for a class a table omits: the rows
+/// are written out by this list rather than looked up, and a build that writes
+/// its own table and omits a class still fails to compile for it.
+///
+/// THE TWENTY ARE THE ENTRIES' OWN CLASSES. Every host entry's policy parameter
+/// defaults to its own class's DefaultPolicy, and the twenty below are exactly
+/// the (precision, shape) pairs those defaults name: each lane's five shapes -
+/// single, fixed-N, all-N, all-N-at-orders and all-orders (boys/boys.hpp and
+/// boys/boys_span.hpp are where the entries are declared) - on the double lane,
+/// the float lane and the two half lanes. The two half formats are one engine at
+/// one budget and two classes, because a class is keyed by the format a return is
+/// stored in. A row for a class no entry names is a combination nothing asks for,
+/// and an entry added at a class this list does not carry fails to compile until
+/// its row is written.
 #define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp)
 #define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN) X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN) X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders) X(kBf16, kSingle) X(kBf16, kFixedN) X(kBf16, kAllN) X(kBf16, kAllNAtOrders) X(kBf16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
 
-// The device half of the interface, composed the same way: a class is a
-// (device, precision, shape) triple, so a table carrying the host's classes alone
-// would leave every device class with no default in this build. The rows are the
-// four host choices above at each device lane's budget, one per class of each of
-// the four device lanes, and they take the device's own names for the two
-// choices its entries make rather than the host's: the division form its entries
-// take and the region-B exponential its tables read
-// (boys/boys_build_defaults.hpp, where the two lanes' published figures are two
-// sets measured at two arithmetics). A build that replaces the seam writes these
-// rows itself, or omits them and fails to compile for them.
+/// The device half of the interface, composed the same way: a class is a
+/// (device, precision, shape) triple, so a table carrying the host's classes alone
+/// would leave every device class with no default in this build. The rows are the
+/// four host choices above at each device lane's budget, one per class of each of
+/// the four device lanes, and they take the device's own names for the two
+/// choices its entries make rather than the host's: the division form its entries
+/// take and the region-B exponential its tables read
+/// (boys/boys_build_defaults.hpp, where the two lanes' published figures are two
+/// sets measured at two arithmetics). A build that replaces the seam writes these
+/// rows itself, or omits them and fails to compile for them.
 #define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROW(kPrecision, kShape)                                    \
     BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,      \
                             LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,          \
@@ -1901,14 +1891,10 @@ extern template void BoysAllN<>(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 extern template void BoysAllNAtOrders<>(
     const int* n, const double* x, double* out, std::size_t count) noexcept;
-// The single-precision entries are NOT declared extern here, and the reason is
-// the one the paragraph above gives. An extern declaration PROMISES that this
-// translation unit's instantiation is defined elsewhere; the library defines a
-// fixed list of them (src/boys_orders_simd.cpp), and since a default call site
-// now resolves its policy from the table, the instantiation it selects is not
-// knowably in that list. Declaring it anyway turned four consumer targets into
-// unresolved externals on gcc. Their definitions are in this header, so a
-// consumer instantiates what it names.
+// The single-precision entries are not declared extern here: an extern promises a definition
+// elsewhere, and the library's fixed list of them (src/boys_orders_simd.cpp) need not hold the
+// one a call site selects from the table - declaring it anyway left four consumer targets
+// unresolved on gcc. Their definitions are in this header: a consumer instantiates what it names.
 
 #if BoysFp16
 extern template F16 BoysSingleF16<>(int n, F16 x) noexcept;

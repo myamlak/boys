@@ -1,12 +1,9 @@
 #pragma once
 
-// The policy-templated entry layer of the device surface (boys/boys_cuda.hpp).
-//
-// Included by boys_cuda.hpp at its end, because every definition here names a
-// declaration of the class above; and it includes that header back at its top so
-// that a translation unit which includes this one alone still gets the class.
-// The mutual include is the same continuation the host's boys_impl.hpp is to
-// boys.hpp, and the two orders a caller may write both compile.
+// The policy-templated entry layer of the device surface (boys/boys_cuda.hpp), included at that
+// header's end because every definition here names a declaration of the class above, and includes
+// it back at its top so a translation unit that includes this one alone gets the class - the same
+// continuation boys_impl.hpp is to boys.hpp, and either order a caller writes compiles.
 
 #include "boys/boys_cuda.hpp"
 
@@ -241,17 +238,10 @@ BoysStatus AllOrdersF16Cascade(
 } // namespace detail
 /// \endcond
 
-// ---------------------------------------------------------------------------
-// The single-order classes: F_n(x[i]) for one order per element.
-//
-// The shape holds one reading of region A per element and no ladder to cut, so the
-// class's entries differ only in the region-B exponential a lane carries: the f32
-// lane has both members (SingleF32 at kAccurate and at kFast) and the f64 and fp16
-// lanes have one each, at the tables' own seed. The route, the scheme, the partition
-// and the packing axis are not coordinates of these classes (DevicePacking::
-// kNotApplicable is what their rows state), and the exponent cell is read: a policy
-// naming a member the lane has no kernel at is refused below.
-// ---------------------------------------------------------------------------
+// The single-order classes: F_n(x[i]) for one order per element. With no ladder to cut, their
+// entries differ only in the region-B exponential a lane carries: f32 has both members, f64 and
+// fp16 one each at the tables' own seed, and a policy naming a member the lane has no kernel at is
+// refused below.
 
 /// The f64 single class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::SingleF64` as boys_cuda.hpp documents it, and
@@ -334,13 +324,9 @@ BoysStatus BoysCuda::SingleF16WithPolicy(
 }
 #endif // BoysFp16
 
-// ---------------------------------------------------------------------------
-// The all-N classes: F_0(x[i])..F_nmax(x[i]) at one common top order.
-//
-// One entry per precision, as the single-order classes have: the class reads the
-// region-B exponential and refuses the member its kernel does not carry, and the
-// other cells are not coordinates of the shape.
-// ---------------------------------------------------------------------------
+// The all-N classes: F_0(x[i])..F_nmax(x[i]) at one common top order. One entry per precision, as
+// the single-order classes have: the class reads the region-B exponential and refuses the member
+// its kernel does not carry, and the other cells are not coordinates of the shape.
 
 /// The f64 all-N class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::AllNF64` as boys_cuda.hpp documents it, and this
@@ -415,18 +401,10 @@ BoysStatus BoysCuda::AllNF16WithPolicy(int nmax, const F16* x, F16* out, std::si
 }
 #endif // BoysFp16
 
-// ---------------------------------------------------------------------------
-// The all-orders classes: the classes whose entries are one kernel per member of
-// the route, scheme, partition and packing axes.
-//
-// The three dispatches below are one cascade each, in the host probe's shape: the
-// route, then the partition, then the packing axis, then the scheme - the order the
-// entries are grouped in (`boys_cuda_options.hpp`, `DevicePartitionOf` and
-// `DeviceEntryAxesOf`), so an arm reads the way the table it dispatches from reads.
-// Each arm names the entry that combination reaches and passes it the policy's
-// division form; a combination with no kernel is refused where it is reached, with
-// the axes it names written into the message.
-// ---------------------------------------------------------------------------
+// The all-orders classes: one kernel per member of the route, scheme, partition and packing axes.
+// Each dispatch below is one cascade in the host probe's shape, nested route, partition, packing
+// axis, then scheme - the order the entries are grouped in (`boys_cuda_options.hpp`,
+// `DevicePartitionOf`, `DeviceEntryAxesOf`), so an arm reads as the table it dispatches from does.
 
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllOrdersF64WithPolicy(
@@ -712,13 +690,10 @@ BoysStatus AllOrdersF64Cascade(
             }
             else if constexpr (Policy::kScheme == EvalScheme::kHorner)
             {
-                // The double lane's rational pair is stored once, so both scheme names
-                // select this arithmetic and the scheme axis is inert on this route
-                // (boys_cuda.hpp, `AllOrdersF64Rat`: "the route is a choice of fit and
-                // not of scheme: the pair is stored once, so both scheme names select
-                // this arithmetic and the scheme axis is inert here"). The class has no
-                // -Horner name of this lane's rational entries because the row states
-                // the entry it is reached by; this arm is that statement.
+                // The double lane's rational pair is stored once, so both scheme names select this
+                // arithmetic and the scheme axis is inert on this route - the route is a choice of
+                // fit, not of scheme (boys_cuda.hpp, `AllOrdersF64Rat`). The class has no -Horner
+                // name of this lane's rational entries: the row states the entry it is reached by.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
@@ -836,11 +811,6 @@ BoysStatus AllOrdersF64Cascade(
         {
             if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
             {
-                // The grid is the one partition of this class at which the axis has no member, on
-                // this route as on the other: "The grid reads no exponential at any argument:
-                // below the join every order is summed from its own stored block, and above it the
-                // call falls to the asymptote, whose seed is the reciprocal square root"
-                // (boys/boys_cuda_options.hpp).
                 static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
                               "no kernel: the grid reads no exponential at any argument: below the "
                               "join every order is summed from its own stored block, and above it "
@@ -980,12 +950,10 @@ BoysStatus AllOrdersF32Cascade(
             }
             else if constexpr (Policy::kScheme == EvalScheme::kHorner)
             {
-                // The coarsest cut is the one whose two scheme names select one kernel:
-                // "The coarsest partition's row is one row for both scheme names, exactly
-                // as `kAllOrdersF32` is" (boys_cuda_options.hpp, above kAllOrdersF32Orders)
-                // - which is why this class has no Mono name of the cut, and why the row's
-                // own entry is the one a Horner policy reaches. Same shape as the rational
-                // route's pairs: one stored form, one arithmetic, two names for it.
+                // The coarsest cut's two scheme names select one kernel ("The coarsest partition's
+                // row is one row for both scheme names, exactly as `kAllOrdersF32` is",
+                // boys_cuda_options.hpp above kAllOrdersF32Orders): no Mono name of the cut, and a
+                // Horner policy reaches the row's own entry - one stored form, two names.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
@@ -1101,11 +1069,6 @@ BoysStatus AllOrdersF32Cascade(
         {
             if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
             {
-                // The grid is the one partition of this class at which the axis has no member, on
-                // this route as on the other: "The grid reads no exponential at any argument: below
-                // the join every order is summed from its own stored block, and above it the call
-                // falls to the asymptote, whose seed is the reciprocal square root"
-                // (boys/boys_cuda_options.hpp).
                 static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
                               "no kernel: the grid reads no exponential at any argument: below the "
                               "join every order is summed from its own stored block, and above it "
@@ -1322,11 +1285,6 @@ BoysStatus AllOrdersF32Cascade(
         {
             if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
             {
-                // The grid is the one partition of this class at which the axis has no member, on
-                // this route as on the other: "The grid reads no exponential at any argument: below
-                // the join every order is summed from its own stored block, and above it the call
-                // falls to the asymptote, whose seed is the reciprocal square root"
-                // (boys/boys_cuda_options.hpp).
                 static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
                               "no kernel: the grid reads no exponential at any argument: below the "
                               "join every order is summed from its own stored block, and above it "
@@ -1467,11 +1425,10 @@ BoysStatus AllOrdersF16Cascade(
             }
             else if constexpr (Policy::kScheme == EvalScheme::kHorner)
             {
-                // The coarsest cut is the one whose two scheme names select one kernel, in
-                // this lane's words too: "the coarsest partition's row is one row for both
-                // scheme names as `kAllOrdersF16` is" (boys_cuda_options.hpp, the half
-                // lane's packing-axis block) - which is why this class has no Mono name of
-                // the cut, and why the row's own entry is the one a Horner policy reaches.
+                // The coarsest cut's two scheme names select one kernel in this lane's words too
+                // ("the coarsest partition's row is one row for both scheme names as
+                // `kAllOrdersF16` is", boys_cuda_options.hpp, the half lane's packing-axis block):
+                // no Mono name of the cut here, and a Horner policy reaches the row's own entry.
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
@@ -1587,11 +1544,6 @@ BoysStatus AllOrdersF16Cascade(
         {
             if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
             {
-                // The grid is the one partition of this class at which the axis has no member, on
-                // this route as on the other: "The grid reads no exponential at any argument: below
-                // the join every order is summed from its own stored block, and above it the call
-                // falls to the asymptote, whose seed is the reciprocal square root"
-                // (boys/boys_cuda_options.hpp).
                 static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
                               "no kernel: the grid reads no exponential at any argument: below the "
                               "join every order is summed from its own stored block, and above it "
@@ -1808,11 +1760,6 @@ BoysStatus AllOrdersF16Cascade(
         {
             if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
             {
-                // The grid is the one partition of this class at which the axis has no member, on
-                // this route as on the other: "The grid reads no exponential at any argument: below
-                // the join every order is summed from its own stored block, and above it the call
-                // falls to the asymptote, whose seed is the reciprocal square root"
-                // (boys/boys_cuda_options.hpp).
                 static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
                               "no kernel: the grid reads no exponential at any argument: below the "
                               "join every order is summed from its own stored block, and above it "

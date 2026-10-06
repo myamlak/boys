@@ -115,31 +115,20 @@ enum class BoysDeviceStatus : int {
 /// \cond
 namespace detail {
 
-// Where a lane's degrees come from, resolved once per call rather than once per order:
-// the piece edges, the coefficient pool and the piece count are the handle's tables,
-// and the degrees a lane reads are the ones its tables were stored at.
-//
-// The region-A table is read in the calling lane's own piece indexing — the double
-// lane's for kF64Single, kF64Batch, kF32Batch and kF16Batch, whose region-A seed is
-// the double piece table whatever precision the entry returns, and the float lane's
-// for kF32Single and kF16Single. The lane object below indexes it through the
-// piece-start table it reads its coefficients with, so the two agree by construction.
-//
-// The region-B table is read per order by the single lanes and at the order-0 entry by
-// the batch lanes: stride carries that, and the batch shape is what the region-B
-// relaxation argues — the F_0 seed's error reaches every output with gain at most
-// 1 + 1.846e-17, so one degree relaxes a whole family.
+// A lane's degrees, resolved once per call: regionA/regionB are the handle's tables, and the lane
+// split and stored degrees are BoysDeviceLane's (boys_device_tables.hpp). The single entries read
+// the seed's own degree, not the order-0 entry the batch lanes read, so stride is 0: the degree is
+// a scalar in the handle here rather than a table (boys_cuda_arithmetic.hpp).
 struct Degrees {
     const int* regionA;
     const int* regionB;
     int stride;
 };
 
-// The handle as a lane object — the same seven members the batch kernels' lane
-// objects carry (boys_cuda_arithmetic.hpp), reading the caller's handle
-// instead of a __constant__ symbol. The piece index of order n, piece p is
-// pieceStart[n] + p, so no stride constant has to agree between this header
-// and the tables the library uploaded.
+// The handle as a lane object — the same seven members the batch kernels' lane objects carry
+// (boys_cuda_arithmetic.hpp), reading the caller's handle instead of a __constant__ symbol. The
+// piece index of order n, piece p is pieceStart[n] + p, so no stride constant has to agree between
+// this header and the tables the library uploaded.
 struct TableLane64 {
     const BoysDeviceTables* tables;
     Degrees deg;
@@ -200,15 +189,10 @@ struct TableLane32 {
     }
 };
 
-// The coarsest partition's other stored form, the double lane's: the same pieces, edges,
-// degrees and piece index base as the lane above, with region A's pool read from the
-// monomial table and the piece — and region B's seed — summed by Horner rather than by the
-// split Clenshaw.
-//
-// The kMonomial member is the whole of what the shared bodies see of the difference
-// (boys_cuda_arithmetic.hpp). The two forms are two pools over one cut, which is why this
-// lane reads the piece tables above rather than carrying a second set of them, and why the
-// handle's monomial fields are two pools and no table beside them.
+// The double lane's monomial reading of the coarsest partition: the same pieces, edges,
+// degrees and piece index base as the lane above, region A's pool from the monomial table, the
+// piece and region B's seed summed by Horner, not by the split Clenshaw; kMonomial is all the
+// shared bodies see (boys_cuda_arithmetic.hpp), two pools over one cut, no second piece table.
 struct TableLane64Mono {
     const BoysDeviceTables* tables;
     Degrees deg;
@@ -285,14 +269,10 @@ __device__ __forceinline__ BoysDeviceStatus DeviceReady(const BoysDeviceTables& 
                                         : BoysDeviceStatus::kSuccess;
 }
 
-// The same test for the uniform route, on the pointers that route's bodies actually
-// read: the grid is a table of its own and an entry taking it touches no piece table,
-// so testing the piece table would report a readiness the read below does not rest on.
-//
-// The grid's two per-interval tables are part of that test and not a separate one: a
-// body takes a degree and a block start from them before it touches a coefficient, so
-// a test that passed while either was missing would answer a status this route cannot
-// serve.
+// The same test for the uniform route, on the pointers its bodies actually read: the grid is a
+// table of its own, and testing the piece table would report a readiness the read below does not
+// rest on. The two per-interval tables are part of the test too - a body reads a degree and a block
+// start from them first, so a test passing with either missing answers a status this route cannot.
 __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady(const BoysDeviceTables& tables) {
     return tables.flatCoeffs == nullptr || tables.flatDegs == nullptr ||
                    tables.flatOffsets == nullptr
@@ -311,12 +291,10 @@ __device__ __forceinline__ BoysDeviceStatus DeviceFlatReady32(const BoysDeviceTa
                : BoysDeviceStatus::kSuccess;
 }
 
-// The same test for the grid's RATIONAL route, which reads five pointers and not
-// three: the pool and the four per-interval columns one row is addressed with. A body
-// takes the numerator's degree, the denominator's and the block's start before it
-// touches a coefficient, so a handle carrying the pool alone is read at another
-// interval's length. The count is a column here rather than a constant of the grid,
-// which is why one more of them is named than the monomial twin's.
+// The same test for the grid's rational route, which reads five pointers and not three: the pool
+// plus four per-interval columns. A body reads both degrees and the block's start before a
+// coefficient, so a pool alone is read at another interval's length. The count is a column, not a
+// grid constant: one more named than the monomial twin's.
 __device__ __forceinline__ BoysDeviceStatus DeviceFlatRatReady(const BoysDeviceTables& tables) {
     return tables.flatRatCoeffs == nullptr || tables.flatRatNumDeg == nullptr ||
                    tables.flatRatDenDeg == nullptr || tables.flatRatStored == nullptr ||
@@ -336,11 +314,10 @@ __device__ __forceinline__ BoysDeviceStatus DeviceFlatRatReady32(
                : BoysDeviceStatus::kSuccess;
 }
 
-// The coarsest partition's monomial reading, and the two tables it rests on that the
-// Chebyshev reading does not touch: region A's pool and region B's seed. A handle may carry
-// the piece tables without them - one filled before this form's slots existed is the case
-// that happens on its own - and an entry testing the piece table alone would report a
-// readiness its own read does not rest on and hand a null pool to Horner.
+// The coarsest partition's monomial reading, and the two tables it rests on that the Chebyshev
+// reading does not touch: region A's pool and region B's seed. A handle may carry the piece tables
+// without them - one filled before this form's slots existed is the case that happens on its own -
+// and the piece table alone reports a readiness the read does not rest on, handing null to Horner.
 __device__ __forceinline__ BoysDeviceStatus DeviceMonoReady(const BoysDeviceTables& tables) {
     return tables.pieceStart == nullptr || tables.monoCoeffs == nullptr ||
                    tables.monoBSeedCoeffs == nullptr
@@ -363,15 +340,10 @@ __device__ __forceinline__ bool DeviceOrderValid(int order) {
     return order >= 0 && order <= kMaxBoysOrder;
 }
 
-// Which lane's degrees a call reads, resolved once per call. The lanes whose region-A
-// seed is the double piece table are the double entries and the two batch entries of
-// the narrow precisions; the two single entries of the narrow precisions seed from the
-// float piece table. That is the same split the batch kernels' lane objects make
-// (boys_cuda.cu), and it is what makes the piece index below the calling lane's own.
-//
-// The batch lanes read the order-0 region-B entry and the single lanes the entry for
-// the order the recursion has reached; stride carries that, and stride 0 is what every
-// call reads here, where the degree is one scalar in the handle rather than a table.
+// Which lane's degrees a call reads, resolved once per call: the double entries and the two batch
+// entries of the narrow precisions seed region A from the double piece table, the single entries
+// from the float one - the split the batch kernels' lane objects make (boys_cuda.cu). It is what
+// makes the piece index below the calling lane's own. Stride 0 is the read: one scalar, not a table.
 template <BoysDeviceLane kLane>
 __device__ __forceinline__ Degrees DeviceStoredDegrees(const BoysDeviceTables& tables) {
     constexpr bool kDoublePieces =
@@ -385,15 +357,10 @@ __device__ __forceinline__ Degrees DeviceStoredDegrees(const BoysDeviceTables& t
     return out;
 }
 
-// The narrow partition as a lane object, one per stored form of region A. The
-// pieces are cut per order, so the lane reads its edges and its stored degree
-// through the handle's own piece-start table, and the form is the coefficient
-// pool and the summation that reads it — the same pieces at the same degrees.
-//
-// Region B's seed is piecewise on this partition, so the lane locates the piece
-// itself and reads that piece's degree at the order-0 entry, exactly as the
-// batch kernels' narrow lanes do (boys_cuda.cu): that seed is F_0's fit, so the
-// batch shape reads one degree whatever order the ladder reaches.
+// The narrow partition as a lane object, one per stored form of region A: pieces cut per order,
+// edges and degree through the handle's piece-start table; the form is the pool and its summation -
+// same pieces, same degrees. Region B's seed is piecewise, so the lane finds its piece and reads
+// its order-0 degree, as the batch kernels' narrow lanes do (boys_cuda.cu): that seed is F_0's fit.
 template <bool kMono>
 struct NarrowLane64 {
     const BoysDeviceTables* tables;
@@ -499,11 +466,10 @@ struct NarrowLane32 {
     }
 };
 
-// The fit route as a lane object, one per partition, at the reading its entry
-// makes. Its pieces are the partition's own — the coarsest piece tables for one
-// and the narrow ones for the other — and what the lane adds is the pair: the
-// numerator's block and the denominator's, the two degrees, and the seed the
-// region-B recursion starts from.
+// The fit route as a lane object, one per partition, at the reading its entry makes. Its pieces
+// are the partition's own - the coarsest piece tables for one, the narrow ones for the other - and
+// what it adds is the pair: the numerator's block and the denominator's, the two degrees, and the
+// seed the region-B recursion starts from.
 template <bool kNarrow>
 struct RatLane64 {
     const BoysDeviceTables* tables;
@@ -636,11 +602,10 @@ __device__ __forceinline__ BoysDeviceStatus DeviceGroupReady(const void* first) 
                             : BoysDeviceStatus::kSuccess;
 }
 
-// The same test for an entry that reads two lanes of one partition. The float
-// entries of the partitions below seed region A from the double lane's tables
-// and sum region B from their own, so a handle that carried one lane's tables
-// without the other's would have the call read what is not there — and the test
-// is on both pointers rather than on the one that happens to be tested first.
+// The same test for an entry that reads two lanes of one partition: the float entries of the
+// partitions below seed region A from the double lane's tables and sum region B from their own, so
+// a handle carrying one lane's tables without the other's has the call read what is not there; the
+// test is on both pointers, not on whichever happens to be tested first.
 __device__ __forceinline__ BoysDeviceStatus DeviceGroupReady2(const void* first,
                                                               const void* second) {
     return first != nullptr && second != nullptr ? BoysDeviceStatus::kSuccess
@@ -1712,14 +1677,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
 }
 
 #if BoysFp16
-// ---------------------------------------------------------------------------
-// the half lane's four shapes, in the caller's own kernel
-// ---------------------------------------------------------------------------
-// The half lane is two stores over one engine, and each body below answers in one
-// of them: the format's entry is written out beside the other format's rather than
-// folded into it, so the two are the same lane, the same tables and the same
-// arithmetic, with the store and its own half digit the whole of the difference a
-// reader has to look for.
+// The half lane's four shapes, in the caller's own kernel. The half lane is two stores over one
+// engine, and each body below answers in one of them: a format's entry is written out beside the
+// other's rather than folded into it, so the two are the same lane, the same tables and the same
+// arithmetic - the store and its half digit the whole of the difference a reader looks for.
 
 /// F_n(x) in fp16, inside the caller's kernel.
 ///
@@ -2300,17 +2261,10 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderBf16(const BoysDeviceTables& tabl
 }
 #endif // BoysFp16
 
-// ---------------------------------------------------------------------------
-// the narrow partition, and the fit route, in the caller's own kernel
-// ---------------------------------------------------------------------------
-// The axes the launched group carries beyond the coarsest partition and the Chebyshev
-// scheme, in the shapes this header offers. Each entry is the same ladder as its
-// sibling on the coarsest partition and differs in the tables its lane reads
-// (boys_cuda_arithmetic.hpp).
-//
-// Every entry below reads the tables its lane was stored with, as every entry of
-// this header does: region A's degrees and region B's own degrees come from the
-// handle, and no entry of this group resolves a second reading of either.
+// The narrow partition and the fit route, in the caller's own kernel: the axes the launched group
+// carries beyond the coarsest partition and the Chebyshev scheme, in the shapes this header offers.
+// Each entry is the same ladder as its coarsest-partition sibling, differing in the tables its lane
+// reads (boys_cuda_arithmetic.hpp), and no entry resolves a second reading of those tables.
 
 /// F_0(x)..F_n(x) in double precision from the narrow partition, inside the
 /// caller's kernel.
@@ -2958,23 +2912,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
     return BoysDeviceAllOrdersF32NarrowRat<kForm, kExp>(tables, order, x, out, capacity);
 }
 
-// ---------------------------------------------------------------------------
-// the orders reading of every partition, and the half lane's rows of the whole
-// ladder family, in the caller's own kernel
-// ---------------------------------------------------------------------------
-// The packing axis of the ladder shape, and the half lane's rows of the partitions
-// and the route, reachable from a caller's own kernel.
-//
-// The orders reading is the axis the launched group already carries: region A's
-// per-order fits are located and summed where they lie rather than seeded from the
-// top order's fit and brought back down the recurrence (boys_cuda_arithmetic.hpp,
-// DeviceOrdersF64 and DeviceOrdersF32). The reading covers region A and nothing
-// else - past kX0 the body is the certified ladder, which is where the region-A fit
-// it replaces ends - so an entry of this group answers at its lane's bound and not
-// at a second one.
-//
-// Every entry below reads the tables its lane was stored with, as every entry of
-// this header does: no entry of this group resolves a second reading of a table.
+// The orders reading (the packing axis) of every partition, and the half lane's ladder rows:
+// region A's per-order fits are summed where they lie, not seeded from the top order's and
+// brought down the recurrence (boys_cuda_arithmetic.hpp, DeviceOrdersF64/F32). Region A alone:
+// past kX0 the body is the certified ladder, so an entry answers at its bound, not a second one.
 
 /// F_0(x)..F_n(x) in double precision from the coarsest partition, each order summed
 /// from its own fit, inside the caller's kernel.
@@ -3802,18 +3743,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRatHorner(
 }
 
 #if BoysFp16
-// ---------------------------------------------------------------------------
-// the half lane's rows of the ladder family, in the caller's own kernel
-// ---------------------------------------------------------------------------
-// The half lane's definition is that it runs the float lane's arithmetic and stores
-// what that engine returns, so every entry below is the float entry of the same
-// position with the half store around it: the same lanes, the same tables, the same
-// partitions and the same route. The value crosses the boundary twice - in through
-// the format's widen and out through its narrow, __half2float and __float2half for
-// the binary16 store and __bfloat162float and __float2bfloat16 for the bfloat16
-// one - which is the whole of the difference and the whole of the bound's
-// difference. A bf16 entry is written out beside its fp16 sibling, body for body
-// rather than folded into it, so the format a body answers in is read off the body.
+// The half lane's rows of the ladder family, in the caller's own kernel. The lane runs the float
+// lane's arithmetic and stores what it returns: same lanes, tables, partitions and route, with the
+// half store around every entry, and the value crossing the boundary twice - through the format's
+// widen and its narrow - which is the whole of the difference and of the bound's difference.
 
 /// F_n(x) in fp16 from the lane's fast region-B exponential, inside the caller's
 /// kernel.
