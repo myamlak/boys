@@ -36,6 +36,19 @@ PATH_IN_LINE = re.compile(r'(?<![\w./-])([A-Za-z_][A-Za-z0-9_./-]*'
                           r'\.(?:cpp|cc|cxx|cu|hpp|h|cuh|inl))(?![\w-])')
 
 
+# A tool a workflow invokes: `tools/check_something.py`. The same defect one file over - a step
+# that runs a script the repository does not carry fails on every leg that clones it, and it fails
+# with "can't open file", which reads as an environment problem rather than as a missing file.
+# This is not hypothetical: `tools/check_comments_are_brief.py` was wired into a CI step while
+# still untracked, and nothing in the tree would have said so before the legs went red.
+TOOL_IN_LINE = re.compile(r'(?<![\w./-])(tools/[A-Za-z_][A-Za-z0-9_/.-]*\.py)(?![\w-])')
+
+
+def workflow_files(root: Path) -> list[Path]:
+    workflows = root / ".github" / "workflows"
+    return sorted(workflows.glob("*.yml")) + sorted(workflows.glob("*.yaml")) if workflows.is_dir() else []
+
+
 def cmake_files(root: Path) -> list[Path]:
     def wanted(p: Path) -> bool:
         return p.name == "CMakeLists.txt" or p.suffix == ".cmake"
@@ -73,11 +86,23 @@ def main(argv: list[str]) -> int:
                 elif not tracked(root, relative):
                     untracked.append((cmake, relative))
 
+    for workflow in workflow_files(root):
+        for line in workflow.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            for found in TOOL_IN_LINE.finditer(line):
+                relative = found.group(1)
+                named += 1
+                if not (root / relative).is_file():
+                    absent.append((workflow, relative))
+                elif not tracked(root, relative):
+                    untracked.append((workflow, relative))
+
     for cmake, relative in absent:
         print(f"{cmake.relative_to(root)}: names {relative}, which is not in the tree")
     for cmake, relative in untracked:
         print(f"{cmake.relative_to(root)}: names {relative}, which exists here but is NOT "
-              f"tracked by git - every leg that clones this repository will fail to configure")
+              f"tracked by git - every leg that clones this repository will fail on it")
 
     total = len(absent) + len(untracked)
     print(f"check_build_names_committed_sources: {named} source path(s) named; "
