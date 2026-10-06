@@ -1,31 +1,7 @@
-// The native half lane: boys/half2.hpp and the two entries it backs,
-// boys::BoysAllOrdersHalf2 and boys::BoysAllNF16Native.
-//
-// The lane is a claim about what packed half arithmetic can carry, graded the way the
-// accuracy gate grades a published one: three claims, each with its own domain and
-// exactly one verdict (the book at the end of the file prints them).
-//
-//   * native-half-packed. Every operation in half2.hpp is on a packed pair and correctly
-//     rounded to binary16, so the lane's error is the arithmetic's, not an implementation
-//     tolerance. Correct rounding is decided exactly, in binary64, no epsilon: a half times
-//     a half, or a half times the midpoint to its neighbour (a 25-bit significand), is exact
-//     in binary64, so "which side of the rounding boundary" is an exact comparison. Square
-//     root: against the squares of the midpoints, exhaustive over every non-negative half.
-//     The four operations: over every finite half against a curated operand set plus a random
-//     sample. The rounding distribution is what separates this lane from the fp16 I/O lane -
-//     the error exceeds half an ULP at 47.3% of values and one ULP at 20.0%, which a lane
-//     that widens, evaluates and rounds once at the end cannot produce.
-//   * native-half-bound. |out[k] - 2^15 F_k(x)| <= 8 ULP(out[k]), the quantum of the returned
-//     value, over region C at its precondition. Measured against the 45-digit committed grid
-//     where the argument is exactly a half, and against the certified double lane (5.5e-14
-//     relative, nine orders of magnitude inside the half quantum) over a sweep of region C.
-//     The domain is the arguments whose returned value is a normal half; the worst measured
-//     ratio there is 4.243 ULP, a swept maximum and not a proof bound.
-//   * native-half-ceiling. The argument past which no accuracy is claimed, per order: below
-//     F_k(x) = 2^-29 the entry returns a subnormal and then a zero by design, and that domain
-//     is counted rather than passed. The ceiling is where the value crosses the format's
-//     smallest normal, and the span wall (the ladder's own F_0/F_k against the format's
-//     range) stops a larger scale from moving it.
+// The native half lane: three claims - packed, bound, ceiling - each with its own domain and one
+// verdict, printed as the book at the end. Packed: correct rounding per packed-pair operation,
+// decided exactly in binary64 - 47.3% of values past half an ULP, 20.0% past one, a distribution
+// a widen-then-round-once lane cannot make. Bound (8 ULP) and ceiling: include/boys/boys.hpp.
 
 #include "boys/boys.hpp"
 #include "boys/half2.hpp"
@@ -66,15 +42,10 @@ double Value(std::uint16_t bits) noexcept {
     return Value(F16FromBits(bits));
 }
 
-// The native half lane's two entries, and the scale constant that goes with them
-// (boys/boys.hpp), are declared behind the BoysFp16 seam, and everything this file measures
-// about the *lane* is compiled with them: the closed configuration is reported as the
-// skipped test at the end of this file rather than as greens over a lane that is not there.
-// The packed type's arithmetic is not seam-gated - boys/half2.hpp is a header of this tree a
-// consumer may include directly - so the packed section below is outside the guard and runs
-// in both configurations. The split is by what a declaration needs: the guard holds the
-// lane's claim constants, its reference machinery and the evidence helpers only the book
-// names; the format helpers both sections share stand between them.
+// The entries and the scale constant (boys/boys.hpp) are behind the BoysFp16 seam; a closed
+// configuration reports the lane's claims as evidence absent, not greens. boys/half2.hpp is not
+// seam-gated and a consumer may include it directly, so the packed section below runs in both
+// configurations. The split is by what a declaration needs, not by what a section measures.
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 
 // --- The claims, in the accuracy gate's shape ---------------------------------
@@ -241,11 +212,9 @@ bool IsCorrectlyRounded(F16 result, F16 a, F16 b, char op) {
 
     if (magnitude >= 0x7C00u)
     {
-        // An infinity is the correctly rounded result exactly when the exact value is at or
-        // past the round-to-infinity threshold: 65520 is the midpoint between 65504 and 65536,
-        // and 65504's significand is odd, so the tie goes to the infinity. A NaN is never
-        // right here: every NaN comes from a non-finite operand, and the sweeps below run over
-        // finite ones.
+        // An infinity is the correctly rounded result exactly at or past the round-to-infinity
+        // threshold: 65520 is the midpoint of 65504 and 65536, and 65504's significand is odd, so
+        // the tie goes to the infinity. A NaN never occurs here: it takes a non-finite operand.
         if (magnitude != 0x7C00u)
         {
             return false;
@@ -675,11 +644,9 @@ TEST(NativeHalfLaneTest, LaneMatchesTheCommittedReferenceGrid) {
 }
 
 TEST(NativeHalfLaneTest, LaneStaysInsideItsBoundAcrossRegionC) {
-    // native-half-bound, over the whole of region C against the certified double lane, per
-    // order: the maximum error in quanta of the returned value. The domain is the arguments
-    // whose returned value is a normal half; the rest are the no-claim domain, counted and
-    // reported, carrying no claim - past the ceiling the entry returns a subnormal and then a
-    // zero by design, so a claim there would be met by the format's floor, not by the lane.
+    // native-half-bound over region C against the certified double lane, per order: the maximum
+    // error in quanta of the returned value. The domain is the arguments whose returned value is a
+    // normal half; the rest are the no-claim domain, counted and reported, carrying no claim.
     const std::vector<F16> xs = SweepArguments();
     const int nmax = kMaxBoysOrder;
 
@@ -866,14 +833,10 @@ TEST(NativeHalfLaneTest, LaneRoundsPerOperationNotOncePerValue) {
 }
 
 TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
-    // The scale 2^15 is exact, so it buys no accuracy but range: the largest argument whose
-    // output is still a normal half, i.e. where 2^15 F_k(x) crosses the smallest normal 2^-14,
-    // i.e. where F_k(x) crosses 2^-29. As one equation, three readings: 2^15 F_k(x) = 2^-14,
-    // that is F_k(x) = 2^-29.
-    //
-    // The same test against the unscaled ladder (scale 2^0, the shipped region-C body) crosses
-    // at F_k = 2^-14, which at orders 3 and up is left of the region-C boundary: unscaled,
-    // those orders never carry a normal value in region C at all.
+    // The scale 2^15 is exact, so it buys range, not accuracy: the largest argument whose output is
+    // still normal is where 2^15 F_k(x) crosses the smallest normal 2^-14, i.e. F_k(x) = 2^-29.
+    // Unscaled (2^0, the shipped region-C body) the same test crosses at F_k = 2^-14, left of the
+    // region-C boundary at orders 3 and up, so those orders carry no normal value there.
     struct Reach {
         int order;
         double expected;
@@ -948,10 +911,9 @@ TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
 }
 
 TEST(NativeHalfLaneTest, TheSpanSetsTheWallNoScalePasses) {
-    // The other end of the range statement. One scale carries the whole ladder, F_0 at the top
-    // down to F_k at the bottom, so the two ends must fit the format's range together: F_0/F_k
-    // passes the format's normal span, 2^29, at about x = 38 at order 8, where the scale 2^15's
-    // own reach is x = 30.17. The two limits are within 25% of each other, so a larger scale
+    // The other end of the range statement: one scale carries the whole ladder, F_0 down to F_k, so
+    // both ends must fit the format's range together. F_0/F_k passes the normal span 2^29 at about
+    // x = 38 at order 8, where the scale 2^15's reach is x = 30.17 - within 25%, so a larger scale
     // has nothing left to win.
     const int orders[] = {3, 4, 5, 6, 8, 12};
     const double spanLimit = std::ldexp(1.0, 29);

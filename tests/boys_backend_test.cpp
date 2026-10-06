@@ -1,8 +1,7 @@
-// The arithmetic-backend contract (boys/backend.hpp): which arithmetic the build
-// carries, and what each one's multiply-adds round. MulAdd is fused and MulSub is
-// not - the split-precision lane evaluates its recurrence at the two-rounding
-// reading on purpose, and a build that fused the bare form would move it.
-// Contracts() is asserted against a measurement in this translation unit.
+// The arithmetic-backend contract (boys/backend.hpp): which arithmetic the build carries, and what
+// each one's multiply-adds round. MulAdd is fused and MulSub is not - the split-precision lane
+// evaluates its recurrence at the two-rounding reading on purpose, and a build that fused the bare
+// form would move it. Contracts() is asserted against a measurement in this translation unit.
 
 #include "boys/backend.hpp"
 
@@ -56,12 +55,10 @@ Probe<T> MakeProbe() {
                     static_cast<T>(-(unit + half)), static_cast<T>(small * small)};
 }
 
-// Whether a bare product-plus-add is one rounding here. The operands are volatile
-// so the expression is evaluated rather than folded away; whether the multiply-add
-// is contracted is the question, and the addend makes the two answers differ.
-//
-// The fused value comes from the standard function rather than the backend, whose
-// own multiply-add is under test: asking it here would have it confirm itself.
+// Whether a bare product-plus-add is one rounding here. The operands are volatile so the expression
+// is evaluated rather than folded away; whether the multiply-add is contracted is the question, and
+// the addend makes the two answers differ. The fused value comes from the standard function rather
+// than the backend, whose own multiply-add is under test: asking it would have it confirm itself.
 template <typename T>
 bool BareIsFused() {
     const Probe<T> p = MakeProbe<T>();
@@ -128,13 +125,10 @@ TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     EXPECT_EQ(backends[0].route, boys::backend::detail::RouteInForce<double>());
     EXPECT_EQ(backends[1].route, boys::backend::detail::RouteInForce<float>());
 
-    // A route in force is the selection unless the build contracts the bare form, and
-    // that filtering is the SCALAR pair's, because the scalar separate route is a bare
-    // expression the build may contract. The packed pair names two instructions instead,
-    // so it runs its separate route whether the build contracts a bare form or not, and
-    // asking it the contraction question would demand an answer it does not have. What
-    // the packed rows owe is that their reported route is the one they run, which is
-    // asserted below.
+    // A route in force is the selection unless the build contracts the bare form, and that filtering is
+    // the SCALAR pair's, whose separate route is a bare expression the build may contract. The packed
+    // pair names two instructions instead, running its separate route either way, so what its rows owe
+    // is that the route they report is the one they run, asserted below.
     for (std::size_t i = 0; i < 2; ++i) {
         if (backends[i].route == MulAddRoute::kSeparate) {
             EXPECT_FALSE(backends[i].contracts) << backends[i].name;
@@ -142,11 +136,10 @@ TEST(BackendTest, ReportedMulAddRouteMatchesTheArithmetic) {
     }
 }
 
-// The packed pair runs the route this build selected. The two routes are two spellings
-// there rather than two readings of one bare expression, so the reported route is the
-// selection with nothing measured away from it: a build asked for the separate route
-// whose packed lanes reported fused would be reporting an arithmetic whose kernels were
-// never compiled into it.
+// The packed pair runs the route this build selected. The two routes are two spellings there, not two
+// readings of one bare expression, so the reported route is the selection with nothing measured away
+// from it: a build asked for the separate route whose packed lanes reported fused would be reporting
+// an arithmetic whose kernels were never compiled into it.
 TEST(BackendTest, ThePackedLanesRunTheSelectedRoute) {
     if (!boys::BoysAvx2Available()) {
         GTEST_SKIP() << "the AVX2 tier is not available on this target";
@@ -221,12 +214,10 @@ TEST(BackendTest, TheCarriedBackendsAreEnumeratedAndNamed) {
         << "a backend name repeats";
 }
 
-// The reported contraction flag is the one the header gives for the arithmetic carrying
-// that name. Contraction belongs to a compiled translation unit, and the library has more
-// than one flag context: src/boys_simd.cpp carries the packed flags, everything else does
-// not. A table measured in the packed unit would print that unit's answer beside the
-// scalar lanes' values, so the comparison is made where a scalar kernel would be compiled,
-// which is what this file is.
+// The reported contraction flag is the one the header gives for the arithmetic carrying that name.
+// Contraction belongs to a compiled translation unit, and the library has more than one flag context:
+// src/boys_simd.cpp carries the packed flags, everything else does not. A table measured in the packed
+// unit would print that unit's answer beside the scalar lanes' values, so the comparison is made here.
 TEST(BackendTest, ReportedContractionMatchesTheArithmetic) {
     const std::span<const BackendInfo> backends = BoysBackends();
     ASSERT_GE(backends.size(), 2u);
@@ -249,29 +240,10 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 
 } // namespace
 
-// ---------------------------------------------------------------------------
-// The selection axes on the policy, and the names the build fixes
-// ---------------------------------------------------------------------------
-// Every axis the entries select is one field of EvalPolicy with its own default. The pins
-// say which member each default names, so a move of one is a decision this test states
-// rather than a value that follows silently, and each axis reports itself by name.
-//
-// The engine budget is the library's: what a single-precision engine computes at, and no
-// build replaces it. The names an unnamed call resolves to are the BUILD's, which is what
-// boys/boys_build_defaults.hpp exists for: a build that has measured its own machine
-// replaces that header with its own set (the CMake option is BOYS_BUILD_DEFAULTS,
-// CONTRIBUTING.md). The pins below are the committed names where the committed header is in
-// force - the configuration every bound in this repository was measured at - and what has
-// to hold instead where it is not.
-//
-// ALL FIVE AXES ARE READ FROM THAT HEADER. Two of them always were - the fit route and the
-// evaluation scheme - and the other three, the packing axis, the division form and the
-// partition, were literals in backend.hpp until they were wired to the same seam. The guard
-// below reads all five, so a replacement that resolved none of them is refused rather than
-// passing on two of five. The pins below cover all five only where the tuned fixture is in
-// force: the committed configure pins the route and the scheme and leaves the packing axis,
-// the division form and the partition unpinned, which is how three macros came to be
-// documented, replaced and read by nothing.
+// Every axis the entries select is one field of EvalPolicy with its own default, and the pins below are
+// the committed names - the configuration every bound in this repository was measured at - where
+// boys/boys_build_defaults.hpp is the committed header. All five axes are read from it, the packing
+// axis, division form and partition included (BOYS_BUILD_DEFAULTS, CONTRIBUTING.md).
 static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
 
@@ -287,19 +259,10 @@ static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
 static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
 #else
-// A replacement is read instead of the committed file rather than beside it, so the names
-// it carries are this build's. A replacement naming the committed set, and a seam that
-// stopped delivering the file, both come out as the committed values.
-//
-// THE FIVE ARE ONE POINT, AND THE CLASS TABLE IS THE REST OF THE ANSWER. A replacement may
-// carry BOYS_BUILD_DEFAULT_ROWS, and where it does the table is expanded from those rows
-// INSTEAD of from the five (boys/boys.hpp expands one branch or the other, never both), so a
-// replacement whose five are the committed five and whose rows move a class has chosen
-// something: the class policy. A guard reading only the five refuses exactly the file the
-// option probe writes - the emitted file carries the build's own five as the point a class
-// with no row resolves to, and its rows are the run's winners - which is the shape this
-// block was widened for. Both levels are read below, and a build that chose nothing at
-// either level is the one this refuses.
+// A replacement is read instead of the committed file, not beside it. Where it carries
+// BOYS_BUILD_DEFAULT_ROWS the table expands from those rows instead of from the five, never both
+// (boys/boys.hpp, one branch or the other): a committed five with a row that moves a class has
+// chosen the class policy, which a guard reading only the five refuses.
 constexpr bool kCoarsestFiveInForce =
     boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
     boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
@@ -307,39 +270,10 @@ constexpr bool kCoarsestFiveInForce =
     boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
     boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
 
-// Whether the class table answers this class with the combination the committed build composes
-// from the committed five.
-//
-// EVERY AXIS THE COMBINATION CARRIES IS COMPARED, the region-B exponential included. The
-// exponential is an axis of EvalPolicy like the five the seam names, so a row that moved it
-// and nothing else is a row that moved the arithmetic this build runs - and the committed
-// member is kFast, the value EvalPolicy's own default carries, so a guard reading the five
-// alone would answer "the committed combination" for a class the replacement had moved the
-// exponential of, which is the reading that lets a build which chose something be refused for
-// having chosen nothing. That is the same shape as the row the guard's own row list could not
-// name while the row format carried six cells.
-//
-// THE EXPONENTIAL IS ONE MEMBER PER HALF, and the comparison is against the member each half's
-// committed tables read: kFast for a host class, kAccurate for a device class - the arithmetic
-// every figure published for that lane was measured at, which the committed seam names in
-// BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP. A device row compared against this build's own
-// kDefaultDeviceRegionBExp instead would answer "the committed combination" for a row a
-// replacement had moved that name to, which is the reading the paragraph above refuses, and a
-// device row compared against the host's member - one name for both halves - answers "not the
-// committed combination" for every device class there is, which is a guard that cannot refuse a
-// device class at all. The division cell needs no such split: the two halves' committed forms are
-// one member.
-//
-// Read through detail::DefaultPolicyRow rather than through DefaultPolicy, because a class
-// the table carries no row for is not a class this question is about: DefaultPolicyFor
-// asserts on it - that absence is the seam's own build error - and a replacement is free to
-// carry fewer classes than the committed table composes. This guard names twenty-seven of
-// them - the committed list's fifteen host classes beside the device half's twelve - and
-// reads them whichever is in force; one a replacement does not carry answers true below. A
-// class this table does not name is no evidence that the replacement chose nothing, so it
-// answers true here. The host lanes' bf16 classes are not among the fifteen: the committed
-// file's bf16 rows are measured ones and name another combination, which is one of the two
-// ways a build states it has chosen something.
+// Whether the class table answers this class with the combination the committed build composes from
+// the committed five: every axis compared, the region-B exponential included, one member per half
+// (BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP). A class the table carries no row for answers true; the host
+// bf16 classes are excepted - their committed rows are measured ones that name another combination.
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice = boys::Device::kHost>
 constexpr bool ClassIsTheCommittedCombination() noexcept
 {
@@ -406,16 +340,10 @@ static_assert(!(kCoarsestFiveInForce && kCoarsestClassTableInForce),
               "a row moving a class, or unset it to build the committed configuration");
 
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
-// The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure
-// that delivered a header claiming this name fails here rather than passing. The name is
-// the tuned fixture's own and only its build defines it: a single-axis fixture
-// (tests/build_defaults_fit_route.hpp and the three beside it) defines neither this guard
-// nor BOYS_BUILD_DEFAULTS_COMMITTED, so no pin here reaches the one axis such a fixture
-// moves, and the five values below are the tuned fixture's.
-// One assertion per axis, whichever value the fixture sets it to. Pinning only
-// the axes it happens to move is how the seam's three dead macros went unnoticed:
-// the fixture moved the scheme, copied the library's literals for the rest, and
-// nothing here could tell a move that took effect from a macro nothing read.
+// The test's own override (tests/build_defaults_tuned.hpp), pinned by value so a configure that
+// delivered a header claiming this name fails here rather than passing; the single-axis fixtures
+// define neither this guard nor BOYS_BUILD_DEFAULTS_COMMITTED. One assertion per axis: pinning
+// only the axes a fixture moves is how three macros came to be documented, replaced and read by nothing.
 static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
               "the fixture's fit route is not in force");
 static_assert(boys::kDefaultEvalScheme == boys::EvalScheme::kSplitClenshaw,
@@ -429,72 +357,16 @@ static_assert(boys::kDefaultFitGranularity == boys::FitGranularity::kCoarsest,
 #endif
 #endif
 
-// Address identity: two function addresses compare equal in a constant expression only
-// when the two names are one instantiation, and two instantiations of one entry share a
-// function-pointer type. The assertion in the test below is therefore a claim about the
-// entry's declaration - that its policy parameter defaults to its own class's row - and
-// not about two calls that happen to agree today.
-//
-// Only the yes direction is a constant expression: comparing two distinct function
-// addresses is not one under the sanitizer configuration this suite is also built in. The
-// no direction is the value comparison in the test's body, which is where two policies
-// that differ are told apart.
+// Address identity: two function addresses compare equal in a constant expression only when the two
+// names are one instantiation, so the assertion below is a claim about the entry's declaration - its
+// policy parameter defaulting to its own class's row - and not about two calls that agree today.
+// Only the yes direction is constant there: distinct addresses are not, under the sanitizer.
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-// The unnamed call is the build's policy, and the build's policy for a call is its
-// CLASS'S ROW: the table boys/boys_build_defaults.hpp carries, read through
-// DefaultPolicy<Precision, Shape> - the name an entry's policy parameter defaults to
-// (boys/boys.hpp). That is the intent stated here, at the entry a caller writes, and it
-// is a statement about the build's table rather than about any line of this file.
-//
-// THE SEAM HAS TWO LEVELS, AND THIS TEST READS THE ONE THAT CARRIES THE ANSWER. The five
-// names at the top of the seam file are the point a class the table carries no row for
-// resolves to; the row list beside them is where a per-class answer lives, and the header
-// that expands the table reads one branch or the other, never both. This test used to
-// compare the unnamed call against a policy spelled out HERE at the five and to require
-// that nothing differ. That held while the committed file's rows were those five and it is
-// false by design now that the committed rows name what the host option probe measured:
-// the values it reported as moved are the seam answering classes it now carries a row for,
-// which is the point of the row list and not a defect in it. What the old assertion
-// measured had become "differs from the fallback five" - a property the seam no longer
-// has, and one no build should be held to, because a build that has measured its own
-// machine is supposed to differ from the fallback five.
-//
-// So the comparison is made against the row this build's table carries for the class this
-// entry belongs to, read from the table and never spelled here, and it holds in both
-// states of the seam: with the committed file, whatever rows it carries, and with any
-// replacement of it. Two things are asserted, and the second is what gives the first its
-// teeth:
-//
-//   - the unnamed call and the class's row policy's call return the same bits, over a
-//     sweep of arguments and orders that spans the domain's regions and the ladder's two
-//     ends. Address identity makes that hold by construction for today's entry - the two
-//     names are one instantiation - and that IS the claim: a revision that moved the
-//     entry's default argument off its class's alias answers a caller from a policy the
-//     build's table does not name for that class;
-//   - the unnamed call's values are the seam's own five's values exactly where that row
-//     spells them, and not otherwise. That direction is the one a class row breaks without
-//     the first assertion noticing: where the table has moved the class, an entry
-//     answering from the seam's point agrees with the five where it must not, and this
-//     equality fires. It fires on the other side too, on a row naming a cell this class's
-//     entry does not carry - the cell is one the table states and the build does not
-//     honour, so the values are the five's while the row is not.
-//
-// WHAT IT DOES NOT CHECK, so that a green run is read for what it is: one entry, the double
-// lane's all-orders ladder, so it says nothing about another class's row
-// (tests/boys_build_defaults_test.cpp walks the rest of the surface entry by entry); and
-// nothing about a library object file compiled from another seam than this translation
-// unit, which is a disagreement about which symbol a name resolves to rather than about a
-// value, and shows up at link time rather than here.
-//
-// Nor does it check that these values can show every cell a row names. A cell the class's
-// entry reads can still leave the values where they were - the packing axis is invisible to
-// this sweep where the grid answers both the row and the five, measured on this tree at 0 of
-// the 540 values differing - and such a row is read below as one the build did not follow,
-// which is the one way this equality is wrong about a row that is honest. No replacement this
-// project builds reaches that state: a five naming the grid is refused by the accuracy gate's
-// ChebyshevFit (tests/build_defaults_uniform.hpp says so of the configure it first tried),
-// and the member is exercised through a row instead.
+// The unnamed call is the build's policy, and that policy is its CLASS'S ROW: the table
+// boys/boys_build_defaults.hpp carries, read through DefaultPolicy<Precision, Shape>. It returns that
+// row's bits, and equals the seam's own five exactly where the row spells them, and not otherwise.
+// One entry only: the double lane's all-orders ladder, the rest in tests/boys_build_defaults_test.cpp.
 TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     using boys::BoysAllOrders;
 
@@ -515,12 +387,10 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
                   "the one the build's table carries for (kFp64, all-orders), and the unnamed "
                   "call is not that policy's call");
 
-    // Which of the two the table answers this class with, read off the class's own policy so
-    // that it is the build's answer and not this line's. Every axis is read, the region-B
-    // exponential included: that is the axis a row can move while spelling the seam's five,
-    // and a flag reading five axes and stopping would call such a row the seam's own
-    // combination and then require the two calls to agree where the build's table says they
-    // must not.
+    // Which of the two the table answers this class with, read off the class's own policy so that it is
+    // the build's answer and not this line's. Every axis is read, the region-B exponential included:
+    // that is the axis a row can move while spelling the seam's five, and a flag reading five axes would
+    // call such a row the seam's own combination and require the calls to agree where they must not.
     constexpr bool kClassRowIsTheSeamFive =
         Class::kRoute == Fallback::kRoute && Class::kScheme == Fallback::kScheme &&
         Class::kBudget == Fallback::kBudget && Class::kPack == Fallback::kPack &&
@@ -598,13 +468,10 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
            "calls agreeing";
 }
 
-// Naming the narrow partition is answered from its own tables; combinations with no
-// table for the named partition are refused where they are named rather than answered
-// from another partition's fits. Those refusals are static_asserts inside `RouteFit`,
-// so a test that has to compile cannot exercise one:
-// what is pinned here is the default. The member itself is measured in the accuracy
-// gate. The two are named and not numbered on purpose - a line number into a header
-// this tree is still moving rots, and a reader who needs the site greps the symbol.
+// Naming the narrow partition is answered from its own tables, and a combination with no table for the
+// named partition is refused where it is named rather than answered from another partition's fits -
+// refusals that are static_asserts inside `RouteFit`, which a compiling test cannot exercise. What is
+// pinned here is the default; the member itself is measured in the accuracy gate.
 TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kCoarsest), "shipped");
     EXPECT_STREQ(boys::GranularityName(boys::FitGranularity::kNarrow), "narrow");
@@ -617,16 +484,10 @@ TEST(BackendTest, ThePartitionNamesRoundTrip) {
     EXPECT_STRNE(boys::GranularityName(boys::FitGranularity::kUniform), "unknown");
 }
 
-// The uniform partition is a row of that table rather than a value the header names on the
-// side; what the row declares is checked against what the build answers, member by member.
-//
-// The last check calls the entry rather than reading the row: a partition served from
-// another partition's tables is a defect the row's own fields cannot show, because those
-// fields would be the ones the substitution was made to satisfy. This build refused that
-// shape once, at the fit selector in backend.hpp, RouteFit<FitRoute::kRationalMinimax,
-// kScheme, FitGranularity::kUniform>, whose first version the narrow partition answered;
-// what is pinned is that each of the two members is the one it names, not a second name for
-// the narrow fits.
+// The uniform partition is a row of that table, not a value the header names on the side; the row's
+// declarations are checked against what the build answers. The last check calls the entry rather than
+// reading the row: a partition served from another partition's tables is invisible in the row's own
+// fields, as this build found once at RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform>.
 TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     const std::span<const boys::FitGranularityInfo> rows = boys::BoysFitGranularities();
 
@@ -756,11 +617,10 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
         << kArguments.size() << " arguments and " << (kNmax + 1)
         << " orders: a uniform policy is being answered from another partition's tables";
 
-    // The same check for the rational route, whose substitution risk is real: its pairs are
-    // per interval and the narrow member's per narrow piece, so an entry answering a uniform
-    // rational policy from the narrow pairs would return certified numbers under the grid's
-    // name. The two members are the same family read over different partitions, which is what
-    // makes the comparison meaningful.
+    // The same check for the rational route, whose substitution risk is real: its pairs are per
+    // interval and the narrow member's per narrow piece, so an entry answering a uniform rational
+    // policy from the narrow pairs would return certified numbers under the grid's name. The two are
+    // the same family read over different partitions, which is what makes the comparison meaningful.
     using UniformRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
@@ -828,26 +688,10 @@ TEST(BackendTest, TheDivisionFormAxisNamesItsMembers) {
     EXPECT_TRUE(carriesDefault) << "the default form is not one of the rows this build reports";
 }
 
-// What each division form actually governs, measured rather than read off the source:
-//
-//  - the refined form is bit-identical to exact division, at every order and every argument,
-//    on both lanes. That is the claim the default form rests on: every published per-region
-//    figure is stated for the exact arithmetic, and the refined form has to deliver those
-//    values to carry that figure;
-//  - the plain form reaches the downward ladder, whose divisor is the step's constant rather
-//    than the argument. A caller naming the plain form was once served exact division there
-//    and nothing reported it, so a zero count here is that back again;
-//  - the plain form reaches the single-precision lane's downward ladder too, and the figure
-//    that lane publishes for the form covers what it delivers there. The lane used to keep
-//    exact division on that ladder, because it published one number for every form and the
-//    reciprocal at that step took it outside that number; it now publishes the plain form's
-//    own figure beside its base, so the form is served and held to that figure. Both halves
-//    are measured: the counts below say the form is reached, and the outside count says the
-//    lane's figure for it covers every cell the sweep read. A carve-out put back would show
-//    as a zero count, and a form served outside its figure as a nonzero one.
-//
-// The counts are printed because a count is the measurement; the assertions are on relations
-// between them and not on the values.
+// What each division form governs, measured not read off the source: the refined form is bit-identical
+// to exact division on both lanes - the claim every published per-region figure rests on. The plain
+// form reaches the downward ladder (divisor: the step's constant, not the argument) and the single-
+// precision lane's too, where its published figure for the form covers every cell the sweep read.
 TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     using boys::BoysAllOrders;
     using boys::BoysAllOrdersF32;
@@ -865,20 +709,18 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     using DRefined =
         EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
 
-    // Arguments below each lane's kX0, where the downward recursion runs, and above it, where
-    // the upward ladders do. The downward set carries both of the accuracy gate's own cells
-    // where the plain form's reciprocal reaches furthest on the single-precision lane - x = 7
-    // and x = 9.74054909 - so the figure that form is held to is read where it was found
-    // rather than at a convenient point.
+    // Arguments below each lane's kX0, where the downward recursion runs, and above it, where the upward
+    // ladders do. The downward set carries both of the accuracy gate's own cells where the plain form's
+    // reciprocal reaches furthest on the single-precision lane - x = 7 and x = 9.74054909 - so the figure
+    // that form is held to is read where it was found rather than at a convenient point.
     constexpr double kDown[] = {0.01, 0.1, 0.5, 1.0, 2.0, 5.0, 7.0, 9.74054909, 11.5};
     constexpr double kUp[] = {12.0, 15.0, 20.0, 28.9, 29.0, 40.0, 60.0, 120.0};
     constexpr int kNmax = boys::kMaxBoysOrder;
 
-    // The figure a lane publishes for the plain reciprocal, read off the library's own
-    // contract row - the row the accuracy accessor, the accessor's documentation and the
-    // gates all read - plus the term that row carries beside its base for this form. It is
-    // not a tolerance chosen here: it is the number the library publishes for the arithmetic
-    // the sweep below runs, and a lane that delivers outside it has broken its own contract.
+    // The figure a lane publishes for the plain reciprocal, read off the library's own contract row -
+    // the row the accuracy accessor, the accessor's documentation and the gates all read - plus the term
+    // that row carries beside its base for this form. It is not a tolerance chosen here: it is the number
+    // the library publishes for the arithmetic the sweep below runs.
     const auto plainFormFigure = [](boys::Precision precision) {
         for (const boys::LaneContractInfo& row : boys::BoysLaneContracts()) {
             if (row.precision == precision) {
@@ -933,12 +775,10 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         BoysAllOrdersF32<DPlain>(kNmax, x, fPlain.data());
         BoysAllOrdersF32<DRefined>(kNmax, x, fRefined.data());
 
-        // The reference this lane's plain form is measured against: the double lane at the
-        // same argument, whose own published figure is 5.5e-14 - five to six digits inside
-        // the bar the single lane is read at, so a difference between the two is this lane's
-        // error and not the reference's. The argument is the float one widened rather than
-        // the double the sweep walked in with, so no part of the difference is the float
-        // argument's own rounding.
+        // The reference this lane's plain form is measured against: the double lane at the same argument,
+        // whose own published figure is 5.5e-14 - five to six digits inside the bar the single lane is read
+        // at, so a difference between the two is this lane's error and not the reference's. The argument is
+        // the float one widened, not the double the sweep walked in with, so the float's own rounding is out.
         BoysAllOrders<DExact>(kNmax, static_cast<double>(x), dReference.data());
 
         for (int n = 0; n <= kNmax; ++n) {
@@ -1017,20 +857,10 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
            "lane's own figure for it, and that figure is what a caller reads";
 }
 
-// The partition question, asked of a fit rather than of a run: which fits carry the uniform
-// grid's own table, and at which partitions a fit answers from a table of its own.
-//
-// The derived families are written against two partitions. Their granularity parameter is a
-// two-case conditional and the grid is the third value it has no answer for, so a path that
-// resolves a policy's partition through one of them answers a policy naming the grid out of
-// the narrow member - certified numbers, under the grid's name, with nothing reporting it.
-// Every one of this library's three substitution defects had that shape, and each was found
-// by a person reading code rather than by a call.
-//
-// detail::FitAnswersPartition is that question asked once, and it is what the paths that
-// resolve a partition now ask rather than each restating the check where it stands. The
-// assertions below are the predicate's own answers, on this build's families; the test under
-// them is the part a static assertion cannot state, because the guard bites at a call site.
+// The partition question, asked of a fit rather than of a run: do the derived families carry the
+// grid's own table? They are written against two partitions - their granularity parameter a two-case
+// conditional with no answer for the grid - so a path resolving a partition through one of them answers
+// the grid's policy from the narrow member, unreported: the question detail::FitAnswersPartition asks once.
 static_assert(boys::detail::kFitCarriesUniform<boys::detail::UniformFit<boys::EvalScheme::kHorner>>,
               "the Chebyshev member over the grid is the one fit that carries it");
 static_assert(boys::detail::kFitCarriesUniform<boys::detail::RationalFitUniform>,
@@ -1080,16 +910,10 @@ static_assert(!boys::detail::FitAnswersPartition<GridFit>(static_cast<boys::FitG
 
 } // namespace
 
-// The guard's bite, at the entries whose routing asks it: a policy naming the grid is served
-// by the batched shapes only because each routes it to the per-argument body, which reads the
-// grid's own table, and the partitioned body the guard keeps out refuses the grid by name at
-// its own contract.
-//
-// This file therefore fails to compile if that routing is removed, and it fails to compile if
-// the predicate answering it is weakened - or answered "yes" - because the call below then
-// reaches the partitioned path and its assertion fires. That is the property a run-time test
-// cannot have: a substitution that compiles is measured here as a value, but one that should
-// not compile is caught in this translation unit before anything is measured.
+// The guard's bite: a policy naming the grid is served by the batched shapes only because each routes
+// it to the per-argument body, which reads the grid's table, so this file fails to compile if that
+// routing is removed or the predicate weakened - the call below then hits the partitioned path, the
+// one property a run-time test cannot have: a substitution that compiles is measured as a value.
 TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
     using UniformPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                            boys::EvalScheme::kHorner,

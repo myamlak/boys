@@ -1,18 +1,7 @@
-// The fixed-n vector entry (BoysFixedN) contract tests: F_n(x[i]) over an array of
-// arguments at one fixed order, the batch shape of angular-momentum-grouped
-// integral-engine inner loops.
-//
-// Each element runs the BoysSingle region bodies verbatim - the certified path -
-// so the accuracy assertions reuse the double-single per-region bounds
-// (1e-15 / 3e-14 / 5.5e-14) over the committed reference grid, and the identity
-// tests assert bitwise agreement with BoysSingle. The layout tests pin the
-// strided surface (out[i * stride] = F_n(x[i]), stride >= 1 in doubles, default 1)
-// and the alignment contract (natural double alignment only - the entry is scalar;
-// buffers over-aligned like the AVX2 lanes' are accepted unchanged).
-//
-// The default-policy call sites below route to the library's certified
-// instantiation (extern-template surface in boys.hpp, explicit instantiation in
-// boys.cpp).
+// BoysFixedN contract tests: F_n(x[i]) over an array at one fixed order, the batch shape of the
+// angular-momentum-grouped integral-engine inner loops. Elements run the BoysSingle region bodies
+// verbatim, so the bounds 1e-15 / 3e-14 / 5.5e-14 hold over the committed grid and identity matches
+// BoysSingle bitwise; layout pins out[i * stride] = F_n(x[i]) at stride >= 1 (default 1).
 
 #include "boys/boys.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -395,12 +384,9 @@ TEST(BoysFixedNTest, TheRationalRouteIsCarriedAndIsBoysSingle) {
         << "the rational route returns the shipped values: the carriage is not reachable";
 }
 
-// The entry at the row its own class carries, against the per-argument single entry at
-// that same row: the row IS the defaults, so the route this pair runs is the class's own
-// and naming no policy is the same call. The pair is one policy on both sides rather
-// than a policy composed from the seam's five against a class of its own - the five are
-// the point a class with no row falls to, and a replacement header that moves this
-// class's row moves both sides with it.
+// The entry at the row its own class carries, against the per-argument single entry at that same
+// row: the row IS the defaults, so naming no policy is the same call and one policy is on both
+// sides - a replacement header that moves this class's row moves both with it.
 TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
     using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
 

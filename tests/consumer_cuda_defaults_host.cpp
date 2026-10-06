@@ -1,14 +1,7 @@
-// The host half of the consumer check on the CUDA lane's default. The static
-// assertions below hold the entry's template default and the value it names to
-// be one instantiation, with the lane's other region-B exponential as a negative
-// control, so the equality is not a name against itself.
-//
-// This is the half that can include <boys/boys_cuda.hpp>, a host header. The
-// kernel and the device entry are in tests/consumer_cuda_defaults.cu.
-//
-// Run:  cmake --build <build> --target boys-consumer-cuda-defaults   (BUILD_CUDA=ON)
-//       <build>/boys-consumer-cuda-defaults
-//       ctest --test-dir <build> -R boys-consumer-cuda-defaults
+// The host half of the consumer check on the CUDA lane's default: the static assertions below hold
+// the entry's template default and the value it names to be one instantiation, with the lane's other
+// region-B exponential as a negative control, so the equality is not a name against itself. This is
+// the half that can include <boys/boys_cuda.hpp>; the device entry is in tests/consumer_cuda_defaults.cu.
 
 #include <algorithm>
 #include <boys/boys_cuda.hpp>

@@ -1,26 +1,7 @@
-// The default policy table of docs/lane-contract.md, read back against the four
-// `DefaultPolicy*` constants it describes.
-//
-// A changed default is still a certified combination meeting its own bound, so
-// no accuracy gate would notice it - this comparison keeps the table honest.
-//
-// THE TABLE DESCRIBES THE COMMITTED FILE, AND THE DOCUMENT SAYS SO. Its cells are
-// the choices `include/boys/boys_build_defaults.hpp` carries, which are the choices a
-// build that replaces nothing compiles; the section that holds the table states in its
-// own words that a build replaces that file with its own five "rather than editing the
-// tree". So the two readings this check makes are the two configurations a build can be
-// in, and each is the document's statement about the build that is in it:
-//
-//  - the committed header is in force: the four names resolve to the table's cells, and
-//    a cell that stops describing what a caller gets is what this fails on;
-//  - a replacement is in force (BOYS_BUILD_DEFAULTS): the table is not about this build
-//    and is not compared with it - the committed five are not reachable from a build
-//    that replaced the file, which refuses to compile beside a replacement - and what
-//    the document promises such a build is that "the entries that name no policy then
-//    compile those choices". That promise is what the four names are held to here.
-//
-// Neither build is left unchecked: this file has one reading at each setting, and the
-// table's own reading is the one the committed header's leg makes.
+// The default policy table of docs/lane-contract.md, read back against the four `DefaultPolicy*`
+// constants it describes - a changed default is still a certified combination meeting its bound, so
+// no accuracy gate would notice it. include/boys/boys_build_defaults.hpp in force reads the rows
+// against the table; BOYS_BUILD_DEFAULTS reads them against the seam's own five choices.
 
 #include "boys/boys.hpp"
 

@@ -1,25 +1,7 @@
-// The host half of the multiply-add route check on the CUDA lane. It prints the
-// route a caller reads off the lane, holds the device's arithmetic at both
-// routes to the exact references a host can state — std::fma for the fused
-// route, round(round(a * b) + c) for the separate one — and holds the route the
-// build selected to the arithmetic it delivers. The rows come in two sets: the
-// lane's bodies as this file's kernels instantiate them, and the shipped batch
-// entry, whose arithmetic the lane's own translation unit compiled. The second
-// set is the one that can see whether the build's selection reached the lane.
-//
-// This is the half that can include <boys/boys_cuda.hpp>, a host header. The
-// kernels and the device-side entries are in tests/boys_cuda_route_test.cu.
-//
-// Run:  cmake --build <build> --target boys-cuda-route-tests       (needs -DBUILD_CUDA=ON)
-//       <build>/Release/boys-cuda-route-tests
-//       ctest --test-dir <build> -R boys-cuda-route-tests
-//
-// The exit code is the verdict: 0 when every requirement below holds, 1 when a
-// requirement failed, 2 when the card or the lane could not be used. A build
-// with -DBOYS_MULADD_SEPARATE=ON is a second run of the same check, and the one
-// where the two routes part: the same rows are required of it, so a lane that
-// ran the fused step under the separate selection fails here rather than
-// answering with the other route's bits.
+// The host half of the multiply-add route check on the CUDA lane (the device half is tests/boys_cuda_route_test.cu):
+// it prints the route a caller reads off the lane, holds the device's arithmetic at both routes to exact references
+// (std::fma; round(round(a * b) + c)), and holds the build's selection to what it delivers, over this file's kernels
+// and the shipped batch entry. Run: boys-cuda-route-tests; exit 0 held / 1 failed / 2 unusable; BOYS_MULADD_SEPARATE reruns.
 
 #include <boys/boys_cuda.hpp>
 

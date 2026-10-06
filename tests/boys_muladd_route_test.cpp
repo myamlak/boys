@@ -1,68 +1,7 @@
-// The multiply-add route's liveness: a lane built to read BOYS_MULADD_SEPARATE
-// has to DELIVER that route's values, not merely report it.
-//
-// WHY THIS TEST EXISTS. The route is a build fact (boys/backend.hpp:
-// kSelectedRoute) and the lanes read it as one, so a lane that stops reading it
-// keeps compiling, keeps every published accuracy bound - both routes are
-// accurate, and the bounds are the fused route's - and keeps the suites that
-// name the route, whose arms differ in what they PRINT rather than in what they
-// assert. Measured before this file was written: reverting the across-orders
-// lane to its hard-coded fused intrinsic and building at the separate route
-// leaves the across-orders suites at [ PASSED ] 19 tests, exit 0. A report can
-// be right while the arithmetic is wrong, so what is held here is the VALUES a
-// lane delivers.
-//
-// THE REFERENCE is the library's own certified summation - ClenshawSplit,
-// HornerMono, FitSum, the same templates the lanes evaluate - instantiated over
-// a backend whose route is a template argument instead of the build's selection
-// (RouteForced and RouteStep below). Same piece, same coefficients, same mapped
-// argument, same steps, same order; the only difference is which multiply-add
-// the step is built from. A lane that ignores the selection therefore delivers
-// the OTHER route's values, and the counts below say so.
-//
-// WHERE IT CAN SEE THE DIFFERENCE, and why the counts are printed. The two
-// routes are one arithmetic on a build whose bare `a * b + c` contracts
-// (boys/backend.hpp: MeasureContraction), and no value comparison can part them
-// there. Each row prints the route the library reports for its family, this
-// translation unit's own contraction measurement, and the counts: the cells
-// compared, the cells the two routes give different values at, the cells the
-// lane delivered off the reported route, and the cells it delivered the OTHER
-// route's value at. A non-zero `routes-differ` is required wherever this unit
-// measures that the build keeps the routes apart, so a sweep that stopped
-// proving anything fails rather than passing quietly.
-//
-// WHICH LANES THIS COVERS, and which it does not:
-//   * the scalar lanes (boys/backend.hpp: Scalar<T>), at the step, at the
-//     multiply-subtract the route does NOT reach, and through the certified
-//     region-A fit body boys_impl.hpp evaluates (both schemes);
-//   * the across-arguments packed lane's region-A body (boys_simd.cpp:
-//     BoysRegionASimd), which reaches the packed backends at the selection;
-//   * the across-orders lane (boys_orders_simd.cpp): the double entry and its
-//     composed fetch, the single-precision entry, and the two policy entries
-//     that name a partition, a budget and a division form rather than taking a
-//     stride (BoysAllOrdersPacked, BoysAllOrdersF32Packed), each at every
-//     scheme, partition and budget that axis declares.
-// The packed backends themselves (boys_backend_simd.hpp: Avx2Fp64/Avx2Fp32) are
-// held in tests/boys_muladd_route_simd_test.cpp, whose translation unit carries
-// the intrinsics' flags the way the library's SIMD units do.
-//
-// THE ROUTE FAMILY'S OWN BODIES are reached through the two policy entries
-// rather than against a second reference of their own: each row compares the
-// value the entry delivered with the SAME CELL's value in the route-named
-// arithmetic - that cell's partition, degree and mapped argument, read off the
-// tables the entry reads - so a body that stopped reading the route fails the
-// row it answers. A cell the entry answers from the certified scalar ladder
-// rather than from a lane body is the seam the scalar rows hold, and is not
-// held a second time here.
-//
-// NOT COVERED, and why: the CUDA device lane, which has its own
-// boys-cuda-route-tests and no device in this configuration; and the arguments
-// at or above kX0, where a lane's region-A body stops being what answers and the
-// entry hands the argument to the region-B, asymptotic and certified scalar
-// bodies (boys_orders_simd.cpp:1076 OrdersLaneApplies, :1744
-// F32OrdersLaneApplies). The sweeps here stay strictly below that cut
-// (RegionASweep), so what they hold, and all they claim, is each lane's
-// region-A body at the build's route.
+// Route liveness: a lane built to read BOYS_MULADD_SEPARATE must deliver that route's values, not
+// report it. One that ignored the build fact (boys/backend.hpp: kSelectedRoute) met every bound and
+// stayed green: reverting the across-orders lane left its suites at [PASSED] 19 tests, exit 0.
+// Values are held against the certified summations at a forced route; sweeps stop below kX0.
 
 #include <gtest/gtest.h>
 
@@ -287,11 +226,9 @@ void HoldScalarStep(const char* name) {
                 0,
                 0.0);
 
-        // What this sweep can tell apart for the multiply-subtract: the fused
-        // step, one instruction and one rounding, and the two-rounding
-        // difference the operation's own contract names. A lane that let the
-        // route reach this operation would deliver the first where the two
-        // differ, so the count is also the bar the sweep has to clear.
+        // What the sweep tells apart at the multiply-subtract: the fused step, one instruction, one
+        // rounding, from the two-rounding difference the operation's contract names. A lane that
+        // let the route reach it would deliver the first where they differ; the count is the bar.
         const T sub_delivered = Scalar<T>::MulSub(a, b, c);
         const T sub_expected = TwoRoundingSub(a, b, c);
         const T sub_fused = std::fma(a, b, -c);
@@ -337,11 +274,9 @@ TEST(BoysMulAddRouteScalar, UnitContractionMeasurementAgreesWithTheReport) {
     ASSERT_NE(fp64, nullptr);
     ASSERT_NE(fp32, nullptr);
 
-    // The report's contraction answer is taken in the unit the scalar
-    // arithmetic is compiled in (src/boys.cpp), and this unit carries the same
-    // flags. A build whose measured answer and this unit's measurement disagree
-    // is a build whose claims and whose arithmetic are not the same statement,
-    // and it fails here rather than passing quietly.
+    // The report's contraction answer is taken in the unit the scalar arithmetic is compiled in
+    // (src/boys.cpp), and this unit carries the same flags; a measured answer that disagrees with
+    // this unit's measurement means the claims and the arithmetic are not the same statement.
     std::printf("  route-liveness family=scalar report-contracts fp64=%d fp32=%d, this unit "
                 "measures fp64=%d fp32=%d, route fp64=%s fp32=%s, build selected=%s\n",
                 fp64->contracts ? 1 : 0,
@@ -670,11 +605,9 @@ void SweepOrdersEntry(const char* family,
 
             for (int order = 0; order <= nmax; ++order)
             {
-                // The table's premise, which the lane asserts of itself before
-                // it reads a group at one degree for four orders: every order's
-                // piece at this index is cut at the same interval and stored to
-                // the same degree. A regenerated table that broke it is a
-                // failure here rather than a reference read at a wrong degree.
+                // The table's premise, asserted before the lane reads a group at one degree for
+                // four orders: every order's piece here is cut at the same interval and stored
+                // to the same degree, so a regenerated table that broke it fails, not misreads.
                 if (OrderSitsInAGroup(order, nmax))
                 {
                     const std::size_t groupFlat =
@@ -767,13 +700,10 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
         << "the packed pair is listed exactly where the tier is available, so a guard reading "
            "BoysAvx2Available() reads the fact this build's own report prints";
 
-    // Which arithmetic this entry runs is a question with three answers, not
-    // two: the group lane's value at the reported route, the group lane's value
-    // at the OTHER route - which is the silent substitution a lane that stopped
-    // reading the selection would deliver - and neither of those, which is a
-    // different arithmetic. The sweep counts all three, so a build that reports
-    // one route and delivers the other is told apart from one whose entry is not
-    // the group lane at all rather than being read as either.
+    // Which arithmetic this entry runs has three answers, not two: the group lane's value at the
+    // reported route, at the other route (the silent substitution), and neither - a different
+    // arithmetic. Counting all three tells a substituted route apart from an entry that is not the
+    // group lane at all.
     const boys::backend::BackendInfo* const scalar_report = ReportedEntry("scalar-fp64");
     const boys::backend::BackendInfo* const packed_report = ReportedEntry("avx2-orders-fp64");
 
@@ -951,51 +881,10 @@ TEST(BoysMulAddRouteOrders, F32EntryDeliversTheReportedRoute) {
         boys::detail::OrdersScheme::kHorner, reported->route, contracts, "horner"));
 }
 
-// --- The across-orders POLICY entries ----------------------------------------
-//
-// Everything above holds a LANE: the scalar steps, the across-arguments body, the
-// across-orders fetch entries at their two fetches, the float fetch. What a
-// consumer of this axis calls is neither fetch but the two policy entries
-// boys_impl.hpp declares on it - detail::BoysAllOrdersPacked and
-// detail::BoysAllOrdersF32Packed - each a template over the axis's choices, each
-// electing its body from them at the build's route. Measured before this section
-// was written: neither name appears in any test in this tree, and a dump of the
-// packed ladder at the two route selections moved 2,271 of 13,728 cells. The
-// route is live on this axis and nothing watched it.
-//
-// THE REFERENCE is this file's, applied to the entries' own bodies: the
-// partition's stored fit, summed by the library's certified scheme over a backend
-// whose route is a template argument (boys_muladd_route_reference.hpp), at the
-// piece, the degree, the table and the mapped argument the entry's own body reads
-// them at. A body that stopped reading backend::detail::kSelectedRoute keeps
-// compiling and keeps every published bound - both routes are accurate, and the
-// bounds are the fused route's - and delivers the OTHER route's values, which is
-// what the counts below say.
-//
-// WHICH CELLS, and what each is held to:
-//   * coarsest x Chebyshev: the shipped cover's body at its stored degrees, the
-//     same body this file's across-orders sweep already holds through the composed
-//     fetch, reached here through the entry and at the division form the caller
-//     named;
-//   * coarsest x rational: the shipped cover's geometry and the route's own stored
-//     pairs, at the per-order handover rule (kTierThresholds) the route's
-//     single-order entries answer with;
-//   * narrow x Chebyshev and narrow x rational: the partition's own pieces, each
-//     order looked up in its own, at the partition's own degree table;
-//   * uniform x Chebyshev: the fixed grid's cell at the interval's own degree;
-//   * uniform x rational: the certified scalar single lane the entry delegates
-//     this cell to, at the uniform grid's rational row.
-// Both divisions of the double lane's form axis are swept beside the default, and
-// both of the float lane's budgets, so every cell of both entries' declared shapes
-// is in one of the rows below.
-//
-// NOT COVERED, and why: the arguments at or above each body's own cut - kX0 for
-// every region-A body, kFlatHi and kFlatHiF32 for the grid - where the entry hands
-// the argument to the certified scalar single lane, which is a different lane's
-// arithmetic and no sweep of this file holds it; and the host without the vector
-// tier, where the entry is that lane at every argument. The sweeps stay strictly
-// below the cuts (RegionASweep), so what they hold, and all they claim, is each
-// entry's region-A body at the build's route.
+// The across-orders POLICY entries: boys_impl.hpp's detail::BoysAllOrdersPacked and
+// detail::BoysAllOrdersF32Packed, each a template electing its body at the build's route. Measured
+// before this section was written: a packed-ladder dump at the two route selections moved 2,271 of
+// 13,728 cells, held per cell against this file's reference, below kX0 and kFlatHi.
 
 /// The library's own certified summation over one stored fit, at a route the
 /// caller names instead of the build's selection. Same two tables, same mapped

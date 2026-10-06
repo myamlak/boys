@@ -1,50 +1,27 @@
-// The positive control for the build-defaults seam's replaced-choices guard
-// (tests/boys_backend_test.cpp, the static_assert under BOYS_BUILD_DEFAULTS_COMMITTED):
-// a replacement header whose five names are the committed five and whose row list moves a
-// class. It has chosen something - the class policy - and it must compile and pass its
-// suite.
-//
-// It is one half of a control pair and is meaningless without the other.
-// tests/build_defaults_noop.hpp is the replacement that has chosen nothing, at either
-// level, and must NOT compile; this one chooses at the class level rather than at the five.
-// That is the shape a real replacement has: the option probe's own file
-// (boys-option-probe --emit-defaults) carries the build's five as the point a class with no
-// row resolves to and its rows as the run's winners (src/boys_probe.cpp), so a guard
-// reading only the five refuses exactly the file the probe writes.
-//
+// The positive control for the build-defaults seam's replaced-choices guard (tests/boys_backend_test.cpp, the
+// static_assert under BOYS_BUILD_DEFAULTS_COMMITTED): a replacement whose five names are the committed five and
+// whose row list moves a class, so it has chosen something and must compile and pass its suite.
+// tests/build_defaults_noop.hpp is the pair's other half - chosen nothing, at either level - and must not compile.
+
+// boys-option-probe --emit-defaults (src/boys_probe.cpp) carries the build's five as the point a class with no
+// row resolves to and its rows as the run's winners, so a guard reading only the five refuses exactly the file
+// the probe writes. This is a fixture and not a measurement: nothing here is a claim about any machine and no
+// figure is quoted, because no probe run produced one.
+
+// It moves boys::BoysAllOrders - the double lane's all-orders ladder when the call site names no policy - on one
+// axis: the scheme, Horner's rule to the split Clenshaw recurrence, as tests/build_defaults_tuned.hpp moves.
+// Different rounding, so an unnamed call to that entry and a call at the seam's own five differ in their last
+// places, which tests/boys_build_defaults_test.cpp's unnamed-call sweep reads.
+
+// The other rows are the classes the host's and the device's entries reach, each the five above at its own lane's
+// budget, written out because the list a replacement carries is read INSTEAD of the one the five compose
+// (include/boys/boys.hpp expands one branch or the other): a class the list omits has no default policy. A class is
+// a (device, precision, shape) triple, so the device's three lanes are the other half, on their own division form.
+
+// The host rows name RegionBExp::kFast, the host's own default (kDefaultHostRegionBExp); every row is ten cells,
+// its last the region-B exponential, and a row that leaves one out does not compile (include/boys/boys.hpp).
+
 //   cmake -S . -B build-defaults-rows -DBOYS_BUILD_DEFAULTS=tests/build_defaults_rows.hpp
-//
-// It is a fixture and not a measurement: the row it moves is moved to a combination this
-// library carries and certifies. Nothing here is a claim about any machine, and no figure
-// is quoted, because no option probe run produced it.
-//
-// WHAT IT MOVES, AND WHY THAT CLASS
-//
-// One class, the double lane's all-orders ladder - the class boys::BoysAllOrders resolves
-// to when its call site names no policy - and one axis of it: the scheme, from Horner's
-// rule to the split Clenshaw recurrence, the same move tests/build_defaults_tuned.hpp
-// makes. Different rounding, so an unnamed call to that entry and a call at the seam's own
-// five differ in their last places, which is what the unnamed-call sweep of
-// tests/boys_build_defaults_test.cpp reads to tell a build whose rows answer from one whose
-// five do.
-//
-// The other nine rows are the classes the host's entries reach, each the five above at its
-// own lane's budget and written out rather than left implicit: the table a replacement
-// carries is read INSTEAD of the one the five compose (boys/boys.hpp expands one branch or
-// the other), so a class this list omits has no default policy at all and fails to compile
-// where it is asked for. Every row names the region-B exponential as its last cell, which is
-// a cell of the format and not an extra: a row that leaves one out is a row that does not
-// compile (include/boys/boys.hpp, the row macro), so every row below is ten cells each
-// like every other row this format carries. The host rows name `RegionBExp::kFast`, the host's
-// own default (`kDefaultHostRegionBExp`), so each of them resolves to the policy it resolved
-// to before the cell existed.
-//
-// The nine below them are the device half: a class is a (device, precision, shape) triple,
-// so the host's classes are half the table and the device's three lanes by the three
-// questions a device entry answers are the other half. They are the same five at each device
-// lane's budget, beside the device lane's own division form and its own region-B member, and
-// they are written out for the same reason the host's rows are: the list this file carries is
-// the whole table for this build, and the device classes are asked for by name like any other.
 #define BOYS_BUILD_DEFAULTS_TEST_ROWS 1
 
 #define BOYS_BUILD_DEFAULT_FIT_ROUTE FitRoute::kChebyshev

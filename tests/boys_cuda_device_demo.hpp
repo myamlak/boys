@@ -1,13 +1,9 @@
 #pragma once
 
-// The launchers of tests/boys_cuda_device_demo.cu, declared once so the
-// translation unit that defines them and the gate that drives them cannot drift
-// apart.
-//
-// Each returns the CUDA error code of its launch, 0 when the launch was
-// accepted. A family launcher writes kMaxBoysOrder + 1 values per element, in
-// the element's own block, and a single launcher writes one value per element;
-// \c status receives the entry's own status per element.
+// The launchers of tests/boys_cuda_device_demo.cu, declared once so the translation unit that
+// defines them and the gate that drives them cannot drift apart. Each returns the CUDA error code
+// of its launch, 0 when accepted; a family launcher writes kMaxBoysOrder + 1 values per element in
+// the element's own block, a single launcher one value per element, and \c status the entry's status.
 
 #include "boys/boys_device_tables.hpp"
 
@@ -121,13 +117,10 @@ extern "C" int BoysDeviceDemoSingle64(const boys::BoysDeviceTables* tables,
                                       std::size_t count,
                                       int* status);
 
-// The partition and route axes of the ladder shape, one launcher per entry.
-//
-// One spelling of the parameter list, instantiated per entry: the launcher's
-// shape and the definition's are then the same declaration rather than two that
-// have to agree, which is what this header is for. The entries are the ladder's
-// own — the same parameters and the same capacity — over another partition,
-// another route or the other stored form.
+// The partition and route axes of the ladder shape, one launcher per entry: one spelling of the
+// parameter list, instantiated per entry, so the launcher's shape and the definition's are the same
+// declaration rather than two that have to agree, which is what this header is for. The entries are
+// the ladder's own - the same parameters and capacity - over another partition, route or stored form.
 #define BOYS_DEVICE_DEMO_LADDER_DECL(SUFFIX, VALUE)                                                \
     extern "C" int BoysDeviceDemoLadder##SUFFIX(const boys::BoysDeviceTables* tables,              \
                                                 const int* n,                                      \

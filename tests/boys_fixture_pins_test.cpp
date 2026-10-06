@@ -1,49 +1,32 @@
-// The four single-axis build-defaults fixtures, pinned by value: what each one resolves, on all
-// five axes, in the configure that points BOYS_BUILD_DEFAULTS at it.
-//
-// The gap this file closes is named beside the pin block of tests/boys_backend_test.cpp, whose
-// five-value block opens only under BOYS_BUILD_DEFAULTS_TEST_FIXTURE - the name
-// tests/build_defaults_tuned.hpp gives itself - and not under the four fixtures that move one axis
-// each: tests/build_defaults_fit_route.hpp, build_defaults_eval_scheme.hpp,
-// build_defaults_division_form.hpp and build_defaults_fit_granularity.hpp. Each of the four was
-// pinned by nothing, so a configure carrying one of them resolved five values that no assertion
-// stated - the shape that let three of the seam's five macros be read by nothing, because a macro
-// dropped from its reader moves a value and a value nothing states is a move nobody reads. Each of
-// the four carries an identity macro of its own, one block below opens on each of those names, and
-// the block states what that fixture resolves.
-//
-// WHY THE PINNED VALUES ARE LITERALS, AND WHERE THE TEETH ARE
-//
-// Every assertion below compares a library constant against an enumerator written out here, and
-// not against the seam macro the constant is supposed to read: a macro dropped from its reader
-// leaves the constant holding the committed literal, so a comparison against the macro would still
-// hold while this one falls over. The teeth are therefore on the axis the fixture moves - the fit
-// route in the first block, the scheme in the second, the division form in the third and the fit
-// granularity in the fourth - and a configure whose moved axis resolves anything but the value
-// stated here does not compile.
-//
-// WHAT THE OTHER FOUR ASSERTIONS IN A BLOCK ARE, AND WHAT THEY ARE NOT
-//
+// The four single-axis build-defaults fixtures, pinned by value: what each resolves, on all five
+// axes, in the configure that points BOYS_BUILD_DEFAULTS at it. Each carries an identity macro of
+// its own, one block below opens on each of those names, and each of the four resolved five values
+// that no assertion stated.
+
+// The four are tests/build_defaults_fit_route.hpp, build_defaults_eval_scheme.hpp,
+// build_defaults_division_form.hpp and build_defaults_fit_granularity.hpp; the five-value block in
+// tests/boys_backend_test.cpp opens only under tests/build_defaults_tuned.hpp, not under these.
+
+// Every assertion below compares a library constant against an enumerator written out here, not
+// against the seam macro the constant is supposed to read: a macro dropped from its reader leaves
+// the constant holding the committed literal, so a comparison against the macro would still hold.
+// The teeth are on the axis each fixture moves - route, scheme, division form, granularity.
+
 // On the four axes a fixture leaves at the committed values, the assertion is an equality between
-// that value and itself: it holds by construction, and no defect this file can reach moves it. It
-// is stated because "the fixture's other four values are the committed ones" is a claim like the
-// moved one, and it was the half nothing said before this file existed.
-//
-// The packing axis is the one of the five no block can have teeth on, for a reason of the
-// library's rather than a fixture's: PackAxis::kOrders is refused by the library's own sources
-// (include/boys/boys_impl.hpp, BoysSingleImpl - a call that produces one order has no second order
-// to put in a vector lane), so kArguments is the only value the axis can hold in a build that
-// compiles and every pin on it is an equality no fixture can break.
-//
-// WHAT THIS FILE CANNOT SEE, so that a configure it passes is read for what it is: a build whose
-// fixture was not delivered - the header named but not copied - carries no identity, reads no
-// block here and resolves the committed values, and this file cannot see that configure's intent.
-// The assertion that catches it is the replaced-choices one in tests/boys_backend_test.cpp, which
-// refuses a header naming all five committed values.
-//
-// WHERE IT IS BUILT
-//
-// It belongs in the boys-tests source list beside tests/boys_backend_test.cpp:
+// that value and itself: it holds by construction and no defect this file can reach moves it, but
+// "the fixture's other four values are the committed ones" is a claim like the moved one.
+
+// The packing axis is the one of the five no block can have teeth on: PackAxis::kOrders is refused
+// by the library's own sources (include/boys/boys_impl.hpp, BoysSingleImpl - a call that produces
+// one order has no second order to put in a vector lane), so kArguments is the only value the axis
+// can hold in a build that compiles, and every pin on it is an equality no fixture can break.
+
+// What this file cannot see, so that a configure it passes is read for what it is: a build whose
+// fixture was not delivered - the header named but not copied - carries no identity, reads no block
+// here and resolves the committed values. The assertion that catches it is the replaced-choices one
+// in tests/boys_backend_test.cpp, which refuses a header naming all five committed values.
+
+// Where it is built: the boys-tests source list, beside tests/boys_backend_test.cpp -
 //
 //   add_executable(boys-tests ... tests/boys_fixture_pins_test.cpp)
 
@@ -56,11 +39,10 @@
 
 namespace {
 
-// The fixture this build carries, as the line the run prints: a report from a configure that
-// failed says which header is in force rather than leaving it to be read off the include path.
-// The arms below are exhaustive for this tree, and the last two are the headers a build can be
-// reading without carrying a fixture: the committed one, and a consumer's own replacement
-// (CONTRIBUTING.md), for which this file has no values to pin.
+// The fixture this build carries, as the line the run prints, so a report from a failed configure
+// says which header is in force rather than leaving it to be read off the include path. The arms
+// are exhaustive; the last two are the headers a build can read without carrying a fixture, the
+// committed one and a consumer's own replacement (CONTRIBUTING.md), which this file cannot pin.
 constexpr const char* kFixtureInForce =
 #if defined(BOYS_BUILD_DEFAULTS_TEST_FIXTURE)
     "the tuned fixture (tests/build_defaults_tuned.hpp)";

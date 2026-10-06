@@ -1,25 +1,7 @@
 // The device half of the axis-sensitivity check: the caller's own kernel with one entry of
-// boys_cuda_device.hpp in it, launched over the same arguments the host half runs the launched
-// entries over.
-//
-// Why this translation unit exists at all. The check compares two things that a row of the
-// option table claims differ in one axis, and 168 of that table's 352 rows are entries of the
-// in-kernel surface, which no host translation unit can call: they are __device__ functions.
-// The alternative — one .cpp compiled as CUDA — cannot reach the launched half either, because
-// the public header it would call through (boys/boys_cuda.hpp) is C++23 and nvcc does not take
-// it (measured: nvcc 13.3 with this MSVC rejects boys.hpp's tables). And the one way a CUDA
-// translation unit could reach the launched entries — restating the library's positional table
-// address order and its launch ABI here — would make this file a third statement of an order
-// the library's own two files already call out for being stated twice. So the split is the same
-// one tests/boys_cuda_accuracy_gate.cpp and tests/boys_cuda_device_demo.cu already make: the
-// host half owns the option table, the arguments and the comparison, and this file owns the
-// kernels and nothing else. The tables are handed in as the value BoysCuda::DeviceTables
-// filled, which is the public way a consumer obtains them.
-//
-// C++20 with a CUDA-safe include list only, as the lane's own .cu is.
-//
-// Not a source the registered target compiles alone: it is one test, registered beside the
-// other boys-cuda-* targets in CMakeLists.txt, and the host half declares its one entry point.
+// boys_cuda_device.hpp in it, launched over the same arguments the host half uses. 168 of the option
+// table's 352 rows are __device__ entries no host translation unit can call, and boys/boys_cuda.hpp is
+// C++23, which nvcc 13.3 with this MSVC does not take; tables arrive as BoysCuda::DeviceTables filled.
 
 #include "boys/boys_cuda_device.hpp"
 #include "boys/boys_cuda_options.hpp" // the shape a row states, and the entry it names
@@ -59,18 +41,10 @@ __device__ __forceinline__ std::size_t Thread() {
     return static_cast<std::size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
 }
 
-// ---------------------------------------------------------------------------
-// One kernel per shape, the entry chosen inside it by the value the host half passes
-// ---------------------------------------------------------------------------
-//
-// The switch is over the enumerator the option table states, so the arm a row reaches is the
-// arm its own entry names, and a row with no arm is one this file does not run - which the
-// host half prints and fails on rather than counting as covered. Every arm calls the device
-// entry the row names; the compiler may inline it or not, and what is compared is the values
-// written either way.
-//
-// The arguments are read from the caller's arrays: x is the double array for the two wider
-// lanes and the F16 array for the half lane, which is what those entries take.
+// One kernel per shape, the entry chosen inside it by the value the host half passes --------------
+// The switch is over the enumerator the option table states, so the arm a row reaches is the arm its
+// own entry names; a row with no arm is not run, which the host half prints and fails on rather than
+// counting as covered. x is the double array for the wider lanes and the F16 array for the half lane.
 
 template <DivisionForm F>
 __global__ void SingleKernel(const BoysDeviceTables tables,

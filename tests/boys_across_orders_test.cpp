@@ -1,42 +1,29 @@
-// The across-orders packed lane's contract tests: BoysAllOrdersSimd, the entry
-// that vectorises four ORDERS of one argument where the across-arguments lane
-// vectorises four arguments of one order.
-//
-// What can go wrong with a lane that re-sums a stored fit in a different order,
-// and what each test is for:
-//
-//  1. A TRANSCRIPTION SLIP. The split Clenshaw body is a second copy of the one
-//     boys_impl.hpp holds, and a reordered step, a fused operation turned into
-//     two, or a coefficient read one index out would all still return a plausible
-//     number: the lane's answer for order l is asserted BIT-IDENTICAL to the
-//     across-arguments lane's - that lane runs the library's own body over four
-//     copies of the argument - with no tolerance, a tolerance being the slack a
-//     slip would hide in.
-//
-//  2. A BOUND NOT MET. Each scheme is measured against the committed reference
-//     grid, not against the library, over every region-A cell of it.
-//
-//  3. A LAYOUT THAT SILENTLY TRANSPOSES. The entry writes at out[l * stride];
-//     the strided write must carry the contiguous write's bits.
-//
-//  4. A ROUTE THAT DISAGREES WITH THE SHIPPED ONE. The lane reaches no order by
-//     recursion where BoysAllOrders reaches most of them that way, so the two
-//     differ by their routes' arithmetic - stated here, not left to be discovered.
-//
-//  5. A CALL THAT ANSWERS WITH THE WRONG TABLE. A policy naming the rational
-//     route must return that route's own region-A fits, and a policy naming the
-//     narrow or the uniform partition must read that partition's own pieces
-//     rather than another's under the name it was given.
-//
-//  6. A FIGURE THAT IS NOT MET. The opened call is measured on the committed
-//     reference grid at the figure the library publishes for it: the route at
-//     the batch budget its fits hold.
-//
-//  7. A LANE THAT FETCHES THE WRONG PARTITION'S PIECES. The narrow partition cuts
-//     region A per order, so the axis fetches each packed order its own piece
-//     instead of stepping one piece's coefficients at a fixed stride. Its values
-//     are measured as a DIFFERENCE from the per-order narrow lane and held to it
-//     wherever the difference is wider than the two mappings' own arithmetic.
+// The across-orders packed lane's contract tests: BoysAllOrdersSimd, the entry that vectorises four
+// ORDERS of one argument where the across-arguments lane vectorises four arguments of one order.
+// What can go wrong with a lane that re-sums a stored fit in a different order, and what each test
+// is for:
+
+//  1. A transcription slip: the split Clenshaw body is a second copy of the one boys_impl.hpp holds,
+//     and a reordered step, a fused operation turned into two or a coefficient read one index out
+//     would all still return a plausible number - so the lane's answer for order l is asserted
+//     bit-identical to the across-arguments lane's, with no tolerance.
+
+//  2. A bound not met: each scheme is measured against the committed reference grid, not against the
+//     library, over every region-A cell of it.
+//  3. A layout that silently transposes: the entry writes at out[l * stride], and the strided write
+//     must carry the contiguous write's bits.
+
+//  4. A route that disagrees with the shipped one: the lane reaches no order by recursion where
+//     BoysAllOrders reaches most of them that way, so the two differ by their routes' arithmetic.
+//  5. A call that answers with the wrong table: a policy naming the rational route must return that
+//     route's own region-A fits, and one naming the narrow or uniform partition its own pieces.
+
+//  6. A figure that is not met: the opened call is measured on the committed reference grid at the
+//     figure the library publishes for it, the route at the batch budget its fits hold.
+
+//  7. A lane that fetches the wrong partition's pieces: the narrow partition cuts region A per order,
+//     so the axis fetches each packed order its own piece, and its values are measured as a difference
+//     from the per-order narrow lane.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -218,11 +205,10 @@ WorstError SchemeAgainstReference(boys::detail::OrdersScheme scheme,
     return worst;
 }
 
-// The cell one public policy sits highest above its own figure at, the error it
-// delivers there, and that cell's documented figure: what a caller naming this
-// policy is handed. The figure travels with the cell because a region-dependent
-// bar - 1e-15 below the extended band, 3e-14 inside it - puts the worst
-// shortfall at a different cell from the worst error.
+// The cell one public policy sits highest above its own figure at, the error it delivers there, and
+// that cell's documented figure. The figure travels with the cell because a region-dependent bar -
+// 1e-15 below the extended band, 3e-14 inside it - puts the worst shortfall at a different cell from
+// the worst error.
 struct BarShortfall {
     double error = 0.0;
     double figure = 0.0;
@@ -254,15 +240,10 @@ BarShortfall PolicyAgainstReference(const std::vector<ReferenceCell>& cells, Bar
 
 } // namespace
 
-// The axis's own correctness claim: with the certified scheme the lane's value
-// for an order is the across-arguments lane's for that order.
-//
-// At the fused route the two bodies run one arithmetic and the claim is bit for
-// bit. At the separate route they are two arithmetics: both lanes carry the route
-// the build selected, and they sum the same stored fit in different orders. The
-// claim there is how far the two part, which is a rounding's — each body is
-// inside the region's budget, so the two are within twice it — and the count and
-// the parting print either way.
+// The axis's own correctness claim: with the certified scheme the lane's value for an order is the
+// across-arguments lane's. At the fused route the two bodies run one arithmetic and the claim is bit
+// for bit; at the separate route they are two arithmetics over the same stored fit summed in
+// different orders, so the claim is how far they part - within twice the region's budget.
 TEST(BoysAcrossOrders, SplitClenshawIsTheAcrossArgumentsLaneBitForBit) {
     if (!VectorTier())
     {
@@ -482,12 +463,9 @@ TEST(BoysAcrossOrders, AgreesWithTheShippedAllOrdersEntryWithinItsBudget) {
     EXPECT_LE(worst, kRegionBudget);
 }
 
-// ---------------------------------------------------------------------------
-// The axis on the public surface
-// ---------------------------------------------------------------------------
-// The lane is reached from outside through PackAxis::kOrders on the all-orders
-// entry: the entry's values are the packed lane's, and the axis a policy names
-// is the axis the report prints.
+// The axis on the public surface: the lane is reached from outside through PackAxis::kOrders on the
+// all-orders entry, so the entry's values are the packed lane's and the axis a policy names is the
+// axis the report prints.
 
 namespace {
 
@@ -532,14 +510,10 @@ using NarrowPerOrderPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kNarrow>;
 
-// The uniform partition on the axis: one fixed grid over the whole fitted
-// domain, not a cut of region A, so pieces are of one width and every order of a
-// cell is stored at one degree. The grid is interval-major - every order of one
-// interval lies one stride from the next order's, the shape the shipped lane's
-// fetch already steps - with the interval found by a multiply and a truncation
-// rather than a scan of piece edges. The rational member over the same grid
-// stores one pair per interval and has no stride between orders, so its cell is
-// served by the certified scalar orders lane (boys_orders_simd.cpp).
+// The uniform partition on the axis: one fixed grid over the whole fitted domain, not a cut of region
+// A - pieces of one width, every order of a cell at one degree - interval-major, every order of one
+// interval one stride from the next order's. Its rational member has no stride between orders, so its
+// cell is served by the certified scalar orders lane (boys_orders_simd.cpp).
 template <boys::EvalScheme kScheme>
 using UniformOrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
@@ -593,12 +567,10 @@ TEST(BoysAcrossOrders, ThePublicAxisIsThePackedLane) {
 }
 
 TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
-    // Past the lane's interval the entry runs the certified scalar single lane one
-    // order at a time, so it is defined for every argument the library accepts, and
-    // its values there are that lane's, bit for bit - asserted exactly rather than
-    // against a tolerance, because above order 28 these arguments are below the
-    // region-C bound, where the value is the recurrence's rounding and carries no
-    // structure a check could test.
+    // Past the lane's interval the entry runs the certified scalar single lane one order at a time, so
+    // it is defined for every argument the library accepts and its values there are that lane's, bit
+    // for bit - asserted exactly rather than against a tolerance, because above order 28 these
+    // arguments are below the region-C bound, where the value is the recurrence's rounding.
     const double arguments[] = {0.0,
                                 boys::detail::kX0,
                                 boys::detail::kX0 + 1e-9,
@@ -635,14 +607,10 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
 // lane's ladder entry, which is the entry its unnamed calls are made through.
 using RoutedClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
-// The axis at the combination the selector builds: the class's own row, with the
-// route and the scheme named where the selector takes them (src/boys.cpp,
-// SelectorClass and SelectorPolicy - "the axes a selector does not take are read off
-// the class's own default"). Spelling the other axes as the library's five instead
-// would compare the axis against a combination this build's class does not compile:
-// the routed entry reads the class row, so the two would differ wherever the seam
-// carries a row for the class, and the reading below would measure the seam rather
-// than the route.
+// The axis at the combination the selector builds: the class's own row, with the route and the scheme
+// named where the selector takes them (src/boys.cpp, SelectorClass and SelectorPolicy, "the axes a
+// selector does not take are read off the class's own default"). Spelling the other axes as the
+// library's five instead would measure the seam rather than the route.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 using RoutedAxisPolicy = boys::EvalPolicy<kRoute,
                                           kScheme,
@@ -652,17 +620,10 @@ using RoutedAxisPolicy = boys::EvalPolicy<kRoute,
                                           RoutedClass::kDivision,
                                           RoutedClass::kRegionBExp>;
 
-// The rational route on the axis: a policy names the route and the entry answers
-// with that route's own region-A fits. The routed per-argument entry reads the same
-// stored pairs by the route's own body at the same combination, so the two agree bit
-// for bit - and the cell that says which table the axis read is the count of bits it
-// does not share with the other route's axis, the reading the narrow partition's test
-// above states: "the count of differing bits has to be nonzero, since a lane ignoring
-// the route would return that axis's bits exactly". The value difference is printed
-// beside it and not asserted: at a partition whose two routes are both accurate on
-// the grid, the routes' values agree well inside the arithmetic slack while their
-// bits do not, so a slack would measure the two fits' accuracy rather than which
-// table was read.
+// The rational route on the axis: a policy names the route and the entry answers with that route's own
+// region-A fits. The routed per-argument entry reads the same stored pairs by the route's own body, so
+// the two agree bit for bit, and the reading that says which table the axis read is the count of
+// differing bits - nonzero, since a lane ignoring the route would return that axis's bits exactly.
 TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
     if (!VectorTier())
     {
@@ -737,24 +698,15 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
     compareWithTheRoutedEntry.template operator()<boys::EvalScheme::kHorner>("horner");
 }
 
-// The narrow partition on the axis. The shipped lane's fetch steps from one order's
-// coefficients to the next at a fixed stride, which the double lane's shipped region-A
-// table has because every order's pieces share their intervals and degrees. The narrow
-// partition's pieces are cut per order, so there is no such stride: the lane fetches
-// each of the four orders it packs its own piece and coefficients.
-//
-// The cost is measured as a DIFFERENCE IN VALUES from the per-order narrow lane, not
-// asserted to agree - the two map one argument into one piece by different arithmetic
-// (the scalar `2 (x - a) / (b - a) - 1` against the packed
-// `fma(x - a, 2 / (b - a), -1)`, the same number up to those roundings) - and the
-// worst cell and both counts are printed.
-//
-// Which table the lane read is a second measurement against the shipped-table axis:
-// the same body at the same scheme, so only the partition differs - and the count of
-// differing bits has to be nonzero, since a lane ignoring the partition would return
-// that axis's bits exactly. Where the two narrow lanes part by more than the slack
-// this test does not decide which is right; the next one does, against the committed
-// reference.
+// The narrow partition on the axis. The shipped lane's fetch steps from one order's coefficients to
+// the next at a fixed stride, which the double lane's shipped region-A table has because every order's
+// pieces share their intervals and degrees; the narrow partition's pieces are cut per order, so the
+// lane fetches each of the four orders it packs its own piece and coefficients.
+
+// The cost is measured as a difference in values from the per-order narrow lane, not asserted to
+// agree: the two map one argument into one piece by different arithmetic - the scalar
+// `2 (x - a) / (b - a) - 1` against the packed `fma(x - a, 2 / (b - a), -1)`, the same number up to
+// those roundings. Which table the lane read is a second measurement against the shipped-table axis.
 TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
     if (!VectorTier())
     {
@@ -840,15 +792,10 @@ TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
     compareWithThePerOrderLane.template operator()<boys::EvalScheme::kHorner>("horner");
 }
 
-// The axis and the per-order narrow lane are two readings of one fit, and where they
-// part by more than the slack the committed 80-digit reference decides which is right:
-// a difference in values resolved against the function, not an agreement asserted
-// between two lanes.
-//
-// Each cell is judged at the figure the lane that produced it documents - the axis at
-// the orders lane's 1e-15 over region A, the per-order lane at the single lane's
-// 1e-15 below the extended band and 3e-14 inside it - with the count outside the
-// per-order lane's own budget printed.
+// Two readings of one fit - the axis and the per-order narrow lane. Where they part by more than the
+// slack the committed 80-digit reference decides which is right: resolved against the function, not
+// asserted between two lanes. Each cell is judged at its own lane's figure - the axis at the orders
+// lane's 1e-15 over region A, the per-order lane at 1e-15 below the extended band and 3e-14 inside it.
 TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsOnTheAxis) {
     if (!VectorTier())
     {
@@ -949,12 +896,10 @@ TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsO
     referee.template operator()<boys::EvalScheme::kHorner>("horner");
 }
 
-// The uniform grid on the axis: the lane's third table, whose domain is not region A.
-// Held here is the axis's own claim - the entry's values are the certified per-order
-// lane's, bit for bit - over that whole domain, including the join at the grid's end,
-// past which the entry runs that same lane. Its value against the committed reference
-// is not asserted: the figure that would judge it is the entry's documented one for
-// this combination, which the partition's row does not state yet.
+// The uniform grid on the axis: the lane's third table, whose domain is not region A. Held here is the
+// axis's own claim - the entry's values are the certified per-order lane's, bit for bit - over that
+// whole domain, including the join at the grid's end. Its value against the committed reference is not
+// asserted: the entry's documented figure for this combination is not stated by the partition's row yet.
 TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
     if (!VectorTier())
     {
@@ -1044,20 +989,10 @@ TEST(BoysAcrossOrders, TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit) {
 #endif
 }
 
-// The rational route on the axis, split by which fit answers the cell. A route is a
-// selector: BoysFitRoutes() reports the domain each takes over, which the library
-// calls the place where "naming it may change a value". Region A's rational route hands
-// an order over at that order's own end of the region (kTierThresholds); below that end
-// the partition's per-order fit answers the cell, under either route's name.
-//
-// This test holds that as two counts: a fallback cell is the shipped lane's value, and
-// a served cell is the route's own pair. The second count is required nonzero so a lane
-// ignoring the route it named cannot pass, and the count of fallback cells that are the
-// per-order rational lane's reading is printed beside it, a reader needing both.
-//
-// The comparison is exact where the build's scalar multiply-add is one-rounding (every
-// release and CI leg but the `BOYS_MULADD_SEPARATE` leg); elsewhere the two are two
-// arithmetics and each half's agreement is bounded at the figure its lane publishes.
+// The rational route on the axis, split by which fit answers the cell. BoysFitRoutes() reports the
+// domain each route takes over, and region A's rational route hands an order over at that order's own
+// end of the region (kTierThresholds); below it the partition's per-order fit answers under either
+// route's name. Exact where the scalar multiply-add is one-rounding (all legs but BOYS_MULADD_SEPARATE).
 TEST(BoysAcrossOrders, TheRationalRoutesFallbackCellsAreTheShippedLanesReading) {
     if (!VectorTier())
     {

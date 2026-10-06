@@ -583,12 +583,10 @@ TEST(BoysTest, AsymptoticBehavior) {
     }
 }
 
-// Region-B exp-Taylor gather-table pin: the shipped ExpTable is private to its TU, so
-// this is a deliberately independent replica. 3001 rows at step 0.01, row i holding
-// the quartic Taylor polynomial of e^{-x} at x_i = i * 0.01 in the monomial basis of
-// the ABSOLUTE argument x, sign folded into the row; Eval mirrors the SIMD chain's
-// Horner form c4*x^4 - c3*x^3 + c2*x^2 - c1*x + c0 at row index i = min(3000,
-// trunc(x / 0.01)) - the _mm256_cvtpd_epi32 semantics, with the clamp inert on [kX0, kX1).
+// Region-B exp-Taylor gather-table pin: the shipped ExpTable is private to its TU, so this is a
+// deliberately independent replica - 3001 rows at step 0.01, row i the quartic Taylor polynomial of
+// e^{-x} in the monomial basis of the ABSOLUTE argument x, sign folded into the row, and Eval
+// mirroring the SIMD chain's Horner form at i = min(3000, trunc(x / 0.01)), the cvtpd_epi32 semantics.
 struct ExpTaylorReplica {
     static constexpr double kStep = 0.01;
     static constexpr int kNumPoints = 3000;
@@ -678,11 +676,10 @@ TEST(BoysTest, ExpTaylorGatherTableRegionB) {
 TEST(BoysTest, FootprintSizes) {
     namespace detail = boys::detail;
 
-    // The committed footprint beside the two flat layouts a table of the same reach
-    // could be stored in: ~18 KB of Chebyshev coefficients (17,904 B incl. metadata),
-    // a ~192 KB region-B gather table, a ~5 MB flat Taylor table. The flat figures
-    // follow the comparator geometry (maxn = 24, step 0.01, limit = 50 -> nx = 5000):
-    // _b is (maxn + 1) x (nx + 1) x 5 doubles per order, _c (nx + 1) x 6 doubles (e^{-x}).
+    // The committed footprint beside the two flat layouts a table of the same reach could use: ~18 KB
+    // of Chebyshev coefficients (17,904 B incl. metadata), a ~192 KB region-B gather table, a ~5 MB
+    // flat Taylor table. The flat figures follow the comparator geometry (maxn = 24, step 0.01,
+    // limit = 50 -> nx = 5000): _b is (maxn + 1) x (nx + 1) x 5 doubles per order, _c (nx + 1) x 6.
     const std::size_t chebyshevBytes =
         detail::kCoeffs.size() * sizeof(double) + detail::kBcoeffs.size() * sizeof(double) +
         detail::f32::kCoeffs.size() * sizeof(float) + detail::f32::kBcoeffs.size() * sizeof(float);
@@ -771,14 +768,10 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         }
     }
 
-    // Region C, from where the entry this lane is compared against reaches it: the scalar
-    // single answers every argument at or above the join its own partition stops at - x1
-    // for the two per-order partitions, the grid's own join where the class row names the
-    // uniform table - and the grid's tables cover the fitted domain whole and return
-    // before the region tests, so a draw between x1 and that join is one the grid answers
-    // and the region-C kernel below never sees. The lane is the region-C kernel, so the
-    // comparison is over that kernel's own domain, which is the entry's region C only from
-    // the entry's own join upward.
+    // Region C from where the entry this lane is compared against reaches it: the scalar single
+    // answers every argument at or above the join its own partition stops at - x1 for the per-order
+    // partitions, the grid's join where the row is uniform - and the grid's tables cover the fitted
+    // domain whole, so the comparison runs over the region-C kernel's domain from that join upward.
     constexpr double kEntryRegionCJoin =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>::kGranularity ==
                 boys::FitGranularity::kUniform
@@ -964,15 +957,10 @@ TEST(BoysTest, SimdMatchesScalarBf16) {
 }
 #endif // BoysFp16
 
-// The five host classes whose rows the default-policy table did not carry: the
-// float lane's fixed-order and per-element-top-order batches and the half lane's
-// three array shapes. Each entry is a composition and not a second engine - the
-// per-argument body at every argument, the result stored once - so what these
-// tests hold them to is the composition itself: the value at every (order,
-// argument) is the per-argument entry's at the same pair, bit for bit. That is
-// the strongest statement a composition can be held to, and it is the one the
-// half lane's entries also need, because the store to half is the whole of what
-// they add to the fp32 body they run.
+// The five host classes whose rows the default-policy table did not carry: the float lane's
+// fixed-order and per-element-top-order batches and the half lane's three array shapes. Each entry is
+// a composition and not a second engine, so what the tests hold them to is the value at every (order,
+// argument) being the per-argument entry's at the same pair, bit for bit.
 TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
     const std::array<int, 4> orders{0, 1, 6, boys::kMaxBoysOrder};
     const std::array<double, 8> args{0.0, 1.0e-8, 0.05, 0.7, 3.5, 12.0, 80.0, 640.0};

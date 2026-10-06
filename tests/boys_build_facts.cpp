@@ -1,22 +1,7 @@
-// The build-fact probe: what this build is, one line per fact, in the stable
-// form docs/build-facts.md records and diffs.
-//
-//   boys-build-facts [--leg NAME]               print this build's facts
-//   boys-build-facts [--leg NAME] --check <doc> print the facts, then compare
-//                                               them with the row <doc> records
-//
-// Every fact is deterministic - a preprocessor fact, a compile-time constant, a
-// binary fact read out of the library's own object code, or an operating-system
-// report of the machine. No timing, and there must not be: a duration taken on a
-// shared build machine is a distribution across ephemeral runners, not a fact.
-//
-// --leg is the key the recorded table is keyed by; CI passes the job's own check
-// name. Without it the probe derives a name for a developer build that no CI leg
-// can be mistaken for.
-//
-// --check gates on a fact and never on the runner's identity: the CPU model, the
-// processor count, the compiler version and the recording date are tags, reported
-// when they move and never failed - a leg draws different hardware each run.
+// The build-fact probe: what this build is, one line per fact, in the stable form docs/build-facts.md
+// records and diffs. Every fact is deterministic - a preprocessor or compile-time constant, a binary
+// fact from the library's object code, or an operating-system report - and never a timing: a duration
+// on a shared build machine is a distribution across ephemeral runners, not a fact.
 
 #include <boys/boys.hpp>
 
@@ -462,12 +447,10 @@ void AddFmaRoute(std::vector<Fact>& facts) {
         return;
     }
 
-    // The undefined-symbol view differs per tool: msvc-dump marks the line UNDEF and names the
-    // symbol after a `|`, nm marks it `U`, objdump `*UND*`; the parser looks for the marker and
-    // the name, not for a layout. Every decoration is stripped: Mach-O (and some COFF symbols)
-    // prefixes an underscore, and a COFF object reaching the runtime through an import library -
-    // the shape a Debug build produces - names the thunk __imp_fma. Read as written, that is
-    // not "fma", so a build that calls the runtime is reported as one that does not.
+    // The undefined-symbol view differs per tool: msvc-dump marks the line UNDEF and names the symbol
+    // after a `|`, nm marks it `U`, objdump `*UND*`; the parser looks for the marker and the name, not
+    // a layout. Every decoration is stripped - a Mach-O or COFF leading underscore, and the __imp_fma
+    // thunk an import library gives a COFF object (Debug) - or a runtime call reads as no call at all.
     bool undefinedFma = false;
     bool undefinedFmaf = false;
     {

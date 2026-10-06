@@ -1,62 +1,7 @@
-// One of the build's five choices, moved on its own: how narrowly the fitted domain is
-// cut when the call site names no policy. A replacement header for
-// include/boys/boys_build_defaults.hpp, pointed at with the BOYS_BUILD_DEFAULTS option,
-// so that a configure which fails can say WHICH axis failed: tests/build_defaults_tuned.hpp
-// moves this one beside the evaluation scheme and the division form, and a report from
-// that build cannot say which of the three a failure belongs to.
-//
-//   cmake -S . -B build-defaults-fit-granularity \
-//       -DBOYS_BUILD_DEFAULTS=tests/build_defaults_fit_granularity.hpp
-//
-// It is a fixture and not a measurement: the value it moves is one this library carries
-// and certifies for every build, and none of it is a claim about any machine. A build
-// that has measured its own machine writes the host, the date and the option probe's own
-// figures beside its choices (include/boys/boys_build_defaults.hpp states the contract a
-// replacement satisfies, and this file satisfies it at the committed values plus one).
-//
-// WHICH MEMBER MOVES, AND WHERE THE THIRD ONE IS NAMED
-//
-// Moved: the narrow partition, the committed file's value, to the shipped partition -
-// region A's per-order pieces and region B's single seed, at the degrees the committed
-// tables carry: two equal bands an order on the double lane, two to four pieces an order
-// on the single-precision one. It is the value the tuned fixture names on this axis too,
-// so a configure of this file reads one of the three axes that fixture crosses.
-//
-// The member this file does not name is kUniform: the batched bodies refused it until this
-// revision and now hand it to the path that reads the grid (the accuracy gate's entry
-// book measures their six cells), so that refusal is gone, and the member is named by the
-// row-list fixture beside this one, tests/build_defaults_uniform.hpp, on ten class rows of
-// a table (the two host lanes' five each) rather than through the name this file sets: a
-// build whose class row names it compiles, and what it compiles to is measured there
-// rather than unmeasured here. This
-// axis offers three values and not one: kNarrow and kCoarsest are both reachable, and
-// CONTRIBUTING.md states which choice a build cannot move. The shipped partition is also
-// the one the library reads back most often - the accuracy gate is defined at it, the
-// packed lane carries it beside the narrow one, and the entries' own fallbacks name it -
-// so a build resolving it is a configuration the library already exercises rather than a
-// path this file invents.
-//
-// WHAT THIS CONFIGURE MEETS BEFORE IT MEETS THE AXIS
-//
-// The replaced-build branch of tests/boys_backend_test.cpp reads all five axes this file
-// names, so it refuses a replacement only when every one of them is the committed value:
-//
-//   constexpr bool kCoarsestDefaultsInForce =
-//       boys::kDefaultFitRoute == boys::FitRoute::kChebyshev &&
-//       boys::kDefaultEvalScheme == boys::EvalScheme::kHorner &&
-//       boys::kDefaultPackAxis == boys::PackAxis::kArguments &&
-//       boys::kDefaultDivisionForm == boys::DivisionForm::kRefinedReciprocal &&
-//       boys::kDefaultFitGranularity == boys::FitGranularity::kNarrow;
-//   static_assert(!kCoarsestDefaultsInForce, "the defaults header in force names all five
-//   committed values, so this build has chosen nothing: point BOYS_BUILD_DEFAULTS at a header
-//   that moves at least one axis, or unset it to build the committed configuration");
-//
-// Four of those five comparisons hold for the values this file names and the fifth does not:
-// kCoarsest is not the committed file's kNarrow, which is the axis this file moves. The
-// message's "at least one axis" is what the predicate reads now, and a header that moved no
-// axis at all is the only one refused, so under this fixture the guard passes exactly when
-// the fit granularity took effect. What this configure reports first is therefore the axis's
-// own answer.
+// One of the build's five choices, moved on its own: how narrowly the fitted domain is cut - kNarrow
+// to the shipped partition kCoarsest - in a replacement for include/boys/boys_build_defaults.hpp under
+// BOYS_BUILD_DEFAULTS, so a failing configure names the axis. kUniform, the third member, is named by
+// tests/build_defaults_uniform.hpp's row table instead, and the accuracy gate reads kCoarsest.
 
 // The name below is this fixture's identity: a guard says which block of a test is read, while
 // this says which fixture the build carries, and tests/boys_fixture_pins_test.cpp opens a block

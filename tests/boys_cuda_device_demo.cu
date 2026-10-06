@@ -1,18 +1,15 @@
-// The consumer side of the device-callable Boys entries: one kernel per public
-// entry, each shaped like a fused integral kernel rather than like a batch
-// evaluator. The file includes the public device header and the CUDA runtime and
-// nothing of the library's implementation, so it is what a consumer's own
-// translation unit is — a host-side wrapper around a batch launcher would prove
-// the launcher works and would prove nothing about a consumer's kernel reaching
-// the arithmetic.
-//
-// A thread forms x as rho * d2, with rho a power of two so that the product is
-// exact: the x it forms is therefore the argument the committed reference grid
-// holds, and every value written back is comparable with that grid cell for cell.
-//
-// A family entry writes kMaxBoysOrder + 1 values per element — the element's own
-// block — and a single entry writes one value per element. An entry that refuses
-// a call records that refusal per element and writes nothing for it.
+// The consumer side of the device-callable Boys entries: one kernel per public entry, each shaped
+// like a fused integral kernel rather than like a batch evaluator. The file includes the public
+// device header and the CUDA runtime and nothing of the library's implementation, so it is what a
+// consumer's own translation unit is.
+
+// A thread forms x as rho * d2, with rho a power of two so that the product is exact: the x it
+// forms is therefore the argument the committed reference grid holds, and every value written back
+// is comparable with that grid cell for cell.
+
+// A family entry writes kMaxBoysOrder + 1 values per element — the element's own block — and a
+// single entry writes one value per element. An entry that refuses a call records that refusal per
+// element and writes nothing for it.
 
 #include "boys/boys_cuda_device.hpp"
 #include "boys_cuda_device_demo.hpp"
@@ -607,18 +604,16 @@ extern "C" int BoysDeviceDemoSingle16(const boys::BoysDeviceTables* tables,
 // ===========================================================================
 // the partition and route axes of the ladder shape
 // ===========================================================================
-// Sixteen entries of one shape. Each is the ladder BoysDeviceDemoLadder64 and
-// BoysDeviceDemoLadder32 already reach — a thread forms x from the handle's
-// quartet, calls the entry and writes the element's own block back — over
-// another partition, another route, or the other stored form of the one it is
-// already on. The body is the body above and the entry is the only thing that
-// moves, so it is written once and instantiated per entry rather than copied
-// sixteen times: a copy that drifted would be a consumer kernel that measures
-// something other than the entry it is named for.
-//
-// One kernel per entry, as above. The two names a pair carries — the route's two
-// scheme names, the grid's two stored forms — are two entries with two names,
-// and a caller's kernel names the one it calls.
+
+// Sixteen entries of one shape, each the ladder BoysDeviceDemoLadder64 and BoysDeviceDemoLadder32
+// already reach — a thread forms x from the handle's quartet, calls the entry and writes the
+// element's own block back — over another partition, another route, or the other stored form of the
+// one it is already on.
+
+// The body is the body above and the entry is the only thing that moves, so it is written once and
+// instantiated per entry rather than copied sixteen times: a copy that drifted would be a consumer
+// kernel that measures something other than the entry it is named for. The two names a pair carries
+// — the route's two scheme names, the grid's two stored forms — are two entries with two names.
 #define BOYS_DEVICE_DEMO_LADDER(SUFFIX, VALUE, ENTRY)                                             \
     __global__ void BoysDeviceDemoLadder##SUFFIX##Kernel(                                         \
         __grid_constant__ const boys::BoysDeviceTables tables,                                    \

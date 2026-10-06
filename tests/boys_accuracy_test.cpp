@@ -1,26 +1,24 @@
-// The accuracy contract tests.
-//
-// Per-region contract: for {double single, double batch, float single, float batch},
-// assert |F_hat - ref| <= B_region per region on the committed reference grid (region
-// bucketing: A x < kX0, B kX0 <= x < kX1, C x >= kX1), with the asserted bounds B: double
-// single 1e-15/3e-14/5.5e-14, double batch 5.5e-14 per region, float single 1.5e-7 per
-// region, and float batch the figure the lane publishes for the division form the entries
-// divide in - 1.5e-7 at exact division and at the refined reciprocal, plus the row's
-// plain-reciprocal term where the build compiles that form, which is the term that form
-// spends on the downward ladder the batch shape reads.
-//
-// The effective-degree tables carry the full degrees of the table they are read from,
-// over all six lane roles and both regions, and are inside the evaluator domain.
-//
-// The fp16/Bf16 lanes forward to the F32 engine (I/O-only wrappers, no fp16-specific
-// degree tables): assert |F_hat - F(x16)| <= 1e-7 + 1/2 ULP per value on the reference
-// grid, F(x16) being the certified double lane evaluated at the fp16-rounded argument.
-//
-// The call sites below route to the library's certified instantiations, which the
-// extern-template declarations in boys/boys.hpp name.
-//
-// The file lives alongside boys_test.cpp rather than inside it to keep that file's
-// existing tests untouched (same test binary, same contract).
+// The accuracy contract tests: for {double single, double batch, float single, float batch}, assert
+// |F_hat - ref| <= B_region per region on the committed reference grid, region bucketing A x < kX0,
+// B kX0 <= x < kX1, C x >= kX1.
+
+// The asserted bounds B: double single 1e-15/3e-14/5.5e-14, double batch 5.5e-14 per region, float
+// single 1.5e-7 per region, and float batch the figure the lane publishes for the division form the
+// entries divide in - 1.5e-7 at exact division and at the refined reciprocal, plus the row's
+// plain-reciprocal term where the build compiles that form.
+
+// The effective-degree tables carry the full degrees of the table they are read from, over all six
+// lane roles and both regions, and are inside the evaluator domain.
+
+// The fp16/Bf16 lanes forward to the F32 engine (I/O-only wrappers, no fp16-specific degree
+// tables): assert |F_hat - F(x16)| <= 1e-7 + 1/2 ULP per value on the reference grid, F(x16) being
+// the certified double lane evaluated at the fp16-rounded argument.
+
+// The call sites below route to the library's certified instantiations, which the extern-template
+// declarations in boys/boys.hpp name.
+
+// The file lives alongside boys_test.cpp rather than inside it to keep that file's existing tests
+// untouched (same test binary, same contract).
 
 #include "boys/boys.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -176,28 +174,24 @@ double RegionBound(BoysRegion region, LaneKind lane) {
     return 0.0; // unreachable
 }
 
-// The policy the float batch entry's unnamed call compiles: the fp32 all-orders class's
-// row. The sweeps below call BoysAllOrdersF32 naming no policy, and the form that entry's
-// downward ladder divides in is this class's and not the seam's five - a replacement
-// header may move the class (boys/boys.hpp expands the one table the header carries), and
-// the seam's five are then the point a class with no row falls to and not this one's form.
+// The policy the float batch entry's unnamed call compiles: the fp32 all-orders class's row. The
+// sweeps below call BoysAllOrdersF32 naming no policy, and the form that entry's downward ladder
+// divides in is this class's and not the seam's five - a replacement header may move the class
+// (boys/boys.hpp expands the one table the header carries), the five falling to rowless classes.
 using FloatBatchClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
 
-// The figure the float lane publishes for the division form the entries below run: the
-// lane's own contract row - the row the README's table, BoysAccuracyGuaranteed and both
-// gates read - plus the term the row carries beside its base for the plain reciprocal
-// where that is the form in force. The row's own scaling is that sum, this lane's additive
-// term being zero, so the sweeps below read the figure the accessor answers.
-//
-// The form is the caller's argument and not a seam read, because the answer belongs to the
-// class the entry under test compiles: an entry whose class row names the plain reciprocal
-// spends that term however the seam's five are set, and one whose row names another form
-// spends nothing.
-//
-// It is not the same number as the float base above, and the difference is the point: the
-// base is what the lane's two other forms deliver, and the row's term is what the plain
-// form spends on the downward ladder, which is inside the batch shape and not inside the
-// single one. So the batch sweeps are read at this figure and the single shape at the base.
+// The figure the float lane publishes for the division form the entries below run: the lane's own
+// contract row - the row the README's table, BoysAccuracyGuaranteed and both gates read - plus the
+// term the row carries beside its base for the plain reciprocal where that is the form in force.
+// The row's own scaling is that sum, this lane's additive term being zero.
+
+// The form is the caller's argument and not a seam read, because the answer belongs to the class
+// entry under test compiles: an entry whose class row names the plain reciprocal spends that term
+// however the seam's five are set, and one whose row names another form spends nothing.
+
+// It is not the float base above, and the difference is the point: the base is what the lane's two
+// other forms deliver, and the row's term is what the plain form spends on the downward ladder,
+// inside the batch shape and not the single one. So the batch sweeps are read at this figure.
 double FloatLanePublishedFigure(boys::DivisionForm kForm) {
     for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
     {
@@ -316,17 +310,16 @@ void SweepFloatSingle() {
     PrintWorsts("float single", worst);
 }
 
-// The half lanes' engine budget, as the f32 entries now take it: the policy is a type,
-// so naming the budget is naming a policy.
-//
-// Each policy is composed from the class the entry under test resolves to - the row the
-// build's table carries for it - rather than from the seam's five, so the budget is the
-// one cell the pairs below differ in. A replacement header carries its own row per class
-// (boys/boys.hpp expands BOYS_BUILD_DEFAULT_ROWS in place of the five-composed table, and
-// DefaultPolicy is that row), so a policy composed from the five is another arithmetic
-// from the class's own the moment a row spells anything but the five: the two calls would
-// then differ in their route and in their division form as well, and the equality below
-// would read a difference the budget did not make as one it did.
+// The half lanes' engine budget, as the f32 entries now take it: the policy is a type, so naming a
+// budget is naming a policy.
+
+// Each policy is composed from the class the entry under test resolves to - the row the build's
+// table carries for it - rather than from the seam's five, so the budget is the one cell the pairs
+// below differ in. A replacement header carries its own row per class (boys/boys.hpp expands
+// BOYS_BUILD_DEFAULT_ROWS in place of the five-composed table, and DefaultPolicy is that row).
+
+// A policy composed from the five is another arithmetic from the class's own once a row spells
+// anything but the five: the two calls would then differ in their route and division form as well.
 using FloatSingleClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
 using Fp16SingleBudget = boys::EvalPolicy<FloatSingleClass::kRoute,
                                           FloatSingleClass::kScheme,
@@ -454,18 +447,15 @@ void SweepDoubleBatchHorner() {
     PrintWorsts("double batch, horner", worst);
 }
 
-// The uniform route against the same committed reference at the same bar: a fixed grid,
-// every order from its own coefficients rather than from a seed and a recursion, so what
-// this measures is the whole of that route's arithmetic - the interval index, the mapped
-// argument, and the block a ladder is read from - and not the fit alone. The last two are
-// part of the table as much as its numbers are: a wrong stride reads a correct table
-// wrongly, delivering a wrong value no check of the coefficients would catch.
-// Both schemes, because the table stores both coefficient forms and only the Horner one had
-// ever been swept. That omission was not hypothetical: the table was first fitted at an odd
-// degree, which ClenshawSplit cannot read at all (it asserts an even degree and says so), so
-// the Clenshaw path asserted in debug and computed silently wrong values in release while a
-// bound for it sat published. A scheme the table carries but nothing sweeps is a scheme
-// nothing has checked.
+// The uniform route against the same committed reference at the same bar: a fixed grid, every order
+// from its own coefficients rather than from a seed and a recursion, so what this measures is the
+// whole of that route's arithmetic - the interval index, the mapped argument, the block a ladder
+// is read from - and not the fit alone. The last two are part of the table as much as its numbers.
+
+// Both schemes, because the table stores both coefficient forms and only the Horner one had been
+// swept: the table was first fitted at an odd degree, which ClenshawSplit cannot read at all (it
+// asserts an even degree and says so), so the Clenshaw path asserted in debug and computed silently
+// wrong values in release while a bound for it sat published.
 template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDoubleBatchUniform() {
     using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                     kScheme,
@@ -646,12 +636,10 @@ TEST(BoysAccuracyTest, EffectiveDegreesAreFullAndInDomain) {
 }
 
 TEST(BoysAccuracyTest, BothBasesReadTheirOwnTableToItsFullDegree) {
-    // The carriage of the basis through the degree tables: the two bases must return the
-    // degree table's own (full) degrees, region A and region B. The criterion's budget is
-    // zero at the accuracy this library serves, so no degree is cut in either basis - and a
-    // choice of basis that reached no table (one table shared by both, or a rule that always
-    // read the Chebyshev coefficients) would show here as a basis whose degrees are not the
-    // table's own.
+    // The carriage of the basis through the degree tables: the two bases must return the degree
+    // table's own (full) degrees, region A and region B. The criterion's budget is zero at the
+    // accuracy this library serves, so no degree is cut in either basis, and a choice of basis that
+    // reached no table would show here as a basis whose degrees are not the table's own.
     constexpr auto chebA = RegionADegrees<BoysRole::kDoubleSingle, TailBasis::kChebyshev>();
     constexpr auto monoA = RegionADegrees<BoysRole::kDoubleSingle, TailBasis::kMonomial>();
     constexpr auto chebB = RegionBDegrees<BoysRole::kDoubleBatch, TailBasis::kChebyshev>();
@@ -680,9 +668,8 @@ TEST(BoysAccuracyTest, BothBasesReadTheirOwnTableToItsFullDegree) {
 }
 
 // ---------------------------------------------------------------------------
-// Delivered-path consistency: the single and batch lanes (separate
-// arithmetic paths — per-order fits vs. seed + recursion) must agree within
-// the sum of their region bounds, and the exact x = 0 values must survive.
+// Delivered-path consistency: the single and batch lanes (per-order fits vs. seed + recursion) must
+// agree within the sum of their region bounds, and the exact x = 0 values must survive.
 // ---------------------------------------------------------------------------
 
 void CheckSingleBatchAgree() {
@@ -767,10 +754,8 @@ TEST(BoysAccuracyTest, ZeroArgumentIsExact) {
 }
 
 // ---------------------------------------------------------------------------
-// The fp16/Bf16 lanes: |F_hat - F(x16)| <= 1e-7 + 1/2
-// ULP per value, F(x16) the certified double lane at the fp16-rounded
-// argument (the reference lane). The half entries forward to the F32
-// engine's kFp16-budget roles (no fp16-specific degree tables).
+// The fp16/Bf16 lanes: |F_hat - F(x16)| <= 1e-7 + 1/2 ULP per value, F(x16) the certified double
+// lane at the fp16-rounded argument. The half entries reach the F32 engine's kFp16-budget roles.
 // ---------------------------------------------------------------------------
 #if BoysFp16
 
@@ -840,54 +825,44 @@ TEST(BoysAccuracyTest, Bf16MeetsTheHalfBudget) {
 
 // ---------------------------------------------------------------------------
 // The compile-time guarantee entry, held to the library's own tables.
-//
-// `BoysAccuracyGuaranteedStated` is the guarantee a *stated* seven-tuple carries:
-// the figure `BoysAccuracyGuaranteed` answers with, read from the same table at
-// the same seven axes, plus an assertion that every axis is a member of its own
-// enumeration (`detail::GuaranteeAxesAreEnumerators`). Nothing in this repository
-// instantiated it, and one bound in that assertion sat one member behind its
-// enumeration - `Precision` bounded at `kFp16Device` while the enumeration had
-// grown to `kBf16`, and again when `kBf16Device` was appended - with every suite green:
-// the entry was refused at compile time
-// for a tuple the run-time accessor served. The checks below hold the two sides
-// against each other, and they fail in both directions: a bound left behind by a
-// member appended to an enumeration is a compile error here, and a boundary this
-// file names that the library's own table does not carry is a failure at run time.
-//
-// The members of each axis are read from the library's own rows - BoysLaneContracts
-// for the lanes, BoysFitRoutes and BoysFitRoutesF32 for the fit routes,
-// BoysEvalSchemes, BoysPackAxes, BoysFitGranularities, BoysDivisionForms and
-// BoysRegionBExps for the rest. What this file names from an enumeration is its
-// last member and nothing else: that is the boundary the assertion is about, and
-// the two static_asserts per axis pin the assertion to it. A member appended to an
-// enumeration without a row in its table - or a row without a member - fails
-// `ExpectAxisIsTheEnumeration`; a bound left behind by such a member fails the
-// boundary asserts below and the whole cross with them.
-//
-// WHAT IT CATCHES, AND WHAT IT DOES NOT
-//
-// It catches drift between an axis's enumeration and (a) the assertion's bound and
-// (b) the row table the run-time accessor reads, and it catches a compile-time
-// answer that disagrees with the run-time one at any tuple of the cross.
-//
-// It does NOT catch a defect the two sides share. A figure both the stated entry and
-// the accessor read from one wrong row is one answer to this comparison, however wrong
-// it is; what is held against the arithmetic here is nothing at all.
-//
-// It does NOT catch a bound that is right for its enumeration and wrong for the
-// mathematics, and no check of this shape can: whether 1.5e-7 is the figure a lane
-// may promise is a question about the arithmetic, not about which members an
-// enumeration has. That question belongs to the accuracy gate
-// (tests/boys_accuracy_gate.cpp, which measures every lane's cells against the
-// committed high-precision grid) and to the bound instrument, and nothing here
-// answers it.
+
+// `BoysAccuracyGuaranteedStated` is the guarantee a stated seven-tuple carries: the figure
+// `BoysAccuracyGuaranteed` answers with, read from the same table at the same seven axes, plus an
+// assertion that every axis is a member of its enumeration (`detail::GuaranteeAxesAreEnumerators`).
+// Nothing in this repository instantiated it.
+
+// One bound in that assertion sat one member behind its enumeration - `Precision` bounded at
+// `kFp16Device` while the enumeration had grown to `kBf16`, and again when `kBf16Device` was
+// appended - with every suite green: the entry was refused at compile time for a tuple the run-time
+// accessor served.
+
+// The checks below hold the two sides against each other and fail in both directions: a bound left
+// behind by a member appended to an enumeration is a compile error here, and a boundary this file
+// names that the library's own table does not carry is a failure at run time.
+
+// The members of each axis are read from the library's own rows - BoysLaneContracts for the lanes,
+// BoysFitRoutes and BoysFitRoutesF32 for the fit routes, BoysEvalSchemes, BoysPackAxes,
+// BoysFitGranularities, BoysDivisionForms and BoysRegionBExps for the rest. What this file names
+// from an enumeration is its last member and nothing else: the boundary the assertion is about.
+
+// A member appended to an enumeration without a row in its table, or a row without a member, fails
+// `ExpectAxisIsTheEnumeration`; a bound left behind by such a member fails the boundary asserts
+// below and the whole cross with them.
+
+// It catches drift between an axis's enumeration and (a) the assertion's bound and (b) the table
+// the run-time accessor reads, and a compile-time answer that disagrees with the run-time one at
+// any tuple of the cross. It does not catch a defect both sides share: a figure the stated entry
+// and the accessor read from one wrong row is one answer here, however wrong it is.
+
+// It does not catch a bound right for its enumeration and wrong for the mathematics, and no check
+// of this shape can: whether 1.5e-7 is the figure a lane may promise is a question about the
+// arithmetic, which belongs to tests/boys_accuracy_gate.cpp and to the bound instrument.
 // ---------------------------------------------------------------------------
 
-// The last member of each axis, named by the enumeration that carries it. Each is
-// the value the assertion's own bound is stated against - `Precision::kBf16Device`
-// is what `GuaranteeAxesAreEnumerators` bounds `Precision` at - so this is where the
-// boundary the entry is supposed to have is written down, and the rows the run-time
-// accessor reads are what hold it to the library's carried set.
+// The last member of each axis, named by the enumeration that carries it. Each is the value the
+// assertion's own bound is stated against - `Precision::kBf16Device` is what
+// `GuaranteeAxesAreEnumerators` bounds `Precision` at - so this is the boundary the entry is
+// supposed to have, and the rows the run-time accessor reads hold it to the library's carried set.
 constexpr std::size_t kLastPrecision = static_cast<std::size_t>(boys::Precision::kBf16Device);
 constexpr std::size_t kLastRoute = static_cast<std::size_t>(boys::FitRoute::kRationalMinimax);
 constexpr std::size_t kLastScheme = static_cast<std::size_t>(boys::EvalScheme::kHorner);
@@ -951,16 +926,13 @@ constexpr bool ExpIsAnEnumerator() noexcept {
                                                      kFirstGranularity, kFirstForm, kExp>();
 }
 
-// The boundary, at compile time and per axis: the last member of the enumeration is
-// taken and a value one past it is refused. The refusal half is the one that carries
-// the weight - an assertion that takes everything is not a bound but a deletion, and
-// it would look like a fix - and it is proven end to end, on the entry itself rather
-// than on this predicate, by the scratch translation units under .claude/tmp/
-// (guarstatee-refusal-*.cpp), which are compiled as a control and must fail.
-//
-// What these two asserts do not say is which enumeration the boundary is the last
-// member of: that is `ExpectAxisIsTheEnumeration` below, at run time, against the
-// rows the library itself carries.
+// The boundary, at compile time and per axis: the last member of the enumeration is taken and a
+// one past it is refused. The refusal half carries the weight, and it is proven end to end, on the
+// entry itself rather than on this predicate, by the scratch translation units under
+// .claude/tmp/ (guarstatee-refusal-*.cpp), compiled as a control and required to fail.
+
+// What these two asserts do not say is which enumeration the boundary is the last member of: that
+// `ExpectAxisIsTheEnumeration` below, at run time, against the rows the library itself carries.
 static_assert(PrecisionIsAnEnumerator<static_cast<boys::Precision>(kLastPrecision)>(),
               "GuaranteeAxesAreEnumerators refuses the last member of Precision: its bound sits "
               "behind the enumeration it bounds, which is the defect that stood at kFp16Device "
@@ -1038,11 +1010,10 @@ std::vector<unsigned> RouteSelectors() {
     return values;
 }
 
-// The axis the library carries, held to the boundary this file names: one row per
-// enumerator, in enumerator order, and no member the enumeration does not have. This
-// is what makes the boundary above the library's own rather than this file's: a row
-// added for a member this file has not named, or a member named here that no row
-// carries, is a failure with the axis's name on it.
+// The axis the library carries, held to the boundary this file names: one row per enumerator, in
+// enumerator order, and no member the enumeration does not have. This is what makes the boundary
+// above the library's own rather than this file's: a row added for a member not named here, or a
+// member named here that no row carries, is a failure with the axis's name on it.
 void ExpectAxisIsTheEnumeration(const char* axis, std::vector<unsigned> values, std::size_t last) {
     std::sort(values.begin(), values.end());
     values.erase(std::unique(values.begin(), values.end()), values.end());
@@ -1117,12 +1088,10 @@ constexpr std::size_t kGranularityCount = kLastGranularity + 1;
 constexpr std::size_t kFormCount = kLastForm + 1;
 constexpr std::size_t kExpCount = kLastExp + 1;
 
-// Every combination of every axis: 8 lanes x 2 fit routes x 2 schemes x 2 packing
-// axes x 3 partitions x 3 division forms x 2 region-B exponentials = 1152 cells,
-// each one instantiated at compile time and each one held to the run-time accessor
-// at the same seven axes. The product is written as a product and printed by the
-// test, so the count is the compiler's arithmetic and the run's own, not this
-// file's.
+// Every combination of every axis: 8 lanes x 2 fit routes x 2 schemes x 2 packing axes x 3
+// x 3 division forms x 2 region-B exponentials = 1152 cells, each instantiated at compile time and
+// held to the run-time accessor at the same seven axes. The product is written as a product and
+// printed by the test, so the count is the compiler's arithmetic and the run's own.
 constexpr std::size_t kCombinationCount = kPrecisionCount * kRouteCount * kSchemeCount * kAxisCount *
                                           kGranularityCount * kFormCount * kExpCount;
 
@@ -1217,11 +1186,10 @@ void AskOneCell(std::vector<CellAnswers>& answers) {
                               static_cast<boys::RegionBExp>(kExp)>());
 }
 
-// The cells are asked a chunk at a time rather than in one fold. A fold over all
-// kCombinationCount of them nests one level per cell, and clang refuses a fold
-// expression past 256 arguments (-fbracket-depth): the count is a property of the
-// library's axes, and the suite must not stop compiling when an axis grows. Chunking
-// bounds the nesting by the chunk, and the halving below adds only its logarithm.
+// The cells are asked a chunk at a time rather than in one fold: a fold over all kCombinationCount
+// them nests one level per cell, and clang refuses a fold expression past 256 arguments
+// (-fbracket-depth). The count is a property of the library's axes, so the suite must not stop
+// compiling when an axis grows; chunking bounds the nesting by the chunk.
 constexpr std::size_t kCellsPerFold = 64;
 
 template <std::size_t kFirst, std::size_t kLast>

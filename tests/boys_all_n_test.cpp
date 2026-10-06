@@ -1,11 +1,7 @@
-// The all-orders batch entry (BoysAllN) contract tests: F_0(x_i)..F_nmax(x_i)
-// over an array of arguments, with the per-argument dispatch and the grouping
-// done internally - the batch shape a shell-quartet consumer needs.
-//
-// The entry's documented bound is 5.5e-14, the double batch lane's
-// per-region budget and the bound the per-argument BoysAllOrders call meets.
-// The suite pins it over the committed reference grid and against the
-// per-argument path, both as observed maxima.
+// The all-orders batch entry (BoysAllN) contract tests: F_0(x_i)..F_nmax(x_i) over an array of
+// arguments, with the per-argument dispatch and the grouping done internally - the batch shape a
+// shell-quartet consumer needs. Its documented bound (5.5e-14) is pinned over the committed reference
+// grid and against the per-argument BoysAllOrders path, both as observed maxima.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -53,16 +49,10 @@ constexpr double kBandBudget = 3e-14;
 // above it the lane's per-order cost outweighs the body's single seed and recursion.
 constexpr int kLaneMaxOrder = 4;
 
-// The policy an unnamed BoysAllN call compiles: this entry's own class row.
-//
-// The sweeps below compare this entry against the per-argument BoysAllOrders entry, and
-// the identity they pin is between the two ENTRIES - the batch's bodies are that entry's
-// own, restructured onto this layout (include/boys/boys_impl.hpp). It is an identity at
-// ONE policy and not across the class table: a replacement header that carries its own
-// rows may give the fp64 all-n class a different combination from the fp64 all-orders
-// class (boys/boys.hpp expands the one table the header carries), and two entries at two
-// policies return two arithmetics by construction. So the per-argument side below is asked
-// at THIS entry's class policy, which is the policy the unnamed call here compiles.
+// The policy an unnamed BoysAllN call compiles: this entry's own class row. The sweeps below compare
+// the entry against per-argument BoysAllOrders at this entry's class policy - the batch's bodies are
+// that entry's own, restructured onto this layout (include/boys/boys_impl.hpp) - and not across the
+// class table, where a replacement header may pair the fp64 all-n class with another combination.
 using AllNPolicy = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
 
 struct ReferenceRow {
@@ -164,11 +154,9 @@ Sub SubOf(double x) {
     return Sub::kC;
 }
 
-// The bound the difference against the per-argument path is held to. The entry
-// calls the per-argument path's own bodies on every path except region A below
-// kLaneMaxOrder, where a lane serves it: exactly zero elsewhere, and there the
-// lane's own 1e-15 below the band, the entry's 5.5e-14 over it - the lane
-// evaluating the argument, not the band's scalar body.
+// The bound the difference against the per-argument path is held to: exactly zero everywhere the
+// entry calls that path's own bodies, and on region A below kLaneMaxOrder, where a lane serves the
+// argument instead, the lane's own kGroupedBudget below the band and kBatchBound over it.
 double DifferenceBudget(double x, int nmax = boys::kMaxBoysOrder) {
     if (!boys::BoysAvx2Available() || nmax > kLaneMaxOrder)
     {
@@ -312,11 +300,9 @@ void CheckAgainstPerArgument(const Grid& grid,
         const std::size_t i = ArgumentIndex(grid, row.x, shuffled);
         double want[boys::kMaxBoysOrder + 1];
 
-        // The per-argument path at the batch's own order: region A's body seeds at
-        // nmax and recurses down, so the batch's F_k for k < nmax is the recurrence's.
-        // Asked at the batch entry's own class policy (AllNPolicy above): the two entries
-        // are two classes in the build's table, and a replacement may move one without
-        // the other.
+        // The per-argument path at the batch's own order, at the batch entry's class policy
+        // (AllNPolicy above): region A's body seeds at nmax and recurses down, so the batch's F_k
+        // for k < nmax is the recurrence's, and a replacement may move one class without the other.
         BoysAllOrders<AllNPolicy>(nmax, row.x, want);
         const double diff =
             std::abs(out[static_cast<std::size_t>(row.n) * count + i] - want[row.n]);
@@ -385,10 +371,9 @@ TEST(BoysAllNTest, LaneRouteHoldsTheLaneBudgetAndItsNeighbourIsExact) {
     }
 }
 
-// The lane route's chunking: the grouped kernel stages a fixed number of arguments
-// at a time, so a run that is not a whole number of chunks goes round that loop
-// more than once, short chunk last, with a scalar tail inside every chunk. The grid's
-// region-A run is shorter than one chunk, so these lengths cover the boundaries - every
+// The lane route's chunking: the grouped kernel stages a fixed number of arguments at a time, so a
+// run that is not a whole number of chunks goes round the loop more than once, short chunk last. The
+// grid's region-A run is shorter than one chunk, so these lengths cover the boundaries - every
 // argument here is inside region A below the band, so the array is one run of one path.
 TEST(BoysAllNTest, LaneRouteChunkBoundariesOverALongRun) {
     constexpr int kNmax = kLaneMaxOrder;
@@ -585,12 +570,10 @@ TEST(BoysAllNTest, CallerWorkspaceIsEquivalentAndRespected) {
     }
 }
 
-// The orders axis on this entry. The plane entry's call shape has both wide
-// dimensions: an argument's whole order vector (out[k * count + i] is F_k(x[i])) and an
-// order's whole argument array. A packed lane holds four doubles, so which of the two it
-// packs is the axis, and this entry carries both. The tests below hold that the axis's
-// values are the all-orders entry's own and that the region grouping, which exists for
-// the arguments axis, is not taken here.
+// The orders axis on this entry: the plane entry's call shape has both wide dimensions - an
+// argument's whole order vector and an order's whole argument array - and a packed lane holds four
+// doubles, so which of the two it packs is the axis. The tests below hold the axis's values to the
+// all-orders entry's own, and the region grouping - for the arguments axis - not taken here.
 
 namespace {
 
@@ -600,13 +583,10 @@ using OrdersAxisPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
-// The certified scalar single lane the axis's fallback runs: the axis's own policy with
-// the packing axis set to this shape's, the one cell the per-order entry carries
-// (boys_impl.hpp asserts it, one order at one argument having no four orders to fill a
-// lane with) and the cell ScalarOrders names when it hands its orders over one at a
-// time - src/boys_orders_simd.cpp, "the certified scalar single lane at the policy the
-// axis names". Every other cell is the axis's, so a rung and a form fall back to their
-// own arithmetic and not to another's.
+// The certified scalar single lane the axis's fallback runs: the axis's own policy with the packing
+// axis set to this shape's, the one cell the per-order entry carries (boys_impl.hpp asserts it) - the
+// cell ScalarOrders names when it hands its orders over one at a time (src/boys_orders_simd.cpp).
+// Every other cell is the axis's, so a rung and a form fall back to their own arithmetic.
 template <boys::EvalScheme kScheme>
 using OrdersAxisSingleLane =
     boys::EvalPolicy<OrdersAxisPolicy<kScheme>::kRoute,
@@ -702,10 +682,9 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
     }
 }
 
-// Past the packed lane's own interval the axis runs the certified scalar single lane
-// one order at a time, asserted exactly: the fallback claims that lane's values. The
-// lane is the one at the policy the axis names - the policy this test asks the batch
-// entry with - so the per-order side is asked at that same policy rather than at the
+// Past the packed lane's own interval the axis runs the certified scalar single lane one order at a
+// time, asserted exactly. The lane is the one at the policy the axis names, which is the policy this
+// test asks the batch entry with, so the per-order side is asked at it rather than at the
 // single-order entry's own class row, which a replacement seam may move apart from it.
 TEST(BoysAllNTest, OrdersAxisIsDefinedPastItsOwnDomain) {
     const std::vector<double> xs = {0.0, kX0, kX0 + 1e-9, 20.0, kX1, 31.0, 200.0};

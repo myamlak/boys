@@ -933,24 +933,10 @@ TEST(BoysCudaTest, AllNChecksTheOrder) {
 }
 #endif // BoysFp16
 
-// ---------------------------------------------------------------------------
-// The division-form axis, checked by bits
-// ---------------------------------------------------------------------------
-//
-// The axis states that every entry of the space runs every form, and the reason
-// the two reciprocal forms are worth carrying is a claim about bits: accuracy.hpp
-// states of the refined form that it "is bit-identical to exact division", and of
-// the plain one that it rounds twice where the exact form rounds once. No bound
-// the library publishes can see that difference - one ulp sits inside every one of
-// them - so the check below crosses a spread of entries with the three forms,
-// compares bit patterns, and counts the values at which two forms disagree.
-//
-// The check has a negative control: a build with BOYS_CUDA_TEST_DROP_DIVISION_FORM
-// defined (the target boys-cuda-tests-divform-control) hands every launch
-// kExactDivision whatever form it asked for, and the assertion that the plain form
-// differ from the exact one must then fail on its own message. Without that build,
-// "the refined form is bit-identical" would be consistent with a form argument no
-// kernel reads, which is the failure this whole axis exists to make visible.
+// The axis states that every entry of the space runs every form. accuracy.hpp says the refined form is
+// bit-identical to exact division and the plain one rounds twice where the exact form rounds once - a
+// difference no published bound can see - so the check crosses entries with the three forms and counts the
+// bits that disagree. The negative control (BOYS_CUDA_TEST_DROP_DIVISION_FORM) hands every launch kExactDivision.
 
 namespace {
 
@@ -1317,11 +1303,10 @@ TEST(BoysCudaTest, DivisionFormsDifferByBits) {
                     tally.widestRelativePlainVsExactWhere.c_str());
     }
 
-    // The gap in the units a bound is written in. A per-form device figure is not
-    // published at this revision (BoysLaneContracts(), the fp32-device row), so this
-    // is a measurement and not a comparison against a bar; it is printed so that the
-    // figure the lane owes is a number a reader can see rather than one to be
-    // measured again to find out.
+    // The gap in the units a bound is written in. A per-form device figure is not published at this
+    // revision (BoysLaneContracts(), the fp32-device row), so this is a measurement and not a comparison
+    // against a bar; it is printed so that the figure the lane owes is a number a reader can see rather
+    // than one to be measured again to find out.
     std::printf("exact vs plain: the widest ABSOLUTE gap between the two forms, over the values "
                 "compared, is %.6g\n",
                 tally.plainVsExactWidestAbsolute);
@@ -1337,12 +1322,10 @@ TEST(BoysCudaTest, DivisionFormsDifferByBits) {
         std::printf("%s\n", line.c_str());
     }
 
-    // The claim the refined form is carried for, in accuracy.hpp's own words
-    // ("this form is bit-identical to exact division"): stated over every value of
-    // every entry crossed here, so one differing bit violates it. That is the
-    // assertion to make, and not a tolerance to widen - a value the two forms place
-    // in different bins is either a defect in the refinement or a defect in what
-    // "exact" compiles to, and both are findings.
+    // The claim the refined form is carried for, in accuracy.hpp's own words ("this form is bit-identical
+    // to exact division"), stated over every value of every entry crossed here, so one differing bit
+    // violates it: not a tolerance to widen, since a value the two forms place in different bins is a
+    // defect in the refinement or in what "exact" compiles to, and both are findings.
     EXPECT_EQ(tally.refinedVsExact, 0u)
         << "the refined form is not bit-identical to exact division over the values compared; "
            "the differing values and their x are printed above";

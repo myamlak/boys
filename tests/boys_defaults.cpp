@@ -1,84 +1,7 @@
-// The defaults command: what this build's unnamed calls resolve to, class by
-// class, read from the table the build carries.
-//
-// A consumer writes a call and names no policy; the build answers it with the
-// combination the seam file in force carries for that class
-// (include/boys/boys_build_defaults.hpp). The answer is a compile-time type,
-// which is what makes it free - and which is why nothing printed it. A reader
-// asking what they get had to find the header, expand its macro list by hand and
-// look up each cell; a build configured with BOYS_BUILD_DEFAULTS had no way at
-// all to see the choices it was compiled with. This program is that answer, one
-// command, and the design that names it is
-// .claude/lane-status/api-and-defaults-design.md, "One command prints what this
-// build will do".
-//
-// WHAT IT READS, AND WHY THAT IS THE WHOLE POINT
-//
-// The table, and not a copy of it. A class is a (device, precision, shape)
-// triple; the row is the specialization the compiler selects for that triple
-// (boys::detail::DefaultPolicyRow, include/boys/boys.hpp); the axes printed are
-// the ones that specialization resolves to, and the bound is the figure the
-// library's own accessor answers for those axes. A build that replaced the seam
-// file prints the replacement's rows for the same reason the library compiles
-// them: the include path delivers the replacement to this translation unit
-// exactly as it delivers it to the library's own instantiations, and
-// BOYS_BUILD_DEFAULTS_REPLACED is what says which of the two happened.
-//
-// THE CLASSES ARE WALKED, NOT LISTED. This program asks the table about every
-// class the three enumerations name - Device, Precision and Shape - and prints
-// the ones the table carries. The lane axis is the enumeration's members unioned
-// with the lanes the seam's rows themselves name, so a class the seam carries is
-// a class this walk reaches without either list being edited to agree with the
-// other (MakeLaneWalk below). A class it does not carry is reported as that, and
-// is not printed as a policy, because there is no policy to print: asking for
-// the default of such a class is a compile error (the assertion in
-// DefaultPolicyFor, include/boys/boys.hpp), which is the seam's contract rather
-// than a gap in this report.
-//
-// WHAT IT IS NOT
-//
-// Not a measurement and not a timing: nothing is evaluated, nothing is called
-// but the reporting accessors, so the same build prints the same report on every
-// machine - which is why it is registered as a ctest case rather than left as a
-// local run. It is not the option probe either: the probe ranks combinations on
-// the machine it runs on (benchmarks/boys_option_probe.cpp), and this prints the
-// choice a build made, which is data the probe produced rather than data it can
-// produce.
-//
-// THE CHECKS, WHICH ARE WHY THE EXIT STATUS IS NOT DECORATION
-//
-//  - the lane table (BoysLaneContracts(), one row per lane) and the walk below
-//    agree on how many lanes this build has;
-//  - a class's figure composed from the lane row the report prints -
-//    (multiplicand + the named form's term) x m + additive - is the figure the
-//    accessor returned, to the bit. A report that prints a multiplicand and a
-//    figure that do not compose is a report a reader cannot use;
-//  - DefaultGuarantee<Precision, Shape>() and the axis-taking accessor, asked
-//    with the axes the class resolves to, are one figure for a host class. That
-//    equality is the seam's own promise (include/boys/boys.hpp), and it is read
-//    here rather than assumed.
-//
-// Failures are printed as lines beside the report, never instead of it, and the
-// exit status is 1 when one fires.
-//
-// WHAT IT DOES NOT CHECK, so that a green run is read for what it is: whether
-// every class an ENTRY reaches has a row. A class with no row cannot be asked
-// for by this program at all - reading its default is the compile error the
-// report describes - and the entries are declarations this program does not see.
-// That reading is the source-text checker's (tools/check_default_rows_have_entries.py,
-// which reads the table against the entries) and the link test's
-// (tests/boys_defaults_link_test.cpp, which calls every default), not this
-// report's.
-//
-// WHERE IT IS BUILT
-//
-// CMakeLists.txt, the tool block in BOYS_BUILD_TESTS: target boys-defaults, and
-// the ctest case of the same name, which runs the report rather than only
-// building it.
-//
-// Run:  cmake --build <build> --target boys-defaults
-//       <build>/boys-defaults
-//       ctest --test-dir <build> -R boys-defaults
+// The defaults command (ctest case boys-defaults, BOYS_BUILD_TESTS): what this build's unnamed
+// calls resolve to, read from the table it carries (boys::detail::DefaultPolicyRow,
+// include/boys/boys.hpp). Holding every class an entry reaches to a row is not this report's:
+// tools/check_default_rows_have_entries.py and tests/boys_defaults_link_test.cpp do that.
 
 #include "boys/boys.hpp"
 
@@ -92,11 +15,9 @@ namespace {
 
 using namespace boys;
 
-// The path of the seam file in force, and - for a build that replaced it - the
-// copy the compiler read on the include path before include/. Both come from the
-// configure rather than from __FILE__: a header's own path is whatever the
-// include directive spelled, and a report that cannot say which table produced
-// it is the defect this whole seam exists to remove.
+// The seam file in force, and - for a build that replaced it - the copy the compiler read on the
+// include path before include/. Both come from the configure rather than __FILE__, whose own path is
+// whatever the include directive spelled and would not say which table produced the report.
 #ifndef BOYS_DEFAULTS_HEADER_PATH
 #define BOYS_DEFAULTS_HEADER_PATH "(not recorded: this translation unit was not compiled by the boys CMake build)"
 #endif
@@ -104,17 +25,10 @@ using namespace boys;
 #define BOYS_DEFAULTS_HEADER_COPY ""
 #endif
 
-// --- the names the library does not publish --------------------------------
-//
-// The fit route, the scheme, the packing axis, the partition and the division
-// form each have a name from the library itself, and this report prints those
-// (RouteName below, EvalSchemeName, PackAxisName, GranularityName,
-// DivisionFormName). The device, the shape and the compute budget have none at
-// this revision, so they are named here - except the precision lane, whose name
-// is read from the library's own lane row. Each switch below names every
-// enumerator of its axis and has no default arm, so a member a later change adds
-// is a missing arm here - a failed build on the toolchains that build this tree
-// with -Werror - rather than a class this report quietly omits.
+// The names the library does not publish: the fit route, the scheme, the packing axis, the
+// partition and the division form have names from the library (RouteName below), while the device,
+// the shape and the compute budget have none at this revision and are named here. Each switch names
+// every enumerator of its axis with no default arm, so a member added later fails a -Werror build.
 
 /// The name this report prints a device under.
 constexpr const char* DeviceName(Device device) noexcept {
@@ -161,24 +75,10 @@ constexpr const char* BudgetName(BoysBudget budget) noexcept {
     return "unknown";
 }
 
-// The three enumerations a class key is made of, one walk per axis. C++ has no
-// way to walk an enumeration, so the members are written out here and the
-// `static_assert` walks below hold each list to the names above; a member added
-// to the enumeration and left out of the list is the one case neither catches,
-// which is why the report prints how many classes it scanned and what the table
-// answered rather than only the classes it found.
-//
-// THE LANE LIST IS NOT THE WALK. The members below are the enumerator's own
-// record, and the walk's lanes are those unioned with the lanes the seam's rows
-// name (MakeLaneWalk below). A lane added to the enumeration and named by the
-// seam's rows is therefore walked without this list being touched - the failure
-// this file was repaired for on 2026-10-04, when `Precision::kBf16` was appended
-// and the five bf16 rows arrived while this list still ended at kFp16Device: the
-// seam names a class, the walk reaches it, and no reader has to know both lists.
-// The list below is still the half no seam can supply - the lanes of a build
-// whose rows name none of them - and main() holds it to the library's own lane
-// table, so a member added to the enumeration and left out of BOTH is a run-time
-// refusal rather than a class this report quietly omits.
+// The three enumerations a class key is made of, one walk per axis, spelled out because C++ cannot
+// walk one. The lane list is not the walk: the walk's lanes are these unioned with the lanes the
+// seam's rows name (MakeLaneWalk), so the 2026-10-04 repair (Precision::kBf16 with five bf16 rows,
+// list ending at kFp16Device) cannot repeat; main() holds the list to the library's lane table.
 #define BOYS_DEFAULTS_DEVICES(X) X(kHost) X(kDevice)
 #define BOYS_DEFAULTS_PRECISIONS(X)                                                               \
     X(kFp64) X(kFp32) X(kFp16) X(kBf16) X(kFp32Device) X(kFp64Device) X(kFp16Device) X(kBf16Device)
@@ -310,17 +210,10 @@ constexpr std::span<const Precision> kPrecisions{kLaneWalk.members.data(), kLane
 constexpr std::array<Shape, 5> kShapes{BOYS_DEFAULTS_SHAPES(BOYS_DEFAULTS_SHAPE_ENTRY)};
 #undef BOYS_DEFAULTS_SHAPE_ENTRY
 
-// A build whose seam file carries a row list names its classes there, and every
-// one of them is a class the walk above must reach: a row keyed by a member the
-// walk does not carry would be a row this report omits while a reader saw it in
-// the header - the failure this report exists to make impossible. The lane cell
-// of a row is carried by construction, the walk's lanes being the seam's own
-// cells unioned with the enumeration's (MakeLaneWalk above); what the assertion
-// below is a tripwire for is the row's device and its shape, the two cells no
-// row list can put into the walk by naming them. A replacement that names such a
-// class fails the build here instead, and the line says which list to extend.
-// The block is compiled only where there is a list to check, which is also why
-// the walk's members are not asserted against themselves.
+// A build whose seam file carries a row list names its classes there, and the walk above must reach
+// every one: the lane cell is carried by construction (MakeLaneWalk above), so the assertion below
+// is a tripwire for the row's device and shape, the two cells a row list cannot put into the walk by
+// naming them. A class it names fails the build here, with a line saying which list to extend.
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
 /// Whether a class is one of the classes the walks above cross.
 constexpr bool ScannedClass(Device device, Precision precision, Shape shape) noexcept {
@@ -521,12 +414,9 @@ void PrintClass(Coverage& coverage) {
         ++coverage.compositionFailed;
     }
 
-    // The two named readings of one figure, held to each other: DefaultGuarantee is
-    // documented as the same figure, from the same table, as the axis-taking
-    // accessor asked with the policy's own axes, the region-B exponential included
-    // (include/boys/boys.hpp, \c DefaultGuarantee), and the claim is over classes
-    // rather than over host classes - a device class reads the same accessor and
-    // is held to the same two readings.
+    // The two named readings of one figure, held to each other: DefaultGuarantee is documented
+    // (include/boys/boys.hpp, \c DefaultGuarantee) as the same figure from the same table as the
+    // axis-taking accessor asked with the policy's own axes, the region-B exponential included.
     const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
                                                          Policy::kRoute,
                                                          Policy::kScheme,
@@ -560,11 +450,9 @@ void AskClass(Coverage& coverage) {
 
     ++coverage.scanned;
 
-    // The gate is the table's own answer, asked of the primary template - which
-    // carries no Type for a class it does not name - rather than of
-    // DefaultPolicyFor, whose assertion makes the same question a compile error
-    // (which is what a call site gets, and is why this program can report the
-    // class instead).
+    // The gate is the table's own answer, asked of the primary template - which carries no Type
+    // for a class it does not name - rather than of DefaultPolicyFor, whose assertion makes the
+    // same question the compile error a call site gets.
     if constexpr (detail::DefaultPolicyRow<kDeviceValue, kPrecisionValue, kShapeValue>::kCarried)
     {
         ++coverage.carried[kDevice][kLane];

@@ -1,28 +1,20 @@
-// The device-callable arm of the accuracy gate's fast-member reading.
-//
-// The gate measures a device lane through the CUDA surface's launched entries, which
-// are host calls that carry their own launch. The surface's other group is not a call
-// at all: an in-kernel entry is a __device__ function the caller's own kernel calls,
-// and it can only be reached from a kernel of the caller's - which is why this arm is
-// a translation unit of its own and not a few lines of tests/boys_accuracy_gate.cpp,
-// whose extension the CUDA compiler does not take. The shape is
-// tests/boys_cuda_device_demo.cu's: a kernel that forms x per thread, calls the entry
-// from inside itself, and a host launcher the caller hands its own handle and arrays
-// to - a kernel translation unit may include the device header and not the host one,
-// so the handle is filled by the caller, which is a host translation unit.
-//
-// The member this arm reads is RegionBExp::kFast, the member the gate's launched arms
-// do not read: they launch the all-orders family, whose rows the option table carries
-// at RegionBExp::kAccurate. The entry is the lane's own single order at that member,
-// BoysDeviceSingleF32 at RegionBExp::kFast, and the figure it is judged at is the one
-// BoysAccuracyGuaranteed composes for the member (src/boys.cpp): the lane's base plus
-// the term its row publishes under that member. The gate does the judging; what this
-// file returns is the card's values.
-//
-// The division form is a template argument of a device entry, because it selects an
-// arithmetic inside the caller's kernel rather than a step of the launch, so the
-// runtime form the gate names is dispatched here onto the three instantiations the
-// axis carries. A form outside them is refused rather than run at another.
+// The device-callable arm of the accuracy gate's fast-member reading: an in-kernel entry is a
+// __device__ function only the caller's own kernel reaches, so this arm is a translation unit of
+// its own and not lines of tests/boys_accuracy_gate.cpp, whose extension the CUDA compiler does
+// not take.
+
+// The shape is tests/boys_cuda_device_demo.cu's: a kernel that calls the entry, the caller filling
+// the handle, a kernel translation unit being unable to include the host header.
+
+// The member read is RegionBExp::kFast, the one the gate's launched arms do not read: they launch
+// the all-orders family, whose rows the option table carries at RegionBExp::kAccurate. The entry
+// is BoysDeviceSingleF32 at that member, judged at the figure BoysAccuracyGuaranteed composes for
+// it (src/boys.cpp), the lane's base plus the term its row publishes; the gate judges.
+
+// The division form is a template argument of a device entry, since it selects an arithmetic
+// inside the caller's kernel rather than a step of the launch, so the gate's runtime form is
+// dispatched here onto the three instantiations the axis carries; one outside them is refused
+// rather than run at another.
 
 #include <cuda_runtime.h>
 

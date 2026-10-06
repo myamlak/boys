@@ -1,35 +1,7 @@
-// Consumer check: does every combination of the option space this build serves have a NAME a
-// consumer can write, and does naming it evaluate that combination?
-//
-// The option space is four structural axes - the fit route, the evaluation scheme, the interval
-// partition and the packing axis - per precision: the axes are what a call site chooses once, when
-// it is written, and a policy names one combination of them.
-//
-//  * for every combination the library's own book reports as served (BoysAccuracyGuaranteed
-//    answering a figure for the five axes), this program writes THE NAME of that combination - a
-//    policy type - and calls the entry at that name: one arm per name, resolved where the line is
-//    written, with no string, no table and no run-time search anywhere in this file, so a
-//    combination it could not name would not compile;
-//
-//  * every value that comes back is judged against the committed 45-digit reference grid within
-//    the bound the book states for the combination that was named - the figure
-//    BoysAccuracyGuaranteed answers for the same five axes;
-//
-//  * the census is printed per precision - combinations served, combinations named, cells served,
-//    cells named and evaluated - counted from the library's own tables rather than a list kept
-//    here; the axes this file spells are checked against those tables first, so a third scheme or
-//    partition is a reported gap rather than an else arm.
-//
-// The four precisions are four measurements reported apart: the double lane's entries take a
-// policy at the library's own budget, the float lane's at its own, the half lanes run the float
-// lane's engine at the tighter fp16 budget with the half store. Where a format conversion sits
-// between the grid and the entry, the comparison is against the certified double lane at the same
-// converted argument, as the umbrella consumer check does it, and the half lanes' representation
-// term is one half-ULP of the value they returned.
-//
-// Run:  cmake --build <build> --target boys-consumer-option-space
-//       <build>/boys-consumer-option-space
-//       ctest --test-dir <build> -R boys-consumer-option-space
+// Consumer check: every combination the option space serves has a name a consumer can write, and
+// naming it evaluates it - one arm per name, so a combination it could not name would not compile.
+// Values are judged against the committed 45-digit reference grid within BoysAccuracyGuaranteed's
+// figure for the same five axes; the census comes from the library's own tables, not a list here.
 
 #include <algorithm>
 #include <array>

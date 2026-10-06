@@ -1,21 +1,7 @@
-// The device half of the multiply-add route check: the lane's own arithmetic,
-// evaluated at both routes and at the build's own selection, so that the host
-// half can hold each of the three to what it means.
-//
-// Naming a route explicitly is what a check can do and a call site cannot: the
-// route is a build fact (BOYS_MULADD_SEPARATE), selected once and read by both
-// sides of the device boundary. This file exists to hold the build's arithmetic
-// to the route it was built at, so that "the device ran the fused step" is a
-// result rather than a sentence in a header.
-//
-// The bodies are the lane's own (boys/boys_cuda_arithmetic.hpp): the
-// multiply-add step the host lane's backend names, and the uniform grid's flat
-// ladder, which is the arithmetic BoysCuda::AllOrdersF64Uniform,
-// AllOrdersF64UniformHorner, AllOrdersF32Uniform and AllOrdersF32UniformHorner
-// launch. The three arrays each kernel writes are the same arithmetic at the
-// fused route, at the separate route, and at the route the build selected —
-// the last of them through the bodies' own default, which is what every entry
-// of the public surface runs.
+// The device half of the multiply-add route check: the lane's own arithmetic
+// (boys/boys_cuda_arithmetic.hpp) - the multiply-add step and the flat ladder BoysCuda::AllOrdersF64Uniform,
+// AllOrdersF64UniformHorner, AllOrdersF32Uniform and AllOrdersF32UniformHorner launch - evaluated at
+// both routes and at the build's own (BOYS_MULADD_SEPARATE), the delivered array through the bodies' default.
 
 #include "boys/boys_cuda_arithmetic.hpp"
 #include "boys/boys_device_tables.hpp"

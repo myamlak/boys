@@ -1,95 +1,7 @@
-// The build-defaults seam's own check, the compile half: every choice the seam
-// header offers is one the library reads, read as the value an entry that names
-// no policy resolves to.
-//
-// The defect this file exists for is on the record. include/boys/
-// boys_build_defaults.hpp named five choices then - seven now, the host's five
-// and the device lane's two - a build may replace it (BOYS_BUILD_DEFAULTS), and
-// until the wiring three of the five - the packing axis, the division form and
-// the fit granularity - were expanded by nothing at
-// all: the library compiled hard-coded literals, a consumer who replaced the
-// header got two choices honoured and three silently ignored, and no test
-// noticed, because the fixture moved one choice and copied the library's own
-// values for the other four.
-//
-// TWO READINGS, AND THIS IS THE SECOND ONE
-//
-// A macro that stops being expanded is a text fact, and tools/check_seam_macros.py
-// is what reads it. What a text check cannot see is the half this file is:
-// whether the value a header names is the value the entries resolve to. Both are
-// needed because they fail differently - the text one fires when a reader is
-// deleted, this one when a reader stops being reached.
-//
-// AND A THIRD READING, OF WHAT THE BUILD SAYS IT IS. The choices above are read
-// as values, and a build that replaced the seam could say none of them: nothing a
-// consumer could reach reported that the seam had been replaced, or by which file,
-// so a consumer whose regression baseline moved had no way to see that the seam is
-// why. The library reports the seam's identity now
-// (include/boys/version.hpp, BuildDefaultsSeamIdentity()), and the test at the end
-// of this file holds that report to the file the configure named - the one claim
-// here that a consumed library, and not a source tree, is the thing making.
-//
-// HOW THIS FAILS
-//
-// The seven macros are expanded here as values, so each comparison below is
-// between the value the seam in force names and the value this build's unnamed
-// policy carries:
-//
-//   - the macro is dropped from its reader and the constant that owned it holds
-//     a literal: the constant stops equalling the seam's value, and the first
-//     block below fails;
-//   - the constant still reads the macro and a policy default stops using the
-//     constant: EvalPolicy<> or one of the four DefaultPolicy* names stops
-//     carrying it, and the second or the third block fails.
-//
-// Every one of them is a static_assert, so the failure is the configure not
-// compiling rather than a program that has to be run to say so - and a macro
-// that stops being read is exactly the change no suite was looking at.
-//
-// WHAT IT CANNOT SEE, so that "this file passes" is read for what it is:
-//
-//   - a replacement naming the COMMITTED value is, by value, indistinguishable
-//     from a macro nothing expands. The comparisons are equalities and they hold
-//     in the committed configuration by construction, so this file has teeth
-//     only in a build whose seam moves a choice - which is what
-//     tests/build_defaults_tuned.hpp is for: it moves a choice on every axis a
-//     build can move, except the fit route, which tests/boys_backend_test.cpp
-//     pins at the committed value for a header defining its fixture guard. The
-//     configure that points BOYS_BUILD_DEFAULTS at that file is where this check
-//     fails when a reader is broken, and it is not only a local one: the
-//     `Build defaults (tuned fixture built and tested)` step of
-//     `.github/workflows/ci.yml` points the option at that file on the
-//     linux-x86 gcc Release leg and runs the suite there, so the loud failure is
-//     one CI reports as well as one a person can run.
-//   - one of the members the five axes offer cannot be named by a build at all,
-//     so no check of this shape can have teeth on it: PackAxis::kOrders, which
-//     the single-order entry refuses because a call that produces one order has
-//     no second order to put in a vector lane (include/boys/boys_impl.hpp,
-//     BoysSingleImpl). FitGranularity::kUniform was the second until this
-//     revision: the batched bodies that refused it now hand a policy naming the
-//     grid to the path that reads it, and the accuracy gate's entry book measures
-//     their six cells (tests/boys_accuracy_gate.cpp). The tuned fixture leaves the
-//     packing axis at the committed value and quotes that refusal; the uniform
-//     member is named by tests/build_defaults_uniform.hpp, whose row table carries
-//     it on the two host lanes' ten classes, so what a build whose class row names
-//     it compiles to is measured there rather than unmeasured here.
-//   - whether the bodies use the policy they are handed is not a text or a type
-//     fact: a body reading another partition's table under this policy's name is
-//     the accuracy gate's business (tests/boys_accuracy_gate.cpp), not this
-//     file's.
-//   - the enumeration of what the seam offers is the text check's and not this
-//     file's: this file names the seven choices an unnamed call resolves to - the
-//     host lane's five and the device lane's two, which are held by the same
-//     comparisons because the device lane reads its own names and not the host's -
-//     and an eighth macro added to the seam header is read by
-//     tools/check_seam_macros.py (which reads the names off that file) rather than
-//     by a list here that would go stale.
-//
-// WHERE IT IS BUILT
-//
-// It belongs in the boys-tests source list beside tests/boys_backend_test.cpp:
-//
-//   add_executable(boys-tests ... tests/boys_build_defaults_test.cpp)
+// The build-defaults seam's compile half: every choice include/boys/boys_build_defaults.hpp offers is
+// read as the value an entry naming no policy resolves to. A replacement naming the committed value
+// is indistinguishable from a macro nothing expands, and PackAxis::kOrders is no build's to name
+// (include/boys/boys_impl.hpp): the teeth are tests/build_defaults_tuned.hpp's configure.
 
 #include "boys/backend.hpp"
 
@@ -123,11 +35,9 @@
 
 namespace {
 
-// The seven seam macros expand to enumerator names written as the library's own
-// headers write them - FitRoute::kChebyshev and its six siblings - and the
-// library's headers write them inside namespace boys. A translation unit that
-// reads the macros therefore has to be in that namespace or import it, which is
-// what this using-directive is for and the only reason it is here.
+// The macros expand to enumerator names the library writes as FitRoute::kChebyshev and its six
+// siblings, inside namespace boys: this unit reads them and so has to import that namespace, which is
+// the only reason this directive is here.
 using namespace boys;
 
 // The seven values the seam in force names: the host lane's five and the device
@@ -142,21 +52,10 @@ constexpr boys::FitGranularity kSeamFitGranularity = BOYS_BUILD_DEFAULT_FIT_GRAN
 constexpr boys::DivisionForm kSeamDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM;
 constexpr boys::RegionBExp kSeamDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP;
 
-// The policy the seam's own five values compose: the point a class the table carries
-// no row for resolves to, and the type EvalPolicy<> names. It is NOT what every entry
-// that names no policy resolves to - an entry resolves to its class's row, which is
-// this combination only where that row spells it (include/boys/boys.hpp expands the
-// row list or the five, never both), and the unnamed-call test at the end of this file
-// is where that is read. Naming the values here is what makes the assertions below
-// claims about the build's header and not about this line.
-//
-// The region-B exponential is named as the host lane's own default rather than left to
-// EvalPolicy's template default, and no host macro of the seam names it: this axis is
-// one a host ROW moves, and the device lane's own macro above
-// (BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP) is what its half reads. Spelling it keeps the
-// type the same as EvalPolicy<>'s - the default is this constant - and makes the axis a
-// reader of this file can see, which is what the comparisons below need to tell a class
-// whose row moved the exponential from one whose row spells the seam's five.
+// The policy the seam's five compose: the point a class with no row resolves to, and the type
+// EvalPolicy<> names. Not what every unnamed entry resolves to - an entry resolves to its class's row,
+// which is this combination only where the row spells it (include/boys/boys.hpp expands the row list
+// or the five, never both). Its RegionBExp is boys::kDefaultHostRegionBExp, which no host macro names.
 using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
@@ -166,11 +65,9 @@ using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     boys::kDefaultHostRegionBExp>;
 
 // --- Link one: the constant that owns a macro reads it ------------------------
-// Each of the five constants is documented beside the enumeration it belongs to
-// and is the name the entries' template defaults read. A constant that stops
-// expanding its macro is the shape that sat here before the wiring: the macro
-// stays in the seam file, documented, and the library compiles a literal that
-// the committed header happens to agree with.
+// Each of the five constants is the name the entries' template defaults read. One that stopped
+// expanding its macro is the shape that sat here before the wiring: the macro stays in the seam file,
+// documented, and the library compiles a literal the committed header happens to agree with.
 static_assert(kSeamFitRoute == boys::kDefaultFitRoute,
               "the seam names a fit route the library does not read: boys::kDefaultFitRoute is not "
               "BOYS_BUILD_DEFAULT_FIT_ROUTE, so a build replacing the seam would be told the "
@@ -188,13 +85,9 @@ static_assert(kSeamFitGranularity == boys::kDefaultFitGranularity,
               "the seam names a fit granularity the library does not read: "
               "boys::kDefaultFitGranularity is not BOYS_BUILD_DEFAULT_FIT_GRANULARITY");
 
-// The device lane's two names, held the same way and for the same reason. They are
-// separate from the five above because they are the device half of the seam: a
-// device class resolves its form and its region-B exponential through these and
-// never through the host's, so a build whose device half stopped reading its own
-// names would take the host's values in silence - the shape that sat here before
-// the device half existed, where an unnamed device call compiled the host macro's
-// form and a literal region-B.
+// The device lane's two names, held the same way: a device class resolves its form and its region-B
+// exponential through these and never through the host's, so a device half that stopped reading its
+// own names would take the host's values in silence.
 static_assert(kSeamDeviceDivisionForm == boys::kDefaultDeviceDivisionForm,
               "the seam names a device division form the library does not read: "
               "boys::kDefaultDeviceDivisionForm is not BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM");
@@ -219,14 +112,9 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate,
 #endif
 
 // --- Link two: the policy the five constants compose --------------------------
-// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the host
-// combination the seam names; a device class composes the device lane's own two names
-// beside four of these rather than this type (include/boys/boys_build_defaults.hpp).
-// A default that stopped reading the constants would keep every
-// constant correct and answer a caller from another policy - the same silent
-// substitution one step further down. What an entry that names no policy resolves
-// to is its class's row rather than this name, which is the last test below's
-// claim rather than this block's.
+// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the host combination the
+// seam names; a device class composes the device lane's own two beside four of these rather than this
+// type (include/boys/boys_build_defaults.hpp).
 static_assert(kSeamFitRoute == boys::EvalPolicy<>::kRoute,
               "an entry that names no fit route does not resolve to the one the seam names: "
               "EvalPolicy<>'s default route reads another value");
@@ -246,10 +134,9 @@ static_assert(std::is_same_v<boys::EvalPolicy<>, SeamPolicy>,
               "EvalPolicy<> does not compose the seam's own five values");
 
 // --- Link three: the four names a precision is selected by --------------------
-// Each name is what the entries of that precision run when the call site names no
-// policy, so each carries the seam's five. The budget is not one of the five and
-// is not compared: it is the library's, and it is the one field the fp16 and bf16
-// names move.
+// Each name is what the entries of that precision run when the call site names no policy, so each
+// carries the seam's five. The budget is not compared: it is not one of the five, and it is the one
+// field the fp16 and bf16 names move.
 static_assert(boys::DefaultPolicyFp64::kRoute == kSeamFitRoute &&
                   boys::DefaultPolicyFp64::kScheme == kSeamEvalScheme &&
                   boys::DefaultPolicyFp64::kPack == kSeamPackAxis &&
@@ -276,30 +163,9 @@ static_assert(boys::DefaultPolicyBf16::kRoute == kSeamFitRoute &&
               "DefaultPolicyBf16 does not carry the seam's five values");
 
 // --- Link four: the twelve device classes, asked for by name ------------------
-//
-// A class is a (device, precision, shape) triple, and the device half of the table
-// is twelve of them: the four device lanes - the precisions a device entry is
-// built at, two of which are one lane's two stores and not one format named
-// twice - by the three questions a device entry answers. Each of the twelve is
-// asked for here the way a
-// caller asks: by the class's own default policy, which is the name an unnamed
-// call resolves through (include/boys/boys.hpp, DefaultPolicyFor).
-//
-// THE ASK IS THE CHECK. The seam's rule for a class with no row is a static_assert
-// in DefaultPolicyFor, and an assertion fires only where something asks for the
-// class: a device row dropped from the list in force leaves one of the twelve names
-// below unanswered and this file stops compiling, with the seam's own message -
-// "this build's default-policy table carries no row for this class". A list that
-// stopped carrying one of the twelve is what this link exists for, because a table
-// whose device half went missing reads complete from the file it is written in.
-//
-// The two shapes the host lanes carry these beside - kFixedN and kAllNAtOrders -
-// are not device classes and are asked for by no name here: the device option
-// probe asks three questions, so no device class is keyed by the other two.
-//
-// In the committed configuration each of these resolves to the row the seam
-// writes for that class, which is the row this file's Link four pins below; in a
-// replacement the row is the replacement's, and the ask is the same ask.
+// The device half of the table is four device lanes by three questions; each class is asked for as a
+// caller asks, by its own default policy (include/boys/boys.hpp, DefaultPolicyFor). That ask is the
+// check: a device row dropped leaves one of the twelve unanswered and the static_assert there fails.
 using DeviceFp64Single = boys::DefaultPolicy<boys::Precision::kFp64Device, boys::Shape::kSingle,
                                               boys::Device::kDevice>;
 using DeviceFp64Orders = boys::DefaultPolicy<boys::Precision::kFp64Device, boys::Shape::kAllOrders,
@@ -456,22 +322,10 @@ TEST(BuildDefaultsTest, TheSeamNamesAreTheValuesThisBuildResolves) {
     EXPECT_TRUE(granularitiesAgree);
 }
 
-// The entry, not only the policy type: the static asserts above hold EvalPolicy<> to the
-// seam, and this holds an entry to the policy its own CLASS resolves to. That is a
-// different claim - an entry whose default argument stopped being that alias would keep
-// every assert above true and answer a caller from another policy - and it is made at the
-// call a caller writes, so the unnamed call and the class default's call have to return the
-// same bits at every argument and order this sweep reaches.
-//
-// THE CLASS DEFAULT IS THE TABLE'S ROW, WHICH IS THE SEAM'S FIVE ONLY WHERE THE ROW SPELLS
-// THEM. A replacement that defines BOYS_BUILD_DEFAULT_ROWS is read INSTEAD of the
-// five-composed table (include/boys/boys.hpp expands one branch or the other, never both),
-// so where its list carries a row for a class that row is the answer for that class and the
-// seam's five are not. The sweep below reads which of the two this build's table holds for
-// each entry's class and asserts the entry follows it: the class default everywhere, and
-// the seam's five exactly where the row that carries the class spells them. A build whose
-// row moves the class is therefore the configuration in which the second half has teeth,
-// and the configuration a check written against the five alone answers wrongly.
+// The entry, not only the policy type: an entry whose default argument stopped being its class's alias
+// would keep every assert above true and answer a caller from another policy. A replacement defining
+// BOYS_BUILD_DEFAULT_ROWS is read instead of the five-composed table (include/boys/boys.hpp expands one
+// branch or the other), so the sweep asserts the entry follows whichever the build's table holds.
 TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
     using boys::BoysAllOrders;
     using boys::BoysSingle;
@@ -483,16 +337,10 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
     using OrdersClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
     using SingleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
 
-    // Which of the two the table answers each class with. Read from the class's own policy,
-    // so it is the build's answer and not this line's. The budget is not one of the five and
-    // is compared as the fp64 lane's: the seam's five name no budget.
-    //
-    // The region-B exponential is compared too, and it is the axis a row can move while
-    // spelling the seam's five: a class whose row differs from `SeamPolicy` in that cell
-    // alone is answered by another arithmetic, so a flag reading the five and stopping would
-    // call it the seam's own combination and the assertions below would then require the two
-    // calls to agree where the build's own table says they must not. Every axis of the policy
-    // is read here, which is what this flag's name claims.
+    // Which of the two the table answers each class with, read from the class's own policy. The budget
+    // is not one of the five and is compared as the fp64 lane's. The region-B exponential is compared
+    // too, the axis a row can move while spelling the seam's five: a flag that stopped there would call
+    // such a class the seam's own combination and require the two calls to agree.
     constexpr bool kOrdersClassIsTheSeamFive =
         OrdersClass::kRoute == kSeamFitRoute && OrdersClass::kScheme == kSeamEvalScheme &&
         OrdersClass::kPack == kSeamPackAxis &&
@@ -577,11 +425,8 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
     EXPECT_EQ(singleClassMoved, 0u) << "the single-order entry that names no policy does not "
                                        "resolve to its own class's default policy";
 
-    // The table's own precedence, at the call a caller writes: the unnamed call equals the
-    // seam's five's call exactly where the row that carries the class spells the five. An
-    // entry resolving through the five where the table's row moves the class agrees here
-    // when it must not, and one resolving through the row where the row is the five agrees
-    // when it must.
+    // The table's own precedence, at the call a caller writes: the unnamed call equals the seam
+    // policy's call exactly where the row that carries the class spells the five.
     EXPECT_EQ(batchSeamMoved == 0u, kOrdersClassIsTheSeamFive)
         << "the unnamed call and the seam policy's call differ where the table's row for the "
            "class spells the seam's five, or agree where the row moves the class: the entry is "
@@ -591,25 +436,10 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
            "build's table carries for its class, or the other way round";
 }
 
-// THE SAME CLAIM, PER ENTRY, OVER EVERY ENTRY A MISSING ROW WOULD SILENTLY MOVE.
-//
-// The sweep above holds two entries to their class's row. This one holds the rest of
-// the surface to it, because the claim is per entry and not per library: each of these
-// is a separate declaration whose default template argument is that entry's own class
-// alias, and any one of them stopped reading it answers a caller from a policy its
-// class's row does not name.
-//
-// WHY IT IS HERE RATHER THAN IN THE ENTRY'S OWN SUITE. The suites that sweep these
-// entries compare them AGAINST EACH OTHER - boys_all_n_test.cpp holds the all-n entry
-// to the all-orders entry, boys_c_test.cpp holds the C entries to the C++ ones - and
-// that comparison is a claim about two classes, which holds only where the two classes'
-// rows agree. Naming a policy on both sides is what those sweeps have to do to state
-// an implementation relationship that survives a replacement, and once they do, nothing
-// in them reads the class table at all. This test is what still reads it.
-//
-// The entries below are the ones a shape-carried row can move apart, each measured
-// against its own class: the rows are the question and an entry's default argument is
-// the answer this file checks.
+// The same claim, per entry, over every entry a missing row would silently move: each entry below is
+// its own declaration, whose default template argument is that entry's class alias, and one that
+// stopped reading it answers from a policy its class's row does not name. boys_all_n_test.cpp and
+// boys_c_test.cpp compare entries against each other and read the class table nowhere; this reads it.
 TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
     using AllOrdersF32Class = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
     using AllNF32Class = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
@@ -725,11 +555,8 @@ TEST(BuildDefaultsTest, EveryEntryResolvesThroughItsOwnClasssRow) {
 }
 
 // The device half printed: one row per class, holding the row that class resolves to. It is the
-// run-time reading of Link four - the twelve names are instantiated above whether or not this
-// test
-// is run, so what the print adds is which row each name resolved to rather than whether it
-// resolved at all: a class the table carries no row for stops the build at Link four, and a class
-// whose row moved prints the row it moved to.
+// run-time reading of Link four, which is instantiated whether or not this test runs, so the print
+// adds which row each name resolved to rather than whether it resolved at all.
 TEST(BuildDefaultsTest, TheDeviceClassesPrintTheRowEachResolvesTo) {
     std::printf("boys: the device half of the table, one row per class, as this build resolves it\n");
     std::printf("boys: %-14s %-11s %-8s %-14s %-12s %-14s %-12s %-18s\n",
@@ -759,15 +586,9 @@ TEST(BuildDefaultsTest, TheDeviceClassesPrintTheRowEachResolvesTo) {
 namespace {
 
 // --- sha256, for the identity check below -------------------------------------
-//
-// The claim the test at the end of this file makes is that the identity the
-// library reports is the sha256 of the seam file this build compiled, and the
-// only way to check a digest is to compute one: comparing that answer with
-// BOYS_BUILD_DEFAULTS_SEAM_SHA256 would be the check agreeing with the definition
-// it just read, which is green whatever file the digest was taken of. Nothing
-// else in this tree hashes anything, so the implementation is here, and the test
-// that uses it runs FIPS 180-4's two published vectors through it first: a broken
-// hash is then a failing assertion rather than a wrong expectation.
+// The identity the library reports is the sha256 of the seam file this build compiled, and a digest is
+// checked only by computing one - comparing it with BOYS_BUILD_DEFAULTS_SEAM_SHA256 would be the check
+// agreeing with the definition it read. FIPS 180-4's two published vectors run first.
 
 inline std::uint32_t RotateRight(std::uint32_t value, int bits) {
     return (value >> bits) | (value << (32 - bits));
@@ -893,42 +714,9 @@ std::string Sha256Hex(const std::string& message) {
 } // namespace
 
 // --- The seam's identity, held to the file it is the identity of --------------
-//
-// WHAT THIS IS FOR. A build input that changes delivered bits has to be able to
-// say which file it was: the seam is such an input - an unnamed call resolves
-// through the table the seam file carries, and the tests above this one measure
-// that a replaced seam delivers other bits - and until this revision nothing a
-// consumer could reach said whether the seam had been replaced, let alone by
-// what. A consumer whose regression baseline moved had no way to see that the
-// seam is why. The library reports the seam's identity now
-// (include/boys/version.hpp, BuildDefaultsSeamIdentity()), and this test is the
-// half that makes that report a claim rather than a decoration.
-//
-// WHAT IT COMPARES, AND WHY THE HASH ABOVE IS WRITTEN HERE. The identity is the
-// sha256 of the seam file, and the only way to check a digest is to compute one:
-// comparing the accessor against BOYS_BUILD_DEFAULTS_SEAM_SHA256 would be the
-// check agreeing with the definition it just read, which stays green whatever
-// file that digest was taken of. So this unit hashes the file the configure named
-// (BOYS_DEFAULTS_SEAM_FILE, CMakeLists.txt) itself and requires the library's
-// answer to be that. The two FIPS 180-4 vectors run first, so a broken hash fails
-// here rather than silently agreeing with a wrong expectation.
-//
-// WHERE EACH HALF RUNS. A default configure runs the committed half: the seam is
-// the committed header, and the library has to say so, in the words the seam's own
-// guard lets this unit read beside it (BOYS_BUILD_DEFAULTS_COMMITTED is what the
-// committed file defines and a replacement does not). A configure with
-// BOYS_BUILD_DEFAULTS runs the other half - CI's `Build defaults (tuned fixture
-// built and tested)` step is one - and there the library must report the digest of
-// the file that configure named, which on that leg is the tuned fixture.
-//
-// WHAT IT CANNOT SEE, so that a pass here is read for what it is. It hashes the
-// source file the option named and not the copy the compiler reads: the copy is
-// configure_file(COPYONLY) of that file, so the two are the same bytes by
-// construction, and which of the two a translation unit reached is the seam
-// guard's business (boys_build_defaults.hpp). A build directory carried somewhere
-// without the sources it was configured from has no file to hash, and this test
-// skips there with a printed line rather than passing: the identity is then
-// unverified, and this file says so instead of implying otherwise.
+// The library reports the seam's identity (include/boys/version.hpp, BuildDefaultsSeamIdentity()), and
+// this test hashes the file the configure named (BOYS_DEFAULTS_SEAM_FILE) rather than comparing it
+// with BOYS_BUILD_DEFAULTS_SEAM_SHA256, which would be the check agreeing with the definition it read.
 TEST(BuildDefaultsTest, TheReportedIdentityIsTheSeamThisBuildCompiled) {
     // Before the implementation is used for anything: FIPS 180-4's published
     // digests of the empty string and of "abc".
@@ -978,10 +766,8 @@ TEST(BuildDefaultsTest, TheReportedIdentityIsTheSeamThisBuildCompiled) {
            "a digest";
 
     // The other half of the claim is the file's own: the committed seam defines
-    // BOYS_BUILD_DEFAULTS_COMMITTED and a replacement does not, so this unit can say
-    // which of the two seams it read. A unit in neither state read a seam that did
-    // not come through the option, and the committed words are then not about the
-    // seam this unit resolved.
+    // BOYS_BUILD_DEFAULTS_COMMITTED and a replacement does not, so this unit can say which of the two
+    // seams it read; a unit in neither state read a seam that did not come through the option.
 #if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
     constexpr bool kSeamIsCommitted = true;
 #else

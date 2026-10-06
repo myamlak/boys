@@ -1,55 +1,7 @@
-// Consumer check: does the umbrella header reach everything the library
-// documents, and does every returned value meet the bound its entry states?
-//
-// This translation unit is a CONSUMER of the library, not one of its tests:
-//
-//  * <boys/boys.hpp> is its first include and its only library include, and no
-//    internal header is named. The library's own suite includes headers from
-//    src/ and compiles with that directory on its include path, so a public
-//    header a consumer cannot reach - or an entry whose definition never left
-//    a .cpp file - passes the suite and fails a consumer. The probe below makes
-//    that distinction explicit: this build fails if src/ ever reaches this
-//    file's include path;
-//
-//  * every documented public choice is exercised: the two fit routes of the
-//    double lane, the two evaluation schemes, the product modes of the region-A
-//    transform over both bands, the sorted-argument and workspace forms of the
-//    many-argument entry, its per-element-order form in both precisions, the
-//    fp16/bf16 I/O lanes, the native packed half lane, and the lane templates at
-//    a policy the library does not pre-instantiate - the case that is a link
-//    error when a definition lives in a .cpp file rather than in the header its
-//    declaration ships in;
-//
-//  * every returned value is judged against the bound its entry documents, with
-//    the committed 45-digit reference grid as the reference for the arguments it
-//    carries. Where a format conversion sits between the reference and the entry
-//    (the fp32 and fp16 lanes round their argument, the native half lane returns
-//    2^15 F_k), the comparison is made against the certified double lane at the
-//    same converted argument, and the rule's name states the bound that
-//    composition carries;
-//
-//  * the claims that hold on one arithmetic and not on another are compiled
-//    against the answer this build's configure measured rather than against the
-//    host's architecture, which does not decide the question: MSVC on aarch64
-//    does not contract a bare product-plus-add and gcc on the same architecture
-//    does, while on x86-64 no compiler measured contracts one without -mfma.
-//    Two entries that evaluate the same recurrence from the same source are not
-//    thereby guaranteed the same bits, because whether that bare form is one
-//    rounding or two is a licence the compiler holds per call site. The two
-//    entries' values agree at every cell swept here on every host measured, and
-//    that is asserted wherever the run happens. The strided shape's offsets are
-//    exact by construction only where the bare form is two roundings, so there
-//    the bound is asserted on every build and the exact offset on the builds
-//    whose configure measured that. Both counts are printed either way, so an
-//    abstention is a visible figure rather than a silent one.
-//
-// The output is one line per rule - cells judged, the worst measured error as a
-// fraction of the bound, and where that cell is - so a green run states what it
-// covered and a red one names the cells that exceeded.
-//
-// Run:  cmake --build <build> --target boys-consumer-umbrella
-//       <build>/boys-consumer-umbrella
-//       ctest --test-dir <build> -R boys-consumer-umbrella
+// A consumer of <boys/boys.hpp> alone: this file's first and only library include, no internal
+// header named, and the probe below fails if src/ ever reaches the include path. Every documented
+// public choice is exercised, values judged against the bound their entry documents, the committed
+// 45-digit grid the reference; claims on one arithmetic follow the configure's measurement.
 
 #include <algorithm>
 #include <array>
@@ -65,11 +17,9 @@
 #include <string>
 #include <vector>
 
-// The library's private src/ directory is deliberately NOT on this file's
-// include path: a consumer gets include/ and nothing else. Prove it here rather
-// than assume it. Each name below resolves only if a directory holding that
-// file is on the include path, and those files are the library's sources; five
-// names, so that renaming one does not quietly retire the probe.
+// The library's private src/ is not on this file's include path: a consumer gets include/ and
+// nothing else. Each name below resolves only if a directory holding that source file is on the
+// path, and those five files are the library's sources, so renaming one does not retire the probe.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
                                 __has_include("boys_transform.cpp") ||                             \
@@ -410,10 +360,8 @@ double FloatFigure() {
 }
 
 // --- the entries the rules sweep --------------------------------------------
-//
-// Each helper names its entry at the lane's own default policy - the call an
-// entry naming no policy compiles. A rule that reads a policy of its own calls
-// the entry itself, so the policy is named where the reader meets it.
+// Each helper names its entry at the lane's own default policy - the call an entry naming no policy
+// compiles. A rule reading a policy of its own calls the entry, so it is named where read.
 
 double Single(int n, double x) {
     return boys::BoysSingle<>(n, x);
@@ -520,11 +468,9 @@ void CheckConstants(Report& report) {
             "kHalfNativeScaleExponent is the documented 2^15 scale");
 #endif
 
-    // The version a caller reads is the version the build was configured at: the
-    // build carries BoysExpectedVersion (from project()), so a release that bumps
-    // one and not the other fails here rather than shipping two answers. Parsed by
-    // hand rather than with sscanf, which MSVC deprecates and this tree builds with
-    // warnings as errors; the format is project()'s, three dot-separated decimals.
+    // The version a caller reads is the version the build was configured at: the build carries
+    // BoysExpectedVersion (from project()), so a release that bumps one and not the other fails.
+    // Parsed by hand: sscanf is deprecated on MSVC and this tree builds warnings as errors.
     int major = 0;
     int minor = 0;
     int patch = 0;
@@ -578,12 +524,10 @@ void CheckConstants(Report& report) {
 #endif
     Covered("boys::BoysAvx2Available");
 
-    // The library publishes whether this build contracts a bare product-plus-add,
-    // measured when the build was configured, and the lane claims below are compiled
-    // against that answer. It is a statement about one translation unit's arithmetic,
-    // so it is checked here in the unit that makes those claims: a build whose flags
-    // reached this file but not the measurement would assert the other arithmetic's
-    // claim and be green for it.
+    // The library publishes whether this build contracts a bare product-plus-add, measured at
+    // configure time, and the lane's claims below are compiled against that answer - checked here
+    // in the unit that makes them, since a build whose flags reached this file but not the
+    // measurement would assert the other arithmetic's claim and be green for it.
 #if defined(BOYS_SCALAR_CONTRACTS)
     Require(report,
             boys::backend::ScalarFp64::Contracts() == (BOYS_SCALAR_CONTRACTS != 0),
@@ -623,16 +567,10 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 }
             }
 
-            // Documented: each output element of the fixed-order entry carries the
-            // single lane's per-region bound at the same order and argument, and is
-            // that entry's value bit for bit.
-            //
-            // Same recurrence, same source - but the same source is not the same
-            // bits: whether a bare product-plus-add in it is one rounding or two is
-            // a licence the compiler holds per call site. The equality is asserted
-            // on every build, because it has held at every cell swept on every host
-            // measured; the bound is asserted beside it so a host where the equality
-            // stops holding is still judged on what the lane promises there.
+            // Documented: each output element of the fixed-order entry carries the single lane's
+            // per-region bound at the same order and argument, and that entry's value bit for bit.
+            // Same source is not the same bits: the equality is asserted on every build, because it
+            // has held at every cell swept on every host measured, and the bound is beside it.
             const std::size_t comparedBefore = report.exactCompared;
             const std::size_t heldBefore = report.exactHeld;
             std::size_t outsideBound = 0;
@@ -665,16 +603,10 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                     report.exactHeld - heldBefore == report.exactCompared - comparedBefore,
                     "BoysFixedN returns what BoysSingle returns, bit for bit");
 
-            // Documented: out[i * stride] = F_n(x[i]), so the same value lands at
-            // offset 0 of a stride-1 call and at offsets 0 and 3 of a stride-3 one,
-            // and the slots between them are the caller's, untouched. The value is
-            // the single lane's by the paragraph above, so the two claims are split
-            // the same way: the bound on every build, the exact offset on the builds
-            // whose bare product-plus-add is two roundings. This shape is the one
-            // place the difference has been measured: a call with two arguments and
-            // a gap is not the same generated code as a call with one, and on a
-            // contracting build the compiler fused the recurrence at one of the two
-            // and not at the other, moving the value by one unit in the last place.
+            // Documented: out[i * stride] = F_n(x[i]), so a stride-1 call and a stride-3 call
+            // place the same value at offsets 0 and 0/3, the slots between them the caller's,
+            // untouched. The bound holds on every build; the exact offset only where the bare
+            // product-plus-add is two roundings (a gap changes the code, one ULP apart).
             const double two[2] = {x, x * 0.5 + 0.25};
             const double one = Single(3, x);
             const double other = Single(3, two[1]);
@@ -720,15 +652,10 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     const std::span<const boys::FitRouteInfo> routes = boys::BoysFitRoutes();
     const std::vector<double> args = DistinctArgs(cells);
 
-    // The class every unnamed call in this check is made through, and the domain
-    // the table that class reads covers. A row of BoysFitRoutes states the
-    // intervals of the per-order partitions' fits; a class row naming the grid
-    // reads one fixed table instead, whose domain is its own row of
-    // BoysFitGranularities - the grid covers [0, kFlatHi) whole, region A's and
-    // region B's arguments alike, and the body answers the whole of that domain
-    // from the table and returns before the region tests. Where the class row
-    // names that partition, naming a route reaches every argument the partition
-    // covers, because the route's own member over the grid is what answers there.
+    // The class every unnamed call here is made through, and the domain of the table it reads:
+    // a BoysFitRoutes row states the intervals a per-order partition's fits cover, while a class
+    // row naming the grid reads one fixed table whose domain is its own BoysFitGranularities row -
+    // [0, kFlatHi) whole, region A's and region B's arguments alike, so naming a route reaches it.
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
     const boys::FitGranularityInfo* partition = nullptr;
@@ -832,13 +759,10 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             "the report carries both the default and the rational route");
     Require(report, regionA && regionB, "the report covers region A and region B");
 
-    // Documented: outside the intervals a route's own fits cover, naming a route
-    // runs the default entry's own code, so a caller who names one and one who
-    // does not agree. Which intervals those are is the class row's: a per-order
-    // partition leaves the route rows' own boundaries, and a class row naming the
-    // grid leaves the partition's cover, where the route's member over the table
-    // answers every argument. Read from the two reports rather than written here,
-    // so a class row that moves the partition moves the domain with it.
+    // Documented: outside the intervals a route's own fits cover, naming a route runs the default
+    // entry's own code, so a caller who names one and one who does not agree. Which intervals
+    // those are is the class row's, read from the two reports: a per-order partition leaves the
+    // route rows' own boundaries, a class row naming the grid the partition's cover.
     std::size_t outside = 0;
     std::size_t changedOutside = 0;
 
@@ -903,23 +827,10 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             changedUnknown == 0,
             "a route value outside the enumeration evaluates at the default, bit for bit");
 
-    // The two axes compose at run time as they do at compile time: the entry names
-    // both, and a caller holds one fixed to see the other move. If one axis did not
-    // reach the call, one of the counts below would be zero - which makes this
-    // a check of the pair rather than of two options printed beside each other.
-    //
-    // What the scheme reaches on the rational route is the library's own account of
-    // it: "the scheme reaches the parts of the call that route's fits do not serve"
-    // (boys/boys.hpp, the three-selector overload), and where the call reads those
-    // parts it reads the Chebyshev lane's own tables at the policy's scheme
-    // (boys_impl.hpp, PolicyRegionAValue: "below each route's fits-first crossover
-    // the value a policy answers with is the Chebyshev lane's"). Which parts those
-    // are is the class row's partition: a per-order partition leaves the arguments
-    // below the route's own takeover, and a class row naming the grid leaves none
-    // inside the fitted domain - the grid's branch answers them from its own
-    // member, one fit under either scheme. Both readings are taken from the two
-    // reports rather than written here, so a class row that moves the partition
-    // moves them with it.
+    // The two axes compose at run time as at compile time: the entry names both, and a caller
+    // holds one fixed to see the other move - if one axis did not reach the call, a count below
+    // would be zero. What the scheme reaches on the rational route is the library's own account -
+    // boys/boys.hpp's three-selector overload, boys_impl.hpp's PolicyRegionAValue.
     std::size_t routeAtClenshaw = 0;
     std::size_t routeAtHorner = 0;
     std::size_t schemeOnRational = 0;
@@ -1002,33 +913,27 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
     Require(report,
             routeAtHorner > 0,
             "naming the rational route changes values with the Horner scheme held");
-    // The two counts behind the reading above, printed rather than left in the
-    // assertions: the differences inside the rational route's own domain are what
-    // the region-A read at the policy's scheme reaches when the class row names a
-    // per-order partition, and the argument count outside it is the domain the
-    // axis is live over on this build.
+    // The two counts behind the reading above, printed rather than left in the assertions: the
+    // differences inside the rational route's own domain are what the region-A read at the
+    // policy's scheme reaches, and the count outside it is the domain the axis is live over
+    // on this build.
     std::printf("  scheme on the rational route: %zu differing cell(s), %zu of them inside the "
                 "domain that route's own fits answer, over %zu swept argument(s) outside it\n",
                 schemeOnRational,
                 schemeInsideTheFits,
                 partsTheRationalFitsDoNotServe);
-    // The half the sentence states, read off the partition: where the class row
-    // leaves the route parts its own fits do not serve, naming a scheme reaches
-    // them. A class row naming the grid leaves none - the shape it names is the
-    // one fit under either scheme - so there the axis is live on this route
-    // nowhere, and the count above states that rather than asserting it away.
+    // Read off the partition: where the class row leaves parts the route's own fits do not
+    // serve, naming a scheme reaches them; a class row naming the grid leaves none, the shape
+    // it names being one fit under either scheme, so the axis is live on this route nowhere
+    // and the count above states that rather than asserting it away.
     Require(report,
             partsTheRationalFitsDoNotServe == 0 || schemeOnRational > 0,
             "naming a scheme on the rational route reaches the parts its own fits do not serve");
 
-    // Documented: the two-selector overload names a route and no scheme, so the
-    // call it is one with is the three-selector call that names the scheme the
-    // class's own row carries - an axis a caller leaves unnamed is that class's
-    // choice and not the seam's five (boys/boys.hpp, DefaultPolicy: an entry's
-    // policy parameter defaults to the row its class resolves to) - and the two
-    // overloads answer one call rather than two. The argument is inside the
-    // rational route's served domain, where naming the route reaches values
-    // rather than the default entry.
+    // Documented: the two-selector overload names a route and no scheme, so it is one call with
+    // the three-selector call naming the scheme the class's own row carries - an unnamed axis
+    // is the class's choice, not the seam's five (boys/boys.hpp, DefaultPolicy) - and the two
+    // overloads answer one call, on an argument the route's served domain holds.
     {
         double rationalFrom = 0.0;
         double rationalHi = 0.0;
@@ -1175,11 +1080,10 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 /// word the other one is, and both readings above are the same two readings at either
 /// setting of the axis.
 void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
-    // The name each entry read below actually resolves to when no policy is named: its
-    // own class's row, which is the five above where this build's seam carries no row for
-    // the class and the row where it does. The two entries are held to this name for
-    // the reason CheckEvalSchemes states: a name that happens to agree with the entry's
-    // default at this revision is not the entry's default.
+    // The name each entry read below resolves to when no policy is named: its own class's row,
+    // the five above where this build's seam carries no row for the class, the row where it
+    // does. Held to this name for the reason CheckEvalSchemes states: a name that happens to
+    // agree with the entry's default at this revision is not the entry's default.
     using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
@@ -1444,15 +1348,10 @@ void CheckPerElementOrderLanes(Report& report, const std::vector<Cell>& cells) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t plane = static_cast<std::size_t>(nmax) + 1;
 
-    // The name each entry below resolves to when no policy is named: its own
-    // class's row, which is the five where this build's seam carries no row for the
-    // class and the row where it does. Both entries document the identity each
-    // check reads as one with a body of the all-orders shape - "the per-argument
-    // all-orders body run at that argument's own top order" for the order-array
-    // entry, and "the all-orders body this entry calls" for the float all-N one -
-    // and that body is read at this entry's own name: two classes whose rows differ
-    // answer two arithmetics, and reading one class's row on the body would measure
-    // the seam's choice reaching two shapes rather than the shape reaching a body.
+    // The name each entry below resolves to when no policy is named: its own class's row, the
+    // five where this build's seam carries no row for the class, the row where it does - as in
+    // the block above. The identity each check reads is documented for an all-orders body read
+    // at this entry's own name: two classes whose rows differ answer two arithmetics.
     using AllNAtOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
     using AllNF32Default = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
@@ -2140,16 +2039,10 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     const double worstSchemeBound = schemeBound(boys::EvalScheme::kHorner);
     Require(report, worstSchemeBound > 0.0, "the Horner scheme publishes a bound");
 
-    // The two axes compose into one selection: a policy names the fit route and the
-    // scheme together, and every templated entry takes that policy.
-    //
-    // The name a call that names no policy actually resolves to, per class: its own
-    // class's row, which is the five above where this build's seam carries no row for
-    // the class and the row where it does (boys/boys.hpp, DefaultPolicy: "the policy a
-    // class compiles when its call site names no policy: the name an entry's policy
-    // parameter defaults to"). The two entries read below are held to their own class's
-    // name rather than to the point the seam's five compose: a name that happens to
-    // agree with the entry's default at this revision is not the entry's default.
+    // The two axes compose into one selection: a policy names the fit route and the scheme
+    // together, and every templated entry takes that policy. The name a call naming no policy
+    // resolves to, per class, is its own class's row - the five above where this build's seam
+    // carries no row (boys/boys.hpp, DefaultPolicy) - not the point the five compose to.
     using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
@@ -2229,14 +2122,10 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
                 "a batch call naming no policy is the pair its class's row names, bit "
                 "for bit");
 
-        // The unnamed call reads the scheme its own class's row carries, and the
-        // reading that says so is the other scheme's: the two sum one fit, so they
-        // agree to within their own bounds and part somewhere, and the part is what
-        // makes the unnamed call's scheme a reading rather than the only one there is.
-        // Which word the other scheme is belongs to the row, so this names the member
-        // the row leaves at the other rather than the split Clenshaw recurrence; a
-        // build whose row names that recurrence reads the same three lines below about
-        // Horner's rule.
+        // The unnamed call reads the scheme its own class's row carries, and the reading that
+        // says so is the other scheme's: the two sum one fit, so they agree inside their bounds
+        // and part somewhere, and that part makes the unnamed call's scheme a reading rather
+        // than the only one. Which word the other is belongs to the row and is named here.
         const double byOtherScheme = boys::BoysSingle<OtherSchemePolicy>(cell.n, cell.x);
         schemePartsFromOther += (byDefault != byOtherScheme) ? 1 : 0;
         Require(report, std::isfinite(byOtherScheme), "the other scheme answers a finite value");
@@ -2284,45 +2173,20 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::kDefaultFitRoute");
 }
 
-// The interval-granularity axis, reached the way a consumer reaches it: by naming
-// the partition on the policy and calling the entries.
-//
-// The member is a second partition of the fitted domain - region A's pieces and
-// region B's seed - so the things a consumer has to be able to read from it are
-// that naming it changes the values over the fitted domain at both regions the two
-// tables are cut in, so that the member is a partition and not the default's tables
-// under another name; that above both partitions' published ends it changes nothing,
-// the axis being a selection between two stored tables and not a second arithmetic
-// path; that between those two ends the partition whose own tables reach there is the
-// one that answers, because the end a partition publishes is not the same argument for
-// all three members - the two per-order partitions stop at x1, the grid reaches its own
-// join past it - so a reading that cut every partition at one argument would be
-// asserting the axis changes nothing over arguments the grid's own tables serve; that
-// naming the default member is the default call bit for bit, so the default is a member
-// of the axis; and that every value it returns is inside the lane's published bound, so
-// the member does not widen the contract a caller relies on. The counts the partition
-// costs are the generated header's own static_assert and the gate's narrow rows; what
-// is asserted here is that the policy carries the partition it was named with.
-//
-// The member named is the one the class's own row leaves at the other, so the readings
-// hold at either setting: they separate the two partitions, they do not pin which of
-// the two a given row names as its default. The two ends the readings are cut at are
-// read off the partitions' own rows of BoysFitGranularities rather than transcribed,
-// so the readings hold for a class row naming any member the axis carries and not only
-// for the two the shipped table names.
+// The interval-granularity axis, reached the way a consumer reaches it: naming the partition on
+// the policy and calling the entries. The member is a second partition of the fitted domain -
+// region A's pieces, region B's seed - so naming it moves values at both regions the two tables
+// are cut in, nothing above both published ends, and between them that partition's tables answer.
 void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
-    // The axis' default member, named: the policy the entry under this check compiles
-    // when no policy is named, which is the row its own class carries, so the reading
-    // below is that the member a call reaches by naming nothing is the member that row
-    // names. `BoysSingle<>` is the entry read, so the class is the double lane's
-    // single-order one.
+    // The axis' default member, named: the policy the entry compiles when no policy is named -
+    // the row its own class carries - so the reading is that the member a call reaches by naming
+    // nothing is the member that row names. `BoysSingle<>` is the entry read, so the class is
+    // the double lane's single-order one.
     using DefaultPolicy = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
 
-    // The other member, named: every axis that row carries, with the partition named to
-    // the value the row does not name. Which of the two words that is belongs to the row
-    // - the shipped partition is the default of a build whose class rows name it - so
-    // what the readings below separate is the two partitions rather than which one a
-    // given build calls the default.
+    // The other member, named: every axis that row carries, with the partition set to the word
+    // the row does not name - which of the two that is belongs to the row - so the readings
+    // below separate the two partitions rather than which one a build calls the default.
     constexpr boys::FitGranularity kOtherGranularity =
         DefaultPolicy::kGranularity == boys::FitGranularity::kCoarsest
             ? boys::FitGranularity::kNarrow
@@ -2359,13 +2223,10 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
 
     Rule& rule = NewRule("granularity: both partitions through the entries");
 
-    // The two ends, read off the public surface rather than transcribed: a row of
-    // BoysFitGranularities states the interval its own tables serve, `hi` being one past
-    // the highest argument they reach, and the two partitions this check compares do not
-    // serve the same interval - the per-order partitions end where region C begins, the
-    // grid covers the fitted domain whole and reaches its own join past it. A policy
-    // naming a partition therefore answers exactly to that partition's own `hi`, and the
-    // end the readings below are cut at is a different argument for the two rows.
+    // The two ends, read off the public surface rather than transcribed: a BoysFitGranularities
+    // row states the interval its tables serve, `hi` one past the highest argument they reach.
+    // The two partitions do not serve the same interval: the per-order ones end where region C
+    // begins, the grid covers the fitted domain whole and reaches past it to its own join.
     const boys::FitGranularityInfo* otherRow = nullptr;
     const boys::FitGranularityInfo* defaultRow = nullptr;
 
@@ -2684,11 +2545,10 @@ void CheckOptionAccuracy(Report& report) {
         }
     }
 
-    // The cross refuses combinations, because the uniform partition is served at one
-    // route, one packing axis and its other cells are refused where they
-    // are named: the first refusal the walk reaches is the example printed below. The
-    // fallback is for a revision that serves the whole space, and what it names then
-    // is a value outside the enumerations, which names no combination at all.
+    // The cross refuses combinations: the uniform partition is served at one route and one
+    // packing axis, its other cells refused where named, and the first refusal the walk reaches
+    // is printed below. The fallback is for a revision serving the whole space and names a value
+    // outside the enumerations, which names no combination at all.
     if (!haveRefused)
     {
         refusedPrecision = boys::Precision::kFp32;
@@ -2702,13 +2562,10 @@ void CheckOptionAccuracy(Report& report) {
             "the tolerance query answers the two accessors' figures and their comparison on every "
             "combination of the cross");
 
-    // A caller with a target, read at requests on one combination: the numbers each
-    // answer was made on are printed beside it, so the "yes" and the "no" here are the
-    // caller's request against the library's own figures rather than a claim about
-    // them. The requests run from above the bound to below both figures, so every
-    // verdict but a refusal is reached; the request at the measured figure is made
-    // only where that figure is the tighter of the two, the case a single number
-    // could not have answered.
+    // A caller with a target, read at requests on one combination: the numbers each answer was
+    // made on are printed beside it, so the "yes" and the "no" are the caller's request
+    // against the library's figures. The requests run from above the bound to below both, so
+    // every verdict but a refusal is reached, and the measured figure only where it is tighter.
     const boys::AccuracyFigure servedBound = boys::BoysAccuracyGuaranteed(
         servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity);
     const boys::AccuracyFigure servedDelivered = boys::BoysAccuracyDelivered(

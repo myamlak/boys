@@ -1,13 +1,11 @@
-// The device half of the consumer check on the CUDA lane's default. The device
-// f32 single entry takes two selection axes, the division form and the region-B
-// exponential, each a template parameter with a default, so a caller that has
-// chosen the precision and the format's f32 writes one call and gets the lane's
-// shipped arithmetic.
-//
-// The check is two translation units because the lane is: the batch entry
-// BoysCuda::SingleF32 is declared in <boys/boys_cuda.hpp>, a host header, and
-// the device-callable BoysDeviceSingleF32 in <boys/boys_cuda_device.hpp>, which
-// is what a .cu may include. This file is the device half.
+// The device half of the consumer check on the CUDA lane's default. The device f32 single entry
+// takes two selection axes, the division form and the region-B exponential, each a template
+// parameter with a default, so a caller that has chosen the precision and the format's f32 writes
+// one call and gets the lane's shipped arithmetic.
+
+// The check is two translation units because the lane is: BoysCuda::SingleF32 is declared in
+// <boys/boys_cuda.hpp>, a host header, and BoysDeviceSingleF32 in <boys/boys_cuda_device.hpp>,
+// which is what a .cu may include.
 
 #include "boys/boys_cuda_device.hpp"
 
@@ -22,15 +20,10 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate);
 
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-// Two spellings of one entry compare equal as function addresses exactly when
-// they are one instantiation, so the assertion below says the two calls are one
-// call and not two that happen to agree: the entry named with no argument and the
-// one naming both of its defaults — the division form's and the region-B
-// exponential's — are the same call. The negated one is the control, and it holds
-// the form at its default on both sides so that the axis it varies is the
-// exponential alone: a call naming kFast is not the call naming the default
-// exponential, without which an equality that held for every pair would prove
-// nothing.
+// Two spellings of one entry compare equal as function addresses exactly when they are one
+// instantiation: the entry named with no argument and the one naming both of its defaults — the
+// division form's and the region-B exponential's — are the same call. The negated one is the
+// control, holding the form at its default so the axis it varies is the exponential alone.
 static_assert(
     SameCall<&boys::BoysDeviceSingleF32<>,
              &boys::BoysDeviceSingleF32<boys::kDefaultDivisionForm, boys::kDefaultRegionBExp>>);

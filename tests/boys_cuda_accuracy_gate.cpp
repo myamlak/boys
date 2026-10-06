@@ -1,92 +1,7 @@
-// The CUDA device gate: the device lane's documented bounds measured against
-// the same independent high-precision reference the CPU gate measures against
-// (tests/data/boys_accuracy_gate_reference.csv, re-derivable with
-// tools/gen_boys_accuracy_gate_reference.py), over the whole of the lane's
-// named domain, in the CPU gate's own row shape.
-//
-// What it adds to tests/boys_cuda_test.cpp: that test compares the device lane
-// with the CPU lane, and the two implementations it subtracts can carry error
-// in the same direction, so a difference bounds the device's distance from the
-// CPU lane and not its distance from F_n(x). This gate removes the middle term
-// and measures every device entry against the CPU gate's committed grid, which
-// shares no code with the library, directly.
-//
-// What is measured, per entry. Every documented device bound is a claim about a
-// (lane, region) cell, and the reference grid is rectangular over orders
-// 0..kMaxBoysOrder and one shared argument list, so one launch per entry covers
-// every cell: the single entries are handed one element per (order, argument)
-// cell, and the batch entries the argument list at nmax = kMaxBoysOrder. A cell
-// the bound cannot fail on - the bound is at least as large as |F_n(x)| itself,
-// so any return in range passes there - is counted in the vacuous column rather
-// than folded into the total, which is the CPU gate's rule.
-//
-// The whole launched surface, entry by entry. A surface is not measured by
-// measuring the rows somebody remembered: every launched entry the library's
-// report carries (BoysDeviceOptions()) has an arm in the table further down,
-// launched over the same grid at that row's own documented bound, and an entry
-// the report carries and no arm reaches is named and fails the run. An arm the
-// library declares and this revision defines no kernel for is written where it
-// belongs and commented out with the reason, because arming it would be an
-// unresolved external at link time rather than a measurement; the survey counts
-// it as a row no arm reaches, so the gap is a number and not a silence.
-//
-// A launch that did not happen. Every launch in the arms is read back through
-// cudaGetLastError() and a non-success stops the gate naming the entry, because a
-// launcher whose kernel the driver never issued returns what a launcher that
-// agreed with the reference returns. That read is itself shown able to fail
-// before it is trusted: the runtime is asked for a refused launch, and the read
-// is required to report it or the run stops.
-//
-// The card is named rather than assumed: a delivered figure describes the
-// arithmetic this device executes, so a weaker or stronger double unit changes
-// what a bound costs and not what it is - the bounds transfer between cards and
-// the delivered figures do not. Every entry is measured at the one accuracy
-// this library has: the batch entries are swept once and the device-callable
-// entries once.
-//
-// One entry carries two certified options rather than one arithmetic: the f32
-// single entry's region-B exponential, each option measured against the bound
-// that option documents. The two returns are measured against each other as
-// well - they differ in that one factor, so their difference is the
-// contribution the fast option's second bound term has to cover, and the
-// wrong-sign cells are the audit for the defect that term exists because of.
-// The term itself is derived from the recurrence's condition number rather than
-// read off this sweep; the sweep is what confirms it.
-//
-// The device-callable entries (boys_cuda_device.hpp) are measured beside the
-// batch ones, and through the kernels of tests/boys_cuda_device_demo.cu rather
-// than through a host wrapper: that file includes the public device header and
-// the CUDA runtime and nothing of this library's implementation, so a row for
-// one of these entries is a measurement of what a consumer's own kernel
-// reaches. Each of its threads forms its own argument from a factor pair the
-// gate chose exact, so the value measured is the reference's own. The entries
-// that are one body reached through different shapes are additionally compared
-// with each other bit for bit, which is a stronger statement than a bound.
-//
-// Every device entry is also compared bit for bit with the batch entry of the
-// same precision, because the two are one arithmetic reached two ways and no
-// bound can say so: the same degree tables, the same inlined body, a lane object
-// that reads the caller's handle where the batch kernel reads a __constant__
-// symbol. The order and the capacity refusals are exercised beside those
-// comparisons.
-//
-// The fp64 device entries are additionally measured against the 45-digit
-// reference grid (tests/data/boys_reference.csv), whose arguments are the region
-// boundaries and a logarithmic sweep rather than the gate grid's 1718. That grid
-// carries one argument column, so only the double entries can be measured on it:
-// a float or fp16 row needs the reference at the rounded argument, and the
-// rounded columns are the gate grid's and not this one's. Both references are
-// named, with their argument counts, in the report.
-//
-// Run:  cmake --build <build> --config Release --target boys-cuda-accuracy-gate
-//       <build>/Release/boys-cuda-accuracy-gate [--reference <grid.csv>]
-//                                                      [--digit-reference <grid.csv>]
-// The statuses: 0 when every documented bound is met and every entry the report
-// carries is armed; 1 when a cell is over its bound, or when a served option has
-// no claim; 2 when a launch or a runtime call failed, or an input could not be
-// read; 3 when a launched entry the report carries has no arm, which is a
-// coverage gap and not an accuracy figure. A run that measured nothing and one
-// that measured everything green do not share a status.
+// The CUDA device gate: every documented device bound measured against the committed grid
+// (tests/data/boys_accuracy_gate_reference.csv, 33 orders x 1718 arguments, re-derivable with
+// tools/gen_boys_accuracy_gate_reference.py, in the CPU gate's row shape; the fp64 entries also against
+// tests/data/boys_reference.csv. Exit: 0 all met, 1 over bound or unclaimed, 2 launch failed, 3 unarmed.
 
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
@@ -121,14 +36,10 @@
 #define BoysGateRevision "unknown"
 #endif
 
-// The fp16 device entries and the host launchers that reach them are declared
-// under the BoysFp16 build-time seam (include/boys/boys_cuda.hpp), and CMake
-// pins that seam ON, so a consumer may build this tree with it closed. The
-// format types arrive from boys/f16.hpp either way; the entries do not exist in
-// a closed build, so calling one is a compile error rather than a wrong number.
-// The lane's cells are therefore measured only where this build carries it, and
-// the report names every row it could not measure and why, and says so in its
-// RESULT line: a table missing a row reads as a row that was measured.
+// The fp16 device entries and the host launchers that reach them sit behind the BoysFp16 seam
+// (include/boys/boys_cuda.hpp), which CMake pins ON but a consumer may close; the format types arrive
+// from boys/f16.hpp either way, so calling a closed build's entry is a compile error, not a wrong
+// number; rows this build cannot measure are named unmeasured in the report and its RESULT line.
 #if BoysFp16
 #define BOYS_CUDA_GATE_FP16 1
 #endif
@@ -139,18 +50,10 @@ using namespace boys_gate;
 
 namespace {
 
-// ---------------------------------------------------------------------------
-// The documented device bounds, and the option rows they are the bounds of.
-//
-// The fp32 and fp16 figures, and the rows the device cells below are claimed
-// for, are read from boys::BoysDeviceOptions(), the library's own report of its
-// device option space. A gate that transcribed them would be a second source of
-// truth for the same numbers, so a row added to the surface could be certified
-// by nothing and a bound could say one thing to a chooser and another to the
-// certifier. The fp64 single lane's per-region cells are the exception and are
-// transcribed below, because the report states one figure per option and that
-// lane's contract is four cells of one option.
-// ---------------------------------------------------------------------------
+// The documented device bounds and the option rows they are the bounds of: the fp32 and fp16 figures,
+// and the rows the device cells are claimed for, are read from boys::BoysDeviceOptions(), a
+// transcription being a second source of truth. The fp64 single lane's per-region cells are the
+// exception, transcribed below: the report states one figure per option where that lane's contract is four.
 
 /// The report's row for an option, by entry and axis member.
 ///
@@ -174,14 +77,10 @@ const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
     std::abort();
 }
 
-// README's accuracy contract: "CUDA fp64 | the same budgets as the CPU double
-// lanes". The CPU double single lane is the one with per-region cells (1e-15
-// below the region-A edge, 3e-14 through the extended band and region B,
-// 5.5e-14 in region C); the CPU double batch lane publishes one, 5.5e-14.
-// Three of those cells are transcribed below, because the report states one
-// figure per option and this lane's contract is four cells of one option. The
-// region-C cell and the batch bound are read from the report, as every fp32 and
-// fp16 figure below is.
+// README's accuracy contract: "CUDA fp64 | the same budgets as the CPU double lanes". The CPU
+// double single lane holds per-region cells (1e-15 below the region-A edge, 3e-14 through the
+// extended band and region B, 5.5e-14 in region C) and the batch lane publishes one, 5.5e-14.
+// Three are transcribed below - the report carries one figure per option - and the rest are the report's own.
 constexpr double kBoundSingleA = 1e-15;
 constexpr double kBoundSingleBand = 3e-14;
 constexpr double kBoundSingleB = 3e-14;
@@ -192,29 +91,16 @@ const double kBoundDoubleBatch = DeviceRow(boys::DeviceEntry::kAllOrdersF64).bou
 // region-B exponential, of the batch entries and of the all-n entry. Read from
 // the report, which is the header's own figure for that option.
 const double kBoundFloat = DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
-// The single entry's fast region-B exponential carries its own bound: the
-// lane's 1.5e-7 plus the corrected seed's own contribution, which the
-// recurrence's amplification caps at this figure. The cap is derived, not
-// measured cell by cell: the region-B ladder f_l = ((l - 1/2) f_{l-1} - e)/x
-// propagates an error in e to order n with gain G_n(x) = sum_k A_n/(x A_k),
-// A_m = prod_{j<=m} (j - 1/2)/x - the ratio of the dominant solution of the
-// homogeneous recurrence to the wanted one, 7.6e4 at n = 32 at the region-B
-// boundary - so a seed whose relative error is flat at rho ulp contributes at
-// most G_n (1/2) e^{-x} rho: 6.1e-8 at rho = 4 ulp, 8e-8 here. The sweep below
-// reports the contribution it actually measured, and the audit reports the
-// wrong-sign cells.
-//
-// It is read as the difference between the two options' documented bounds: the
-// fast option's figure is the lane's plus this contribution, and both figures
-// are the report's.
+// The fast region-B exponential's own bound is the lane's 1.5e-7 plus the corrected seed's
+// contribution, capped by the recurrence's amplification: A_m = prod_{j<=m} (j - 1/2)/x and
+// G_n(x) = sum_k A_n/(x A_k), 7.6e4 at n = 32 at the region-B boundary, so a seed flat at rho ulp
+// contributes at most G_n (1/2) e^{-x} rho: 6.1e-8 at rho = 4 ulp, 8e-8 here.
 const double kFastExpContribution =
     DeviceRow(boys::DeviceEntry::kDeviceSingleF32Fast, boys::RegionBExp::kFast).bound -
                                     DeviceRow(boys::DeviceEntry::kDeviceSingleF32).bound;
-// The fp16 entries' bound is the header's: 1e-7 + 1/2 ULP of the returned
-// value, which is what HalfBoundAt computes. Its constant part is read from the
-// report's fp16 row, and the coverage check at the end of this file compares it
-// against kBoundHalfBase, the figure the shared reference book states: two
-// books, one number, and a disagreement stops the gate.
+// The fp16 entries' bound is the header's 1e-7 + 1/2 ULP of the value returned, which is what
+// HalfBoundAt computes; its constant part is the report's fp16 row, checked at the end against
+// kBoundHalfBase, the shared reference book's figure - two books, one number.
 const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).bound;
 
 // The smallest positive normal float: below it a returned value is the
@@ -222,13 +108,10 @@ const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).boun
 // of the fast exponential's audit is restricted to.
 constexpr double kFloatMinNormal = std::numeric_limits<float>::min();
 
-// What the fast region-B exponential costs, measured against the accurate one
-// over the same grid: the seed substitution's own contribution (max|fast -
-// accurate|, which is the term the fast bound carries on top of the lane's),
-// and the cells whose return has the opposite sign to the function. The second
-// is a tripwire rather than a bound term: a seed error the recurrence amplifies
-// is what put the wrong sign there before the correction, so a non-zero count
-// means the correction has been lost.
+// What the fast region-B exponential costs against the accurate one over the same grid: the seed
+// substitution's own contribution (max|fast - accurate|, the term the fast bound carries on top of
+// the lane's) and the cells whose return has the opposite sign to the function - a tripwire, not a
+// bound term: an amplified seed error put the wrong sign there before the correction.
 struct ExpAudit {
     std::string lane;
     double contributed = 0.0;
@@ -386,18 +269,10 @@ private:
     std::size_t mCount = 0;
 };
 
-// The swept cells, laid out so that an element index IS the reference's own
-// index for the cell it holds: element e = n * count + i carries order n at
-// argument i, so one single-element launch over this list covers every cell of
-// the grid and the value the entry returns for e is the value the reference
-// holds at e.
-//
-// rho and d2 are the factor pair a fused kernel multiplies to form its own
-// argument: the device entries take x where it is formed, in a register, so the
-// gate hands the demo kernels a product rather than the argument itself. rho is
-// a power of two, so x / rho is a shift and the product is the grid's own
-// argument to the last bit; a general density factor would only move which
-// argument is measured.
+// The swept cells, laid out so an element index IS the reference's own index: element e = n * count
+// + i carries order n at argument i, so one single-element launch covers every cell and the value
+// returned for e is the reference's. rho and d2 are the factor pair a fused kernel multiplies to
+// form its own argument; rho is a power of two, so x / rho is a shift and the product is exact.
 struct Grid {
     std::vector<int> n;
     std::vector<double> x;
@@ -499,13 +374,10 @@ const char* RouteName(boys::FitRoute route) {
     return "unnamed route";
 }
 
-// The committed 45-digit grid (tests/data/boys_reference.csv), the reference the
-// CPU tests call definitive: F_n at the double its x column states, to 45 digits.
-// Its arguments are the region boundaries and a logarithmic sweep rather than
-// the gate grid's 1718, so it is also where the fp64 entries are pointed at the
-// boundaries. One argument column means only an fp64 entry can be measured on
-// it: a float or fp16 row needs the reference at the argument the entry actually
-// evaluated, and the rounded columns belong to the gate grid.
+// The committed 45-digit grid (tests/data/boys_reference.csv), the reference the CPU tests call
+// definitive: F_n at the double its x column states, to 45 digits. Its arguments are the region
+// boundaries and a logarithmic sweep, not the gate grid's 1718; one argument column means only an
+// fp64 entry is measurable on it - a float or fp16 row needs the rounded argument that grid has not.
 struct DigitGrid {
     std::vector<int> n;
     std::vector<double> x;
@@ -736,13 +608,10 @@ void SweepDouble(const Reference& ref,
 // stopped being refusals.
 // ---------------------------------------------------------------------------
 
-// The division form this gate's device rows are launched at. Every entry of the
-// surface takes the form as a trailing argument and the option space crosses each
-// of them with all three, but a bound is stated for a lane and a region and not
-// for a form (there is no per-form figure in BoysLaneContracts()), so the rows
-// below are measured at the arithmetic the library's own default names - the one
-// every published figure was measured at. Crossing the forms here would be a
-// second option space beside the probe's, and this gate is not that instrument.
+// The division form this gate's device rows are launched at. Every entry takes the form as a
+// trailing argument and the option space crosses each with all three, but a bound is stated for a
+// lane and a region, not for a form (BoysLaneContracts() carries no per-form figure), so the rows
+// are measured at boys::kDefaultDivisionForm, the one every published figure was measured at.
 constexpr boys::DivisionForm kGateDivisionForm = boys::kDefaultDivisionForm;
 
 // One of those rows, launched once over the whole grid, measured against the
@@ -793,20 +662,10 @@ std::vector<double> LaunchDeviceChoice(const Reference& ref,
     return out;
 }
 
-// The other half of the claim: the two lanes are one question answered twice
-// rather than two rows that agree with a third party. The host lane is handed
-// the same arguments and its returns are the reference
-// the device row's are read against, so what is measured is the distance
-// between the two lanes. The host entry is the CPU spelling of this lane's
-// batch (boys.hpp says so), so the two calls are one question with two answers.
-//
-// The distance is held to the sum of the two rows' bounds and not to one of
-// them. A row's bound says it is that far from the true value; two rows each
-// that far from the true value can be twice that far from each other, so the
-// sum is what a comparison between two bounded rows can assert, and one row's
-// bound is not. The sum is a statement about the pair, and it neither loosens
-// nor tightens either row's own figure: those stay at the single bound, and are
-// measured against the 45-digit reference above.
+// The other half of the claim: the two lanes are one question answered twice, the host lane being
+// the CPU spelling of this lane's batch (boys.hpp says so). Its returns are the reference the device
+// row's are read against, and the distance is held to the sum of the two rows' bounds: two rows each
+// that far from the true value can be twice that far apart, and neither row's own figure moves.
 template <typename HostPolicy>
 void CompareDeviceWithHost(const Reference& ref,
                            const Grid& grid,
@@ -831,25 +690,10 @@ void CompareDeviceWithHost(const Reference& ref,
     }
 }
 
-// The seven rows, each measured against the reference and against the host lane.
-//
-// Two host comparisons and not one. The lane's shipped batch entry is the host
-// entry that answers the same question, so it is what the device row is read
-// against; the row is additionally shown against the host's combination of the
-// same name - the same route, scheme, partition and packing axis - which is the
-// counterpart that says the two lanes agree about the option and not merely
-// about the function.
-//
-// A cross-lane claim is registered under the row's own name followed by the
-// phrase naming what it was compared with, because the device-option coverage
-// below reads a claim as belonging to an option when it is that option's name
-// or that name followed by a phrase, and a cross-lane claim is not the row
-// itself.
-//
-// The entry and the launcher are named together and once, in MeasureDeviceRow:
-// the row's claim takes its name from the report's own row for that entry, and
-// the launcher is that entry's kernel, so a claim cannot name a row the library
-// does not report or an entry no kernel serves.
+// The seven rows, each measured against the reference and twice against the host: the shipped batch
+// entry answering the same question, and the host's combination of the same name (same route,
+// scheme, partition, packing axis), which says the two lanes agree about the option and not merely
+// the function. A cross-lane claim is named row + phrase, which the coverage below reads as that option's.
 std::vector<double> MeasureDeviceRow(const Reference& ref,
                                      const Grid& grid,
                                      boys::DeviceEntry entry,
@@ -875,17 +719,10 @@ std::vector<double> MeasureDeviceRow(const Reference& ref,
     return out;
 }
 
-// The single-precision launched rows, measured the way this lane's other float
-// entries are: against the reference's own float column and at the float lane's
-// bound, which is the figure the row documents. The fp64 sibling above cannot
-// certify one of these — its bound is the double batch lane's and its comparison
-// is against the fp64 host lane — and a row measured at another precision's bar
-// is a claim about arithmetic that row does not run.
-//
-// One claim, the row's own: the name comes from the report's row for the entry,
-// so a name this gate invented could not pass the coverage check at the end of
-// this file, and a row the report carries is either certified here or counted
-// there.
+// The single-precision launched rows: against the reference's own float column at the float lane's
+// bound. The fp64 sibling cannot certify one of these - its bound is the double batch lane's and its
+// comparison is against the fp64 host lane - and a row measured at another precision's bar is a
+// claim about arithmetic that row does not run. One claim, the row's own, named from the report.
 void MeasureDeviceRowF32(const Reference& ref,
                          const Grid& grid,
                          boys::DeviceEntry entry,
@@ -902,12 +739,10 @@ void MeasureDeviceRowF32(const Reference& ref,
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
 
-    // The launch is the fp64 sibling's, one lane down: `count` arguments and a
-    // ladder for each, so the output holds `count * (kMaxBoysOrder + 1)` values.
-    // The cell count is the size of that output and is not the batch size — a
-    // launch handed the cells as its count would ask every element for a whole
-    // ladder over a buffer sized for one value each, which is the out-of-bounds
-    // write this helper originally made.
+    // The launch is the fp64 sibling's, one lane down: `count` arguments and a ladder for each, so the
+    // output holds `count * (kMaxBoysOrder + 1)` values. The count handed to the entry is the number of
+    // arguments and not the size of that output: a launch handed the cells would ask every element for a
+    // whole ladder over a buffer sized for one value each, the out-of-bounds write this helper once made.
     DevBuf<int> dN(count);
     DevBuf<double> dX(count);
     DevBuf<float> dOut(cells);
@@ -933,19 +768,10 @@ void MeasureDeviceRowF32(const Reference& ref,
 }
 
 #ifdef BOYS_CUDA_GATE_FP16
-// The half-precision launched rows, measured the way this lane's other fp16
-// entries are: against the reference at the argument the entry actually
-// evaluated, at the header's own bound - 1e-7 plus half of the last
-// representable digit of the value the entry returned - and with the format's
-// floor counted apart rather than judged. The fp32 sibling above cannot certify
-// one of these: its bound is the float lane's and its reference is the float
-// column, and a row measured at another precision's bar is a claim about
-// arithmetic that row does not run.
-//
-// One claim, the row's own: the name comes from the report's row for the entry,
-// so a name this gate invented could not pass the coverage check at the end of
-// this file, and a row the report carries is either certified here or counted
-// there.
+// The half-precision launched rows: against the reference at the argument the entry actually
+// evaluated, at the header's own bound - 1e-7 plus half of the last representable digit of the value
+// returned - with the format's floor counted apart. The fp32 sibling cannot certify one of these,
+// its bound being the float lane's; one claim, the row's own, named from the report.
 void MeasureDeviceRowF16(const Reference& ref,
                          const Grid& grid,
                          boys::DeviceEntry entry,
@@ -961,11 +787,9 @@ void MeasureDeviceRowF16(const Reference& ref,
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t cells = grid.cells;
 
-    // The launch is the fp64 sibling's, one lane down: `count` arguments and a
-    // ladder for each, so the output holds `count * (kMaxBoysOrder + 1)` values.
-    // The count handed to the entry is the number of arguments and not the size
-    // of that output, which is the same distinction the fp32 sibling's comment
-    // makes.
+    // As the fp32 sibling above: `count` arguments and a ladder for each, so the output holds
+    // `count * (kMaxBoysOrder + 1)` values, and the count handed to the entry is the number of arguments
+    // rather than the size of that output.
     DevBuf<int> dN(count);
     DevBuf<boys::F16> dX(count);
     DevBuf<boys::F16> dOut(cells);
@@ -1285,12 +1109,10 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono,
         &boys::BoysCuda::AllOrdersF32NarrowOrdersMono);
 
-    // The float lane's rational route on both axes and both partitions: the
-    // region-B pair is that lane's own fit, cut by the same criterion over the
-    // coefficients the row sums, and region A's seed is the double lane's pair
-    // at the same cut. Each of its rows is named twice because the route's pair
-    // is stored in one form: the two scheme names of a partition reach one
-    // kernel, and the row's own scheme says which name reached it.
+    // The float lane's rational route on both axes and both partitions: region B is that lane's own fit
+    // at the same cut, region A's seed the double lane's pair. Each row is named twice because the
+    // route's pair is stored in one form - the two scheme names of a partition reach one kernel, and the
+    // row's own scheme says which name reached it.
     MeasureDeviceRowF32(
         ref,
         grid,
@@ -1334,11 +1156,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner,
         &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner);
 
-    // The two lanes' rows of the same name, read against each other: the
-    // device row's distance from the host lane's own combination - the same
-    // route, scheme, partition and packing axis - which is the counterpart that
-    // says the two lanes agree about the option and not merely about the
-    // function.
+    // The two lanes' rows of the same name, read against each other: the device row's distance from the
+    // host lane's own combination - same route, scheme, partition and packing axis - which says the two
+    // lanes agree about the option and not merely about the function.
     {
         const int narrowHost = AddClaim(
             (std::string(DeviceRow(boys::DeviceEntry::kAllOrdersF64Narrow).name) + " vs fp64 host narrow")
@@ -1388,11 +1208,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         CompareDeviceWithHost<NarrowOrdersMonoPolicy>(
             ref, grid, bothMonoOut, bothMonoHost);
 
-        // The fit route's rows, each shape's two scheme names measured against the
-        // host lane at the route and that shape's partition and packing axis.
-        // Both names of a shape run one kernel, so the two distances are two
-        // measurements of one arithmetic; each is recorded per row, because a
-        // row's claim is the row's own.
+        // The fit route's rows, each shape's two scheme names measured against the host lane at the route
+        // and that shape's partition and packing axis. Both names of a shape run one kernel, so the two
+        // distances measure one arithmetic; each is recorded per row, a row's claim being the row's own.
         const auto routeHostClaim = [&](const char* rowName, const char* shape) {
             return AddClaim((std::string(rowName) + " vs fp64 host " + shape).c_str(),
                             "A..C",
@@ -1422,13 +1240,10 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         CompareDeviceWithHost<NarrowRatPolicy>(
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
 
-        // The narrow partition under the rational route on the orders axis, the
-        // last of the route's four shapes. The host lane carries it: its packed
-        // entry takes the route and the partition as template arguments, and
-        // boys_orders_simd.cpp instantiates that pair for both schemes
-        // (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). The rows are read
-        // against the host lane at their own policy like every other shape of
-        // the route.
+        // The narrow partition under the rational route on the orders axis, the last of the route's four
+        // shapes. The host lane carries it: its packed entry takes the route and the partition as template
+        // arguments, and boys_orders_simd.cpp instantiates that pair for both schemes
+        // (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). Rows are read at their own policy, like every shape.
         const int bothRatHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
         const int bothRatHornerHost = routeHostClaim(
@@ -1441,11 +1256,9 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
     }
 }
 
-// The half lane's partition, route and packing axes, measured row by row the way
-// the float lane's are. The names are the report's, so the two sweeps differ in
-// the format and in nothing else: every member of the half device lane's option
-// space is named here, and a member added to that surface is certified by
-// nothing until its row appears below.
+// The half lane's partition, route and packing axes, measured row by row as the float lane's are:
+// the names are the report's, so the two sweeps differ in the format and nothing else - a member
+// added to the half lane's option space is certified by nothing until its row appears below.
 void SweepHalfChoices(const Reference& ref, const Grid& grid) {
 #ifdef BOYS_CUDA_GATE_FP16
     // The shipped partition's two other shapes: the narrow pieces, in the
@@ -1558,11 +1371,9 @@ void SweepFloat(const Reference& ref,
     // reference's own xf column.
     const auto narrow = [](const float* got) { return Widen(*got); };
 
-    // The single entry's two options in one pass. They share every operation
-    // but the exponential, so the difference between them is that exponential's
-    // own contribution and nothing else - which is what the fast bound's second
-    // term has to cover, and what the audit below reports from the measurement
-    // rather than from the constant.
+    // The single entry's two options in one pass: they share every operation but the exponential, so
+    // their difference is that exponential's own contribution - the term the fast bound's second half
+    // has to cover, reported by the audit from the measurement rather than from the constant.
     {
         DevBuf<int> dN(cells);
         DevBuf<double> dX(cells);
@@ -1918,11 +1729,10 @@ void Agree(const std::string& what,
     ShapeAgreements().push_back(agreement);
 }
 
-// The compile-time-top-order entry against the runtime-top-order one, at the
-// element whose own top order is kMaxBoysOrder. Both are one call to one body
-// with one top order, so the claim is bit identity; a call at a lower order
-// descends from that lower order, so comparing there would be comparing two
-// arithmetic paths and not two entries.
+// The compile-time-top-order entry against the runtime-top-order one, at the element whose own top
+// order is kMaxBoysOrder. Both are one call to one body at one top order, so the claim is bit
+// identity; at a lower order each descends from that order, and comparing there would be two
+// arithmetic paths rather than two entries.
 template <typename T>
 void AgreeFixedTopOrder(const std::string& what,
                         const std::vector<T>& fixed,
@@ -2095,16 +1905,10 @@ DeviceSlots DeviceClaimSet() {
     slots.allN16 = AddClaim(allN16.c_str(), "A..C", kBoundHalfRow);
     slots.each16 = AddClaim(each16.c_str(), "A..C", kBoundHalfRow);
 
-    // The partition and route axes reached in the caller's kernel. Each row's
-    // name, precision and bound are its launched row's above, because the
-    // arithmetic is the same arithmetic: the two rows differ in how a caller
-    // reaches it.
-    //
-    // Every row of the float lane - the shipped and narrow partitions' Chebyshev
-    // and monomial forms and the rational route on both partitions - is served
-    // and claimed here, as the double lane's rows and the grid's are: a claim is
-    // made wherever the row's own entry says the row answers, so the claim set
-    // and the space the library reports cannot come apart here.
+    // The partition and route axes reached in the caller's kernel: each row's name, precision and
+    // bound are its launched row's above, the arithmetic being the same, and the two differ only in
+    // how a caller reaches it. The float lane's shipped and narrow Chebyshev and monomial forms and
+    // its rational route on both partitions are served and claimed here as the double lane's are.
     slots.narrow64 = AddClaim(
         Label(DeviceRow(boys::DeviceEntry::kDeviceAllOrdersF64Narrow).name).c_str(),
         "A..C",
@@ -2201,13 +2005,10 @@ DeviceSlots DeviceClaimSet() {
     return slots;
 }
 
-// A device entry and the batch entry of the same precision: one arithmetic
-// reached two ways - the same degree tables, the same inlined body, a lane
-// object that reads the caller's handle instead of a __constant__ symbol. A
-// bound cannot say that, and the header claims it, so every value the device
-// call wrote is compared bit for bit against the batch entry launched on the
-// same orders and the same arguments; a divergence is a defect in one of the
-// two routes, not a looser bound.
+// A device entry and the batch entry of the same precision: one arithmetic reached two ways - the
+// same degree tables, the same inlined body, a lane object that reads the caller's handle instead of
+// a __constant__ symbol. A bound cannot say that, so both are compared bit for bit over one set of
+// orders and arguments, where a defect on either route shows.
 struct PairAgreement {
     std::string what;
     std::size_t identical = 0;
@@ -2306,12 +2107,9 @@ void AgreeOrder(PairAgreement& agreement,
     }
 }
 
-// Every order of a family. The device call writes the element's own block and
-// the batch entry the order-major plane, so the two indexings are compared
-// through the element: `deviceTop` is the highest order this comparison covers,
-// the element's own top order for the shapes that descend from it and
-// kMaxBoysOrder for the shape that descends from kMaxBoysOrder at every
-// argument. A slot above that is one neither call wrote.
+// Every order of a family. The device call writes the element's own block and the batch entry the
+// order-major plane, so the two indexings are compared through the element: `uniformTop` selects the
+// element's own top order or kMaxBoysOrder, and a slot above that is one neither call wrote.
 template <typename T>
 void AgreeFamily(const std::string& what,
                      const std::vector<T>& device,
@@ -2348,17 +2146,10 @@ void AgreeFamily(const std::string& what,
     PairAgreements().push_back(agreement);
 }
 
-// One device-callable row of the ladder shape, measured: the entry called
-// inside the consumer's kernel over the grid, its cells compared with the
-// reference at the row's own bound, and its values compared bit for bit with
-// the launched row of the same option.
-//
-// The two comparisons are two statements and neither implies the other. The
-// bound is what a caller of the row is promised, and it is the claim the report
-// carries. The bit-for-bit comparison is what the header claims for a
-// device-callable entry - one arithmetic reached two ways, the same degree
-// tables read through the handle instead of through a __constant__ symbol -
-// which no bound can state.
+// One device-callable row of the ladder shape: the entry called inside the consumer's kernel over
+// the grid, its cells compared with the reference at the row's own bound, and its values compared
+// bit for bit with the launched row of the same option. Neither comparison implies the other: the
+// bound is what a caller is promised and the report carries, the bit identity what the header claims.
 void MeasureDeviceLadder64(
     const Reference& ref,
     const Grid& grid,
@@ -2699,12 +2490,9 @@ void SweepDevice(const Reference& ref,
             }
         }
 
-        // The batch entries of the same precision, on the same orders and the same
-        // arguments, element for element. The single entry is launched over the
-        // whole element list, so its element is the device's element; the ladders
-        // are launched once per top order, because a ladder descends from the
-        // order it is named; the all-n entry takes its arguments non-decreasing,
-        // so its plane is permuted back to the reference order first.
+        // The batch entries of the same precision, element for element: the single entry over the whole
+        // element list, the ladders once per top order (a ladder descends from the order it is named), and
+        // the all-n entry with its plane permuted back from the non-decreasing order it takes.
         {
             PairAgreement ladderAgreement;
             PairAgreement eachAgreement;
@@ -3240,14 +3028,9 @@ void SweepDevice(const Reference& ref,
 #endif // BOYS_CUDA_GATE_FP16
     }
 
-    // The partition and route axes reached in the caller's kernel. Each is
-    // measured the way the shapes above are: over the grid, against the
-    // reference at the row's own bound, and bit for bit against the launched row
-    // of the same option.
-    //
-    // The double lane's eight rows, and the float lane's grid, narrow and
-    // rational rows, are all served: the float lane's rational pairs are cut as
-    // its narrow seed is.
+    // The partition and route axes reached in the caller's kernel, each measured over the grid against
+    // the reference at the row's own bound and bit for bit against the launched row of the same option.
+    // The double lane's eight rows and the float lane's grid, narrow and rational rows are all served.
     MeasureDeviceLadder64(ref,
                                        grid,
                                        tables,
@@ -3799,64 +3582,10 @@ void CheckRefusals(const boys::BoysDeviceTables& tables) {
 #endif // BoysFp16
 }
 
-// ---------------------------------------------------------------------------
-// The uniform grid's carriage on the rows that answer a policy naming it.
-//
-// Every row of the report that answers a policy naming the uniform grid is
-// measured above for accuracy, and no accuracy row can tell that grid from the
-// narrow member below it: the two partitions are different fits of the same
-// function over the same intervals and hold the same bar, so a row that read
-// the narrow member's tables under the grid's name would print the same numbers
-// inside the same bound and every row above would stay green. The rows below
-// are that question asked of the values themselves, in the shape the CPU gate
-// asks it in its own single-precision block: each row is read twice in one pass
-// - once through its own entry and once through the narrow member's of the same
-// arm - and the cells where the two readings differ are counted per region
-// against the per-argument host entry's own separation at that arm. A region
-// where the per-argument entry's two readings differ and this row's do not is a
-// region this row answered from the narrow member's fits.
-//
-// The reference is the host per-argument entry's own two readings and not the
-// device's, because the question is about the fits: the device lane reads the
-// same tables the host lane does, uploaded, so where the fits separate at this
-// precision on the host they separate on the card. The rule is the CPU gate's:
-// a region where the per-argument entry's two readings agree is a region where
-// no cell can discriminate, so no row is held to it - which is why region C is
-// carried as a token and not judged where the lane's grid ends inside region B
-// (kFlatHiF32 on the float lane and the half lane that reads its tables, kFlatHi
-// on the double lane) and every reading above kX1 is the asymptotic form's. The
-// comparison is made in the format the row itself returns, which is why the
-// float and double lanes' rows are held to a reference read in their own.
-//
-// The half lane's rows are not two fits read against each other but one lane's
-// bodies with half I/O: the row named for a policy is the float lane's body of
-// that name, its arguments and its return the half ones (measured, all four
-// arms on both axes: the half row and the float body it names agree in 56694 of
-// 56694 cells at the half lane's own arguments). Each is held to the body it
-// names, cell for cell, in every region: a row that read the other member's
-// fits would part from the body it names in every cell where the two bodies'
-// half images differ - 39 cells of B today - and the float lane's own rows
-// carry the rest. The reference the two bodies' own separation is recorded
-// against says why the rest is not carried here: the two bodies differ over
-// 4148 cells of A and 7789 of band at fp32, and the half format tells 0 and 0
-// of them apart, so in A and band a row answering from the other member's fits
-// and a row answering from its own are the same half values, cell for cell, and
-// no rule reading half values can tell them apart. That separation is measured
-// on the device pair of the same arm, not on the host's half entry: the host
-// path's two readings part at the half boundaries while the device pair agrees,
-// which is host rounding and not a difference any cell of the lane's can show.
-//
-// The rows are every row the report names over the grid, in all three
-// precisions: the launched pair on both packing axes at each arm of each lane,
-// and the device-callable pair reached through the consumer's kernels where the
-// lane reports one. The float and double lanes carry twelve rows - the four
-// arms of their cross, each on the argument axis, the orders axis and the
-// device-callable entry, which is all-orders-fp64-orders-uniform and
-// all-orders-f64-rat-horner-orders-uniform among the orders-axis rows - and the
-// half lane eight, its four arms on the two launched axes, the half lane having
-// no device-callable uniform/narrow pair over the grid to reach. An arm left
-// out would be a row of the report that nothing below asks this of.
-// ---------------------------------------------------------------------------
+// The uniform grid's carriage: each row is read twice in one pass, through its own entry and the
+// narrow member's of the same arm, the differing cells counted per region against the host
+// per-argument entry's own separation there; no row is held to a region where those two agree. The
+// half lane's rows are not two fits but the float lane's bodies with half I/O, held to the body each names.
 
 /// One carriage row: the entry's own reading against the narrow member's of the
 /// same arm, cell for cell, region by region - or, where the row names a body
@@ -5310,29 +5039,10 @@ void RunProbe(const Reference& ref,
     }
 }
 
+// The whole launched surface: one arm per entry the library's report carries, an entry no arm
+// reaches being certified by nothing and printing what a passing run prints; a row an earlier
+// section claims is counted, not measured twice.
 // ---------------------------------------------------------------------------
-// The whole launched surface: one arm per entry the library's report carries,
-// and the launch discipline every arm runs under.
-// ---------------------------------------------------------------------------
-//
-// The sections above measure the arithmetic this gate was written for. What this
-// section adds is the statement that the surface is reached at all. The library
-// reports one row per entry (BoysDeviceOptions()) and every one of those rows has
-// a kernel behind it, so an entry no arm launches is an entry whose documented
-// bound is certified by nothing - and a run that never calls it prints exactly
-// what a run in which every one of its cells passed prints. That is the failure
-// this section exists for, and it is why an arm is owed for every row rather than
-// for the rows somebody remembered to write down.
-//
-// The table below is keyed by the library's own enumerator and states only the
-// one thing the report cannot: the function pointer. The shape and the lane are
-// read off the row at run time, so a row whose shape or precision moves moves its
-// arm with it and no second list can disagree with the first.
-//
-// A row an earlier section already claims is not measured twice: the entry is
-// reached, the claim exists, and a second claim of the same name would double the
-// table without adding a statement. The arm is counted either way, which is what
-// makes the count a statement about the surface and not about this table.
 
 // The launched signatures, by argument list and lane. The single and all-orders
 // shapes share the range signature and differ only in the layout the kernel
@@ -5481,134 +5191,14 @@ const LaunchedArm kLaunchedArms[] = {
     {.entry = boys::DeviceEntry::kSingleF32Fast, .range32 = &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
     // fp16 ------------------------
 #if BOYS_CUDA_GATE_FP16
-    // all-n-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllNBf16, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllNBf16},
-    // all-n-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllNBf16Fast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllNBf16Fast},
+    // all-n-bfloat16 and all-n-bfloat16-fast: the report carries the rows and boys_cuda.hpp declares
+    // no function for AllNBf16 or AllNBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kAllNF16, .allN16 = &boys::BoysCuda::AllNF16},
     {.entry = boys::DeviceEntry::kAllNF16Fast, .allN16 = &boys::BoysCuda::AllNF16Fast, .exp = boys::RegionBExp::kFast},
-    // all-orders-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16},
-    // all-orders-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Fast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Fast},
-    // all-orders-bfloat16-mono at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Mono, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Mono},
-    // all-orders-bfloat16-mono-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16MonoFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16MonoFast},
-    // all-orders-bfloat16-narrow at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Narrow, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Narrow},
-    // all-orders-bfloat16-narrow-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowFast},
-    // all-orders-bfloat16-narrow-mono at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowMono, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMono},
-    // all-orders-bfloat16-narrow-mono-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowMonoFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMonoFast},
-    // all-orders-bfloat16-narrow-orders at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrders, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrders},
-    // all-orders-bfloat16-narrow-orders-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersFast},
-    // all-orders-bfloat16-narrow-orders-mono at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersMono, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMono},
-    // all-orders-bfloat16-narrow-orders-mono-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersMonoFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMonoFast},
-    // all-orders-bfloat16-narrow-orders-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersRat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRat},
-    // all-orders-bfloat16-narrow-orders-rat-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersRatFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatFast},
-    // all-orders-bfloat16-narrow-orders-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersRatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHorner},
-    // all-orders-bfloat16-narrow-orders-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowOrdersRatHornerFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHornerFast},
-    // all-orders-bfloat16-narrow-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowRat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRat},
-    // all-orders-bfloat16-narrow-rat-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowRatFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatFast},
-    // all-orders-bfloat16-narrow-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowRatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHorner},
-    // all-orders-bfloat16-narrow-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16NarrowRatHornerFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHornerFast},
-    // all-orders-bfloat16-orders at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Orders, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Orders},
-    // all-orders-bfloat16-orders-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersFast},
-    // all-orders-bfloat16-orders-mono at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersMono, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMono},
-    // all-orders-bfloat16-orders-mono-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersMonoFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMonoFast},
-    // all-orders-bfloat16-orders-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersRat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRat},
-    // all-orders-bfloat16-orders-rat-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersRatFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatFast},
-    // all-orders-bfloat16-orders-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersRatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHorner},
-    // all-orders-bfloat16-orders-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersRatHornerFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHornerFast},
-    // all-orders-bfloat16-orders-uniform at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersUniform, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniform},
-    // all-orders-bfloat16-orders-uniform-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersUniformHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformHorner},
-    // all-orders-bfloat16-orders-uniform-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersUniformRat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRat},
-    // all-orders-bfloat16-orders-uniform-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16OrdersUniformRatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRatHorner},
-    // all-orders-bfloat16-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Rat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Rat},
-    // all-orders-bfloat16-rat-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16RatFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatFast},
-    // all-orders-bfloat16-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16RatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatHorner},
-    // all-orders-bfloat16-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16RatHornerFast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatHornerFast},
-    // all-orders-bfloat16-uniform at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16Uniform, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16Uniform},
-    // all-orders-bfloat16-uniform-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16UniformHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformHorner},
-    // all-orders-bfloat16-uniform-rat at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16UniformRat, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRat},
-    // all-orders-bfloat16-uniform-rat-horner at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for AllOrdersBf16UniformRatHorner, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRatHorner},
+    // The bf16 rows the report carries - all-orders, each-order and single, with their -fast, -mono,
+    // -narrow, -orders, -rat, -horner and -uniform members - carry no arm here: boys_cuda.hpp declares
+    // no function behind any of them, so arming one would name an unresolved external at link time. The
+    // survey counts them as rows no arm reaches.
     {.entry = boys::DeviceEntry::kAllOrdersF16, .range16 = &boys::BoysCuda::AllOrdersF16},
     {.entry = boys::DeviceEntry::kAllOrdersF16Fast, .range16 = &boys::BoysCuda::AllOrdersF16Fast, .exp = boys::RegionBExp::kFast},
     {.entry = boys::DeviceEntry::kAllOrdersF16Mono, .range16 = &boys::BoysCuda::AllOrdersF16Mono},
@@ -5649,20 +5239,12 @@ const LaunchedArm kLaunchedArms[] = {
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformHorner},
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformRat, .range16 = &boys::BoysCuda::AllOrdersF16UniformRat},
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformRatHorner},
-    // each-order-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for EachOrderBf16, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kEachOrderBf16},
-    // each-order-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for EachOrderBf16, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kEachOrderBf16Fast},
+    // each-order-bfloat16 and each-order-bfloat16-fast: the report carries the rows and boys_cuda.hpp
+    // declares no function for EachOrderBf16 or EachOrderBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kEachOrderF16, .each16 = &boys::BoysCuda::EachOrderF16},
     {.entry = boys::DeviceEntry::kEachOrderF16Fast, .each16 = &boys::BoysCuda::EachOrderF16<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
-    // single-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for SingleBf16, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kSingleBf16},
-    // single-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
-    // declares no function for SingleBf16Fast, so there is nothing to arm.
-    // {.entry = boys::DeviceEntry::kSingleBf16Fast},
+    // single-bfloat16 and single-bfloat16-fast: the report carries the rows and boys_cuda.hpp declares
+    // no function for SingleBf16 or SingleBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kSingleF16, .range16 = &boys::BoysCuda::SingleF16},
     {.entry = boys::DeviceEntry::kSingleF16Fast, .range16 = &boys::BoysCuda::SingleF16Fast, .exp = boys::RegionBExp::kFast},
 #endif // BOYS_CUDA_GATE_FP16
@@ -6273,21 +5855,10 @@ std::size_t SurveyLaunchedSurface(const Reference& ref,
     return unarmed;
 }
 
+// The coverage, and the two books' one number: the claims name rows the library's report carries,
+// so an option certified by nothing and a claim for an unreported row are caught, and the fp16
+// bound the report and the reference book both state is compared here.
 // ---------------------------------------------------------------------------
-// The coverage, and the two books' one number.
-//
-// The claims above are made for rows named by the library's report, so the
-// gate's row list and the chooser's are one list. This says so out loud,
-// because the failure it guards against is silent: an option added to the
-// surface and certified by nothing, or a claim left behind for a row the
-// library's report does not carry.
-//
-// It also checks the one figure the report and the shared reference book both
-// state, so the fp16 cells' bound cannot come out of one book in the claims and
-// the other in the comparisons.
-//
-// \returns the number of options the library reports that this build serves and
-//          the gate has no claim for, plus the claims naming no reported option.
 std::size_t ReportDeviceOptionCoverage() {
     char fp16Report[32];
     char fp16Book[32];
@@ -6497,12 +6068,9 @@ int main(int argc, char** argv) {
     CheckRefusals(tables);
     SweepDeviceLane(ref, grid, sorted, digits);
 
-    // The whole launched surface, one arm per entry the report carries, and the
-    // proof that the read which says a launch happened is able to say it did not.
-    // This runs after the sections above so that a row one of them already
-    // measured is counted rather than measured twice, and it is what turns the
-    // coverage statement below from a list of names into an account of the
-    // surface: an entry no arm launches is an entry no cell of this run measures.
+    // The whole launched surface, one arm per entry the report carries, and the proof that the read
+    // which says a launch happened can say it did not. It runs after the sections above, so a row one of
+    // them measured is counted rather than measured twice.
     ProveLaunchErrorBites();
     const std::size_t launchedUnarmed = SurveyLaunchedSurface(ref, grid, sorted);
 
@@ -6563,11 +6131,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // A device entry and the batch entry of the same precision are one arithmetic
-    // reached two ways: the same degree tables, the same inlined body, a lane
-    // object that reads the caller's handle where the batch kernel reads a
-    // __constant__ symbol. Every value the device call wrote is compared bit for
-    // bit with the batch entry of the same precision.
+    // A device entry and the batch entry of the same precision are one arithmetic reached two ways -
+    // the same degree tables, the same inlined body, a lane object that reads the caller's handle where
+    // the batch kernel reads a __constant__ symbol - compared bit for bit over every value a call writes.
     if (!PairAgreements().empty())
     {
         std::printf("\n  the device entries against the batch entries of the same precision, one\n"
@@ -6626,12 +6192,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The fast option's row is a bound on the distance from F_n(x) and not on the
-    // direction, and the seed it carries is a correction of the hardware
-    // approximation rather than the approximation itself. The audit keeps both
-    // facts checkable: the contribution is the term the fast bound carries on top
-    // of the lane's, and the wrong-sign count is a tripwire for the return of the
-    // defect this correction removes.
+    // The fast option's row bounds the distance from F_n(x) and not the direction, and the seed it
+    // carries is a correction of the hardware approximation rather than the approximation itself. The
+    // audit keeps both checkable: the contribution is the term the fast bound carries on top of the
+    // lane's, and the wrong-sign count is a tripwire for the return of the defect the correction removes.
     if (!ExpAudits().empty())
     {
         std::printf(

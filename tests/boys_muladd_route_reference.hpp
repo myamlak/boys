@@ -1,19 +1,9 @@
 #pragma once
 
-// The reference arithmetic at a NAMED multiply-add route.
-//
-// The library's own certified summations (boys_impl.hpp: ClenshawSplit,
-// HornerMono, FitSum) are templates over any arithmetic backend, and the routes
-// are a build fact (boys/backend.hpp: kSelectedRoute). The two backends below
-// make the route a template argument instead, so one binary holds either
-// arithmetic, and a lane's delivered value can be held against the route it was
-// built to run rather than against what it reports. See
-// tests/boys_muladd_route_test.cpp for the argument and the sweeps, and
-// tests/boys_muladd_route_simd_test.cpp for the packed backends' half.
-//
-// Both live here rather than in one test file because two translation units
-// need them and the two must be the same arithmetic: a second copy that drifted
-// would be a reference that agrees with nothing.
+// Reference arithmetic at a named multiply-add route: the library's summations take the route
+// as a build fact (boys/backend.hpp: kSelectedRoute, over boys_impl.hpp's ClenshawSplit,
+// HornerMono and FitSum), here it is a template argument. Shared with the two translation units
+// that need it - tests/boys_muladd_route_test.cpp and tests/boys_muladd_route_simd_test.cpp.
 
 #include "boys/backend.hpp"
 

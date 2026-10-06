@@ -25,13 +25,10 @@ constexpr int kSampleOrders[] = {0, 1, 2, 3, 7, 16, 31, 32};
 // supported order and argument, so a negative marker says "not written".
 constexpr double kUnwritten = -1.0;
 
-// Each batch entry below wraps one C++ entry, and that entry resolves through the
-// default-policy row of its own class - the row, which is not the seam's five once a
-// replacement header moves a class. So a reference asked without naming that class
-// reads a different row wherever the two disagree, and the comparison would state an
-// identity between two classes instead of the identity between the batch shape and the
-// per-argument shape this file is checking. Naming the entry's class on the reference
-// side keeps every comparison the statement the entries make: one policy, two shapes.
+// Each batch entry below wraps one C++ entry, and that entry resolves through the default-policy row
+// of its own class, which is not the seam's five once a replacement header moves a class. A reference
+// asked without naming that class would read another row and state an identity between two classes
+// instead of the one this file checks: naming the class keeps every comparison one policy, two shapes.
 using DoubleAtOrdersClass =
     boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
 using FloatBatchClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;

@@ -1,19 +1,16 @@
-// Consumer check: are the lane templates' definitions reachable from the public
-// headers alone, with no library on the link line? The library pre-instantiates
-// the default policy's entries, so only a policy outside that set proves
-// anything: this target links nothing (CMakeLists.txt asserts the empty link
-// line) and names two it does not export.
-//
-// The two policies flip one structural axis away from the build's own default and name no
-// division form, so each combination named here is one the lane carries and runs the form the
-// build's own seam chose. The division form is the one axis that moves a lane's guaranteed
-// figure, so the figure a rule is judged against is the build's and not the shipped revision's:
-// each rule below reads the form in force and names the lane's own figures for it.
-//
-// Values are judged against the committed 45-digit grid, with the double lane at
-// the policy this file names as the oracle, so a composed bound includes the
-// oracle's own figure.
-//
+// Consumer check: are the lane templates' definitions reachable from the public headers alone, with
+// no library on the link line? The library pre-instantiates the default policy's entries, so only a
+// policy outside that set proves anything: this target links nothing (CMakeLists.txt asserts the
+// empty link line) and names two it does not export.
+
+// The two policies flip one structural axis away from the build's own default and name no division
+// form, so each combination named here is one the lane carries and runs the form the build's own
+// seam chose. The division form is the one axis that moves a lane's guaranteed figure, so the
+// figure a rule is judged against is the build's and not the shipped revision's.
+
+// Values are judged against the committed 45-digit grid, with the double lane at the policy this
+// file names as the oracle, so a composed bound includes the oracle's own figure.
+
 // Run:  cmake --build <build> --target boys-consumer-header-only, then
 //       <build>/boys-consumer-header-only, or ctest --test-dir <build> -R boys-consumer-header-only
 
@@ -259,17 +256,15 @@ double Bf16IoBound(double returned) {
 // The named policies this check carries. None of them is the policy a call that names one resolves
 // to: that policy is the entry's own class row in the build's default-policy table (boys/boys.hpp,
 // DefaultPolicy - the name an entry's policy parameter defaults to, resolved for the class of the
-// call), so each policy below is one cell off the row of the lane it serves and every instantiation
-// below is this translation unit's own, to be had from the headers alone.
-//
-// Each is built from that row rather than from the five names the seam states. The five are the axes
-// a build composes its rows from (boys/boys.hpp, BOYS_DEFAULT_POLICY_BUILD_ROW), not the rows: a
-// build whose table writes rows is one whose row for a class may be a combination the five do not
-// name - tests/build_defaults_rows.hpp is such a build - and a policy composed from the five is a
-// row of that table exactly when a class's row carries the combination. The assertions under the
-// policies are what hold every call below off the rows this file reaches; they are the premise, and
-// a build whose rows put one of these policies on a reached class fails the build here instead of
-// passing with a check that proves nothing.
+// call), so each policy below is one cell off the row of the lane it serves.
+
+// Each is built from that row rather than from the five names the seam states: the five are the
+// a build composes its rows from (boys/boys.hpp, BOYS_DEFAULT_POLICY_BUILD_ROW), not the rows, so a
+// build whose table writes rows may give a class a row the five do not name.
+
+// tests/build_defaults_rows.hpp is such a build. The assertions under the policies hold every call
+// below off the rows this file reaches, so a build whose rows put one of these policies on a
+// class fails the build here instead of passing with a check that proves nothing.
 template <boys::FitRoute kRoute>
 constexpr boys::FitRoute OtherRoute = kRoute == boys::FitRoute::kChebyshev
                                           ? boys::FitRoute::kRationalMinimax
@@ -674,12 +669,10 @@ int main(int argc, char** argv) {
     std::printf("consumer check through <boys/boys.hpp> alone: %zu grid cells\n", cells.size());
     PrintRules();
 
-    // The violations PrintRules has just listed are this check's own verdict. A
-    // sweep whose cells may exceed the bound their lane documents and still exit 0
-    // is a check that cannot fail, so every rule's count is summed into the one
-    // assertion that decides the exit code. The float and the half lanes hold no
-    // Report of their own and reach no other assertion, so this is also the only
-    // place their bounds are answered for.
+    // The violations PrintRules has just listed are this check's own verdict: every rule's count is
+    // summed into the one assertion that decides the exit code. The float and half lanes hold no
+    // Report of their own and reach no other assertion, so this is the only place their bounds are
+    // answered for.
     std::size_t exceeded = 0;
 
     for (const Rule& rule : gRules)

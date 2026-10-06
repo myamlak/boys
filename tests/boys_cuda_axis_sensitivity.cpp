@@ -1,79 +1,50 @@
-// Does every row of the device option table read the axes it states?
-//
-// What this checks, and the defect it was written for. A row of the device option space names an
-// entry, and the entry is really called; what that does not prove is that the entry *reads* the
-// axis the row's coordinates state. Two rows that differ in one axis and execute identical
-// arithmetic are one option under two names and a claim with nothing behind it - and a count of
-// the combinations a surface serves, taken by comparing names, cannot see it. This check takes it
-// by measurement: for every axis a row carries more than one member of, it runs the entries at
-// each member, over the argument range the tables cover and at the orders each shape carries, and
-// requires the values to differ somewhere. A cell whose members all deliver the same bits is
-// reported by row, by axis and by member, and the run fails.
-//
-// The axes and where they come from. The five the option table varies a row along are its own
-// DeviceOptionInfo::axis - route, scheme, partition, packing and the region-B exponential - and
-// the members are the library's enumerations, read from each row and never listed here. The sixth
-// is the division form, which every entry's own signature carries: this check runs each row at the
-// build's default form and at the plain reciprocal, requires those to differ, and reads the
-// launched rows at the third member beside them, whose relation to the first the library states in
-// its own words and this run reports as measured. Nothing here states a member set of its own: the
-// rows come from BoysDeviceOptions(), and a row this file has no call for is printed and counted as
-// an option nothing here runs rather than quietly counting as covered - which is a coverage gap
-// this run states, not an axis finding, so it does not decide the exit code.
-//
-// What "differ" means, and the honest reading of it. The comparison is over the raw bits of every
-// value a run wrote - one block per argument, over 64 arguments spanning [0, 60] and orders 0..32
-// - and it asks that a cell's members not all be one value. Two members that coincide while a
-// third differs is not a failure: it is printed with the rows named, because that is what a name
-// that denotes another name's arithmetic looks like from here, and it is the reader's to judge
-// against what the library documents. A documented coincidence is expected and reported the same
-// way.
-//
-// Three readings of one cell, and which of them is a failure. Two members delivering one value is
-// a failure when the store they wrote through could have shown a difference. The fp64 and fp32
-// lanes store exactly what their engine computed, so one value there is one arithmetic. The half
-// lane computes in that same float engine and stores eleven or eight mantissa bits of the result,
-// so two arithmetics that differ by less than the format's resolution - 2^-11 for fp16, 2^-8 for
-// bf16 - are one value in it, and requiring a bit-difference in a format coarser than the
-// difference is asking the wrong question of the row. The row's claim is about which arithmetic
-// runs, so that is what is measured: the same cell is asked at the float lane, which is the same
-// bodies over the same tables with the engine's own twenty-four mantissa bits kept, and the
-// members are known to differ only where they differ there. The witness has to be one store: a
-// fp64 row is another engine, and reading one beside a fp32 row would let the width of the store
-// stand in for the axis being read - which is exactly the mistake the deliberate-defect control
-// catches, because under it the float lane's own members are one value too and every cell of the
-// collapsed axis has to fail. Such a cell is printed by row and counted as **not observable**,
-// with the resolution and the widest difference the float lane showed beside it, and it does not
-// fail: the run has no evidence that the row is a claim with nothing behind it, which is the
-// treatment the rows this test cannot run already get. A cell whose float-lane siblings deliver
-// one value too is one arithmetic under two names whatever the store, and stays a failure. The
-// split is not a threshold chosen to pass: the wider store's own difference is
-// printed for every cell moved, so a reader checks the classification against the resolution
-// rather than taking it on trust.
-//
+// Every row of the device option table names an entry, and the entry is really called; what that does
+// not prove is that it *reads* the axes the row's coordinates state. Two rows differing in one axis and
+// executing identical arithmetic are one option under two names, so the entries are run at each member
+// of every axis a row varies, and a cell whose members all deliver the same bits is reported and fails.
+
+// The five axes the option table varies a row along are its own DeviceOptionInfo::axis - route, scheme,
+// partition, packing and the region-B exponential - and the members are the library's enumerations, read
+// from each row and never listed here. The sixth is the division form, which every entry's own signature
+// carries: each row runs at the build's default form and at the plain reciprocal, which must differ.
+
+// Rows come from BoysDeviceOptions(); a row this file has no call for is printed and counted as an
+// option nothing here runs - a coverage gap this run states, not an axis finding, so it does not decide
+// the exit code. "Differ" is over the raw bits of every value a run wrote - one block per argument, over
+// 64 arguments spanning [0, 60] and orders 0..32 - and asks that a cell's members not all be one value.
+
+// Two members that coincide while a third differs is not a failure: it is printed with the rows named,
+// because that is what a name that denotes another name's arithmetic looks like from here, and it is
+// the reader's to judge against what the library documents.
+
+// Which of those readings is a failure. Two members delivering one value is a failure when the store
+// they wrote through could have shown a difference: fp64 and fp32 store exactly what their engine
+// computed, while the half lane keeps eleven or eight mantissa bits - 2^-11 for fp16, 2^-8 for bf16 - so
+// arithmetics differing by less are one value in it.
+
+// That row's claim is about which arithmetic runs, so the same cell is asked at the float lane - the same
+// bodies over the same tables with the engine's own twenty-four mantissa bits kept - and the members are
+// known to differ only where they differ there. The witness has to be one store: a fp64 row is another
+// engine, and reading one beside a fp32 row would let the width of the store stand in for the axis.
+
+// Such a cell is printed by row and counted as **not observable**, with the resolution and the widest
+// difference the float lane showed beside it, and it does not fail; one whose float-lane siblings
+// deliver one value too is one arithmetic under two names whatever the store, and stays a failure.
+
 // The in-kernel rows. 168 of the table's 352 rows are entries of boys_cuda_device.hpp, which are
-// __device__ functions no host translation unit can call. They are run by
-// tests/boys_cuda_axis_sensitivity_device.cu, the device half of this test, over the same
-// arguments and the same handle (BoysCuda::DeviceTables); the host declares its one entry point
-// below. The two halves are one target, registered beside the other boys-cuda-* targets.
-//
-// The deliberate-defect control. `--collapse=<axis>` runs every row of a cell at the entry of the
-// cell's own first member, which is what an entry that does not read that axis delivers: the
-// members then produce identical values and the check must fail, naming the rows, the axis and the
-// members. A test that cannot fail is worse than no test, so the failure is shown rather than
-// asserted:
-//
-//     boys-cuda-axis-sensitivity --collapse=route         # exits 1, every cell of that axis
-//     boys-cuda-axis-sensitivity                          # exits 1 while a row is a finding
-//
-// The second line's exit code is the library's answer and not this file's: it is 1 exactly while
-// some cell delivers one value where the store could have shown a difference, which is what the
-// run prints and what a reader is meant to act on. It is 0 once no such cell remains.
-//
-// A note on the plumbing. Every value is also gated on being a value of the Boys function at all -
-// finite and in [0, 1] wherever it is not the zero of a slot the entry did not write - so a handle
-// that was not filled, an argument array that was not uploaded or a kernel that wrote nothing is
-// reported as a broken run rather than quietly becoming an axis difference or an axis coincidence.
+// __device__ functions no host translation unit can call; they are run by
+// tests/boys_cuda_axis_sensitivity_device.cu, over the same arguments and the same handle
+// (BoysCuda::DeviceTables). The two halves are one target, registered beside the other boys-cuda-* ones.
+
+// The deliberate-defect control: `--collapse=<axis>` runs every row of a cell at the entry of the cell's
+// own first member, which is what an entry that does not read that axis delivers, and the check must
+// then fail, naming the rows, the axis and the members. The exit code is the library's: 1 exactly while
+// some cell delivers one value where the store could have shown a difference, 0 once none remains.
+
+// Every value is also gated on being a value of the Boys function at all - finite and in [0, 1] wherever
+// it is not the zero of a slot the entry did not write - so a handle that was not filled, an argument
+// array that was not uploaded or a kernel that wrote nothing is reported as a broken run rather than
+// quietly becoming an axis difference or an axis coincidence.
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp" // the region boundaries the arguments are placed at
@@ -594,11 +565,10 @@ bool RunRow(const DeviceOptionInfo& row, Context& ctx, DivisionForm form, Run& r
             return RunLadder(&boys::BoysCuda::AllOrdersF64NarrowMono, ctx, form, run);
         case boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono:
             return RunLadder(&boys::BoysCuda::AllOrdersF64NarrowOrdersMono, ctx, form, run);
-        // The double lane's rational route has one member per partition, not two: the route's
-        // pair is stored in one form and the two scheme names reach one kernel
-        // (boys_cuda_options.hpp, DeviceEntryAxesOf, and the launcher comment in
-        // src/boys_cuda.cu), so each -horner row of this lane runs the member its plain twin
-        // names. The row is still run as the row it is: only the entry it reaches is shared.
+        // The double lane's rational route has one member per partition, not two: the route's pair is
+        // stored in one form and the two scheme names reach one kernel (boys_cuda_options.hpp,
+        // DeviceEntryAxesOf, and the launcher comment in src/boys_cuda.cu), so each -horner row runs the
+        // member its plain twin names; only the entry it reaches is shared.
         case boys::DeviceEntry::kAllOrdersF64Rat:
         case boys::DeviceEntry::kAllOrdersF64RatHorner:
             return RunLadder(&boys::BoysCuda::AllOrdersF64Rat, ctx, form, run);
@@ -1456,11 +1426,10 @@ int main(int argc, char** argv) {
 
             if (classes.size() < 2)
             {
-                // One reading for every member. That is a failure only where the store the cell
-                // wrote through could have shown a difference: the half lane's store is narrower
-                // than the engine that computed the value, so a cell of it whose wider siblings
-                // do differ is one this format cannot resolve rather than a claim with nothing
-                // behind it, and is reported as its own class.
+                // One reading for every member, a failure only where the store the cell wrote through
+                // could have shown a difference: the half lane's store is narrower than the engine that
+                // computed the value, so a cell of it whose wider siblings do differ is one this format
+                // cannot resolve, and is reported as its own class.
                 double spread = 0.0;
                 std::string why;
                 const DeviceOptionInfo& first = rows[cell.front()];
@@ -1586,11 +1555,10 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        // The half lane's two classes store eleven and eight mantissa bits of a float engine's
-        // result, and what one division form adds to another is below both: the two forms' values
-        // are one value once either format has it, so a row of either class cannot show the
-        // difference either way and is not evidence about the axis. The launched half's rows are
-        // the same rows.
+        // The half lane's two classes store eleven and eight mantissa bits of a float engine's result,
+        // and what one division form adds to another is below both: the two forms' values are one value
+        // once either format has it, so a row of either class cannot show the difference and is not
+        // evidence about the axis.
         if (rows[i].precision == DeviceOptionPrecision::kFp16 ||
             rows[i].precision == DeviceOptionPrecision::kBf16)
         {

@@ -1,31 +1,7 @@
-// Standalone reproduction of the boundary measurement: the smallest x for which the
-// double-precision upward recursion from an erf-seeded F0 stays within 5e-14 of the
-// reference for all n <= kmax. The shipped kernel is seeded from its stored fits
-// instead, and its certified boundaries are higher than every cell below.
-//
-// The recursion error is not monotone over the transition: the amplified seed-rounding
-// error oscillates through the 5e-14 line, so each grid draws its own lattice sample
-// and every value here is a genuine measurement of its grid, ulp-sensitive within
-// roughly 10-20%. The cells are first failing samples of a 0.0001-step descending
-// sweep - resolution-limited draws, not formal proofs.
-//
-// The reference is the provably stable all-positive series (V&S eq. 26), evaluated in
-// long double where the platform provides it, and self-tested against the shipped
-// 45-digit grid (boys_reference.csv), read from the working directory.
-//
-// Sections: [1] the coarse ascending geometric grid; [2] the fine two-phase descending
-// sweep; [2b] the failure top at 1e-4, which is what the gates compare; [3] the 0.0001
-// descending sweep over [0.8 x0, 1.2 x0] of each cell (--postcheck); [4] the shipped
-// kernel's extended-band path over [0.8 x_env, kX0) (--extended-seed).
-//
-// Compile: any C++17 compiler, e.g.
-//     cl /O2 /std:c++17 /EHsc boys_boundary_standalone.cpp   (MSVC)
-//     g++ -O2 -std=c++17 boys_boundary_standalone.cpp -o boys_boundary
-// Run:     ./boys_boundary                 (sections [1], [2] and [2b])
-//          ./boys_boundary --postcheck     (section [3])
-//          ./boys_boundary --extended-seed (section [4])
-//
-// No dependencies beyond the standard library.
+// Standalone boundary measurement: the smallest x at which the double-precision upward recursion
+// from an erf-seeded F0 matches the reference (V&S eq. 26) to 5e-14 for all n <= kmax. The shipped
+// kernel is seeded from its stored fits instead and certifies higher; the error is not monotone
+// over the transition, so every cell is a ulp-sensitive draw of a 0.0001-step sweep, not a proof.
 
 #include <algorithm>
 #include <array>
@@ -197,13 +173,9 @@ double MeasureBoundaryFine(int kmax) {
     return x0;
 }
 
-// ---------------------------------------------------------------------------
-// The GATE's measurement (section [2b]): the FAILURE TOP - the largest failing sample of a
-// descending sweep from the sweep start at kMeasurementResolution. A failing sample is a
-// witness that the recursion leaves the window there, so the value is a rigorous lower bound
-// on the top of the failure set, bracketed above by the sampled point one step higher, which
-// passes; it is the same kind of measurement as the recorded cells.
-// ---------------------------------------------------------------------------
+// Section [2b], the gate's measurement: the failure top, the largest failing sample of a descending
+// sweep from kMeasurementResolution. A failing sample witnesses the recursion leaving the window,
+// so the value is a lower bound on the failure set's top, bracketed above by the next sample up.
 struct FailureTop {
     bool startPasses = false; // the sweep start is inside the 5e-14 window
     bool found = false; // a failing sample exists above the sweep floor
@@ -341,12 +313,9 @@ const std::array<ThresholdRow, 4> kThresholdRows = {
     ThresholdRow{32, 10.0492, 9.70, 11.9},
 };
 
-// ---------------------------------------------------------------------------
-// [3] the 0.0001-step descending sweep over [0.8 x0, 1.2 x0] of a cell x0 - each cell IS the
-// first failing sample of this walk. The whole band is walked, not stopped at the first
-// failure, so the pass/fail alternations (the amplified seed-rounding error oscillating
-// through the 5e-14 line) are counted as evidence of the grid's adequacy near the transition.
-// ---------------------------------------------------------------------------
+// Section [3]: the 0.0001-step sweep over [0.8 x0, 1.2 x0] of a cell x0 - each cell is the first
+// failing sample of this walk. The whole band is walked, not stopped at the first failure, so the
+// pass/fail alternations are counted as evidence of the grid's adequacy near the transition.
 constexpr double kPostCheckStep = 0.0001;
 
 struct PostCheckResult {
@@ -500,12 +469,10 @@ bool RunPostCheckAll() {
     return allOk;
 }
 
-// ---------------------------------------------------------------------------
-// [4] the extended-band path: the seeded F0 fit on [kExtendedBX0, kX0) plus the upward
-// step, dispatched per kmax tier at the certified kTierBoundaries. This sweep is the
-// certified rows' measured consistency check - a certified crossing must sit at or
-// above the first failure, a conservative bound crossing no lower than the true error.
-// ---------------------------------------------------------------------------
+// Section [4], the extended-band path: seeded F0 fit on [kExtendedBX0, kX0) plus the upward step,
+// dispatched per kmax tier at the certified kTierBoundaries. It is the certified rows' consistency
+// check: a certified crossing must sit at or above the first failure, a conservative bound no lower
+// than the true error.
 
 // The generated constants: exact decimal copies of boys_coefficients.hpp, the double
 // values being the nearest doubles to these literals.

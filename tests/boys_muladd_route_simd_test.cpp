@@ -1,28 +1,7 @@
-// The packed backends' route liveness: the half of the regression that needs
-// the intrinsics, and so a translation unit of its own.
-//
-// tests/boys_muladd_route_test.cpp carries the argument this file is the second
-// half of: a lane built to read BOYS_MULADD_SEPARATE has to DELIVER that route's
-// values, and the route is a build fact a lane can stop reading while every
-// suite stays green. What is held here is boys_backend_simd.hpp's pair -
-// Avx2Fp64<Route> and Avx2Fp32<Route> - at both named routes and at the
-// default, against the reference arithmetic of
-// tests/boys_muladd_route_reference.hpp, in the LANES the vector holds.
-//
-// This unit carries the intrinsics' flags the way src/boys_simd.cpp does:
-// CMakeLists.txt pins the same set onto it, contraction flag included, so the
-// two spellings mean here what they mean in the library's own unit.
-//
-// WHICH ROUTE A STEP DELIVERS HERE. The fused spelling is the fused
-// instruction. The separate spelling is a product and a sum, and a build that
-// contracts a bare product-plus-add contracts this spelling too
-// (boys_backend_simd.hpp:9-15, which names the compiler and the flags), so
-// where THIS unit measures contraction the separate spelling is the fused
-// arithmetic and the expected value is the fused one. The expectation is
-// therefore read off the measurement rather than assumed from the name, and a
-// lane that stopped reading the selection still fails: with contraction off the
-// expected value is the two-rounding one and a hard-coded fused step delivers
-// the other.
+// The packed backends' route liveness: boys_backend_simd.hpp's Avx2Fp64<Route> and Avx2Fp32<Route> at
+// both named routes and the default, held against tests/boys_muladd_route_reference.hpp - the half of
+// the regression that needs the intrinsics (the argument is tests/boys_muladd_route_test.cpp). This
+// unit carries their flags as src/boys_simd.cpp does, CMakeLists.txt pinning the same set.
 
 #include <gtest/gtest.h>
 
@@ -32,12 +11,9 @@
 #include "boys_muladd_route_reference.hpp"
 
 // --- Architecture guard -----------------------------------------------------
-//
-// As src/boys_simd.cpp: the build's answer when it states one, the compiler's
-// predefines otherwise. Unlike that unit this one does not refuse an unstated
-// non-x86_64 target - the library's SIMD unit is the one that must not compile
-// the tier out silently - so a target without the tier carries a single
-// skipping test and the rest of the suite is unchanged.
+// As src/boys_simd.cpp: the build's answer when it states one, the compiler's predefines otherwise.
+// Unlike that unit this one does not refuse an unstated non-x86_64 target - the library's SIMD unit
+// is the one that must not compile the tier out silently - so such a target gets one skipping test.
 #ifdef BOYS_SIMD_X86
 
 // The build answered; nothing to detect.
@@ -260,11 +236,10 @@ PackedRow SweepPackedSub(const char* backend_name) {
 
         for (std::size_t j = 0; j < width; ++j)
         {
-            // The fused step at this operation - one instruction, one rounding -
-            // against the two-rounding difference the backend's MulSub promises
-            // on every build. The route does not reach the operation, so a lane
-            // that ran the route anyway would deliver the first where the two
-            // part, and the count of those cells is what this sweep reads.
+            // The fused step at this operation - one instruction, one rounding - against the
+            // two-rounding difference the backend's MulSub promises on every build. The route does
+            // not reach it, so a lane that ran the route anyway would deliver the fused value where
+            // the two part, and the count of those cells is what this sweep reads.
             const T fused = std::fma(a[j], b[j], -c[j]);
             const T expected = TwoRoundingSub(a[j], b[j], c[j]);
 

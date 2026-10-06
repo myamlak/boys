@@ -1,8 +1,6 @@
-// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a batch
-// of arguments in one band, by one matrix product in the named mode's arithmetic.
-//
-// Every mode's delivered error is held to the bound the public header's table
-// asserts for it, and reported beside that bound.
+// The region-A transform lane (boys/boys_transform.hpp): F_0..F_nmax for a batch of arguments in one
+// band, by one matrix product in the named mode's arithmetic. Every mode's delivered error is held
+// to the bound the public header's table asserts for it, and reported beside that bound.
 
 #include "boys/boys.hpp"
 #include "boys/boys_transform.hpp"

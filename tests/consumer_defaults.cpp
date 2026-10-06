@@ -1,29 +1,25 @@
-// Consumer check: the policy a call naming nothing compiles, from <boys/boys.hpp>
-// alone, and the figures that show each name is the policy its entry already runs.
-// A template parameter's zero value cannot be pointed at or cited; these names can.
-//
-// Two claims are checked, each printing numbers rather than a checkmark. First, the
-// name and the empty argument list are one call, and the two spellings are compared
-// on values as well, because a type-level argument is not a value-level one.
-//
-// **The name the first claim uses is the class's own row.** What an entry's policy
-// parameter defaults to is the row this build's default-policy table carries for the
-// class that entry's precision and shape make -
-// `boys::DefaultPolicy<Precision, Shape>`, which boys/boys.hpp resolves from the one
+// Consumer check: the policy a call naming nothing compiles, from <boys/boys.hpp> alone, and the
+// figures that show each name is the policy its entry already runs. A template parameter's zero
+// value cannot be pointed at or cited; these names can.
+
+// Two claims are checked, each printing numbers rather than a checkmark. First, the name and the
+// empty argument list are one call, and the two spellings are compared on values as well, because a
+// type-level argument is not a value-level one.
+
+// The name the first claim uses is the class's own row. What an entry's policy parameter defaults
+// to is the row this build's default-policy table carries for the class that entry's precision and
+// shape make - `boys::DefaultPolicy<Precision, Shape>`, which boys/boys.hpp resolves from the one
 // table the seam file carries - and not the shortcut composed from the seam's five.
-// The five are the point a class the table does not name falls to, and this build's
-// table names every class: a build that writes its own rows makes a class's default
-// a row of its own choosing, and an entry held to the five would then be held to a
-// policy it does not run. So the class-keyed names below are what the entries are
-// compared against, and the four shortcut names are asserted as the names they are.
-//
-// Second, where one precision's default is not another's (the half lanes run the fp16
-// engine budget, the float lane the float one), the entry is compared against its own
-// class's call bit for bit, and beside it against the float lane's class.
-//
-// The second claim's rows are the one place a difference is expected and is not a
-// failure.
-//
+
+// The five are the point a class the table does not name falls to, and this build's table names
+// every class: a build that writes its own rows makes a class's default a row of its own choosing,
+// and an entry held to the five would be held to a policy it does not run. So the class-keyed names
+// below are what the entries are compared against; the four shortcut names are asserted as such.
+
+// Second, where one precision's default is not another's (the half lanes run the fp16 engine
+// budget, the float lane the float one), the entry is compared against its own class's call bit for
+// bit, and beside it against the float lane's class: the one place a difference is expected.
+
 // Run:  cmake --build <build> --target boys-consumer-defaults
 //       <build>/boys-consumer-defaults
 //       ctest --test-dir <build> -R boys-consumer-defaults
@@ -70,15 +66,10 @@ using Fp32Default = boys::DefaultPolicyFp32;
 using Fp16Default = boys::DefaultPolicyFp16;
 using Bf16Default = boys::DefaultPolicyBf16;
 
-// The class-keyed names: what an entry's own policy parameter defaults to.
-// `boys::DefaultPolicy<Precision, Shape>` is the name the library resolves a class to -
-// the row this build's seam carries for it, or the five above where it carries none - so
-// an entry is held to its own class's default rather than to a name that happens to agree
-// with it at this revision. A seam that writes its own rows moves these names and leaves
-// the four above where they are, which is the difference the rows below measure.
-//
-// One name per class this file's entries make. The device classes are not among them:
-// every entry compared below is a host entry.
+// The class-keyed names: what an entry's own policy parameter defaults to. `boys::DefaultPolicy<
+// Precision, Shape>` is the name the library resolves a class to - the row this build's seam
+// carries for it, or the five above where it carries none - so a seam that writes its own rows
+// moves these names and leaves the four above. One per class this file's entries make, all host.
 using Fp64Single = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
 using Fp64FixedN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
 using Fp64AllN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
@@ -89,19 +80,17 @@ using Fp32AllN = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>
 using Fp32AllOrders = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
 using Fp16Single = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>;
 using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
-// The two half formats are one engine at one budget and two classes: the seam keys a class
-// by the format a return carries, so the bf16 class's own row is not the fp16 class's, and
-// this name is that row rather than the fp16 one. A bf16 entry that names no policy
-// resolves through it (`Precision::kBf16`), which is why the row below compares
-// `BoysAllOrdersBf16<>` against the bf16 class and not against the fp16 class.
+// The two half formats are one engine at one budget and two classes: the seam keys a class by the
+// format a return carries, so this name is the bf16 class's own row and not the fp16 class's. A
+// bf16 entry that names no policy resolves through it (`Precision::kBf16`), which is why the row
+// below compares `BoysAllOrdersBf16<>` against the bf16 class and not against the fp16 class.
 using Bf16Single = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kSingle>;
 using Bf16AllOrders = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kAllOrders>;
 
-// Each shortcut name denotes the type it is defined as: `EvalPolicy<>` for the double and
-// float lanes; for the half lanes the same axes under the fp16 engine budget. That is a
-// statement about the four names and not about any entry's parameter - the entries'
-// parameters default to the class-keyed names above, and the two coincide only on a class
-// whose row is the five.
+// Each shortcut name denotes the type it is defined as: `EvalPolicy<>` for the double and float
+// lanes; for the half lanes the same axes under the fp16 engine budget. That is a statement about
+// the four names and not about any entry's parameter - the entries' parameters default to the
+// class-keyed names above, and the two coincide only on a class whose row is the five.
 static_assert(std::is_same_v<Fp64Default, boys::EvalPolicy<>>);
 static_assert(std::is_same_v<Fp32Default, boys::EvalPolicy<>>);
 static_assert(Fp64Default::kBudget == boys::BoysBudget::kFloat);
@@ -120,28 +109,24 @@ static_assert(Fp16Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp16Default::kPack == boys::kDefaultPackAxis);
 static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 
-// Address identity: two function addresses compare equal in a constant expression only
-// when the two names are one instantiation, and two instantiations of one entry share a
-// function-pointer type, so these assert that each entry's *own* default is the name
-// its class resolves to - not merely that the name is a type the entry could be called
-// with. A revision that changed an entry's template default, or a seam that moved a
-// class row, fails them; a name that merely agrees at this revision does not pass them.
-//
-// The alias each entry is held to is its own class's name above, not the lane name: an
-// entry's parameter defaults to `DefaultPolicy<Precision, Shape>` for the class it
-// belongs to (boys/boys.hpp, the declarations at BoysSingle, BoysFixedN, BoysAllN,
-// BoysAllNAtOrders, BoysSingleF32, BoysAllNF32), and that name is the lane name only
-// while this build's seam carries no row for the class. Holding a class to the lane
-// name would compare the entry against a name it does not default to as soon as a seam
-// carries the class's own row.
-//
-// Only the yes direction is a constant expression: comparing two distinct function
-// addresses is not one under the sanitizer configuration this file is also built in.
-// g++ 15 with -fsanitize=address,undefined refuses it with "'(f == g)' is not a constant
-// expression", and a function address against a null pointer with "'(f == 0)'", while
-// two spellings of one function fold. A variable template's initializer is a
-// constant-expression context even where the value is only read at run time, so the
-// comparison cannot be written as one; the two controls that can say no compare in main().
+// Address identity: two function addresses compare equal in a constant expression only when the two
+// names are one instantiation, and two instantiations of one entry share a function-pointer type,
+// so these assert that each entry's own default is the name its class resolves to, not merely that
+// the name is a type the entry could be called with. A moved template default or class row fails.
+
+// The alias each entry is held to is its own class's name above, not the lane name: an entry's
+// parameter defaults to `DefaultPolicy<Precision, Shape>` for the class it belongs to:
+// the declarations at BoysSingle, BoysFixedN, BoysAllN, BoysAllNAtOrders, BoysSingleF32,
+// BoysAllNF32 (boys/boys.hpp), and it is the lane name only while the seam carries no row.
+
+// Only the yes direction is a constant expression: comparing two distinct function addresses is not
+// one under the sanitizer configuration this file is also built in - g++ 15 with
+// -fsanitize=address,undefined refuses it with "'(f == g)' is not a constant expression", and a
+// function address against a null pointer with "'(f == 0)'"; two spellings of one function fold.
+
+// A variable template's initializer is a constant-expression context even where the value is only
+// read at run time, so the comparison cannot be written as one; the two controls that can say no
+// compare in main().
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
 static_assert(SameCall<&boys::BoysSingle<>, &boys::BoysSingle<Fp64Single>>);
@@ -450,11 +435,9 @@ int main() {
     }
 
     // --- half ---------------------------------------------------------------
-    // The half lane's entry takes a policy like the float lane's and defaults to the fp16
-    // lane's, so the row compares the entry as a caller writes it against the float
-    // lane's entry at that same policy, converted: the documented name is the entry's
-    // arithmetic. Those entries sit behind the BoysFp16 seam, so a closed-seam build says
-    // so below.
+    // The half lane's entry takes a policy like the float lane's and defaults to the fp16 lane's,
+    // so the row compares the entry as a caller writes it against the float lane's entry at that
+    // same policy, converted: the documented name is the entry's arithmetic.
 #if BoysFp16
     {
         Row row = SingleOrderRow<F16>(
@@ -535,11 +518,9 @@ int main() {
     }
 
     // --- why the names are not one name --------------------------------------
-    // The half lanes' class and the float lane's single-order class are two arithmetics,
-    // the engine budget being the one axis on which they part; this row prints how many
-    // cells they differ on and is not a failure either way. The float side is that class
-    // row, so the reading is one class against another rather than a class against the
-    // seam's five.
+    // The half lanes' class and the float lane's single-order class are two arithmetics, the engine
+    // budget being the one axis on which they part; this row prints how many cells they differ on
+    // and is not a failure either way. The float side is that class row, not the seam's five.
     std::printf("  (rows below compare a half lane against the FLOAT lane's single-order "
                 "class, which is the other engine budget)\n");
     {
@@ -568,12 +549,9 @@ int main() {
     }
 
     // --- the negative controls ------------------------------------------------
-    // The identity assertions above fold only when the two names are one instantiation,
-    // so they prove nothing on the pair they cannot be made on - the half lane's class
-    // and the half shortcut name, two names that must compare unequal because the
-    // shortcut carries the default axes at the fp16 engine budget. In main() rather than
-    // a static assertion because the sanitizer configuration rejects the comparison in
-    // any constant-expression context (see SameCall above).
+    // The identity assertions above fold only for one instantiation, so they prove nothing on the
+    // pair that must compare unequal: the half lane's class and the half shortcut name, which
+    // carries the default axes at the fp16 engine budget.
     {
         const bool singleIsHalf = &boys::BoysSingle<> == &boys::BoysSingle<Fp16Default>;
         const bool singleF32IsHalf = &boys::BoysSingleF32<> == &boys::BoysSingleF32<Fp16Default>;
