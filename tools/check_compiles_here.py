@@ -116,6 +116,12 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="print every command run, not only the ones that fail",
     )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="accepted for the invocation the workflow uses uniformly; this tool has no other "
+        "mode, so a source that does not compile exits non-zero with or without it",
+    )
     return parser.parse_args(argv)
 
 

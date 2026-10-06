@@ -115,7 +115,30 @@ LEG_ARG = re.compile(r'--leg\s+"([^"]*)"')
 # put back by hand and this tool refused it - "UNARMED names a check the step(s) do
 # invoke" - which is the behaviour that makes the list worth keeping empty rather than
 # stale. A check that cannot be armed yet belongs here with its reason; none now does.
-UNARMED = {}
+UNARMED = {
+    "check_compiles_here.py": (
+        "in the mode it is armed in its input is the working tree's own change against HEAD, and "
+        "a CI checkout has no change. The legs that build compile every source the tree carries "
+        "with the same two compilers, so a step here would re-run a leg this job has already run. "
+        "It is armed where the change exists - as the pre-commit hook (tools/hooks/pre-commit), "
+        "which refuses a commit whose staged C++ does not compile"
+    ),
+    "install_hooks.py": (
+        "its subject is the hooks of the checkout it runs in, and a CI checkout has none: the "
+        "check asks whether this machine's .git/hooks carries the pre-commit script, which is a "
+        "fact about a developer's clone and not about the tree. It is armed by whoever clones, "
+        "and the hook it installs is what arms check_compiles_here.py on the way into a commit - "
+        "so the two are armed together on the machine where a commit is made, and neither is a "
+        "leg of the workflow"
+    ),
+    "splice_default_rows.py": (
+        "its input is a pair of files no leg produces: the emitted defaults an option-probe run "
+        "writes and the seam they are spliced into. There is no such emitted file in the tree, "
+        "and the run that makes one is the probe - which is the round trip held under condition "
+        "10, whose evaluator is a probe run for keeps and a build configured against the seam it "
+        "emits. Arming this check means arming that round trip, not adding a step here"
+    ),
+}
 
 
 def platform_tool():

@@ -553,12 +553,16 @@ jobs:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
           .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-      - name: Generated tables (platform table, build-facts page, option matrix)
+      - name: Generated tables (platform table, build-facts page, option matrix, entry aliases)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/gen_platform_table.py --check
           .venv/bin/python tools/gen_option_matrix.py --check
           .venv/bin/python tools/gen_build_facts.py --check
+          # The generated block in boys_cuda_options.hpp, whose claim is that two rows of the
+          # device option space reach one kernel. It is derived from the entries' own bodies, so
+          # this is what notices a row that starts or stops being a second name for one.
+          .venv/bin/python tools/gen_entry_aliases.py --check
       # tests/data/boys_accuracy_gate_reference.csv is the grid every accuracy
       # claim in this tree is measured against: the CPU gate, the CUDA device
       # gate and the bounds printed beside them all read it, and no step here
@@ -761,6 +765,31 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_gate_covers_combinations.py --check
+      # A build file can name a source the tree carries and git does not. Two runs went red on
+      # exactly that - `Cannot find source file` - both times a target registered by one writer
+      # while its sources sat untracked in another's tree, and both times on every leg that
+      # clones the repository. This reads every path the build files name and requires the
+      # repository to carry it, before a leg spends twenty minutes learning it the hard way.
+      - name: Docs (every source the build names is carried)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_build_names_committed_sources.py --check
+      # A lane member no body reads is a seat filled by nothing: the loop that fills it walks
+      # past it and every figure the lane publishes rests on arithmetic that never ran. This
+      # reads each member of the device lanes against the bodies that read it, and holds the
+      # ones that are deliberately unread as interface with the reason.
+      - name: Docs (every lane member is read)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_lane_members_read.py --check
+      # The owner's rule: a comment says what the code cannot, and then stops. A run of ordinary
+      # comment lines longer than a few is a comment arguing a case beside code that already
+      # makes it, and this counts what can be counted - documentation comments are exempt by the
+      # rule itself, so `///`, `/**` and `//!` are not what this reads.
+      - name: Docs (comments are brief)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_comments_are_brief.py --check
       # The two consumer documents quote what the examples print, and nothing read those runs back:
       # the ctest legs run every example (`boys-example-*`) and compare nothing, and no tool read an
       # example's stdout at all - so a change that moved a printed digit left README.md and

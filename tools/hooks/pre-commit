@@ -17,7 +17,16 @@
 set -u
 
 root=$(git rev-parse --show-toplevel) || exit 0
-build_dir=${BOYS_CHECK_BUILD_DIR:-build-checkgate}
+
+# Named by the caller, or the tool's own default - which is the pair, a non-CUDA build
+# and a CUDA one. A single directory is what makes a device source uncheckable: the
+# non-CUDA build carries no command for it and the check exits 2 with "no target among
+# them builds it", which reads as a defect in the commit.
+if [ -n "${BOYS_CHECK_BUILD_DIR:-}" ]; then
+    build_args="--build-dir $BOYS_CHECK_BUILD_DIR"
+else
+    build_args=""
+fi
 
 # The staged sources, of the kinds that compile. A deleted file is not one of them.
 staged=$(git diff --cached --name-only --diff-filter=ACMR |
@@ -34,12 +43,16 @@ if command -v wsl.exe >/dev/null 2>&1 || command -v wsl >/dev/null 2>&1; then
     rest=$(printf '%s' "$root" | cut -c3-)
     wsl_root="/mnt/$drive$rest"
     files=$(printf '%s' "$staged" | tr '\n' ' ')
-    wsl -e bash -lc "cd '$wsl_root' && python3 tools/check_compiles_here.py --build-dir '$build_dir' $files"
+    # MSYS_NO_PATHCONV: Git Bash rewrites an argument that looks like a path, and this one
+    # is `/mnt/c/...` - handed to wsl.exe it arrives as `C:/Program Files/Git/mnt/c/...`
+    # and the check reports it cannot find the tree.
+    MSYS_NO_PATHCONV=1 wsl -e bash -lc "cd '$wsl_root' && python3 tools/check_compiles_here.py $build_args $files"
     status=$?
 else
     # No WSL: the compilers may still be on PATH directly.
     files=$(printf '%s' "$staged" | tr '\n' ' ')
-    python3 "$root/tools/check_compiles_here.py" --build-dir "$build_dir" $files
+    # shellcheck disable=SC2086
+    python3 "$root/tools/check_compiles_here.py" $build_args $files
     status=$?
 fi
 
