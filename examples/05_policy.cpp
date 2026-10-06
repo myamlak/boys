@@ -1,11 +1,7 @@
 // How do I ask for a specific evaluation, once I know which one I want?
-//
 //   c++ -std=c++20 -I include examples/05_policy.cpp -L build -lboys -o policy && ./policy
-//
-// A policy is named in the template argument list, never constructed. The four
-// settings below are the ones a caller who has measured a preference names; a
-// call site that names none gets the build's own defaults, which is the call
-// this program compares against.
+// A policy is named in the template argument list, never constructed; a call site that names none
+// gets the build's own defaults, which is the call this program compares the named one against.
 #include <boys/boys_span.hpp>
 
 #include <array>

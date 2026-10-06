@@ -1,11 +1,7 @@
 // I need F_0(x) through F_nmax(x) at one argument - how do I get the ladder?
-//
 //   c++ -std=c++20 -I include examples/02_all_orders.cpp -L build -lboys -o f0n && ./f0n
-//
-// One call fills an array of nmax + 1 values: out[k] = F_k(x). This is the
-// shape an integral code wants, because a shell quartet needs every order at
-// once and the higher orders are cheaper reached from the lower ones than
-// computed one at a time.
+// One call fills an array of nmax + 1 values, out[k] = F_k(x): the shape an integral code wants,
+// since a shell quartet needs every order at once, and the higher ones are cheaper from the lower.
 #include <boys/boys_span.hpp>
 
 #include <array>

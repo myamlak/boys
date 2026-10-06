@@ -1,26 +1,10 @@
-// The GPU throughput rows, on the same uniform (n, x) workload as the CPU
-// benchmark. Lanes:
-//   cheb-f64   - BoysCuda::SingleF64 (the certified double lane)
-//   cheb-f32   - BoysCuda::SingleF32 (the recommended GPU lane)
-//   erf-f64    - erf-F0 + upward recursion (competitor; kernels in the
-//                companion kernels file)
-//   lut-f64    - Tsuji-style gridded LUT + Taylor corrections (competitor)
-//   fp16-single - BoysCuda::SingleF16 (I/O-only lane, device-pointer and
-//                asynchronous like the others: the time is device-side cost)
-//
-// Custom main(): --self-check runs the verifier against the CPU references
-// and exits; otherwise the measurement protocol runs (warmup + 3 passes,
-// min/median/max, median = the cell the run reports).
-//
-// Self-check budgets (the lanes are compared against the CPU references):
-//   cheb-f64      |out - BoysSingle|    <= 5.5e-14
-//   cheb-f32      |out - BoysSingleF32| <= 3.5e-7
-//   erf-f64       <= 1e-13 for x >= 10.0 (asserted device-lane domain;
-//                    off-domain errors are recorded as the scheme's honest cost)
-//   lut-f64       <= 1e-12 (LUT values <= 5.5e-14 plus degree-5 Taylor
-//                    truncation ~1e-15)
-//   fp16-single   GPU vs the coarsest CPU fp16 lane, <= 3.5e-7 + 1 full ULP
-//                    (the GPU-vs-CPU comparison contract)
+// The GPU throughput rows, on the same uniform (n, x) workload as the CPU benchmark. cheb-f64 and
+// cheb-f32 are BoysCuda::SingleF64 (the certified double lane) and SingleF32 (the recommended GPU
+// lane); fp16-single is SingleF16, an I/O-only lane whose time is device-side cost; erf-f64
+// (erf-F0 + upward recursion) and lut-f64 (Tsuji-style gridded LUT + Taylor) are competitors.
+
+// --self-check runs the verifier against the CPU references and exits; otherwise the measurement
+// protocol runs (warmup + 3 passes, min/median/max, median = the cell the run reports).
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys_cuda_benchmark_kernels.hpp"
@@ -79,12 +63,10 @@ double StableSeriesF(int n, double x) {
     return 0.5 * std::exp(-x) * sum;
 }
 
-// Builds the 38 x 1025 LUT: rows 0..32 from BoysCuda::AllNF64 on the grid
-// (certified <= 5.5e-14), rows 33..37 from the stable series above (the
-// degree-5 corrections of order-32 inputs reach F_37). The batch entry takes
-// DEVICE pointers (boys_cuda.hpp), so the grid travels through device memory
-// (once per process); one nmax covers the grid, so the sorted-argument entry
-// applies and no order array is uploaded.
+// Builds the 38 x 1025 LUT: rows 0..32 from BoysCuda::AllNF64 on the grid, rows 33..37 from the
+// stable series above, since the degree-5 corrections of order-32 inputs reach F_37. The batch
+// entry takes DEVICE pointers, so the grid travels through device memory once per process, and one
+// nmax covers the grid: the sorted-argument entry applies and no order array is uploaded.
 bool BuildLutRows(std::vector<double>& rows) {
     rows.assign(38 * 1025, 0.0);
     std::vector<double> grid(1025);
@@ -349,11 +331,10 @@ int SelfCheck(const std::vector<Item>& items,
         failed += !pass;
     }
 
-    // erf-f64 (competitor lane). The upward recursion from an F0 seed stays
-    // within 5e-14 for x >= 9.70 at k_max = 32 on the CPU; the device lane's
-    // rounding near the turning point is worse (2.3e-13 at x = 9.73, n = 32 on
-    // this T1000), so the asserted domain takes headroom. The x >= 5 worst is
-    // the scheme's honest off-domain behavior.
+    // erf-f64 (competitor lane). The upward recursion from an F0 seed stays within 5e-14 for
+    // x >= 9.70 at k_max = 32 on the CPU; this device lane's rounding near the turning point is
+    // worse (2.3e-13 at x = 9.73, n = 32 on this T1000), so the asserted domain takes headroom, and
+    // the x >= 5 worst is the scheme's honest off-domain behavior.
     {
         constexpr double kErfBoundary32 = 10.0; // asserted domain (device lane)
         BoysBenchLaunchErfF64(dN, dX, dOutF64, kInputCount, blocks, kThreads, nullptr);

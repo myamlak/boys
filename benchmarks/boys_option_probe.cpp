@@ -1,15 +1,7 @@
-// The option probe driver: measures this build's evaluation options on this
-// machine and prints what it found, verdict included.
-//
-// The exit status is 0 whether or not a default was named — a refusal is one of
-// this tool's results, not a failure of it — so a script that wants the verdict
-// reads it from the text. A run that measured fails in one of two ways: its
-// option space does not close (exit 1) — which the report's last block prints,
-// because a space whose cells do not add up is a defect in the accounting and
-// not a result, and a closure check that could not fail would be a decoration —
-// or an --emit-defaults write it was asked for cannot be made (exit 3). An
-// argument this tool does not read is refused (exit 2) before anything is
-// measured.
+// The option probe driver: measures this build's evaluation options on this machine and prints what
+// it found, verdict included. Exit 0 is a result either way: a refusal is one of them, so a script
+// reads the verdict from the text. A measured run exits 1 when its option space does not close (an
+// accounting defect, not a result), 3 on a failed --emit-defaults write, 2 otherwise.
 #include "boys/boys_probe.hpp"
 
 #include <array>

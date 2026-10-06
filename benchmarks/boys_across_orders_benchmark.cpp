@@ -1,52 +1,11 @@
-// The across-orders packed lane against the across-arguments lane, on the
-// workload the all-orders entrance actually has.
-//
-// The two lanes vectorise different axes of the same call, so the call shape
-// decides which axis has anything to fill:
-//
-//   * BoysAllOrders(nmax, x, out) is ONE argument and nmax + 1 orders, so the
-//     across-arguments lane has one argument for its four lanes - the baseline
-//     below runs it over four copies of x, which is what serving this shape on
-//     that axis costs. The across-orders lane fills its lanes with the orders.
-//
-//   * BoysAllN(nmax, x, out, count) is count arguments by nmax + 1 orders, so
-//     both axes are available. The shipped entry takes the arguments (an
-//     order-major loop of the region-A lane); the across-orders lane takes the
-//     orders (an argument-major loop) and pays the plane's order stride on the
-//     store because AVX2 has no scatter.
-//
-//   * THE PARTITION. The double lane's shipped region-A pieces share their
-//     intervals and degrees across orders, which is what lets its lane fetch one
-//     piece's coefficients at a fixed stride and hold four orders of ONE piece.
-//     The float lane's do not, so its lane looks each order's own piece up. The
-//     narrow partition is cut per order too, so no such stride exists: its lane
-//     fetches each of the four orders it packs its own piece and coefficients,
-//     so one group is four different pieces evaluated together. The per-order
-//     loop beside it is that partition read one order at a time by the
-//     library's own single-order entry, and the pair's two counts say whether
-//     the packed form is a vector path or four scalar calls.
-//
-// WHAT THIS PROGRAM REPORTS. One variant at a time over a fixed workload, with
-// the work it did printed - calls, output values and the worst deviation from
-// the shipped entry, so a measurement can never be of a broken variant. It
-// reports instruction and operation counts, not a time: those come from the
-// counter the platform exposes (perf stat) or from the compiled code, not from a
-// clock. --time prints why its number is not a measurement on a loaded machine.
-//
-// Usage:
-//   boys-across-orders-benchmark --list
-//   boys-across-orders-benchmark [--variant=NAME] [--reps=N] [--count=N]
-//                                [--nmax=N] [--time]
-//
-// Reproducing an instruction count, one variant per run, under
-// perf stat -e instructions:u,uops_retired.retire_slots:u:
-//   boys-across-orders-benchmark --variant=orders-across-direct --reps=20000
-//   boys-across-orders-benchmark --variant=orders-narrow-clenshaw --reps=20000
-//   boys-across-orders-benchmark --variant=orders-narrow-scalar-clenshaw --reps=20000
-//   boys-across-orders-benchmark --variant=orders-f32-orders-axis --reps=2000
-//   (and the same line with --variant=orders-f32-committed,
-//    --variant=orders-f32-scalar-fits, --variant=orders-f32-across-clenshaw,
-//    --variant=orders-f32-across-composed)
+// The across-orders packed lane against the across-arguments lane on the all-orders entrance's
+// workload. BoysAllOrders is one argument by nmax + 1 orders, so the arguments axis is served four
+// copies of x and the orders lane takes the orders; BoysAllN carries both, and its orders lane pays
+// the plane's order stride on the store because AVX2 has no scatter.
+
+// Reproducing an instruction count, one variant per run:
+//   perf stat -e instructions:u,uops_retired.retire_slots:u: boys-across-orders-benchmark
+//   --variant=orders-across-direct --reps=20000 (the f32 variants --reps=2000)
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -209,11 +168,10 @@ struct Deviation {
     double relative = 0.0;
 };
 
-// The narrow partition's lane at one argument, at the scheme the variant names.
-// The library's packed entry carries the two certified schemes on this
-// partition; the direct Chebyshev sum is this driver's own extra reading of the
-// shipped lane and is not a scheme of the library's, so this partition has no
-// direct-sum variant rather than one answered with another scheme's numbers.
+// The narrow partition's lane at one argument, at the scheme the variant names. The library's
+// packed entry carries the two certified schemes on this partition; the direct Chebyshev sum is
+// this driver's own extra reading of the shipped lane, not a scheme of the library's, so this
+// partition has no direct-sum variant rather than one answered with another scheme's numbers.
 void NarrowLane(boys::EvalScheme scheme, int nmax, double x, double* out) noexcept {
     if (scheme == boys::EvalScheme::kHorner)
     {

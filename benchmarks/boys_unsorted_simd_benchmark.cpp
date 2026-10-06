@@ -1,28 +1,14 @@
-// The unsorted-SIMD lane: one kernel evaluating all three region paths per vector
-// (A piecewise Chebyshev, B F0-Chebyshev + upward from a gathered e^{-x} table,
-// C pure asymptotic) and blending them per lane — the cost of the unsorted input
-// stream, against the region-sorted lanes of the companion sorted benchmark.
-//
-// The measured parts are the shipped kernel's own, compiled here from
-// src/boys_simd.cpp rather than restated: the e^{-x} table and its
-// gather-and-Horner Eval4, the split Clenshaw both fitted region-A paths run,
-// and the constants read beside them (kHalfSqrtPi among them). A change to any
-// of these moves this file's number, which a copy cannot promise. What stays
-// local is the driver - all three paths per vector, blended per lane - because
-// no such lane is shipped: the library's lanes partition the arguments by
-// region first, so every 4-lane vector is homogeneous. The ExpTable's shape is
-// the shipped one for that reason (rows padded to 8 doubles, grid index
-// pre-shifted by 3 before the scale-8 gather),
-// and --self-check pins the values against BoysSingle rather than assuming it.
+// The unsorted-SIMD lane: one kernel evaluating all three region paths per vector, blended per lane
+// — the cost of an unsorted input stream against the region-sorted lanes of the companion
+// benchmark. No such lane is shipped: the library partitions arguments by region first, so every
+// 4-lane vector is homogeneous, and the parts measured here are the shipped kernel's own.
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
 
-// The shipped AVX2 unit, compiled into this one so that the table, Eval4 and
-// Clenshaw4Split below ARE those definitions and not lookalikes. Four of that
-// unit's definitions are the library's in this build, which this target links
-// as well, so they are renamed for the length of the include; a new external
-// definition there needs the same treatment, and the duplicate-symbol error at
-// link time is what asks for it.
+// The shipped AVX2 unit, compiled into this one so that the table, Eval4 and Clenshaw4Split below
+// ARE those definitions and not lookalikes. Four of that unit's definitions are the library's in
+// this build, which this target links as well, so they are renamed for the length of the include;
+// a new external definition there needs the same treatment, and the duplicate-symbol error asks.
 #define BoysAvx2Available BoysAvx2AvailableFromShippedUnit
 #define AppendPackedBackends AppendPackedBackendsFromShippedUnit
 #define DetectF16c DetectF16cFromShippedUnit

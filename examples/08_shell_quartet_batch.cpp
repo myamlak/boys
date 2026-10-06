@@ -1,16 +1,10 @@
 // A shell quartet does not ask for one order. What does the batch it needs cost?
-//
 //   c++ -std=c++20 -I include examples/08_shell_quartet_batch.cpp -L build -lboys -o quartet
-//
-// Every argument of a real batch arrives with its own highest order, and they are
-// not the same: a quartet's demand runs to la + lb + lc + ld for the argument its
-// exponents produce. Padding all of them to the batch's largest is the easy call
-// and it is not free. This program asks for both shapes over the same arguments
-// and counts the values each one had to produce.
-//
-// The accuracy question is the other half. The bound and the speed are one
-// choice, so the program asks the library what it guarantees before it relies on
-// the answer, and checks the answer against that.
+
+// Every argument of a real batch arrives with its own highest order, running to la + lb + lc + ld,
+// and padding all of them to the batch's largest is the easy call and not free. The bound and the
+// speed are one choice: both shapes are asked over the same arguments, and the library's guarantee
+// is asked with them.
 #include <boys/boys_span.hpp>
 
 #include <array>

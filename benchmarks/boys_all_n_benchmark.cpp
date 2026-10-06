@@ -1,32 +1,7 @@
-// The all-orders batch entry (BoysAllN) against the per-argument loop it
-// replaces: same arguments, same order-major planes, with the sort's own cost
-// separated from the grouped-path win.
-//
-// Five variants over ONE argument set:
-//   perarg          BoysAllOrders per argument, scattered into the planes (the
-//                   C API's BoysDoubleBatch is this loop)
-//   shuffled        BoysAllN on the arguments in generation order - the sort is
-//                   paid
-//   ascending       BoysAllN on the same arguments sorted - the sort is still
-//                   walked, but the run memory is sequential
-//   tag             BoysAllN with BoysSortedArgs on sorted input - sort skipped
-//   tag_workspace   the same call with a caller-supplied workspace
-//
-// tag vs perarg is the win the entry exists for. The sort's own cost is
-// ascending minus tag: same arguments, same runs, differing only in the
-// classification pass, the index scatter and the indexed plane writes. shuffled
-// vs ascending isolates the input-order effect at a fixed sort cost.
-//
-// Protocol: interleaved rounds of one call per variant, so a busy machine
-// inflates every variant together; each variant reports its minimum over the
-// rounds, with the round count and the max/min spread printed so a reader can
-// judge the noise. The ratios, not the milliseconds, are the result.
-//
-// Workload: x log-uniform on [1e-3, 40], which populates region A, the extended
-// band, region B and region C in one array - a synthetic stand-in for a
-// molecular argument set. --xrange=lo,hi, --nmax=N, --count=N and --rounds=N
-// move it to other shapes (a low angular momentum shell quartet wants a small
-// nmax over region-A arguments).
+// The all-orders batch entry (BoysAllN) against the per-argument loop it replaces (BoysDoubleBatch
+// in the C API): the same arguments into the same order-major planes, with tag vs perarg the win
+// the entry exists for. x is log-uniform over one array that populates region A, the extended band,
+// B and C; rounds interleave, and the ratios are the result.
 #include "boys/boys.hpp"
 
 #include <algorithm>

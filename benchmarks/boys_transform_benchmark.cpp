@@ -1,40 +1,12 @@
-// The region-A transform lane's cost: one row per arithmetic mode and band, on
-// one argument set.
-//
-// WHAT A ROW IS. BoysRegionAProduct evaluates one band's per-order fits as a
-// single matrix product per band, in the mode named at compile time. Each row
-// below is one call of the shipped entry at one (mode, band) pair, timed; the
-// two bands are the lane's whole domain (the entry takes region-A arguments and
-// does not sort, group or fall back), so the rows are its entire option space.
-//
-// WHY THE MODES SEPARATE. The modes differ in exactly two things: how many
-// products per operand they take (ProductModeInfo::parts: 1, 2 or 3, which is
-// parts * (parts + 1) / 2 products per degree pair) and how many operand
-// roundings they pay, since every mode but fp64 rounds each operand to its
-// format through detail::RoundSignificand. fp64 against tf32 isolates the
-// second one: one product per degree in both, so the difference between those
-// two rows is the rounding and nothing else. The split modes then pay it twice
-// or three times per operand on top of their extra products.
-//
-// PROTOCOL. Every row is timed once per round, the rounds interleaved, so a
-// machine doing something else inflates every row together and the ratios
-// survive it. Each row reports its minimum over the rounds with the max/min
-// spread beside it; the ratio to the same band's fp64 row is the result.
-// ns_per_value is that minimum in nanoseconds per output value, the call
-// writing count * (nmax + 1) values as out[k * count + i] = F_k(x[i]).
-//
-// WORKLOAD. Arguments log-uniform across the band, from a fixed formula so two
-// runs of one build hand the entry the same arguments. The lane's work does not
-// depend on where inside a band an argument sits - the whole band is one
-// product, taken by every argument of the batch - so what the spread buys is
-// that no single point of the interval is what a figure describes. Every row
-// writes into one output buffer: the entry is pure and touches only its own
-// out, so reusing it leaves the rows differing in arithmetic and nothing else.
-//
-// Usage:
-//   boys-transform-benchmark [--band=kA1|kA2] [--mode=NAME] [--nmax=N]
-//                            [--count=N] [--rounds=N]
-//   boys-transform-benchmark --list
+// The region-A transform lane's cost: one row per arithmetic mode and band, one call of the shipped
+// entry each, which is the lane's whole option space - it takes region-A arguments and does not
+// sort, group or fall back. fp64 against tf32 isolates the operand rounding, one product per degree
+// in both; the split modes pay that rounding twice or three times on top of their extra products.
+
+// Every row is timed once per round, the rounds interleaved so a busy machine inflates every row
+// together; each reports its minimum over the rounds with the max/min spread beside it, and the
+// ratio to the same band's fp64 row is the result. Arguments are log-uniform across the band from a
+// fixed formula, and every row writes one buffer, so the rows differ in arithmetic only.
 #include "boys/boys_transform.hpp"
 
 #include <algorithm>

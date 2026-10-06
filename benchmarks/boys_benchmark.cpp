@@ -1,9 +1,7 @@
-// Boys-function kernel benchmarks — the CPU throughput rows.
-//
-// Two workloads: uniform (n, x) pairs with n uniform in [0, 32], and a molecular
-// x-distribution sampled from real benzene 6-31G(d) primitive pairs, NAI-style
-// (x = p*|P-C|^2 about the nuclear-attraction center C). The SIMD lanes are
-// measured on region-sorted arrays, the pattern the engine uses.
+// Boys-function kernel benchmarks — the CPU throughput rows, over two workloads: uniform (n, x)
+// pairs with n uniform in [0, 32], and a molecular x-distribution sampled from real benzene
+// 6-31G(d) primitive pairs, NAI-style. The SIMD lanes are measured on region-sorted arrays, the
+// pattern the engine uses.
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"

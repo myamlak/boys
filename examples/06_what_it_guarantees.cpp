@@ -1,10 +1,7 @@
 // Will this entry meet the error my calculation needs?
-//
 //   c++ -std=c++20 -I include examples/06_what_it_guarantees.cpp -L build -lboys -o check && ./check
-//
-// Ask before you rely on it. The answer is decided by the guaranteed error, not
-// by the error the lane happened to deliver on somebody's test grid, so a "yes"
-// here is something a calculation can rest on.
+// Ask before you rely on it: the verdict rests on the guaranteed error rather than on what the lane
+// delivered on somebody's test grid, so a "yes" here is something a calculation can rest on.
 #include <boys/boys_span.hpp>
 
 #include <array>

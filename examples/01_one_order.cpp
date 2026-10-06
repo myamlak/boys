@@ -1,10 +1,7 @@
 // How do I evaluate F_n(x) for one order at one argument?
-//
 //   c++ -std=c++20 -I include examples/01_one_order.cpp -L build -lboys -o f0 && ./f0
-//
-// The answer is one call. The second number printed is the error the library
-// guarantees for that call, so the first number is read with a figure beside it
-// rather than on trust.
+// The answer is one call, printed beside the error the library guarantees for it, so the value is
+// read with a figure next to it rather than on trust.
 #include <boys/boys_span.hpp>
 
 #include <array>

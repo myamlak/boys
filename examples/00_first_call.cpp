@@ -1,19 +1,10 @@
 // What does it look like to call this library? - the program the README opens with.
-//
 //   c++ -std=c++20 -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
-//
-// Four calls cover most of what a program does with this function: one order
-// at one argument, every order at one argument, one order over an array of
-// arguments, and every order over an array of arguments. Everything else in
-// this directory is one of these four, asked about more precisely.
-//
-// The entries take a pointer and a count, which is what a kernel wants at the
-// call. Including boys/boys_span.hpp adds an overload of each for a caller
-// holding a container, which costs nothing: the overload forwards to the same
-// entry, and both spellings compile to the same call.
-//
-// The printing is printf's because the numbers below are quoted by the
-// documentation word for word, and %.17g is the exact shortest round trip.
+
+// Four calls cover what a program does with this function: one order at one argument, every order
+// at one, one order over an array of arguments, every order over an array. The entries take a
+// pointer and a count; boys/boys_span.hpp adds a cost-free container overload of each, printed at
+// %.17g because the documents quote them word for word.
 #include <boys/boys_span.hpp>
 
 #include <array>
