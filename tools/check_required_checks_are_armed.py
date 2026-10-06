@@ -109,21 +109,13 @@ LEG_ARG = re.compile(r'--leg\s+"([^"]*)"')
 # a leg cannot re-make, a build of the check's own - and never its cost, because cost is work and a
 # check that is merely slow is a check to arm and measure. `unarmed_reasons` holds the list to
 # those terms on every run.
-UNARMED = {
-    # Two of the three entries that stood here are gone because the checks are armed:
-    # `check_class_combinations` is pointed at a committed report and
-    # `check_combination_bounds` builds its driver on a leg. This one is NOT armed, and
-    # its reason is kept: emptying the dictionary outright would remove the statement
-    # that this check cannot be armed yet, which is the one piece of information a
-    # reader of this tool needs about it.
-    "check_gate_covers_combinations.py": (
-        "it judges the accuracy gate's committed recorded run, which is a record of one build on "
-        "one machine that no leg can re-make. It fails against that record at the revision it can "
-        "be read at - 576 of 1152 combinations measured by no row, 96 rows exercising no cell - so "
-        "the record does not carry the coverage this check demands and a step would be red on "
-        "committed content (measured: exit 1). Armed by a re-made record"
-    ),
-}
+# Every check that once stood here is armed: `check_class_combinations` is pointed at a
+# committed report, `check_combination_bounds` builds its driver on a leg, and
+# `check_gate_covers_combinations` has a step of its own. The entry for the last one was
+# put back by hand and this tool refused it - "UNARMED names a check the step(s) do
+# invoke" - which is the behaviour that makes the list worth keeping empty rather than
+# stale. A check that cannot be armed yet belongs here with its reason; none now does.
+UNARMED = {}
 
 
 def platform_tool():
