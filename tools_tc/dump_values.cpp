@@ -1,11 +1,10 @@
-// Cross-check driver: the committed library's region-A values on a grid, at full
-// precision. Reads x values from argv[1] (one per line).
-//
-// Two jobs: (1) it pins the harness - a Python reimplementation of the committed
-// recursion must reproduce these values bit for bit, and where it cannot (the
-// committed expx is a float expf, which no Python expression reproduces) these
-// values are the measurement instead; (2) it gives the recursion's own
-// rounding, which is the term a mode's seed has to be added to.
+// Cross-check driver: the committed library's region-A values on a grid, at full precision. Reads x
+// values from argv[1], one per line.
+
+// A Python reimplementation of the committed recursion must reproduce these values bit for bit, and
+// where it cannot - the committed expx is a float expf, which no Python expression reproduces -
+// these values are the measurement instead. The recursion's own rounding is what a mode's seed is
+// added to.
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
