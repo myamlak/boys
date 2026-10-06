@@ -46,8 +46,12 @@ COMPILERS = {
 }
 
 # What a source file we compile looks like. A file of another kind is not ours to
-# check - and a header is checked through the sources that include it.
+# check directly.
 SOURCE_SUFFIXES = (".cpp", ".cc", ".cxx", ".cu")
+
+# What is compiled into something else rather than on its own. A header in a change
+# is checked through the translation units that name it.
+HEADER_SUFFIXES = (".hpp", ".h", ".cuh", ".inl")
 
 # The first line of a compiler's diagnostic, so a failure reads as one line rather
 # than as a screenful. Whatever follows the first `error:`/`warning:` is kept.
@@ -60,6 +64,11 @@ DIAGNOSTIC = re.compile(r"^(.*?:(?:error|fatal error|warning):.*)$", re.MULTILIN
 CI_LIMITS = {
     "clang++": ["-fbracket-depth=256"],
 }
+
+# How many translation units a changed header is checked through. A header included
+# everywhere is compiled many times over; the first few that name it settle whether
+# it compiles at all, and the whole tree is a build's job rather than this one's.
+HEADER_TU_LIMIT = 3
 
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
@@ -134,6 +143,38 @@ def load_commands(build_dir: Path) -> dict[Path, list[dict]]:
         keyed.setdefault(source.resolve(), []).append(entry)
 
     return keyed
+
+
+def keyed_for_header(
+    header: Path, keyed: dict[Path, list[dict]], root: Path
+) -> list[dict]:
+    """The compile commands of the translation units whose source names this header.
+
+    The name is read as the sources spell it - `#include <boys/boys_x.hpp>` or a
+    relative path - so both spellings are looked for, and the search is over the
+    sources the build knows about rather than over the tree.
+    """
+    names = {header.name, f"{header.parent.name}/{header.name}"}
+    for candidate in (header, *header.parents):
+        if candidate == root or root not in candidate.parents:
+            break
+        names.add(str(header.relative_to(candidate)).replace("\\", "/"))
+
+    found: list[dict] = []
+    for source, entries in keyed.items():
+        if not source.is_file() or source.suffix not in SOURCE_SUFFIXES:
+            continue
+        try:
+            text = source.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if not any(f'"{name}"' in text or f"<{name}>" in text for name in names):
+            continue
+        found.extend(entries)
+        if len(found) >= HEADER_TU_LIMIT:
+            break
+
+    return found[:HEADER_TU_LIMIT]
 
 
 def command_of(entry: dict) -> list[str]:
@@ -213,7 +254,9 @@ def main(argv: list[str]) -> int:
     if not wanted:
         wanted = default_files(root)
 
-    wanted = [name for name in wanted if name.suffix in SOURCE_SUFFIXES]
+    wanted = [
+        name for name in wanted if name.suffix in SOURCE_SUFFIXES + HEADER_SUFFIXES
+    ]
     if not wanted:
         print("check_compiles_here: no source to check", file=sys.stderr)
         return 0
@@ -226,6 +269,17 @@ def main(argv: list[str]) -> int:
 
     for source in wanted:
         entries = keyed.get(source)
+        if not entries and source.suffix in HEADER_SUFFIXES:
+            # A header is not compiled on its own: it is compiled into every translation
+            # unit that names it. Checking those is what checks the header, and it is
+            # also the closest thing to what the build will do to it.
+            entries = keyed_for_header(source, keyed, root)
+            if entries:
+                print(
+                    f"check_compiles_here: {source.relative_to(root)} has no target of its "
+                    f"own; checked through {len(entries)} translation unit(s) that include it",
+                    file=sys.stderr,
+                )
         if not entries:
             unbuilt.append(source)
             continue
