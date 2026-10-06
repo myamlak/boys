@@ -1474,6 +1474,14 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // partition's monomial lanes and their float lane counterparts state kMonomial,
         // and the bodies above sum what they read by Horner
         // (boys_cuda_arithmetic.hpp, DevicePieceSum).
+        case DeviceEntry::kDeviceAllOrdersF64Mono:
+        case DeviceEntry::kDeviceAllOrdersF64MonoFast:
+        case DeviceEntry::kDeviceAllOrdersF32Mono:
+        case DeviceEntry::kDeviceAllOrdersF32MonoFast:
+        case DeviceEntry::kDeviceAllOrdersF16Mono:
+        case DeviceEntry::kDeviceAllOrdersF16MonoFast:
+        case DeviceEntry::kDeviceAllOrdersBf16Mono:
+        case DeviceEntry::kDeviceAllOrdersBf16MonoFast:
         case DeviceEntry::kAllOrdersF64Mono:
         case DeviceEntry::kAllOrdersF64MonoFast:
         case DeviceEntry::kAllOrdersF64NarrowMono:
@@ -1528,20 +1536,12 @@ constexpr DeviceEntryAxes DeviceEntryAxesOf(DeviceEntry entry) noexcept {
         // The monomial form of that reading, from a caller's own kernel, on the narrow
         // partition of both lanes.
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMono:
-        case DeviceEntry::kDeviceAllOrdersF64Mono:
-        case DeviceEntry::kDeviceAllOrdersF64MonoFast:
         case DeviceEntry::kDeviceAllOrdersF64OrdersMono:
         case DeviceEntry::kDeviceAllOrdersF64OrdersMonoFast:
-        case DeviceEntry::kDeviceAllOrdersF32Mono:
-        case DeviceEntry::kDeviceAllOrdersF32MonoFast:
         case DeviceEntry::kDeviceAllOrdersF32OrdersMono:
         case DeviceEntry::kDeviceAllOrdersF32OrdersMonoFast:
-        case DeviceEntry::kDeviceAllOrdersF16Mono:
-        case DeviceEntry::kDeviceAllOrdersF16MonoFast:
         case DeviceEntry::kDeviceAllOrdersF16OrdersMono:
         case DeviceEntry::kDeviceAllOrdersF16OrdersMonoFast:
-        case DeviceEntry::kDeviceAllOrdersBf16Mono:
-        case DeviceEntry::kDeviceAllOrdersBf16MonoFast:
         case DeviceEntry::kDeviceAllOrdersBf16OrdersMono:
         case DeviceEntry::kDeviceAllOrdersBf16OrdersMonoFast:
         case DeviceEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast:

@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
+#include <vector>
 
 // The toolkit and the target architectures, stated by the report. CMake passes
 // both; the fallbacks are what a translation unit compiled outside this tree
@@ -117,7 +118,13 @@ __global__ void FloorKernel(int* touched) {
 
 /// The double lane's four entries, and the cheap stand-in the removed-call half
 /// writes in their place.
-struct Dev64 {
+///
+/// The region-B exponential is the entry's one axis on this lane too, and it is a
+/// template argument here for the same reason it is one on the float lane below:
+/// that is how the library offers it, as two members with two figures over one
+/// set of tables.
+template <bool kFastExp>
+struct Dev64T {
     using Value = double;
 
     template <boys::DivisionForm kForm>
@@ -125,7 +132,8 @@ struct Dev64 {
                                                               int order,
                                                               double x,
                                                               double* out) {
-        return BoysDeviceSingleF64<kForm>(tables, order, x, out);
+        return BoysDeviceSingleF64<kForm, kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, out);
     }
 
     template <boys::DivisionForm kForm>
@@ -134,14 +142,17 @@ struct Dev64 {
                                                                  double x,
                                                                  double* out,
                                                                  int capacity) {
-        return BoysDeviceAllOrdersF64<kForm>(tables, order, x, out, capacity);
+        return BoysDeviceAllOrdersF64<kForm, kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, out, capacity);
     }
 
     template <boys::DivisionForm kForm>
     static __device__ __forceinline__ BoysDeviceStatus AllN(const BoysDeviceTables& tables,
                                                             double x,
                                                             double* out) {
-        return BoysDeviceAllNF64<kForm, kProbeInKernelTopOrder>(tables, x, out);
+        return BoysDeviceAllNF64<kForm, kProbeInKernelTopOrder,
+                                 kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(tables, x,
+                                                                                       out);
     }
 
     template <boys::DivisionForm kForm, typename Sink>
@@ -149,13 +160,18 @@ struct Dev64 {
                                                                  int order,
                                                                  double x,
                                                                  Sink sink) {
-        return BoysDeviceEachOrderF64<kForm>(tables, order, x, sink);
+        return BoysDeviceEachOrderF64<kForm, Sink,
+                                      kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, sink);
     }
 
     static __device__ __forceinline__ double Cheap(double x, int l) {
         return x * static_cast<double>(l + 1);
     }
 };
+
+using Dev64 = Dev64T<false>;
+using Dev64Fast = Dev64T<true>;
 
 /// The float lane; the region-A seed is double, as the entry documents.
 ///
@@ -309,6 +325,13 @@ BOYS_PROBE_LADDER_POLICY(Dev32Uniform, float, BoysDeviceAllOrdersF32Uniform)
 BOYS_PROBE_LADDER_POLICY(Dev32UniformHorner, float, BoysDeviceAllOrdersF32UniformHorner)
 BOYS_PROBE_LADDER_POLICY(Dev32UniformRat, float, BoysDeviceAllOrdersF32UniformRat)
 BOYS_PROBE_LADDER_POLICY(Dev32UniformRatHorner, float, BoysDeviceAllOrdersF32UniformRatHorner)
+// The coarsest partition in the monomial basis. It is its own row on every lane that carries
+// it rather than a second reading of the Chebyshev one: the two stored forms are one fit over
+// one cut, read by Horner instead of the split Clenshaw recurrence.
+BOYS_PROBE_LADDER_POLICY(Dev64Mono, double, BoysDeviceAllOrdersF64Mono)
+BOYS_PROBE_LADDER_POLICY(Dev64OrdersMono, double, BoysDeviceAllOrdersF64OrdersMono)
+BOYS_PROBE_LADDER_POLICY(Dev32Mono, float, BoysDeviceAllOrdersF32Mono)
+BOYS_PROBE_LADDER_POLICY(Dev32OrdersMono, float, BoysDeviceAllOrdersF32OrdersMono)
 
 // The orders-axis rows of the two wider lanes: the packing axis's other side, on
 // the partition each row names, one policy per row as the rows above are.
@@ -379,6 +402,33 @@ BOYS_PROBE_LADDER_POLICY_FAST(
 BOYS_PROBE_LADDER_POLICY_FAST(
     Dev32NarrowOrdersRatHornerFast, float, BoysDeviceAllOrdersF32NarrowOrdersRatHorner)
 
+// The double lane's fast rows, the same one-policy-per-row list the float lane's
+// fast rows above are, over the same bodies the row's accurate sibling names: the
+// lane carries no grid row at this reading, because the grid reads no exponential
+// at any argument, so the list is the thirteen ladders and not the whole block.
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64OrdersFast, double, BoysDeviceAllOrdersF64Orders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64RatFast, double, BoysDeviceAllOrdersF64Rat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64OrdersRatFast, double, BoysDeviceAllOrdersF64OrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64RatHornerFast, double, BoysDeviceAllOrdersF64RatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev64OrdersRatHornerFast, double, BoysDeviceAllOrdersF64OrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64NarrowFast, double, BoysDeviceAllOrdersF64Narrow)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64NarrowOrdersFast, double, BoysDeviceAllOrdersF64NarrowOrders)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64NarrowMonoFast, double, BoysDeviceAllOrdersF64NarrowMono)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev64NarrowOrdersMonoFast, double, BoysDeviceAllOrdersF64NarrowOrdersMono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64NarrowRatFast, double, BoysDeviceAllOrdersF64NarrowRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev64NarrowOrdersRatFast, double, BoysDeviceAllOrdersF64NarrowOrdersRat)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev64NarrowRatHornerFast, double, BoysDeviceAllOrdersF64NarrowRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(
+    Dev64NarrowOrdersRatHornerFast, double, BoysDeviceAllOrdersF64NarrowOrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64MonoFast, double, BoysDeviceAllOrdersF64Mono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev64OrdersMonoFast, double, BoysDeviceAllOrdersF64OrdersMono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32MonoFast, float, BoysDeviceAllOrdersF32Mono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev32OrdersMonoFast, float, BoysDeviceAllOrdersF32OrdersMono)
+
 #if BoysFp16
 // The half lane's rows, one policy per row, over the body the row names: the same
 // ladder the policy above writes, at the lane's own value type. The cheap
@@ -419,6 +469,8 @@ BOYS_PROBE_HALF_POLICY(Dev16Uniform, BoysDeviceAllOrdersF16Uniform)
 BOYS_PROBE_HALF_POLICY(Dev16UniformHorner, BoysDeviceAllOrdersF16UniformHorner)
 BOYS_PROBE_HALF_POLICY(Dev16UniformRat, BoysDeviceAllOrdersF16UniformRat)
 BOYS_PROBE_HALF_POLICY(Dev16UniformRatHorner, BoysDeviceAllOrdersF16UniformRatHorner)
+BOYS_PROBE_HALF_POLICY(Dev16Mono, BoysDeviceAllOrdersF16Mono)
+BOYS_PROBE_HALF_POLICY(Dev16OrdersMono, BoysDeviceAllOrdersF16OrdersMono)
 
 #undef BOYS_PROBE_HALF_POLICY
 
@@ -443,6 +495,8 @@ BOYS_PROBE_LADDER_POLICY_FAST(
     Dev16NarrowRatHornerFast, __half, BoysDeviceAllOrdersF16NarrowRatHorner)
 BOYS_PROBE_LADDER_POLICY_FAST(
     Dev16NarrowOrdersRatHornerFast, __half, BoysDeviceAllOrdersF16NarrowOrdersRatHorner)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16MonoFast, __half, BoysDeviceAllOrdersF16Mono)
+BOYS_PROBE_LADDER_POLICY_FAST(Dev16OrdersMonoFast, __half, BoysDeviceAllOrdersF16OrdersMono)
 
 /// The half lane's fast region-B reading, the four shapes `Dev16` carries at the
 /// lane's own reading: the single-order row is a symbol of its own, and the other
@@ -487,6 +541,161 @@ struct Dev16Fast {
         return __float2half(__half2float(x) * static_cast<float>(l + 1));
     }
 };
+
+/// The bfloat16 lane, which is the half lane's own engine with the other format
+/// around it: the same float arithmetic, the same tables, and a store into
+/// bfloat16 in place of the store into fp16.
+///
+/// The region-B exponential is a template argument for the reason it is one on
+/// every lane above, and this lane offers it the two ways the library does: at
+/// the single shape as a symbol of its own, because that entry's fast member is
+/// a certified choice of arithmetic rather than a template argument of the
+/// accurate one, and at the other three as the parameter the body already takes.
+///
+/// The bfloat16 bodies this lane names are behind the seam that declares them,
+/// so the lane and the rows that reach it carry the lane's guard.
+template <bool kFastExp>
+struct DevBf16T {
+    using Value = __nv_bfloat16;
+
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus Single(const BoysDeviceTables& tables,
+                                                              int order,
+                                                              __nv_bfloat16 x,
+                                                              __nv_bfloat16* out) {
+        if constexpr (kFastExp)
+        {
+            return BoysDeviceSingleBf16Fast<kForm>(tables, order, x, out);
+        }
+        else
+        {
+            return BoysDeviceSingleBf16<kForm>(tables, order, x, out);
+        }
+    }
+
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus AllOrders(const BoysDeviceTables& tables,
+                                                                 int order,
+                                                                 __nv_bfloat16 x,
+                                                                 __nv_bfloat16* out,
+                                                                 int capacity) {
+        return BoysDeviceAllOrdersBf16<kForm, kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, out, capacity);
+    }
+
+    template <boys::DivisionForm kForm>
+    static __device__ __forceinline__ BoysDeviceStatus AllN(const BoysDeviceTables& tables,
+                                                            __nv_bfloat16 x,
+                                                            __nv_bfloat16* out) {
+        return BoysDeviceAllNBf16<kForm, kProbeInKernelTopOrder,
+                                  kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(tables, x,
+                                                                                        out);
+    }
+
+    template <boys::DivisionForm kForm, typename Sink>
+    static __device__ __forceinline__ BoysDeviceStatus EachOrder(const BoysDeviceTables& tables,
+                                                                 int order,
+                                                                 __nv_bfloat16 x,
+                                                                 Sink sink) {
+        return BoysDeviceEachOrderBf16<kForm, Sink,
+                                       kFastExp ? RegionBExp::kFast : RegionBExp::kAccurate>(
+            tables, order, x, sink);
+    }
+
+    static __device__ __forceinline__ __nv_bfloat16 Cheap(__nv_bfloat16 x, int l) {
+        return __float2bfloat16(__bfloat162float(x) * static_cast<float>(l + 1));
+    }
+};
+
+using DevBf16 = DevBf16T<false>;
+using DevBf16Fast = DevBf16T<true>;
+
+// The bfloat16 lane's ladder and orders rows, one policy per row the option
+// table carries, over the body the row names: the same one-policy-per-row list
+// the half lane's rows above are, at this lane's value type. The stand-in is
+// this lane's, spelled as DevBf16 spells it.
+#define BOYS_PROBE_BF16_POLICY(NAME, ENTRY) \
+    struct NAME { \
+        using Value = __nv_bfloat16; \
+ \
+        template <boys::DivisionForm kForm> \
+        static __device__ __forceinline__ BoysDeviceStatus AllOrders( \
+            const BoysDeviceTables& tables, \
+            int order, \
+            __nv_bfloat16 arg, \
+            __nv_bfloat16* out, \
+            int capacity) { \
+            return ENTRY<kForm>(tables, order, arg, out, capacity); \
+        } \
+ \
+        static __device__ __forceinline__ __nv_bfloat16 Cheap(__nv_bfloat16 x, int l) { \
+            return __float2bfloat16(__bfloat162float(x) * static_cast<float>(l + 1)); \
+        } \
+    };
+
+BOYS_PROBE_BF16_POLICY(DevBf16Narrow, BoysDeviceAllOrdersBf16Narrow)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowMono, BoysDeviceAllOrdersBf16NarrowMono)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowOrders, BoysDeviceAllOrdersBf16NarrowOrders)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowOrdersMono, BoysDeviceAllOrdersBf16NarrowOrdersMono)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowRat, BoysDeviceAllOrdersBf16NarrowRat)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowRatHorner, BoysDeviceAllOrdersBf16NarrowRatHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowOrdersRat, BoysDeviceAllOrdersBf16NarrowOrdersRat)
+BOYS_PROBE_BF16_POLICY(DevBf16NarrowOrdersRatHorner, BoysDeviceAllOrdersBf16NarrowOrdersRatHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16Rat, BoysDeviceAllOrdersBf16Rat)
+BOYS_PROBE_BF16_POLICY(DevBf16RatHorner, BoysDeviceAllOrdersBf16RatHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16Orders, BoysDeviceAllOrdersBf16Orders)
+BOYS_PROBE_BF16_POLICY(DevBf16OrdersRat, BoysDeviceAllOrdersBf16OrdersRat)
+BOYS_PROBE_BF16_POLICY(DevBf16OrdersRatHorner, BoysDeviceAllOrdersBf16OrdersRatHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16Uniform, BoysDeviceAllOrdersBf16Uniform)
+BOYS_PROBE_BF16_POLICY(DevBf16UniformHorner, BoysDeviceAllOrdersBf16UniformHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16UniformRat, BoysDeviceAllOrdersBf16UniformRat)
+BOYS_PROBE_BF16_POLICY(DevBf16UniformRatHorner, BoysDeviceAllOrdersBf16UniformRatHorner)
+BOYS_PROBE_BF16_POLICY(DevBf16Mono, BoysDeviceAllOrdersBf16Mono)
+BOYS_PROBE_BF16_POLICY(DevBf16OrdersMono, BoysDeviceAllOrdersBf16OrdersMono)
+
+#undef BOYS_PROBE_BF16_POLICY
+
+// The bfloat16 lane's rows at the other region-B exponential, the same
+// one-policy-per-row list the float lane's fast rows are, over the bodies the
+// rows name. The grid rows are absent for the reason the double lane's fast list
+// states: the grid reads no exponential at any argument.
+#define BOYS_PROBE_BF16_POLICY_FAST(NAME, ENTRY) \
+    struct NAME { \
+        using Value = __nv_bfloat16; \
+ \
+        template <boys::DivisionForm kForm> \
+        static __device__ __forceinline__ BoysDeviceStatus AllOrders( \
+            const BoysDeviceTables& tables, \
+            int order, \
+            __nv_bfloat16 arg, \
+            __nv_bfloat16* out, \
+            int capacity) { \
+            return ENTRY<kForm, RegionBExp::kFast>(tables, order, arg, out, capacity); \
+        } \
+ \
+        static __device__ __forceinline__ __nv_bfloat16 Cheap(__nv_bfloat16 x, int l) { \
+            return __float2bfloat16(__bfloat162float(x) * static_cast<float>(l + 1)); \
+        } \
+    };
+
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16OrdersFast, BoysDeviceAllOrdersBf16Orders)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16RatFast, BoysDeviceAllOrdersBf16Rat)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16OrdersRatFast, BoysDeviceAllOrdersBf16OrdersRat)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16RatHornerFast, BoysDeviceAllOrdersBf16RatHorner)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16OrdersRatHornerFast, BoysDeviceAllOrdersBf16OrdersRatHorner)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowFast, BoysDeviceAllOrdersBf16Narrow)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowOrdersFast, BoysDeviceAllOrdersBf16NarrowOrders)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowMonoFast, BoysDeviceAllOrdersBf16NarrowMono)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowOrdersMonoFast, BoysDeviceAllOrdersBf16NarrowOrdersMono)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowRatFast, BoysDeviceAllOrdersBf16NarrowRat)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowOrdersRatFast, BoysDeviceAllOrdersBf16NarrowOrdersRat)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16NarrowRatHornerFast, BoysDeviceAllOrdersBf16NarrowRatHorner)
+BOYS_PROBE_BF16_POLICY_FAST(
+    DevBf16NarrowOrdersRatHornerFast, BoysDeviceAllOrdersBf16NarrowOrdersRatHorner)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16MonoFast, BoysDeviceAllOrdersBf16Mono)
+BOYS_PROBE_BF16_POLICY_FAST(DevBf16OrdersMonoFast, BoysDeviceAllOrdersBf16OrdersMono)
+
+#undef BOYS_PROBE_BF16_POLICY_FAST
 #endif // BoysFp16
 
 #undef BOYS_PROBE_LADDER_POLICY_FAST
@@ -603,6 +812,7 @@ int LaunchInKernel(ProbeEntry entry,
                    const double* xd,
                    const float* xf,
                    const __half* xh,
+                   const __nv_bfloat16* xb,
                    void* out,
                    std::size_t count,
                    bool withBoys,
@@ -664,11 +874,38 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceEachOrderF16:
                 BOYS_PROBE_LAUNCH(Dev16, __half, kEachOrder, xh);
                 break;
+            // The coarsest partition in the monomial basis, one arm per row the table
+            // carries: the same bodies as the arms above, over the row's own stored form.
+            case ProbeEntry::kDeviceAllOrdersF16Mono:
+                BOYS_PROBE_LAUNCH(Dev16Mono, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16MonoFast:
+                BOYS_PROBE_LAUNCH(Dev16MonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersMono:
+                BOYS_PROBE_LAUNCH(Dev16OrdersMono, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev16OrdersMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Mono:
+                BOYS_PROBE_LAUNCH(DevBf16Mono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16MonoFast:
+                BOYS_PROBE_LAUNCH(DevBf16MonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersMono:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersMonoFast:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
 #else
             // A build with the seam closed has no fp16 enumerator to be asked
             // for and no half array to read, so this is the only arm that would
             // have touched the parameter.
             (void)xh;
+            (void)xb;
 #endif // BoysFp16
             // The partition and route axes of the ladder shape, one arm per
             // entry. Their argument array is the one their lane reads, as it is
@@ -702,6 +939,61 @@ int LaunchInKernel(ProbeEntry entry,
                 break;
             case ProbeEntry::kDeviceAllOrdersF64UniformRatHorner:
                 BOYS_PROBE_LAUNCH(Dev64UniformRatHorner, double, kAllOrders, xd);
+                break;
+            // The double lane's rows at the other region-B exponential, one arm
+            // per row the table carries: the arm of the row's accurate sibling
+            // with the row's own member selected, over the same body and the
+            // same tables.
+            case ProbeEntry::kDeviceSingleF64Fast:
+                BOYS_PROBE_LAUNCH(Dev64Fast, double, kSingle, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Fast:
+                BOYS_PROBE_LAUNCH(Dev64Fast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllNF64Fast:
+                BOYS_PROBE_LAUNCH(Dev64Fast, double, kAllN, xd);
+                break;
+            case ProbeEntry::kDeviceEachOrderF64Fast:
+                BOYS_PROBE_LAUNCH(Dev64Fast, double, kEachOrder, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersFast:
+                BOYS_PROBE_LAUNCH(Dev64OrdersFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatFast:
+                BOYS_PROBE_LAUNCH(Dev64RatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev64OrdersRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev64RatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev64OrdersRatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowMonoFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowRatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(Dev64NarrowOrdersRatHornerFast, double, kAllOrders, xd);
                 break;
             case ProbeEntry::kDeviceAllOrdersF32Narrow:
                 BOYS_PROBE_LAUNCH(Dev32Narrow, float, kAllOrders, xf);
@@ -777,6 +1069,34 @@ int LaunchInKernel(ProbeEntry entry,
                 break;
             case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
                 BOYS_PROBE_LAUNCH(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
+                break;
+            // The coarsest partition in the monomial basis on the two wider lanes, one
+            // arm per row the table carries: the same bodies as the arms above, over the
+            // row's own stored form. Their rows are the lanes' own and the seam does not
+            // close them, so the arms stand outside it.
+            case ProbeEntry::kDeviceAllOrdersF64Mono:
+                BOYS_PROBE_LAUNCH(Dev64Mono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64MonoFast:
+                BOYS_PROBE_LAUNCH(Dev64MonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersMono:
+                BOYS_PROBE_LAUNCH(Dev64OrdersMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev64OrdersMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Mono:
+                BOYS_PROBE_LAUNCH(Dev32Mono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32MonoFast:
+                BOYS_PROBE_LAUNCH(Dev32MonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersMono:
+                BOYS_PROBE_LAUNCH(Dev32OrdersMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersMonoFast:
+                BOYS_PROBE_LAUNCH(Dev32OrdersMonoFast, float, kAllOrders, xf);
                 break;
 #if BoysFp16
             // The half lane's rows of those same axes, one arm per row of the
@@ -947,6 +1267,125 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceEachOrderF16Fast:
                 BOYS_PROBE_LAUNCH(Dev16Fast, __half, kEachOrder, xh);
                 break;
+            // The bfloat16 lane's rows, in the enumeration's own order: the same
+            // bodies as the fp16 arms above, reading this lane's argument array.
+            // It is a second array rather than a reinterpretation of xh - the two
+            // formats are 5/10 and 8/7 over the same sixteen bits, so reading one
+            // as the other would hand every entry a different number.
+            case ProbeEntry::kDeviceSingleBf16:
+                BOYS_PROBE_LAUNCH(DevBf16, __nv_bfloat16, kSingle, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16:
+                BOYS_PROBE_LAUNCH(DevBf16, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllNBf16:
+                BOYS_PROBE_LAUNCH(DevBf16, __nv_bfloat16, kAllN, xb);
+                break;
+            case ProbeEntry::kDeviceEachOrderBf16:
+                BOYS_PROBE_LAUNCH(DevBf16, __nv_bfloat16, kEachOrder, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Orders:
+                BOYS_PROBE_LAUNCH(DevBf16Orders, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Narrow:
+                BOYS_PROBE_LAUNCH(DevBf16Narrow, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrders:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrders, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Uniform:
+                BOYS_PROBE_LAUNCH(DevBf16Uniform, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowMono:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformHorner:
+                BOYS_PROBE_LAUNCH(DevBf16UniformHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Rat:
+                BOYS_PROBE_LAUNCH(DevBf16Rat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRat:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRat:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformRat:
+                BOYS_PROBE_LAUNCH(DevBf16UniformRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatHorner:
+                BOYS_PROBE_LAUNCH(DevBf16RatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatHorner:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatHorner:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformRatHorner:
+                BOYS_PROBE_LAUNCH(DevBf16UniformRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceSingleBf16Fast:
+                BOYS_PROBE_LAUNCH(DevBf16Fast, __nv_bfloat16, kSingle, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Fast:
+                BOYS_PROBE_LAUNCH(DevBf16Fast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersFast:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatFast:
+                BOYS_PROBE_LAUNCH(DevBf16RatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatFast:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatHornerFast:
+                BOYS_PROBE_LAUNCH(DevBf16RatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(DevBf16OrdersRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowMonoFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH(DevBf16NarrowOrdersRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllNBf16Fast:
+                BOYS_PROBE_LAUNCH(DevBf16Fast, __nv_bfloat16, kAllN, xb);
+                break;
+            case ProbeEntry::kDeviceEachOrderBf16Fast:
+                BOYS_PROBE_LAUNCH(DevBf16Fast, __nv_bfloat16, kEachOrder, xb);
+                break;
 #endif // BoysFp16
             default:
                 return 1;
@@ -1030,6 +1469,60 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF64UniformRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64UniformRatHorner, double, kAllOrders, xd);
                 break;
+            // The removed-call half of the double lane's fast rows above, in the
+            // same order and over the same policies: the subtraction's other
+            // side.
+            case ProbeEntry::kDeviceSingleF64Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Fast, double, kSingle, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Fast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllNF64Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Fast, double, kAllN, xd);
+                break;
+            case ProbeEntry::kDeviceEachOrderF64Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Fast, double, kEachOrder, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64RatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64RatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64RatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersRatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersRatFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowRatHornerFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64NarrowOrdersRatHornerFast, double, kAllOrders, xd);
+                break;
             case ProbeEntry::kDeviceAllOrdersF32Narrow:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32Narrow, float, kAllOrders, xf);
                 break;
@@ -1103,6 +1596,34 @@ int LaunchInKernel(ProbeEntry entry,
                 break;
             case ProbeEntry::kDeviceAllOrdersF32NarrowOrdersRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32NarrowOrdersRatHorner, float, kAllOrders, xf);
+                break;
+            // The coarsest partition in the monomial basis on the two wider lanes, one
+            // arm per row the table carries: the same bodies as the arms above, over the
+            // row's own stored form. Their rows are the lanes' own and the seam does not
+            // close them, so the arms stand outside it.
+            case ProbeEntry::kDeviceAllOrdersF64Mono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64Mono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64MonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64MonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersMono, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF64OrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev64OrdersMonoFast, double, kAllOrders, xd);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32Mono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32Mono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32MonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32MonoFast, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersMono, float, kAllOrders, xf);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF32OrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersMonoFast, float, kAllOrders, xf);
                 break;
 #if BoysFp16
             // The removed-call half of the same eighteen arms; see above.
@@ -1261,6 +1782,148 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceEachOrderF16Fast:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kEachOrder, xh);
                 break;
+            // The removed-call half of the coarsest partition's monomial rows above, in
+            // the same order and over the same policies: the subtraction's other side.
+            case ProbeEntry::kDeviceAllOrdersF16Mono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16Mono, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16MonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16MonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersMono, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersF16OrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(Dev16OrdersMonoFast, __half, kAllOrders, xh);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Mono:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Mono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16MonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16MonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            // The removed-call half of the bfloat16 rows above, in the same order
+            // and over the same policies: the subtraction's other side.
+            case ProbeEntry::kDeviceSingleBf16:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16, __nv_bfloat16, kSingle, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllNBf16:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16, __nv_bfloat16, kAllN, xb);
+                break;
+            case ProbeEntry::kDeviceEachOrderBf16:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16, __nv_bfloat16, kEachOrder, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Orders:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Orders, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Narrow:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Narrow, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrders:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrders, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Uniform:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Uniform, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowMono:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersMono:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersMono, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16UniformHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Rat:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Rat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRat:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRat:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformRat:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16UniformRat, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16RatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16UniformRatHorner:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16UniformRatHorner, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceSingleBf16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Fast, __nv_bfloat16, kSingle, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Fast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16RatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16RatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16RatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16OrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersMonoFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersMonoFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersRatFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllOrdersBf16NarrowOrdersRatHornerFast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16NarrowOrdersRatHornerFast, __nv_bfloat16, kAllOrders, xb);
+                break;
+            case ProbeEntry::kDeviceAllNBf16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Fast, __nv_bfloat16, kAllN, xb);
+                break;
+            case ProbeEntry::kDeviceEachOrderBf16Fast:
+                BOYS_PROBE_LAUNCH_PLAIN(DevBf16Fast, __nv_bfloat16, kEachOrder, xb);
+                break;
 #endif // BoysFp16
             default:
                 return 1;
@@ -1339,6 +2002,64 @@ int BoysCudaLaunchAllOrdersF64UniformRat(
 int BoysCudaLaunchAllOrdersF64UniformHorner(
     int, const int*, const double*, double*, std::size_t, void*);
 int BoysCudaLaunchAllNF64(int, int, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64Fast(int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64OrdersFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64MonoFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64OrdersMonoFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowMonoFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersMonoFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64RatFast(int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64OrdersRatFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowRatFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast(
+    int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchEachOrderF64(int, const int*, const double*, const int*, double*, std::size_t,
+                               void*);
+int BoysCudaLaunchEachOrderF64Fast(int, const int*, const double*, const int*, double*, std::size_t,
+                                   void*);
+int BoysCudaLaunchEachOrderF32(int, const int*, const double*, const int*, float*, std::size_t,
+                               void*);
+int BoysCudaLaunchEachOrderF32Fast(int, const int*, const double*, const int*, float*, std::size_t,
+                                   void*);
+// The float lane's ladders at the other region-B exponential, one per kernel this lane has: the
+// same bodies as the launchers above with the seed's exponential moved, which is why the member is
+// a second symbol and not a parameter.
+int BoysCudaLaunchAllOrdersF32Fast(int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32MonoFast(int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersMonoFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowMonoFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersMonoFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32RatFast(int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32OrdersRatFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowRatFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF32NarrowOrdersRatFast(
+    int, const int*, const double*, float*, std::size_t, void*);
+// The single and all-N shapes at that exponential, the double lane's beside it.
+int BoysCudaLaunchSingleF64Fast(int, const int*, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllNF64Fast(int, int, const double*, double*, std::size_t, void*);
+int BoysCudaLaunchAllNF32Fast(int, int, const double*, float*, std::size_t, void*);
 #if BoysFp16
 int BoysCudaLaunchSingleF16(int, const int*, const void*, void*, std::size_t, void*);
 // The lane's fast region-B reading: the symbol names the choice, as it does one
@@ -1368,7 +2089,136 @@ int BoysCudaLaunchAllOrdersF16OrdersMono(
 int BoysCudaLaunchAllOrdersF16OrdersRat(int, const int*, const void*, void*, std::size_t, void*);
 int BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
     int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderF16(int, const int*, const void*, const int*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderF16Fast(
+    int, const int*, const void*, const int*, void*, std::size_t, void*);
+// The half lane's ladders at the other region-B exponential, one per kernel this lane has, as the
+// float lane's block above is declared.
+int BoysCudaLaunchAllOrdersF16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16OrdersFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16MonoFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16OrdersMonoFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowMonoFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersMonoFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16RatFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16OrdersRatFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowRatFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersF16NarrowOrdersRatFast(
+    int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllNF16Fast(int, int, const void*, void*, std::size_t, void*);
+// The bfloat16 lane's launched launchers, one per symbol the rows above reach.
+int BoysCudaLaunchAllNBf16(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllNBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Mono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16MonoFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Narrow(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowMono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowMonoFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrders(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersMono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersMonoFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRatFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowRatFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowRatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16NarrowRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Orders(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersMono(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersMonoFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersRatFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersRatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersRatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersUniform(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersUniformHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersUniformRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16OrdersUniformRatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Rat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16RatFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16RatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16RatHornerFast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16Uniform(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16UniformHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16UniformRat(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchAllOrdersBf16UniformRatHorner(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderBf16(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchEachOrderBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchSingleBf16(int, const int*, const void*, void*, std::size_t, void*);
+int BoysCudaLaunchSingleBf16Fast(int, const int*, const void*, void*, std::size_t, void*);
 #endif // BoysFp16
+}
+
+// The each-order arms' placement array. The launched each-order shape takes the index each
+// argument's ladder starts at from the caller, and this is the probe's own choice of it rather
+// than the library's: two passes behind a prefix sum, or a placement the probe can build without
+// one. It builds one without one - offset[i] = i * (kMaxBoysOrder + 1) - which is the placement
+// the padded all-orders rows write, so the ladders do not overlap and every one of them lands
+// inside the out block the arms are already handed. That the shape can also pack them is the
+// caller's gain and not a different arithmetic, so a cost figure taken at this placement is the
+// entry's.
+// The buffer is allocated once and reused: it is count ints and the probe runs one count.
+int* EachOrderOffsets(std::size_t count) {
+    static int* offsets = nullptr;
+    static std::size_t capacity = 0;
+
+    if (count > capacity)
+    {
+        if (offsets != nullptr)
+        {
+            cudaFree(offsets);
+            offsets = nullptr;
+            capacity = 0;
+        }
+
+        if (count == 0)
+        {
+            return nullptr;
+        }
+
+        if (cudaMalloc(reinterpret_cast<void**>(&offsets), count * sizeof(int)) != cudaSuccess)
+        {
+            offsets = nullptr;
+            return nullptr;
+        }
+
+        capacity = count;
+
+        std::vector<int> host(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            host[i] = static_cast<int>(i) * (kMaxBoysOrder + 1);
+        }
+
+        const cudaError_t copied = cudaMemcpy(offsets, host.data(), count * sizeof(int),
+                                              cudaMemcpyHostToDevice);
+
+        if (copied != cudaSuccess)
+        {
+            cudaFree(offsets);
+            offsets = nullptr;
+            capacity = 0;
+            return nullptr;
+        }
+    }
+
+    return offsets;
 }
 
 int LaunchLaunched(boys::DivisionForm form,
@@ -1376,6 +2226,7 @@ int LaunchLaunched(boys::DivisionForm form,
                    const int* n,
                    const double* x,
                    const void* xh,
+                   const void* xb,
                    void* out,
                    std::size_t count,
                    int nmax,
@@ -1389,6 +2240,17 @@ int LaunchLaunched(boys::DivisionForm form,
                                     static_cast<double*>(out),
                                     count,
                                     stream);
+            break;
+        // The single shape at the lane's other region-B exponential, the arm
+        // above at the row's own member: one launcher, one kernel instantiation,
+        // and the same tables.
+        case ProbeEntry::kSingleF64Fast:
+            BoysCudaLaunchSingleF64Fast(static_cast<int>(form),
+                                        n,
+                                        x,
+                                        static_cast<double*>(out),
+                                        count,
+                                        stream);
             break;
         case ProbeEntry::kSingleF32:
             BoysCudaLaunchSingleF32(static_cast<int>(form),
@@ -1413,6 +2275,137 @@ int LaunchLaunched(boys::DivisionForm form,
                                        static_cast<double*>(out),
                                        count,
                                        stream);
+            break;
+        // The double lane's ladders at the other region-B exponential, one arm per row the table
+        // carries, in the table's own order. Each is the arm above it at the second member of the
+        // axis: one launcher per kernel, over the same tables.
+        case ProbeEntry::kAllOrdersF64Fast:
+            BoysCudaLaunchAllOrdersF64Fast(static_cast<int>(form),
+                                           n,
+                                           x,
+                                           static_cast<double*>(out),
+                                           count,
+                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersFast:
+            BoysCudaLaunchAllOrdersF64OrdersFast(static_cast<int>(form),
+                                                 n,
+                                                 x,
+                                                 static_cast<double*>(out),
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowFast:
+            BoysCudaLaunchAllOrdersF64NarrowFast(static_cast<int>(form),
+                                                 n,
+                                                 x,
+                                                 static_cast<double*>(out),
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersFast:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersFast(static_cast<int>(form),
+                                                       n,
+                                                       x,
+                                                       static_cast<double*>(out),
+                                                       count,
+                                                       stream);
+            break;
+        case ProbeEntry::kAllOrdersF64MonoFast:
+            BoysCudaLaunchAllOrdersF64MonoFast(static_cast<int>(form),
+                                               n,
+                                               x,
+                                               static_cast<double*>(out),
+                                               count,
+                                               stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersMonoFast:
+            BoysCudaLaunchAllOrdersF64OrdersMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     x,
+                                                     static_cast<double*>(out),
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowMonoFast:
+            BoysCudaLaunchAllOrdersF64NarrowMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     x,
+                                                     static_cast<double*>(out),
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersMonoFast:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersMonoFast(static_cast<int>(form),
+                                                           n,
+                                                           x,
+                                                           static_cast<double*>(out),
+                                                           count,
+                                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF64RatFast:
+            BoysCudaLaunchAllOrdersF64RatFast(static_cast<int>(form),
+                                              n,
+                                              x,
+                                              static_cast<double*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF64RatHornerFast:
+            BoysCudaLaunchAllOrdersF64RatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<double*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersRatFast:
+            BoysCudaLaunchAllOrdersF64OrdersRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<double*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF64OrdersRatHornerFast:
+            BoysCudaLaunchAllOrdersF64OrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          x,
+                                                          static_cast<double*>(out),
+                                                          count,
+                                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowRatFast:
+            BoysCudaLaunchAllOrdersF64NarrowRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<double*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowRatHornerFast:
+            BoysCudaLaunchAllOrdersF64NarrowRatFast(static_cast<int>(form),
+                                                          n,
+                                                          x,
+                                                          static_cast<double*>(out),
+                                                          count,
+                                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersRatFast:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          x,
+                                                          static_cast<double*>(out),
+                                                          count,
+                                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF64NarrowOrdersRatHornerFast:
+            BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast(static_cast<int>(form),
+                                                                n,
+                                                                x,
+                                                                static_cast<double*>(out),
+                                                                count,
+                                                                stream);
             break;
         case ProbeEntry::kAllOrdersF64Narrow:
             BoysCudaLaunchAllOrdersF64Narrow(static_cast<int>(form),
@@ -1755,6 +2748,142 @@ int LaunchLaunched(boys::DivisionForm form,
                                        count,
                                        stream);
             break;
+        // The float lane's ladders at the other region-B exponential, one arm per row the table
+        // carries, in the double lane's order above. Each is the arm of its own name at the second
+        // member of the axis: one launcher per kernel, over the same lane, the same pieces and the
+        // same tables.
+        case ProbeEntry::kAllOrdersF32Fast:
+            BoysCudaLaunchAllOrdersF32Fast(static_cast<int>(form),
+                                           n,
+                                           x,
+                                           static_cast<float*>(out),
+                                           count,
+                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersFast:
+            BoysCudaLaunchAllOrdersF32OrdersFast(static_cast<int>(form),
+                                                 n,
+                                                 x,
+                                                 static_cast<float*>(out),
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowFast:
+            BoysCudaLaunchAllOrdersF32NarrowFast(static_cast<int>(form),
+                                                 n,
+                                                 x,
+                                                 static_cast<float*>(out),
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersFast:
+            BoysCudaLaunchAllOrdersF32NarrowOrdersFast(static_cast<int>(form),
+                                                       n,
+                                                       x,
+                                                       static_cast<float*>(out),
+                                                       count,
+                                                       stream);
+            break;
+        case ProbeEntry::kAllOrdersF32MonoFast:
+            BoysCudaLaunchAllOrdersF32MonoFast(static_cast<int>(form),
+                                               n,
+                                               x,
+                                               static_cast<float*>(out),
+                                               count,
+                                               stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersMonoFast:
+            BoysCudaLaunchAllOrdersF32OrdersMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     x,
+                                                     static_cast<float*>(out),
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowMonoFast:
+            BoysCudaLaunchAllOrdersF32NarrowMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     x,
+                                                     static_cast<float*>(out),
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersMonoFast:
+            BoysCudaLaunchAllOrdersF32NarrowOrdersMonoFast(static_cast<int>(form),
+                                                           n,
+                                                           x,
+                                                           static_cast<float*>(out),
+                                                           count,
+                                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF32RatFast:
+            BoysCudaLaunchAllOrdersF32RatFast(static_cast<int>(form),
+                                              n,
+                                              x,
+                                              static_cast<float*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF32RatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF32RatFast(static_cast<int>(form),
+                                              n,
+                                              x,
+                                              static_cast<float*>(out),
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersRatFast:
+            BoysCudaLaunchAllOrdersF32OrdersRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF32OrdersRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF32OrdersRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowRatFast:
+            BoysCudaLaunchAllOrdersF32NarrowRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF32NarrowRatFast(static_cast<int>(form),
+                                                    n,
+                                                    x,
+                                                    static_cast<float*>(out),
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersRatFast:
+            BoysCudaLaunchAllOrdersF32NarrowOrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          x,
+                                                          static_cast<float*>(out),
+                                                          count,
+                                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF32NarrowOrdersRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF32NarrowOrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          x,
+                                                          static_cast<float*>(out),
+                                                          count,
+                                                          stream);
+            break;
         // The float lane's other packing axis, one arm per row of it. These are
         // separate arms and not a fall-through: the entry the row names is which
         // kernel runs, and an entry this switch does not name is refused below
@@ -1767,6 +2896,73 @@ int LaunchLaunched(boys::DivisionForm form,
                                              count,
                                              stream);
             break;
+        // The launched each-order rows. The offsets are this probe's own placement and not the
+        // library's figure (EachOrderOffsets); a failed allocation leaves the arm silent, which is
+        // the same treatment every other arm of this switch gives a launch it cannot make.
+        case ProbeEntry::kEachOrderF64: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF64(static_cast<int>(form),
+                                           n,
+                                           x,
+                                           offset,
+                                           static_cast<double*>(out),
+                                           count,
+                                           stream);
+            }
+
+            break;
+        }
+        case ProbeEntry::kEachOrderF64Fast: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF64Fast(static_cast<int>(form),
+                                               n,
+                                               x,
+                                               offset,
+                                               static_cast<double*>(out),
+                                               count,
+                                               stream);
+            }
+
+            break;
+        }
+        case ProbeEntry::kEachOrderF32: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF32(static_cast<int>(form),
+                                           n,
+                                           x,
+                                           offset,
+                                           static_cast<float*>(out),
+                                           count,
+                                           stream);
+            }
+
+            break;
+        }
+        case ProbeEntry::kEachOrderF32Fast: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF32Fast(static_cast<int>(form),
+                                               n,
+                                               x,
+                                               offset,
+                                               static_cast<float*>(out),
+                                               count,
+                                               stream);
+            }
+
+            break;
+        }
         case ProbeEntry::kAllNF64:
             BoysCudaLaunchAllNF64(static_cast<int>(form),
                                   nmax,
@@ -1775,6 +2971,16 @@ int LaunchLaunched(boys::DivisionForm form,
                                   count,
                                   stream);
             break;
+        // The all-N shape at the lane's other region-B exponential, the arm above
+        // at the row's own member.
+        case ProbeEntry::kAllNF64Fast:
+            BoysCudaLaunchAllNF64Fast(static_cast<int>(form),
+                                      nmax,
+                                      x,
+                                      static_cast<double*>(out),
+                                      count,
+                                      stream);
+            break;
         case ProbeEntry::kAllNF32:
             BoysCudaLaunchAllNF32(static_cast<int>(form),
                                   nmax,
@@ -1782,6 +2988,14 @@ int LaunchLaunched(boys::DivisionForm form,
                                   static_cast<float*>(out),
                                   count,
                                   stream);
+            break;
+        case ProbeEntry::kAllNF32Fast:
+            BoysCudaLaunchAllNF32Fast(static_cast<int>(form),
+                                      nmax,
+                                      x,
+                                      static_cast<float*>(out),
+                                      count,
+                                      stream);
             break;
 #if BoysFp16
         // The fp16 lane's launched entries, behind the seam that declares both
@@ -1812,6 +3026,142 @@ int LaunchLaunched(boys::DivisionForm form,
                                        count,
                                        stream);
             break;
+        // The half lane's ladders at the other region-B exponential, one arm per row the table
+        // carries, in the float lane's order above. Each is the arm of its own name at the second
+        // member of the axis, and the two scheme names of a rational pair reach the one member as
+        // their accurate rows do.
+        case ProbeEntry::kAllOrdersF16Fast:
+            BoysCudaLaunchAllOrdersF16Fast(static_cast<int>(form),
+                                           n,
+                                           xh,
+                                           out,
+                                           count,
+                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersFast:
+            BoysCudaLaunchAllOrdersF16OrdersFast(static_cast<int>(form),
+                                                 n,
+                                                 xh,
+                                                 out,
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowFast:
+            BoysCudaLaunchAllOrdersF16NarrowFast(static_cast<int>(form),
+                                                 n,
+                                                 xh,
+                                                 out,
+                                                 count,
+                                                 stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersFast:
+            BoysCudaLaunchAllOrdersF16NarrowOrdersFast(static_cast<int>(form),
+                                                       n,
+                                                       xh,
+                                                       out,
+                                                       count,
+                                                       stream);
+            break;
+        case ProbeEntry::kAllOrdersF16MonoFast:
+            BoysCudaLaunchAllOrdersF16MonoFast(static_cast<int>(form),
+                                               n,
+                                               xh,
+                                               out,
+                                               count,
+                                               stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersMonoFast:
+            BoysCudaLaunchAllOrdersF16OrdersMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     xh,
+                                                     out,
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowMonoFast:
+            BoysCudaLaunchAllOrdersF16NarrowMonoFast(static_cast<int>(form),
+                                                     n,
+                                                     xh,
+                                                     out,
+                                                     count,
+                                                     stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersMonoFast:
+            BoysCudaLaunchAllOrdersF16NarrowOrdersMonoFast(static_cast<int>(form),
+                                                           n,
+                                                           xh,
+                                                           out,
+                                                           count,
+                                                           stream);
+            break;
+        case ProbeEntry::kAllOrdersF16RatFast:
+            BoysCudaLaunchAllOrdersF16RatFast(static_cast<int>(form),
+                                              n,
+                                              xh,
+                                              out,
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF16RatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF16RatFast(static_cast<int>(form),
+                                              n,
+                                              xh,
+                                              out,
+                                              count,
+                                              stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersRatFast:
+            BoysCudaLaunchAllOrdersF16OrdersRatFast(static_cast<int>(form),
+                                                    n,
+                                                    xh,
+                                                    out,
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF16OrdersRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF16OrdersRatFast(static_cast<int>(form),
+                                                    n,
+                                                    xh,
+                                                    out,
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowRatFast:
+            BoysCudaLaunchAllOrdersF16NarrowRatFast(static_cast<int>(form),
+                                                    n,
+                                                    xh,
+                                                    out,
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF16NarrowRatFast(static_cast<int>(form),
+                                                    n,
+                                                    xh,
+                                                    out,
+                                                    count,
+                                                    stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersRatFast:
+            BoysCudaLaunchAllOrdersF16NarrowOrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          xh,
+                                                          out,
+                                                          count,
+                                                          stream);
+            break;
+        case ProbeEntry::kAllOrdersF16NarrowOrdersRatHornerFast:
+            // The other scheme name of the pair above, over the same kernel.
+            BoysCudaLaunchAllOrdersF16NarrowOrdersRatFast(static_cast<int>(form),
+                                                          n,
+                                                          xh,
+                                                          out,
+                                                          count,
+                                                          stream);
+            break;
         case ProbeEntry::kAllNF16:
             BoysCudaLaunchAllNF16(static_cast<int>(form),
                                   nmax,
@@ -1820,6 +3170,41 @@ int LaunchLaunched(boys::DivisionForm form,
                                   count,
                                   stream);
             break;
+        case ProbeEntry::kAllNF16Fast:
+            // The lane's other region-B exponential, and behind the same seam
+            // this arm is: a build with the seam closed has no such enumerator
+            // to be asked for.
+            BoysCudaLaunchAllNF16Fast(static_cast<int>(form),
+                                      nmax,
+                                      xh,
+                                      out,
+                                      count,
+                                      stream);
+            break;
+        // The half lane's launched each-order rows, at the probe's own placement (see
+        // EachOrderOffsets).
+        case ProbeEntry::kEachOrderF16: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF16(
+                    static_cast<int>(form), n, xh, offset, out, count, stream);
+            }
+
+            break;
+        }
+        case ProbeEntry::kEachOrderF16Fast: {
+            int* const offset = EachOrderOffsets(count);
+
+            if (offset != nullptr)
+            {
+                BoysCudaLaunchEachOrderF16Fast(
+                    static_cast<int>(form), n, xh, offset, out, count, stream);
+            }
+
+            break;
+        }
         // The lane's partition and route bodies, one arm per entry of the
         // option table that names one, in the table's own order. Two entries a
         // scheme pair reaches share a launcher as they share a kernel: the
@@ -1887,10 +3272,152 @@ int LaunchLaunched(boys::DivisionForm form,
             BoysCudaLaunchAllOrdersF16NarrowOrdersRat(
                 static_cast<int>(form), n, xh, out, count, stream);
             break;
+        // The bfloat16 lane's launched rows, in the table's own order: the same bodies
+        // as the fp16 arms above over this lane's argument array, which is a second array
+        // rather than a reinterpretation of the half one.
+        case ProbeEntry::kSingleBf16:
+            BoysCudaLaunchSingleBf16(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16:
+            BoysCudaLaunchAllOrdersBf16(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Narrow:
+            BoysCudaLaunchAllOrdersBf16Narrow(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowMono:
+            BoysCudaLaunchAllOrdersBf16NarrowMono(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Uniform:
+            BoysCudaLaunchAllOrdersBf16Uniform(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16UniformHorner:
+            BoysCudaLaunchAllOrdersBf16UniformHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Rat:
+            BoysCudaLaunchAllOrdersBf16Rat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16RatHorner:
+            BoysCudaLaunchAllOrdersBf16RatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowRat:
+            BoysCudaLaunchAllOrdersBf16NarrowRat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowRatHorner:
+            BoysCudaLaunchAllOrdersBf16NarrowRatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16UniformRat:
+            BoysCudaLaunchAllOrdersBf16UniformRat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16UniformRatHorner:
+            BoysCudaLaunchAllOrdersBf16UniformRatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Orders:
+            BoysCudaLaunchAllOrdersBf16Orders(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrders:
+            BoysCudaLaunchAllOrdersBf16NarrowOrders(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersMono:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersMono(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersRat:
+            BoysCudaLaunchAllOrdersBf16OrdersRat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersRatHorner:
+            BoysCudaLaunchAllOrdersBf16OrdersRatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersRat:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersRat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersRatHorner:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersUniform:
+            BoysCudaLaunchAllOrdersBf16OrdersUniform(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersUniformHorner:
+            BoysCudaLaunchAllOrdersBf16OrdersUniformHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersUniformRat:
+            BoysCudaLaunchAllOrdersBf16OrdersUniformRat(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersUniformRatHorner:
+            BoysCudaLaunchAllOrdersBf16OrdersUniformRatHorner(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllNBf16:
+            BoysCudaLaunchAllNBf16(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Mono:
+            BoysCudaLaunchAllOrdersBf16Mono(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersMono:
+            BoysCudaLaunchAllOrdersBf16OrdersMono(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kSingleBf16Fast:
+            BoysCudaLaunchSingleBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kEachOrderBf16:
+            BoysCudaLaunchEachOrderBf16(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kEachOrderBf16Fast:
+            BoysCudaLaunchEachOrderBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16Fast:
+            BoysCudaLaunchAllOrdersBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersFast:
+            BoysCudaLaunchAllOrdersBf16OrdersFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowFast:
+            BoysCudaLaunchAllOrdersBf16NarrowFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersFast:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16MonoFast:
+            BoysCudaLaunchAllOrdersBf16MonoFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersMonoFast:
+            BoysCudaLaunchAllOrdersBf16OrdersMonoFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowMonoFast:
+            BoysCudaLaunchAllOrdersBf16NarrowMonoFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersMonoFast:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersMonoFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16RatFast:
+            BoysCudaLaunchAllOrdersBf16RatFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16RatHornerFast:
+            BoysCudaLaunchAllOrdersBf16RatHornerFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersRatFast:
+            BoysCudaLaunchAllOrdersBf16OrdersRatFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16OrdersRatHornerFast:
+            BoysCudaLaunchAllOrdersBf16OrdersRatHornerFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowRatFast:
+            BoysCudaLaunchAllOrdersBf16NarrowRatFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowRatHornerFast:
+            BoysCudaLaunchAllOrdersBf16NarrowRatHornerFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersRatFast:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersRatFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllOrdersBf16NarrowOrdersRatHornerFast:
+            BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
+        case ProbeEntry::kAllNBf16Fast:
+            BoysCudaLaunchAllNBf16Fast(static_cast<int>(form), n, xb, out, count, stream);
+            break;
 #else
         // As in LaunchInKernel: with the seam closed the fp16 arms are the only
         // ones that would have read a half array.
         (void)xh;
+        (void)xb;
 #endif // BoysFp16
         default:
             return 1;
@@ -1925,6 +3452,7 @@ int RunLaunched(const ProbeTimeRequest& request, cudaStream_t stream) {
                           request.n,
                           request.x,
                           request.xh,
+                          request.xb,
                           request.out,
                           static_cast<std::size_t>(request.count),
                           request.nmax,
@@ -1953,6 +3481,7 @@ int RunInKernel(const ProbeTimeRequest& request, cudaStream_t stream) {
                 request.x,
                 request.xf,
                 static_cast<const __half*>(request.xh),
+                static_cast<const __nv_bfloat16*>(request.xb),
                 request.out,
                 static_cast<std::size_t>(request.count),
                 request.withBoys != 0,
@@ -1965,6 +3494,7 @@ int RunInKernel(const ProbeTimeRequest& request, cudaStream_t stream) {
                 request.x,
                 request.xf,
                 static_cast<const __half*>(request.xh),
+                static_cast<const __nv_bfloat16*>(request.xb),
                 request.out,
                 static_cast<std::size_t>(request.count),
                 request.withBoys != 0,
@@ -1977,6 +3507,7 @@ int RunInKernel(const ProbeTimeRequest& request, cudaStream_t stream) {
                 request.x,
                 request.xf,
                 static_cast<const __half*>(request.xh),
+                static_cast<const __nv_bfloat16*>(request.xb),
                 request.out,
                 static_cast<std::size_t>(request.count),
                 request.withBoys != 0,

@@ -947,6 +947,7 @@ struct Workload {
     std::vector<double> x;
     std::vector<float> xf;
     std::vector<std::uint16_t> xh;
+    std::vector<std::uint16_t> xb;
 };
 
 Workload BuildWorkload(const DeviceProbeOptions& options) {
@@ -1005,11 +1006,13 @@ Workload BuildWorkload(const DeviceProbeOptions& options) {
     // narrowed argument, which is what a caller's own kernel would hold in a register.
     work.xf.resize(count);
     work.xh.resize(count);
+    work.xb.resize(count);
 
     for (std::size_t i = 0; i < count; ++i)
     {
         work.xf[i] = static_cast<float>(work.x[i]);
         work.xh[i] = F16(static_cast<float>(work.x[i])).Bits();
+        work.xb[i] = Bf16(static_cast<float>(work.x[i])).Bits();
     }
 
     return work;
@@ -2596,6 +2599,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     DeviceBuffer args64;
     DeviceBuffer args32;
     DeviceBuffer args16;
+    DeviceBuffer argsBf16;
     DeviceBuffer output;
     DeviceBuffer canarySink;
 
@@ -2603,6 +2607,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
         BoysCudaProbeAlloc(&args64.pointer, pairCount * sizeof(double)) != 0 ||
         BoysCudaProbeAlloc(&args32.pointer, pairCount * sizeof(float)) != 0 ||
         BoysCudaProbeAlloc(&args16.pointer, pairCount * sizeof(std::uint16_t)) != 0 ||
+        BoysCudaProbeAlloc(&argsBf16.pointer, pairCount * sizeof(std::uint16_t)) != 0 ||
         BoysCudaProbeAlloc(&output.pointer, ladderValues * sizeof(double)) != 0 ||
         BoysCudaProbeAlloc(&canarySink.pointer, sizeof(unsigned long long)) != 0)
     {
@@ -2615,7 +2620,8 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     if (BoysCudaProbeUpload(orders.pointer, work.n.data(), pairCount * sizeof(int)) != 0 ||
         BoysCudaProbeUpload(args64.pointer, work.x.data(), pairCount * sizeof(double)) != 0 ||
         BoysCudaProbeUpload(args32.pointer, work.xf.data(), pairCount * sizeof(float)) != 0 ||
-        BoysCudaProbeUpload(args16.pointer, work.xh.data(), pairCount * sizeof(std::uint16_t)) != 0)
+        BoysCudaProbeUpload(args16.pointer, work.xh.data(), pairCount * sizeof(std::uint16_t)) != 0 ||
+        BoysCudaProbeUpload(argsBf16.pointer, work.xb.data(), pairCount * sizeof(std::uint16_t)) != 0)
     {
         report.status = DeviceProbeStatus::kDeviceError;
         report.failure = Text("the workload could not be uploaded to device %d", options.device);
@@ -2631,6 +2637,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     base.x = static_cast<const double*>(args64.pointer);
     base.xf = static_cast<const float*>(args32.pointer);
     base.xh = args16.pointer;
+    base.xb = argsBf16.pointer;
     base.out = output.pointer;
     base.canarySink = static_cast<unsigned long long*>(canarySink.pointer);
     base.count = clamped.count;

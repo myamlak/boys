@@ -837,6 +837,157 @@ public:
     /// budget, which is why the float bodies take a seed lane at all — and the
     /// region-B seed is the float lane's own.
     ///
+    /// The double lane's ladders at the other region-B exponential.
+    ///
+    /// Each member below is the entry of its own name at \c RegionBExp::kFast — the same lane, the
+    /// same pieces, the same seed lane and the same recurrence, whose region-B seed is that
+    /// member's. The axis is a coordinate of the option and not a second entry: what separates
+    /// `AllOrdersF64` from `AllOrdersF64Fast` is the arithmetic the seed is evaluated in, so the
+    /// two carry a figure each and nothing substitutes one for the other
+    /// (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// The figure is the lane's own, \c 5.5e-14: this lane's fast member is the host's reduced-
+    /// argument polynomial ported rather than re-derived, and the host's own documentation of that
+    /// member is that its relative error sits inside the ladder's requirement below the member's
+    /// cut and that no published figure moves at it. The float lane's `+ 8e-8` is that lane's fast
+    /// member's own contribution, and the double lane's member has no such term.
+    ///
+    /// **One member per kernel, not one per scheme name.** The rational route's pair below is one
+    /// member for both scheme names at this exponential, exactly as the accurate pair above is: the
+    /// pair is stored in one form, so neither name selects a second arithmetic.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry of its own name
+    /// above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64Fast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64Orders at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64Narrow at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64MonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's, and both of that entry's scheme names reach this one
+    /// member for the reason the block states.
+    static BoysStatus AllOrdersF64RatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
     /// **This entry reads this lane's own cut of the partition.** The region-B
     /// degrees are derived over the float lane's pieces (NarrowRegionBDegrees at
     /// the float batch role, boys_effective_degrees.hpp) and read by the kernel.
@@ -1482,6 +1633,89 @@ public:
     static BoysStatus AllNF64WithPolicy(
         int nmax, const double* x, double* out, std::size_t count, void* stream);
 
+    /// F_0(x[i])..F_n[i](x[i]) in double precision, each argument's ladder to that
+    /// argument's own order — the shape \c BoysDeviceEachOrderF64 answers in the
+    /// caller's kernel, launched.
+    ///
+    /// **Output layout.** `out[offset[i] + l] = F_l(x[i])` for `l = 0..n[i]`, and no
+    /// other element of `out` is written: the ladder stops at the argument's own top
+    /// order instead of running to a common one. `offset` is the caller's, a device
+    /// array of `count` ints, so it is the caller's prefix sum that places the
+    /// ladders — at the front of `out`, packed, or interleaved with anything else the
+    /// same kernel produces, which is what the shape is for. The padded alternative is
+    /// \c AllOrdersF64, whose planes carry every order for every argument: it spends
+    /// `count * (kMaxBoysOrder + 1)` values where these spend `sum_i (n[i] + 1)`, and a
+    /// batch whose orders differ pays the difference for values no argument asks for.
+    /// A caller who wants ladders packed in argument order passes `offset[i] =` the
+    /// running total of `n[j] + 1` for `j < i`.
+    ///
+    /// **Ladders must not overlap.** `offset` is trusted, as `n` and `x` are: two
+    /// arguments whose ranges overlap are two arguments writing into one slot. A caller
+    /// building `offset` by prefix sum cannot produce that, and one placing ladders by
+    /// hand is told here that placing two in one place is undefined.
+    ///
+    /// The arithmetic is \c AllOrdersF64's, entry for entry: the same lane, the same
+    /// pieces, the same seed and the same recurrence, handed one value at a time to a
+    /// sink that indexes by `offset[i]` where the padded kernel indexes by a plane.
+    /// Nothing here is a second arithmetic and the bound is the lane's.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array, at least the largest `offset[i] + n[i] + 1` the
+    ///   call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \pre `offset[i] >= 0` and `offset[i] + n[i] + 1` is inside `out`, for every i
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF64(
+        const int* n,
+        const double* x,
+        const int* offset,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in single precision: the layout, the offsets and the
+    /// precondition are that entry's, and the arithmetic is \c AllOrdersF32's.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array, at least the largest `offset[i] + n[i] + 1` the
+    ///   call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF32(
+        const int* n,
+        const double* x,
+        const int* offset,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
     /// boundary (behind the BoysFp16 seam). Device pointers and stream
@@ -2112,6 +2346,244 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The float lane's ladders at the other region-B exponential, the double lane's
+    /// block above read at this lane's kernels: the same lane, the same pieces, the
+    /// same seed lane and the same recurrence, whose region-B seed is that member's.
+    ///
+    /// The axis is a coordinate of the option and not a second entry, so what
+    /// separates `AllOrdersF32` from `AllOrdersF32Fast` is the arithmetic the seed is
+    /// evaluated in. This lane's fast member is the floated reading of the double
+    /// lane's own, whose contribution to the returned value the recurrence caps at
+    /// 8e-8: the figure is the lane's bound plus that term, \c 1.5e-7 \c + \c 8e-8,
+    /// and nothing substitutes one exponential for the other (`RegionBExp`,
+    /// boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name.** The rational route's pair
+    /// is one member for both scheme names at this exponential, exactly as the
+    /// accurate pair above is: the pair is stored in one form, so neither name
+    /// selects a second arithmetic.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Fast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32MonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32RatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32RatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The single and all-N shapes at the other region-B exponential, one member per
+    /// shape for the reason the ladders above have one per kernel: the member is a
+    /// compile-time choice of arithmetic, so the choice is a second entry and not a
+    /// parameter.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name; only the region-B exponential differs. The double lane's
+    /// member carries the lane's own figure and no added term; the float lane's
+    /// carries \c 1.5e-7 \c + \c 8e-8, as the block above states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (SingleF64Fast); or the
+    ///   highest order, 0..kMaxBoysOrder (the all-N members)
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) (SingleF64Fast) or
+    ///   out[k * count + i] = F_k(x[i]), k = 0..nmax
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus SingleF64Fast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllNF64 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF64Fast(
+        int nmax,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllNF32 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF32Fast(
+        int nmax,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
 #if BoysFp16
     /// The half lane's rows of the two entries above: the same float engine's bodies
     /// with this lane's fp16 store around them, as every half-lane ladder row is.
@@ -2150,6 +2622,1047 @@ public:
         const int* n,
         const F16* x,
         F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in fp16 — the each-order shape (see that entry for the
+    /// layout, the offsets and the precondition) over this lane's store, behind
+    /// the BoysFp16 seam.
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value, the figure
+    /// the fp16 rows of the device option space carry.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of F16 arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array of F16, at least the largest `offset[i] + n[i] + 1`
+    ///   the call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF16(
+        const int* n,
+        const F16* x,
+        const int* offset,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The half lane's ladders at the other region-B exponential, its own block above
+    /// read the way the float lane's block is: the same kernels, the same seed/lane
+    /// pairs, and the second argument of the pair moved.
+    ///
+    /// The lane's definition is that it runs the float engine's arithmetic and stores
+    /// what it returns, so the member here is the float lane's fast reading and not a
+    /// second half arithmetic. Its figure is \c SingleF16Fast's: the float lane's
+    /// fast term plus the half format's own, and nothing substitutes one exponential
+    /// for the other (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name**, as the double lane's block
+    /// states it: a rational pair is stored in one form, so the two scheme names
+    /// reach the one member.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (AllNF16Fast: the
+    ///   highest order, 0..kMaxBoysOrder)
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Fast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Orders at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF16MonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF16RatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16RatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllNF16 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF16Fast(
+        int nmax,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+
+
+    /// F_n(x[i]) in bfloat16 — the bfloat16 lane of the certified mixed-precision
+    /// boundary (behind the BoysFp16 seam). Device pointers and stream
+    /// contract as the F32/F64 entries; the bfloat16 values are the raw
+    /// IEEE-754 binary16 bit patterns of this library's Bf16 type (see
+    /// f16.hpp), so host copies are plain byte copies of count * sizeof(Bf16).
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value — the
+    /// bfloat16 rows of the device option space (boys_cuda_options.hpp) carry the
+    /// constant part and the half ULP is the format's, and the device accuracy
+    /// gate measures these entries against the sum.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in bfloat16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleBf16(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_nmax(x[i]) in bfloat16 per input (i), layout as AllOrdersF32
+    /// (out[order * count + i] = F_order(x[i])), device pointers and
+    /// stream contract as SingleBf16.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 counterparts of the float lane's other bodies: each entry
+    /// below computes what the float entry of the same name computes
+    /// (AllOrdersF32Narrow and the family beside it), at the same tables, the
+    /// same partitions, the same seed lane and the same arithmetic, and stores
+    /// what it returns as bfloat16. The bfloat16 lane's own definition is that it runs
+    /// the float engine's bodies, so an entry of it is not a second arithmetic:
+    /// it is that body with `__half` I/O around it.
+    ///
+    /// Each is named for the float entry it mirrors, with `Bf16` in place of
+    /// `F32`, so the two lanes' surfaces are one table read twice rather than
+    /// two tables. The contract each carries is the one its float counterpart's
+    /// declaration states, and every one of them takes the device pointers, the
+    /// stream and the division form \c AllOrdersBf16 above takes. None of them
+    /// takes the ordering precondition: that belongs to the uniform-order shapes
+    /// (\c AllNBf16), and every entry here carries a per-element order array.
+    ///
+    /// The figure they answer at is \c Precision::kFp16Device's own row of
+    /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
+    /// digit of the returned value. It is not the float lane's \c 1.5e-7: the
+    /// return is stored half, and the store is this lane's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16
+    ///   values, order-major as \c AllOrdersBf16 writes it
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs, of the three certified
+    ///   forms (DivisionForm, boys/accuracy.hpp)
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Narrow(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowMono's arithmetic and contract, stored bfloat16: the
+    /// narrow partition in its monomial basis, which is the form the Horner
+    /// scheme name sums.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Uniform's arithmetic and contract, stored bfloat16: the float
+    /// lane's uniform grid in its Chebyshev blocks.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Uniform(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformHorner's arithmetic and contract, stored bfloat16. The
+    /// grid's two entries are two stored forms of one fit and not two
+    /// arithmetics, for the reason the float declaration states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat's arithmetic and contract, stored bfloat16: the rational
+    /// route over the coarsest partition. The route's pair is stored in one form
+    /// and read by Horner, so both scheme names reach this one entry.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Rat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Rat under the route's other scheme name. A forwarder and
+    /// not a second arithmetic: it runs \c AllOrdersBf16Rat's kernel and returns
+    /// its status.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16RatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat's arithmetic and contract, stored bfloat16: the
+    /// rational route over the narrow partition, with the same two scheme names
+    /// reaching one kernel that \c AllOrdersBf16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformRat's arithmetic and contract, stored bfloat16: the
+    /// grid's rational route, with the same two scheme names reaching one
+    /// kernel that \c AllOrdersBf16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16UniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders' arithmetic and contract, stored bfloat16: the float
+    /// lane's other packing axis over the coarsest partition. It reads region A
+    /// one fit per order rather than seeding the top order's fit and bringing
+    /// the lower orders down a recurrence, and it is one entry for both scheme
+    /// names, as its float counterpart is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Orders(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders' arithmetic and contract, stored bfloat16: the
+    /// orders axis over the narrow partition.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrders(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersMono's arithmetic and contract, stored bfloat16:
+    /// the orders axis over the narrow partition in its monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat's arithmetic and contract, stored bfloat16: the
+    /// orders axis on the rational route over the coarsest partition, with the
+    /// route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat's arithmetic and contract, stored bfloat16:
+    /// the orders axis on the rational route over the narrow partition, with
+    /// the route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniform's arithmetic and contract, stored bfloat16. The
+    /// grid's cells carry their own degree and block start, so the route's
+    /// packing axis has one member here and this entry runs the kernel
+    /// \c AllOrdersBf16Uniform launches.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniform(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's monomial basis over the orders axis: the kernel
+    /// \c AllOrdersBf16UniformHorner launches, for the reason
+    /// \c AllOrdersBf16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's rational route over the orders axis: the kernel
+    /// \c AllOrdersBf16UniformRat launches, for the reason
+    /// \c AllOrdersBf16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersUniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax in bfloat16 — the uniform-order
+    /// batch of the bfloat16 lane, layout as AllNF32, device pointers and stream
+    /// contract as SingleBf16. Like AllNF32 it has no CPU bfloat16 counterpart (the
+    /// CPU bfloat16 lane stops at BoysSingleBf16 and BoysAllOrdersBf16).
+    ///
+    /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
+    ///      AllNF32 states, for the reason it states there.
+    ///
+    /// \param nmax   highest order, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) bfloat16 values
+    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
+    /// kDeviceError when a device operation fails.
+    static BoysStatus AllNBf16(
+        int nmax,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's rows of the two entries above: the same float engine's bodies
+    /// with this lane's bfloat16 store around them, as every half-lane ladder row is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersBf16Mono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Mono on the coarsest partition's orders reading.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersBf16OrdersMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's fast region-B reading of the single shape, beside
+    /// \c SingleBf16 as \c SingleF32Fast stands beside \c SingleF32.
+    ///
+    /// The two differing exponentials are the two certified members of \c RegionBExp
+    /// (boys_device_tables.hpp), and the choice is one of arithmetic rather than of
+    /// kernel: this entry runs the same float engine, storing what it returns into
+    /// bfloat16, with the lane's fast exponential in region B's seed in place of the
+    /// library routine's. Its bound is \c SingleF32Fast's constant term plus the half
+    /// format's own.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in bfloat16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleBf16Fast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in bfloat16 — the each-order shape (see that entry for the
+    /// layout, the offsets and the precondition) over this lane's store, behind
+    /// the BoysFp16 seam.
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value, the figure
+    /// the bfloat16 rows of the device option space carry.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of Bf16 arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array of Bf16, at least the largest `offset[i] + n[i] + 1`
+    ///   the call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderBf16(
+        const int* n,
+        const Bf16* x,
+        const int* offset,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's ladders at the other region-B exponential, its own block above
+    /// read the way the float lane's block is: the same kernels, the same seed/lane
+    /// pairs, and the second argument of the pair moved.
+    ///
+    /// The lane's definition is that it runs the float engine's arithmetic and stores
+    /// what it returns, so the member here is the float lane's fast reading and not a
+    /// second half arithmetic. Its figure is \c SingleBf16Fast's: the float lane's
+    /// fast term plus the half format's own, and nothing substitutes one exponential
+    /// for the other (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name**, as the double lane's block
+    /// states it: a rational pair is stored in one form, so the two scheme names
+    /// reach the one member.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (AllNBf16Fast: the
+    ///   highest order, 0..kMaxBoysOrder)
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Fast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Orders at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersBf16MonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersBf16RatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16RatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllNBf16 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNBf16Fast(
+        int nmax,
+        const Bf16* x,
+        Bf16* out,
         std::size_t count,
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);

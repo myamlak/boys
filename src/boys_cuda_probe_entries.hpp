@@ -118,6 +118,14 @@ struct ProbeTimeRequest {
     /// The arguments the fp16 lane takes, launched and in-kernel alike.
     const void* xh;
 
+    /// The arguments the bfloat16 lane takes, in-kernel: the same values the half
+    /// lane is offered, stored in the other format. It is a second array rather
+    /// than a reinterpretation of \c xh - the two formats are 5/10 and 8/7 over
+    /// the same sixteen bits, so reading one as the other would hand every entry
+    /// a different number and a different exponent, and the region a Boys
+    /// argument falls in is decided by exactly that.
+    const void* xb;
+
     /// The output block, wide enough for the tallest ladder of any entry.
     void* out;
 
