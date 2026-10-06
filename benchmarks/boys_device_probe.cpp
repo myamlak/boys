@@ -1,10 +1,7 @@
-// The device option probe's driver. There is no measurement in this file —
-// every number printed came out of the library call, including the card's own
-// name. The exit status is 0 whether or not a winner was named; a status that
-// is not kSuccess, and an option space whose closure does not close, are
-// reported and exit 1. The closure is the report's last block and the verdict
-// it prints is the one this program returns: a member of the space in no state
-// is a failure here and not a paragraph.
+// The device option probe's driver. Every number it prints came out of the library call, the
+// card's own name included. Exit 0 whether or not a winner was named; a status that is not
+// kSuccess, or a closure that does not close, is reported and exits 1 - the closure is the
+// report's last block and the verdict it prints is the one this program returns.
 #include "boys/boys_cuda.hpp"
 #include "boys/boys_cuda_probe.hpp"
 
@@ -282,11 +279,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The seam file, written the one way. Both paths write the same bytes and report the same
-    // failures, so neither the format nor the reporting of it can drift from the other's. A
-    // std::ofstream and not the C stdio the option probe's writer uses: this target carries the
-    // CUDA toolkit's include directories, and there the CRT marks fopen deprecated under the
-    // tree's own /WX, so the portable C++ stream is what compiles.
+    // The seam file, written the one way: both paths use this writer, so neither the format nor
+    // the failure reporting can drift from the other's. std::ofstream and not the C stdio the
+    // option probe's writer uses - this target carries the CUDA toolkit's includes, where the CRT
+    // marks fopen deprecated under the tree's own /WX.
     const auto WriteDefaults = [](const std::string& path, const std::string& text) {
         std::ofstream file(path, std::ios::binary | std::ios::trunc);
 
@@ -409,19 +405,17 @@ int main(int argc, char** argv) {
     const std::string text = boys::FormatDeviceOptionProbe(report);
     std::fputs(text.c_str(), stdout);
 
-    // The report counts the option space's rows, and some of those rows are one arithmetic
-    // under two names: this is the space counted by arithmetic beside that count, so a reader
-    // of this run can tell how many distinct arithmetic the 352 names and 1056 members above
-    // are. Read from the library's own rows (BoysDeviceOptions), so it needs no run to be
-    // right and no edit here when a row is added.
+    // The space counted by arithmetic beside the report's count by row, so a reader can tell how
+    // many distinct arithmetic the 352 names and 1056 members above are. Read from the library's
+    // own rows (BoysDeviceOptions): it needs no run to be right, and no edit here when a row is
+    // added.
     const std::string arithmetic = boys::FormatDeviceArithmeticStatement();
     std::fputs(arithmetic.c_str(), stdout);
 
-    // The device half of the seam this run implies, where the caller asked for it: the
-    // classes it carries a row for and the ones it refuses, then the file itself. A run
-    // that measured no device class has nothing to write and the entry says so with an
-    // empty text, which is a failure of this command's own contract rather than a result:
-    // the file would be a transcription of the seam and not a measurement.
+    // The device half of the seam this run implies, where the caller asked for it: the classes it
+    // carries and the ones it refuses, then the file. A run that measured no device class has
+    // nothing to write and says so with an empty text - a failure of this command's contract
+    // rather than a result, the file being a transcription of the seam and not a measurement.
     if (!emitDefaults.empty())
     {
         const boys::DeviceDefaultsEmission emission =
