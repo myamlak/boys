@@ -654,13 +654,15 @@ struct DeviceProbeMeasurement {
     bool measured = false;
 
     /// Whether the subtraction that produced this row resolved a cost above its
-    /// own baseline. False for an in-kernel row whose two halves came out equal
-    /// within the clock at every round: at this workload the entry's arithmetic
-    /// is not distinguishable from the same caller kernel with the call removed,
-    /// so the row is a statement about that kernel and about the card's timing
-    /// rather than about the entry. Such a row carries no ordering: a zero here
-    /// is the instrument's resolution, not a free entry. Always true for a
-    /// launched row, which is not a subtraction.
+    /// own baseline. False for an in-kernel row whose difference is not positive
+    /// at the lower quartile of the run's rounds — the quantile its own two
+    /// readings are stated at — where at this workload the entry's arithmetic is
+    /// not distinguishable from the same caller kernel with the call removed, so
+    /// the row is a statement about that kernel and about the card's timing
+    /// rather than about the entry. Such a row carries no ordering: the figure
+    /// the middle of its rounds would give is the instrument's floor, not a free
+    /// entry. Always true for a launched row, which is not a subtraction and
+    /// whose cell is its own reading.
     bool subtractionResolved = false;
 
     /// The row's own reading at the run's first count
@@ -1423,6 +1425,60 @@ struct DeviceDefaultsEmission {
 /// \ingroup boys
 DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report,
                                                  const std::string& takenAt);
+
+/// A seam published from a report already on disk: the file, and the classes the report did
+/// not let it place.
+///
+/// \ingroup boys
+struct DeviceDefaultsPublication {
+    /// The file, in the format \c FormatDeviceBuildDefaults writes: the same rows and the same
+    /// markers, so the tools that read an emission read this. Written only where \c complete is
+    /// true — a report is published whole or not at all.
+    DeviceDefaultsEmission emission;
+
+    /// One line per class of the device half the report did not let this place, naming the
+    /// class and what the report failed to state for it.
+    std::vector<std::string> refusals;
+
+    /// Whether every class of the device half was placed. False means no file was written, and
+    /// every class that could not be placed is in \c refusals.
+    bool complete = false;
+};
+
+/// The defaults file a report on disk implies, with nothing measured.
+///
+/// **The report is the input and the run is not.** A report records what a card measured, and
+/// the rows a seam carries are the *defaults* that run established — not its fastest rows. The
+/// two disagree wherever a shape's own rounds could not separate its top entries: the fastest
+/// measured row is then a figure the report prints beside the answer, and the default is the
+/// entry the refinement stage's vote named instead. A reader that took the fastest measured
+/// column would write a plausible wrong default for every such class, so the name is read from
+/// the `recommended entry:` line and the way it was reached from the report's own statement of
+/// it — `named with the way it was reached - <how>` on the class's `reason:` line, where the
+/// refinement stage decided it, and the `reached by:` line where the class's own rounds or a
+/// lone entry did.
+///
+/// **Nothing is measured and nothing is read from the clock.** No device is opened, no kernel
+/// is launched, and the file's own comment names the card and the run the report names rather
+/// than this process's moment: the rows are one run's, and a file that dated them to the
+/// publishing would name a run that measured nothing.
+///
+/// **Every class of the device half or no file.** The twelve classes are the library's own
+/// (\c BoysDeviceOptions, boys_cuda_options.hpp, crossed with the questions the report ranks), so
+/// a report that states no class of them, states a class without a `recommended entry:` line, or
+/// states a way of being reached this revision does not define, is refused with the class named
+/// and no file is written. The seam is read INSTEAD of the committed file, so a partial
+/// replacement would leave the build resolving a class this tool had silently dropped.
+///
+/// \param reportText the text of a report an earlier run wrote — the output of
+///                   \c FormatDeviceOptionProbe, as the device probe prints it
+///
+/// \returns the publication. \c emission is filled only where \c complete is true; \c refusals
+///          names every class that could not be placed, and one at least is named whenever
+///          \c complete is false
+///
+/// \ingroup boys
+DeviceDefaultsPublication PublishDeviceBuildDefaults(const std::string& reportText);
 
 /// The device option space counted: every member of it in the state one run
 /// established for it, and the arithmetic that has to close.
