@@ -1,0 +1,55 @@
+#!/bin/sh
+#
+# Compile what this commit stages, with the compilers CI uses, before it is a commit.
+#
+# MSVC is greener than CI and the difference has cost red legs five times: an unused
+# internal function (clang), a variable set and never read (gcc), an expression nested
+# past clang's bracket depth. Each was caught by a CI run that could have been caught
+# in seconds here, on the files the commit touches.
+#
+# The files are checked through tools/check_compiles_here.py with the flags the build
+# itself uses, which needs a configured build directory carrying
+# compile_commands.json. Without one the check cannot run, and a check that cannot run
+# is not a pass: the commit is refused and the remedy is printed.
+#
+# To skip it deliberately: git commit --no-verify.
+
+set -u
+
+root=$(git rev-parse --show-toplevel) || exit 0
+build_dir=${BOYS_CHECK_BUILD_DIR:-build-checkgate}
+
+# The staged sources, of the kinds that compile. A deleted file is not one of them.
+staged=$(git diff --cached --name-only --diff-filter=ACMR |
+    grep -E '\.(cpp|cc|cxx|cu)$' || true)
+
+if [ -z "$staged" ]; then
+    exit 0
+fi
+
+# This hook runs wherever git runs; the compilers are the ones WSL carries, because
+# they are the ones the legs carry. Translate this tree's path to the one WSL sees.
+if command -v wsl.exe >/dev/null 2>&1 || command -v wsl >/dev/null 2>&1; then
+    drive=$(printf '%s' "$root" | cut -c1 | tr 'A-Z' 'a-z')
+    rest=$(printf '%s' "$root" | cut -c3-)
+    wsl_root="/mnt/$drive$rest"
+    files=$(printf '%s' "$staged" | tr '\n' ' ')
+    wsl -e bash -lc "cd '$wsl_root' && python3 tools/check_compiles_here.py --build-dir '$build_dir' $files"
+    status=$?
+else
+    # No WSL: the compilers may still be on PATH directly.
+    files=$(printf '%s' "$staged" | tr '\n' ' ')
+    python3 "$root/tools/check_compiles_here.py" --build-dir "$build_dir" $files
+    status=$?
+fi
+
+if [ "$status" -ne 0 ]; then
+    echo "" >&2
+    echo "pre-commit: this commit does not compile under the compilers CI uses." >&2
+    echo "            Fix the sources above, or commit with --no-verify to skip." >&2
+    echo "            If the check could not run, configure a build directory with:" >&2
+    echo "              cmake -S . -B $build_dir -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" >&2
+    exit 1
+fi
+
+exit 0
