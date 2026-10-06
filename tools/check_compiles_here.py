@@ -70,6 +70,11 @@ CI_LIMITS = {
 # it compiles at all, and the whole tree is a build's job rather than this one's.
 HEADER_TU_LIMIT = 3
 
+# The build directories read when none is named. The second is the CUDA one, and it is
+# the second for a reason: a source built only there is a device source, and reading
+# the non-CUDA directory alone says "no target builds it" about every one of them.
+DEFAULT_BUILD_DIRS = ("build-checkgate", "build-checkgate-cuda")
+
 
 def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -84,9 +89,10 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "--build-dir",
-        default="build-checkgate",
-        help="a configured build directory carrying compile_commands.json "
-        "(default: %(default)s)",
+        action="append",
+        help="a configured build directory carrying compile_commands.json; repeatable, "
+        "and one configured WITH CUDA is what checks the device sources. "
+        "(default: build-checkgate, then build-checkgate-cuda if it exists)",
     )
     parser.add_argument(
         "--compiler",
@@ -246,9 +252,13 @@ def run_one(job: tuple[Path, list[str], str | None, bool, Path]) -> tuple[Path, 
 def main(argv: list[str]) -> int:
     options = parse_arguments(argv)
     root = repo_root(options.repo)
-    build_dir = Path(options.build_dir)
-    if not build_dir.is_absolute():
-        build_dir = root / build_dir
+
+    # More than one build directory is the normal case: the device sources are built
+    # only by a build configured with CUDA, and a check that reads the non-CUDA one
+    # alone reports every device source as unbuilt - which is how a gate comes to have
+    # a blind spot exactly where the defects are.
+    build_dirs = [Path(name) for name in (options.build_dir or DEFAULT_BUILD_DIRS)]
+    build_dirs = [name if name.is_absolute() else root / name for name in build_dirs]
 
     wanted = [Path(name).resolve() for name in options.files]
     if not wanted:
@@ -261,7 +271,21 @@ def main(argv: list[str]) -> int:
         print("check_compiles_here: no source to check", file=sys.stderr)
         return 0
 
-    keyed = load_commands(build_dir)
+    keyed: dict[Path, list[dict]] = {}
+    read_dirs: list[Path] = []
+    for directory in build_dirs:
+        if not (directory / "compile_commands.json").is_file():
+            continue
+        for source, entries in load_commands(directory).items():
+            keyed.setdefault(source, []).extend(entries)
+        read_dirs.append(directory)
+
+    if not read_dirs:
+        raise SystemExit(
+            f"no build directory among {', '.join(str(d) for d in build_dirs)} carries "
+            f"compile_commands.json: configure one with -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+        )
+
     chosen = options.compiler or sorted(COMPILERS)
 
     jobs: list[tuple[Path, list[str], str | None, bool, Path]] = []
@@ -297,7 +321,8 @@ def main(argv: list[str]) -> int:
         for source in unbuilt:
             print(
                 f"check_compiles_here: {source} has no compile command in "
-                f"{build_dir.name}/compile_commands.json - no target builds it",
+                f"{', '.join(d.name for d in read_dirs)}/compile_commands.json - no "
+                f"target among them builds it",
                 file=sys.stderr,
             )
         return 2
