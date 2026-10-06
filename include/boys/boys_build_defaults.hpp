@@ -261,11 +261,9 @@
 /// about measured against unmeasured: this file carries the probe's measured rows.
 #define BOYS_BUILD_DEFAULTS_COMMITTED 1
 
-// A replacement says so on its own command line, PUBLIC, so that every
-// translation unit of it can tell which file it read. Reading this file under
-// that define means an include path reaches include/ before the directory the
-// replacement was copied into: the compiler is asked to say so here rather than
-// to compile a program that mixes the two.
+// A replacement defines BOYS_BUILD_DEFAULTS_REPLACED PUBLIC. Reaching this file under it means
+// include/ precedes the replacement on the include path, so a unit here and the library's own
+// instantiations would resolve different defaults. The #error below is the diagnostic.
 #if defined(BOYS_BUILD_DEFAULTS_REPLACED)
 #error                                                                                             \
     "this build was configured with BOYS_BUILD_DEFAULTS, but this translation unit read the committed defaults header: include/ comes before the build's own copy of it on the include path, so this unit and the library's own instantiations would resolve different defaults"
