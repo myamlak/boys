@@ -293,6 +293,55 @@ else()
     message(STATUS "boys: build defaults = the committed header (the shipped choices)")
 endif()
 
+# --- The contraction the library's arithmetic is compiled at -----------------
+# A bare `a * b + c` in the scalar arithmetic is one rounding or two according
+# to the target and the flags, and the two are different numbers. The figures
+# this tree publishes are the two-rounding arithmetic's: the accuracy gate holds
+# its bounds on a build that does not contract and reports three of them
+# exceeded on one that does, so that is the arithmetic the library is compiled
+# at here — stated, rather than left to whatever the host's compiler happens to
+# do.
+#
+# It takes a statement because the default is not the same on two machines.
+# aarch64 has the fused step in its baseline and its gcc contracts by default;
+# x86-64 has no fused step unless -mfma is passed, so the same source and the
+# same flags deliver two arithmetics, and the accuracy gate said so in its own
+# report: the x86 legs read `bare product-plus-add does not contract here` and
+# the arm64 legs `contracts here`. The lane that showed it is the half lane,
+# which runs the float engine's downward recursion — a bare product-plus-add
+# per step — against a budget of 1e-7 plus a half-ULP, which is one fp32
+# rounding wide.
+#
+# The value named is the two-rounding model and not the fused one. Naming the
+# fused model would ask for an instruction the x86-64 baseline does not have,
+# and on a target that does have it the fused arithmetic is already what the
+# fused route asks for, one call site at a time by name. This way each of the
+# two routes means one arithmetic on every host, and a bound measured on one is
+# a statement about the others.
+#
+# It reaches a consumer as well, where the arithmetic is compiled: every entry
+# is header-defined, so a translation unit that instantiates a kernel compiles
+# its own copy of these steps. The language guard keeps the option off C and
+# CUDA translation units, which do not compile the C++ arithmetic and whose
+# host libraries have their own flag vocabulary.
+#
+# MSVC's spelling is /fp:precise, which is its default and does not contract;
+# /fp:contract is not named because not every MSVC this library builds on
+# accepts it. Contraction there is opt-in, so the statement's work on that
+# toolchain is to refuse a project-level /fp:fast rather than to change a
+# default.
+if (MSVC)
+    set(_boys_contract_option "/fp:precise")
+else()
+    set(_boys_contract_option "-ffp-contract=off")
+endif()
+# Stated where the probe below measures, not only where the sources compile: a
+# build that states its arithmetic in one place and measures it in another is
+# measuring a different build than the one it ships.
+string(APPEND CMAKE_CXX_FLAGS " ${_boys_contract_option}")
+target_compile_options(boys PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_boys_contract_option}>")
+unset(_boys_contract_option)
+
 # --- What this target does with a bare product-plus-add ----------------------
 # Whether `a * b + c` written bare rounds once or twice follows from the target
 # and the flags rather than from the source, and it is not a detail: it decides
@@ -450,9 +499,12 @@ if (BOYS_ARCH_X86_64)
                 list(APPEND _boys_simd_flags "-ffp-contract=off")
             endif()
         endif()
-        # Left unpinned on a cross-compiling configure, where no answer was
-        # measured and the build states none: the flag set is then exactly the
-        # intrinsics' again, which is what the rest of that configure has too.
+        # Nothing added to the flag set on a cross-compiling configure, where no
+        # answer was measured: the set is then the intrinsics' again and the
+        # contract is the one the build states for every other translation unit,
+        # which a cross configure states as well - it is a flag and not a
+        # measurement, and the measurement is the one thing a cross configure
+        # cannot make.
         set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
             COMPILE_OPTIONS "${_boys_simd_flags}")
         unset(_boys_simd_flags)
@@ -1251,6 +1303,24 @@ if (BUILD_CUDA)
             BoysGateRevision="${BOYS_GATE_REVISION}")
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
+
+        # The axis-sensitivity check: for every row of BoysDeviceOptions(), does the entry the
+        # row names read the axes the row states? It runs the members of each axis a row carries
+        # more than one of, over the tables' own argument range and at the top orders each shape
+        # carries, and fails when two members that claim to differ deliver identical values - the
+        # shape a row whose entry ignores one of its stated axes has. Two translation units,
+        # because the rows split that way: the host half includes <boys/boys_cuda.hpp> and reads
+        # the option table, and tests/boys_cuda_axis_sensitivity_device.cu holds the in-kernel
+        # entries, which a host translation unit cannot call. A device is needed to run it, as
+        # for the gate above; `--collapse=<axis>` is its deliberate-defect control and exits 1.
+        add_executable(boys-cuda-axis-sensitivity
+            tests/boys_cuda_axis_sensitivity.cpp
+            tests/boys_cuda_axis_sensitivity_device.cu)
+        target_link_libraries(boys-cuda-axis-sensitivity PRIVATE boys-cuda boys)
+        target_include_directories(boys-cuda-axis-sensitivity PRIVATE src)
+        target_compile_features(boys-cuda-axis-sensitivity PRIVATE cxx_std_23)
+        boys_strict_warnings(boys-cuda-axis-sensitivity)
+        add_test(NAME boys-cuda-axis-sensitivity COMMAND boys-cuda-axis-sensitivity)
 
 
         # The CUDA consumer's own check of the lane's default, in two
