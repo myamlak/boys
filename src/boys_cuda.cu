@@ -351,31 +351,18 @@ struct Lane32Full {
 };
 
 // The coarsest partition in the other basis, the float lane's reading of what Lane64MonoFull reads
-// on the double lane: the pieces, edges, degrees and counts are Lane32Full's, the two pools are the
-// monomial ones, and the summation is Horner's. Region B's seed is the same seed's monomial form,
-// as it is on the double lane.
+// on the double lane: region B's seed is the same seed's monomial form, as it is there.
+//
+// The call sites place this lane in the region-B seat alone, so the five region-A members of the
+// lane interface (boys_cuda_arithmetic.hpp) are not stated here. A body that reaches for one of
+// them fails to compile and names it, which is what makes leaving the half out safe.
+//
+// kMonomial stays, and it is the one member that rule does not cover: the LaneMonomial trait reads
+// it and tolerates its absence, so dropping it would be a silent change rather than a named one.
+// The lane interface asks a lane whose coefficients are the monomial pool's to state it
+// (boys_cuda_arithmetic.hpp), and this lane's are.
 struct Lane32MonoFull {
     static constexpr bool kMonomial = true;
-
-    __device__ __forceinline__ int Count(int order) const {
-        return cCount32[order];
-    }
-
-    __device__ __forceinline__ float A(int order, int piece) const {
-        return cA32[order][piece];
-    }
-
-    __device__ __forceinline__ float B(int order, int piece) const {
-        return cB32[order][piece];
-    }
-
-    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
-        return dMonoCoeffs32 + cOffset32[order][piece];
-    }
-
-    __device__ __forceinline__ int Deg(int order, int piece) const {
-        return cDeg32[order][piece];
-    }
 
     __device__ __forceinline__ float BSeed(float x, int) const {
         const float t = 2.0f * (x - static_cast<float>(detail::kX0)) / static_cast<float>(detail::kX1 - detail::kX0) - 1.0f;
@@ -506,33 +493,15 @@ struct Lane64NarrowMono {
 // ---------------------------------------------------------------------------
 // the float lane's narrow partition
 // ---------------------------------------------------------------------------
-// The same shape of lane one lane down, over the float lane's own pieces, reading the degrees the
-// partition was stored at.
+// The same shape of lane one lane down, over the float lane's own pieces. The call sites place both
+// in the region-B seat alone, so their five region-A members are not stated here; a body that
+// reaches for one fails to compile and names it.
 //
 // The Chebyshev lane reads the float narrow pool and sums each piece by a split Clenshaw; the
-// monomial one reads the same partition's other form by Horner, and the kMonomial member is the
-// whole of the difference the shared bodies see.
+// monomial one reads the same partition's other form by Horner. kMonomial stays on the monomial
+// lane for the reason the coarsest monomial lane above gives: the trait that reads it tolerates its
+// absence, so removing it is not a compile-checked change.
 struct Lane32Narrow {
-    __device__ __forceinline__ int Count(int order) const {
-        return dNarrowAPieceStart32[order + 1] - dNarrowAPieceStart32[order];
-    }
-
-    __device__ __forceinline__ float A(int order, int piece) const {
-        return dNarrowAA32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ float B(int order, int piece) const {
-        return dNarrowAB32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
-        return dNarrowACoeffs32 + dNarrowAOffset32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ int Deg(int order, int piece) const {
-        return dNarrowAStoredDeg32[dNarrowAPieceStart32[order] + piece];
-    }
-
     __device__ __forceinline__ float BSeed(float x, int) const {
         int piece = 0;
 
@@ -554,26 +523,6 @@ struct Lane32Narrow {
 
 struct Lane32NarrowMono {
     static constexpr bool kMonomial = true;
-
-    __device__ __forceinline__ int Count(int order) const {
-        return dNarrowAPieceStart32[order + 1] - dNarrowAPieceStart32[order];
-    }
-
-    __device__ __forceinline__ float A(int order, int piece) const {
-        return dNarrowAA32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ float B(int order, int piece) const {
-        return dNarrowAB32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ const float* Coeffs(int order, int piece) const {
-        return dNarrowAMonoCoeffs32 + dNarrowAOffset32[dNarrowAPieceStart32[order] + piece];
-    }
-
-    __device__ __forceinline__ int Deg(int order, int piece) const {
-        return dNarrowAStoredDeg32[dNarrowAPieceStart32[order] + piece];
-    }
 
     __device__ __forceinline__ float BSeed(float x, int) const {
         int piece = 0;
