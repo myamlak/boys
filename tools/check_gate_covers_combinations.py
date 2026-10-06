@@ -194,6 +194,14 @@ LIBRARY = (
 
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
 
+# What the run's build reached: `device lanes : 4 of 4 measured on a card`. A run
+# whose first number is short of its second measured part of the device surface,
+# and the combinations it leaves uncovered are on the lanes it did not reach. That
+# shortfall is the build's, so the verdict below names the record and the remedy
+# rather than reporting the library as carrying what no row measures.
+DEVICE_LANES = re.compile(r"^device lanes : (?P<measured>\d+) of (?P<carried>\d+) "
+                          r"measured on a card[ \t]*$", re.M)
+
 # The gate's combination book: its marker comment opens it and the next section marker
 # closes it. Both are the gate's own, so the block this check reads is the block the gate
 # says is the combination book.
@@ -1128,6 +1136,14 @@ class RecordedRun:
         self.members_per_row: int | None = None
         self.member_scope: str | None = None
         self.member_device_exclusion = False
+        self.device_measured: int | None = None
+        self.device_carried: int | None = None
+
+        device = DEVICE_LANES.search(self.text)
+
+        if device is not None:
+            self.device_measured = int(device.group("measured"))
+            self.device_carried = int(device.group("carried"))
 
         match = REVISION.search(self.text)
 
@@ -1466,6 +1482,15 @@ def main() -> int:
         print(f"\nSTALE: {args.run} carries no combination rows: no table under a header reading "
               "`combination ... cells outside delivered bound state` was found, so this check has "
               "nothing to hold the library's space to. A read that came back empty is not a pass")
+        return 1
+
+    # A record that does not state how much of the device surface its build
+    # reached cannot be told from one that reached all of it, and the gap this
+    # check then reports would be read as the library's rather than the record's.
+    if run.device_measured is None:
+        print(f"\nSTALE: {args.run} states no device-lane count: no line of it reads `device "
+              f"lanes : N of M measured on a card`, which is what the gate prints for what its "
+              f"build carried and its card ran. Re-make the run and commit the new record")
         return 1
 
     # What the library says it carries, read from the accessor's own rules rather than taken
@@ -2245,7 +2270,15 @@ def main() -> int:
               f"measured by no row of the recorded run.")
 
     if findings or uncovered:
-        print(f"\nFAIL: the recorded run does not cover the combinations this revision carries")
+        if run.device_measured is not None and run.device_measured < run.device_carried:
+            print(f"\nFAIL: this record was taken from a build that measured {run.device_measured} "
+                  f"of the {run.device_carried} device lane(s) it carries, so it covers the host "
+                  f"half and not the whole space. The uncovered combinations above are on the lanes "
+                  f"it did not reach, and what is short is the build the record came from and not "
+                  f"the library: re-make the run from a build with BUILD_CUDA=ON on a host with a "
+                  f"usable card, and commit the new record")
+        else:
+            print(f"\nFAIL: the recorded run does not cover the combinations this revision carries")
         return 1
 
     print("  PASS: every combination the library carries is measured by the recorded run")

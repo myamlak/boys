@@ -13022,6 +13022,32 @@ int main(int argc, char** argv) {
     }
 #endif
 
+    // How much of the device surface this record answers for, stated once and in
+    // a form a reader can hold the record to. Every arm above can clear its own
+    // lane, so the count is taken here, after the last of them, rather than from
+    // the device's own answer - a lane the card is present for and whose entry
+    // this build does not define is a lane this record did not measure.
+    {
+        std::size_t combDeviceLanesMeasured = 0;
+        std::size_t combDeviceLanes = 0;
+
+        for (int lane = 0; lane < combLaneCount; ++lane)
+        {
+            if (!combIsDeviceLane(lane))
+            {
+                continue;
+            }
+
+            ++combDeviceLanes;
+            combDeviceLanesMeasured +=
+                combDeviceLaneArmed[static_cast<std::size_t>(lane)] ? 1 : 0;
+        }
+
+        std::printf("device lanes : %zu of %zu measured on a card\n",
+                    combDeviceLanesMeasured,
+                    combDeviceLanes);
+    }
+
     // ---- the cross, judged against what the accessor answers ----------------
     std::vector<Combination> combinations;
     std::size_t combClaimedCarried = 0;

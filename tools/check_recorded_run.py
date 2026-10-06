@@ -21,6 +21,12 @@ A commit that touches none of those files moves nothing the gate reads - the
 same build would print the same figures - so the record is still this tree's and
 this check passes, saying how many commits it looked past and over what.
 
+The run's own device-lane count is read too: `device lanes : N of M measured on a
+card`. A run taken from a build without the device lanes states the shortfall
+there, and that is a finding about the run and not about the library - a build
+with no card answers no question about a device lane, and what is short is the
+build the record came from.
+
 THE BUILD DESCRIPTION IS REPORTED AND NOT GATED, and the reason is a limit of
 reading rather than a judgement: `CMakeLists.txt` decides the flags the gate is
 compiled under, and it also decides which tests are in which target, and a file
@@ -89,6 +95,15 @@ BUILD_DESCRIPTION = "CMakeLists.txt"
 # reads: `accuracy gate, revision <rev>`. A value of `unknown` is what the gate
 # prints when it was configured where git was not found, and it names no tree.
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
+
+# What the run's build reached: `device lanes : 4 of 4 measured on a card`. A run
+# whose first number is short of its second is a run of the host lanes alone, and
+# the reason is the build it was taken from rather than anything the library does.
+# Read here because a record like that is cited for lanes it never touched, and a
+# reader who finds the shortfall in the coverage check instead reads it as the
+# library carrying combinations the run does not measure.
+DEVICE_LANES = re.compile(r"^device lanes : (?P<measured>\d+) of (?P<carried>\d+) "
+                          r"measured on a card[ \t]*$", re.M)
 
 
 def display(path: pathlib.Path) -> str:
@@ -231,6 +246,39 @@ def main() -> int:
                             f"its output to {display(run_path)} - and commit the new record with the "
                             f"change that moved the figures"
                         )
+
+        # What the run's build reached. The gate states how many of the device
+        # lanes its build carries were measured on a card, and a run that measured
+        # fewer than it counts is a run of the host lanes alone. The shortfall is
+        # the build's and not the library's, so it is refused here, where the
+        # sentence can name the artifact and the remedy, rather than surfacing in
+        # the coverage check as the library carrying combinations no row measures.
+        device = DEVICE_LANES.search(text)
+        if device is None:
+            findings.append(
+                f"{display(run_path)} states no device-lane count: no line of it reads `device "
+                f"lanes : N of M measured on a card`, which is what the gate prints for the lanes "
+                f"its build carried and its card ran. Without it a run taken from a build that "
+                f"carries no device lane reads exactly like one that measured them all, and this "
+                f"check cannot tell which of the two it is holding. Re-make the run at "
+                f"{args.revision} and commit the new record"
+            )
+            lines.append("  device lanes: none stated")
+        else:
+            measured = int(device.group("measured"))
+            carried = int(device.group("carried"))
+            lines.append(f"  device lanes: {measured} of {carried} measured on a card")
+            if measured < carried:
+                findings.append(
+                    f"{display(run_path)} records that {measured} of the {carried} device lane(s) "
+                    f"its build carries were measured on a card. The remaining "
+                    f"{carried - measured} answer no question here: a combination on one of them is "
+                    f"measured by no row of this record, and a reader who takes the record's own "
+                    f"totals for the library's space is reading the host half's run as the whole "
+                    f"one. This is the build the record was taken from and not the library's space - "
+                    f"re-make the run from a build with BUILD_CUDA=ON on a host with a usable card, "
+                    f"and commit the new record"
+                )
 
     for line in lines:
         print(line)
