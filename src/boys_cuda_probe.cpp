@@ -5174,6 +5174,27 @@ StatedResolution ResolutionStatedBy(const std::vector<std::string>& lines, std::
 
     stated.unplaced = StatedValues(lines, first, last, "    not separable: ");
 
+    // The line states a row and then its figures, so what the membership tests below need is the
+    // quoted name and not the sentence: keeping the sentence made each test compare a row's name
+    // against a sentence about it and find nothing, which read as six device classes whose
+    // recommended entry no marker of the seam is true of.
+    for (std::string& value : stated.unplaced)
+    {
+        const std::size_t opening = value.find('\'');
+
+        if (opening == std::string::npos)
+        {
+            continue;
+        }
+
+        const std::size_t closing = value.find('\'', opening + 1);
+
+        if (closing != std::string::npos)
+        {
+            value = value.substr(opening + 1, closing - opening - 1);
+        }
+    }
+
     return stated;
 }
 
