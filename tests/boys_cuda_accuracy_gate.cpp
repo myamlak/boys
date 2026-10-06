@@ -20,6 +20,23 @@
 // so any return in range passes there - is counted in the vacuous column rather
 // than folded into the total, which is the CPU gate's rule.
 //
+// The whole launched surface, entry by entry. A surface is not measured by
+// measuring the rows somebody remembered: every launched entry the library's
+// report carries (BoysDeviceOptions()) has an arm in the table further down,
+// launched over the same grid at that row's own documented bound, and an entry
+// the report carries and no arm reaches is named and fails the run. An arm the
+// library declares and this revision defines no kernel for is written where it
+// belongs and commented out with the reason, because arming it would be an
+// unresolved external at link time rather than a measurement; the survey counts
+// it as a row no arm reaches, so the gap is a number and not a silence.
+//
+// A launch that did not happen. Every launch in the arms is read back through
+// cudaGetLastError() and a non-success stops the gate naming the entry, because a
+// launcher whose kernel the driver never issued returns what a launcher that
+// agreed with the reference returns. That read is itself shown able to fail
+// before it is trusted: the runtime is asked for a refused launch, and the read
+// is required to report it or the run stops.
+//
 // The card is named rather than assumed: a delivered figure describes the
 // arithmetic this device executes, so a weaker or stronger double unit changes
 // what a bound costs and not what it is - the bounds transfer between cards and
@@ -64,7 +81,12 @@
 // Run:  cmake --build <build> --config Release --target boys-cuda-accuracy-gate
 //       <build>/Release/boys-cuda-accuracy-gate [--reference <grid.csv>]
 //                                                      [--digit-reference <grid.csv>]
-// Exits non-zero when any measured cell is over its bound.
+// The statuses: 0 when every documented bound is met and every entry the report
+// carries is armed; 1 when a cell is over its bound, or when a served option has
+// no claim; 2 when a launch or a runtime call failed, or an input could not be
+// read; 3 when a launched entry the report carries has no arm, which is a
+// coverage gap and not an accuracy figure. A run that measured nothing and one
+// that measured everything green do not share a status.
 
 #include "boys/boys.hpp"
 #include "boys/boys_cuda.hpp"
@@ -75,6 +97,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -5240,6 +5263,969 @@ void RunProbe(const Reference& ref,
 }
 
 // ---------------------------------------------------------------------------
+// The whole launched surface: one arm per entry the library's report carries,
+// and the launch discipline every arm runs under.
+// ---------------------------------------------------------------------------
+//
+// The sections above measure the arithmetic this gate was written for. What this
+// section adds is the statement that the surface is reached at all. The library
+// reports one row per entry (BoysDeviceOptions()) and every one of those rows has
+// a kernel behind it, so an entry no arm launches is an entry whose documented
+// bound is certified by nothing - and a run that never calls it prints exactly
+// what a run in which every one of its cells passed prints. That is the failure
+// this section exists for, and it is why an arm is owed for every row rather than
+// for the rows somebody remembered to write down.
+//
+// The table below is keyed by the library's own enumerator and states only the
+// one thing the report cannot: the function pointer. The shape and the lane are
+// read off the row at run time, so a row whose shape or precision moves moves its
+// arm with it and no second list can disagree with the first.
+//
+// A row an earlier section already claims is not measured twice: the entry is
+// reached, the claim exists, and a second claim of the same name would double the
+// table without adding a statement. The arm is counted either way, which is what
+// makes the count a statement about the surface and not about this table.
+
+// The launched signatures, by argument list and lane. The single and all-orders
+// shapes share the range signature and differ only in the layout the kernel
+// fills, so the row's shape selects the driver and never the pointer's type.
+using Range64Fn = boys::BoysStatus (*)(const int*, const double*, double*, std::size_t, void*, boys::DivisionForm);
+using Range32Fn = boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*, boys::DivisionForm);
+using Range16Fn = boys::BoysStatus (*)(const int*, const boys::F16*, boys::F16*, std::size_t, void*, boys::DivisionForm);
+using AllN64Fn = boys::BoysStatus (*)(int, const double*, double*, std::size_t, void*, boys::DivisionForm);
+using AllN32Fn = boys::BoysStatus (*)(int, const double*, float*, std::size_t, void*, boys::DivisionForm);
+using AllN16Fn = boys::BoysStatus (*)(int, const boys::F16*, boys::F16*, std::size_t, void*, boys::DivisionForm);
+using Each64Fn = boys::BoysStatus (*)(const int*, const double*, const int*, double*, std::size_t, void*, boys::DivisionForm);
+using Each32Fn = boys::BoysStatus (*)(const int*, const double*, const int*, float*, std::size_t, void*, boys::DivisionForm);
+using Each16Fn = boys::BoysStatus (*)(const int*, const boys::F16*, const int*, boys::F16*, std::size_t, void*, boys::DivisionForm);
+
+/// One launched entry, and the kernel that serves it.
+///
+/// Exactly one of the nine pointers is set, and which one is decided by the
+/// row's own shape and precision. The dispatch below reads the row and demands
+/// the pointer that row's shape owns, so a row whose shape moved since the table
+/// was written stops the gate rather than arming the wrong driver.
+struct LaunchedArm {
+    boys::DeviceEntry entry; ///< the library's own enumerator for the row
+    Range64Fn range64 = nullptr;
+    Range32Fn range32 = nullptr;
+    Range16Fn range16 = nullptr;
+    AllN64Fn allN64 = nullptr;
+    AllN32Fn allN32 = nullptr;
+    AllN16Fn allN16 = nullptr;
+    Each64Fn each64 = nullptr;
+    Each32Fn each32 = nullptr;
+    Each16Fn each16 = nullptr;
+    /// The row this arm is, where an entry carries two: the certified region-B
+    /// exponential is an axis of its own and its two members are two rows of one
+    /// entry, each with its own bound.
+    boys::RegionBExp exp = boys::RegionBExp::kAccurate;
+};
+
+/// Every launched entry the report carries, one arm apiece.
+///
+/// Read off the library rather than written by hand: the enumerator is the
+/// report's, and the row an entry names is resolved through DeviceRow at run
+/// time, which stops the gate if the report no longer carries it. A launched row
+/// the report carries and this table does not name is named by the survey below
+/// rather than passed over.
+///
+/// A row whose entry the library has not yet given a function this table can
+/// name is written where it belongs and commented out with that reason, rather
+/// than left out: the report lists it as built, nothing here can launch it, and
+/// the survey counts it as a row no arm reaches. Each such line is what an entry
+/// half-landed looks like from this side, and the fix is to uncomment it when the
+/// function exists.
+const LaunchedArm kLaunchedArms[] = {
+    // fp64 ------------------------
+    {.entry = boys::DeviceEntry::kAllNF64, .allN64 = &boys::BoysCuda::AllNF64},
+    {.entry = boys::DeviceEntry::kAllNF64Fast, .allN64 = &boys::BoysCuda::AllNF64Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64, .range64 = &boys::BoysCuda::AllOrdersF64},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Fast, .range64 = &boys::BoysCuda::AllOrdersF64Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Mono, .range64 = &boys::BoysCuda::AllOrdersF64Mono},
+    {.entry = boys::DeviceEntry::kAllOrdersF64MonoFast, .range64 = &boys::BoysCuda::AllOrdersF64MonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Narrow, .range64 = &boys::BoysCuda::AllOrdersF64Narrow},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowMono, .range64 = &boys::BoysCuda::AllOrdersF64NarrowMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowMonoFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrders, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrders},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersMono, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersMonoFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHorner, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowOrdersRatHornerFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowOrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowRat, .range64 = &boys::BoysCuda::AllOrdersF64NarrowRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowRatFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowRatHorner, .range64 = &boys::BoysCuda::AllOrdersF64NarrowRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64NarrowRatHornerFast, .range64 = &boys::BoysCuda::AllOrdersF64NarrowRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Orders, .range64 = &boys::BoysCuda::AllOrdersF64Orders},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersFast, .range64 = &boys::BoysCuda::AllOrdersF64OrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersMono, .range64 = &boys::BoysCuda::AllOrdersF64OrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersMonoFast, .range64 = &boys::BoysCuda::AllOrdersF64OrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersRat, .range64 = &boys::BoysCuda::AllOrdersF64OrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersRatFast, .range64 = &boys::BoysCuda::AllOrdersF64OrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersRatHorner, .range64 = &boys::BoysCuda::AllOrdersF64OrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersRatHornerFast, .range64 = &boys::BoysCuda::AllOrdersF64OrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersUniform, .range64 = &boys::BoysCuda::AllOrdersF64OrdersUniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersUniformHorner, .range64 = &boys::BoysCuda::AllOrdersF64OrdersUniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersUniformRat, .range64 = &boys::BoysCuda::AllOrdersF64OrdersUniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64OrdersUniformRatHorner, .range64 = &boys::BoysCuda::AllOrdersF64OrdersUniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Rat, .range64 = &boys::BoysCuda::AllOrdersF64Rat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64RatFast, .range64 = &boys::BoysCuda::AllOrdersF64RatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64RatHorner, .range64 = &boys::BoysCuda::AllOrdersF64Rat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64RatHornerFast, .range64 = &boys::BoysCuda::AllOrdersF64RatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF64Uniform, .range64 = &boys::BoysCuda::AllOrdersF64Uniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF64UniformHorner, .range64 = &boys::BoysCuda::AllOrdersF64UniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF64UniformRat, .range64 = &boys::BoysCuda::AllOrdersF64UniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF64UniformRatHorner, .range64 = &boys::BoysCuda::AllOrdersF64UniformRatHorner},
+    {.entry = boys::DeviceEntry::kEachOrderF64, .each64 = &boys::BoysCuda::EachOrderF64},
+    {.entry = boys::DeviceEntry::kEachOrderF64Fast, .each64 = &boys::BoysCuda::EachOrderF64<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kSingleF64, .range64 = &boys::BoysCuda::SingleF64},
+    {.entry = boys::DeviceEntry::kSingleF64Fast, .range64 = &boys::BoysCuda::SingleF64Fast, .exp = boys::RegionBExp::kFast},
+    // fp32 ------------------------
+    {.entry = boys::DeviceEntry::kAllNF32, .allN32 = &boys::BoysCuda::AllNF32},
+    {.entry = boys::DeviceEntry::kAllNF32Fast, .allN32 = &boys::BoysCuda::AllNF32Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32, .range32 = &boys::BoysCuda::AllOrdersF32},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Fast, .range32 = &boys::BoysCuda::AllOrdersF32Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Mono, .range32 = &boys::BoysCuda::AllOrdersF32Mono},
+    {.entry = boys::DeviceEntry::kAllOrdersF32MonoFast, .range32 = &boys::BoysCuda::AllOrdersF32MonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Narrow, .range32 = &boys::BoysCuda::AllOrdersF32Narrow},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowMono, .range32 = &boys::BoysCuda::AllOrdersF32NarrowMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowMonoFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrders, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrders},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersMono, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersMonoFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersRat, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHorner, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowOrdersRatHornerFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowOrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowRat, .range32 = &boys::BoysCuda::AllOrdersF32NarrowRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowRatFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowRatHorner, .range32 = &boys::BoysCuda::AllOrdersF32NarrowRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32NarrowRatHornerFast, .range32 = &boys::BoysCuda::AllOrdersF32NarrowRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Orders, .range32 = &boys::BoysCuda::AllOrdersF32Orders},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersFast, .range32 = &boys::BoysCuda::AllOrdersF32OrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersMono, .range32 = &boys::BoysCuda::AllOrdersF32OrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersMonoFast, .range32 = &boys::BoysCuda::AllOrdersF32OrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersRat, .range32 = &boys::BoysCuda::AllOrdersF32OrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersRatFast, .range32 = &boys::BoysCuda::AllOrdersF32OrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersRatHorner, .range32 = &boys::BoysCuda::AllOrdersF32OrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersRatHornerFast, .range32 = &boys::BoysCuda::AllOrdersF32OrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersUniform, .range32 = &boys::BoysCuda::AllOrdersF32OrdersUniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersUniformHorner, .range32 = &boys::BoysCuda::AllOrdersF32OrdersUniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersUniformRat, .range32 = &boys::BoysCuda::AllOrdersF32OrdersUniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32OrdersUniformRatHorner, .range32 = &boys::BoysCuda::AllOrdersF32OrdersUniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Rat, .range32 = &boys::BoysCuda::AllOrdersF32Rat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32RatFast, .range32 = &boys::BoysCuda::AllOrdersF32RatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32RatHorner, .range32 = &boys::BoysCuda::AllOrdersF32RatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32RatHornerFast, .range32 = &boys::BoysCuda::AllOrdersF32RatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF32Uniform, .range32 = &boys::BoysCuda::AllOrdersF32Uniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF32UniformHorner, .range32 = &boys::BoysCuda::AllOrdersF32UniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF32UniformRat, .range32 = &boys::BoysCuda::AllOrdersF32UniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF32UniformRatHorner, .range32 = &boys::BoysCuda::AllOrdersF32UniformRatHorner},
+    {.entry = boys::DeviceEntry::kEachOrderF32, .each32 = &boys::BoysCuda::EachOrderF32},
+    {.entry = boys::DeviceEntry::kEachOrderF32Fast, .each32 = &boys::BoysCuda::EachOrderF32<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kSingleF32, .range32 = &boys::BoysCuda::SingleF32},
+    {.entry = boys::DeviceEntry::kSingleF32Fast, .range32 = &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
+    // fp16 ------------------------
+#if BOYS_CUDA_GATE_FP16
+    // all-n-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllNBf16, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllNBf16},
+    // all-n-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllNBf16Fast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllNBf16Fast},
+    {.entry = boys::DeviceEntry::kAllNF16, .allN16 = &boys::BoysCuda::AllNF16},
+    {.entry = boys::DeviceEntry::kAllNF16Fast, .allN16 = &boys::BoysCuda::AllNF16Fast, .exp = boys::RegionBExp::kFast},
+    // all-orders-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16},
+    // all-orders-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Fast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Fast},
+    // all-orders-bfloat16-mono at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Mono, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Mono},
+    // all-orders-bfloat16-mono-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16MonoFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16MonoFast},
+    // all-orders-bfloat16-narrow at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Narrow, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Narrow},
+    // all-orders-bfloat16-narrow-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowFast},
+    // all-orders-bfloat16-narrow-mono at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowMono, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMono},
+    // all-orders-bfloat16-narrow-mono-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowMonoFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMonoFast},
+    // all-orders-bfloat16-narrow-orders at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrders, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrders},
+    // all-orders-bfloat16-narrow-orders-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersFast},
+    // all-orders-bfloat16-narrow-orders-mono at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersMono, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMono},
+    // all-orders-bfloat16-narrow-orders-mono-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersMonoFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMonoFast},
+    // all-orders-bfloat16-narrow-orders-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersRat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRat},
+    // all-orders-bfloat16-narrow-orders-rat-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersRatFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatFast},
+    // all-orders-bfloat16-narrow-orders-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersRatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHorner},
+    // all-orders-bfloat16-narrow-orders-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowOrdersRatHornerFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHornerFast},
+    // all-orders-bfloat16-narrow-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowRat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRat},
+    // all-orders-bfloat16-narrow-rat-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowRatFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatFast},
+    // all-orders-bfloat16-narrow-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowRatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHorner},
+    // all-orders-bfloat16-narrow-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16NarrowRatHornerFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHornerFast},
+    // all-orders-bfloat16-orders at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Orders, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Orders},
+    // all-orders-bfloat16-orders-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersFast},
+    // all-orders-bfloat16-orders-mono at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersMono, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMono},
+    // all-orders-bfloat16-orders-mono-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersMonoFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMonoFast},
+    // all-orders-bfloat16-orders-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersRat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRat},
+    // all-orders-bfloat16-orders-rat-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersRatFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatFast},
+    // all-orders-bfloat16-orders-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersRatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHorner},
+    // all-orders-bfloat16-orders-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersRatHornerFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHornerFast},
+    // all-orders-bfloat16-orders-uniform at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersUniform, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniform},
+    // all-orders-bfloat16-orders-uniform-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersUniformHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformHorner},
+    // all-orders-bfloat16-orders-uniform-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersUniformRat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRat},
+    // all-orders-bfloat16-orders-uniform-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16OrdersUniformRatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRatHorner},
+    // all-orders-bfloat16-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Rat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Rat},
+    // all-orders-bfloat16-rat-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16RatFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatFast},
+    // all-orders-bfloat16-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16RatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatHorner},
+    // all-orders-bfloat16-rat-horner-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16RatHornerFast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16RatHornerFast},
+    // all-orders-bfloat16-uniform at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16Uniform, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16Uniform},
+    // all-orders-bfloat16-uniform-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16UniformHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformHorner},
+    // all-orders-bfloat16-uniform-rat at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16UniformRat, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRat},
+    // all-orders-bfloat16-uniform-rat-horner at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for AllOrdersBf16UniformRatHorner, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16, .range16 = &boys::BoysCuda::AllOrdersF16},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Fast, .range16 = &boys::BoysCuda::AllOrdersF16Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Mono, .range16 = &boys::BoysCuda::AllOrdersF16Mono},
+    {.entry = boys::DeviceEntry::kAllOrdersF16MonoFast, .range16 = &boys::BoysCuda::AllOrdersF16MonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Narrow, .range16 = &boys::BoysCuda::AllOrdersF16Narrow},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowMono, .range16 = &boys::BoysCuda::AllOrdersF16NarrowMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowMonoFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrders, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrders},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersMono, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersMonoFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersRat, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersRatFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowOrdersRatHornerFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowOrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowRat, .range16 = &boys::BoysCuda::AllOrdersF16NarrowRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowRatFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16NarrowRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16NarrowRatHornerFast, .range16 = &boys::BoysCuda::AllOrdersF16NarrowRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Orders, .range16 = &boys::BoysCuda::AllOrdersF16Orders},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersFast, .range16 = &boys::BoysCuda::AllOrdersF16OrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersMono, .range16 = &boys::BoysCuda::AllOrdersF16OrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersMonoFast, .range16 = &boys::BoysCuda::AllOrdersF16OrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersRat, .range16 = &boys::BoysCuda::AllOrdersF16OrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersRatFast, .range16 = &boys::BoysCuda::AllOrdersF16OrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16OrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersRatHornerFast, .range16 = &boys::BoysCuda::AllOrdersF16OrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersUniform, .range16 = &boys::BoysCuda::AllOrdersF16OrdersUniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersUniformHorner, .range16 = &boys::BoysCuda::AllOrdersF16OrdersUniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersUniformRat, .range16 = &boys::BoysCuda::AllOrdersF16OrdersUniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16OrdersUniformRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16OrdersUniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Rat, .range16 = &boys::BoysCuda::AllOrdersF16Rat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16RatFast, .range16 = &boys::BoysCuda::AllOrdersF16RatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16RatHorner, .range16 = &boys::BoysCuda::AllOrdersF16RatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16RatHornerFast, .range16 = &boys::BoysCuda::AllOrdersF16RatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersF16Uniform, .range16 = &boys::BoysCuda::AllOrdersF16Uniform},
+    {.entry = boys::DeviceEntry::kAllOrdersF16UniformHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersF16UniformRat, .range16 = &boys::BoysCuda::AllOrdersF16UniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersF16UniformRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformRatHorner},
+    // each-order-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for EachOrderBf16, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kEachOrderBf16},
+    // each-order-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for EachOrderBf16, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kEachOrderBf16Fast},
+    {.entry = boys::DeviceEntry::kEachOrderF16, .each16 = &boys::BoysCuda::EachOrderF16},
+    {.entry = boys::DeviceEntry::kEachOrderF16Fast, .each16 = &boys::BoysCuda::EachOrderF16<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
+    // single-bfloat16 at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for SingleBf16, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kSingleBf16},
+    // single-bfloat16-fast at this revision: the report carries the row and boys_cuda.hpp
+    // declares no function for SingleBf16Fast, so there is nothing to arm.
+    // {.entry = boys::DeviceEntry::kSingleBf16Fast},
+    {.entry = boys::DeviceEntry::kSingleF16, .range16 = &boys::BoysCuda::SingleF16},
+    {.entry = boys::DeviceEntry::kSingleF16Fast, .range16 = &boys::BoysCuda::SingleF16Fast, .exp = boys::RegionBExp::kFast},
+#endif // BOYS_CUDA_GATE_FP16
+};
+
+// ---------------------------------------------------------------------------
+// The launch discipline, and the instrument that proves it bites.
+// ---------------------------------------------------------------------------
+
+/// Clear whatever the last call left pending, so the read after a launch answers
+/// for that launch and not for the one before it.
+void BeginLaunchedCall() {
+    (void)cudaGetLastError();
+}
+
+/// The read after a launch, and the one statement a reader of the numbers cannot
+/// make for themselves: that a kernel ran.
+///
+/// A launcher that returned success and a launcher whose kernel the driver never
+/// issued are the same value to anyone looking only at the output buffer, and the
+/// second reads as a lane that agreed with the reference whenever the buffer
+/// still holds what was put there.
+///
+/// Two channels carry that statement out of a launch and this reads both. The
+/// library's launcher reads the runtime's error itself and maps it into the
+/// status CheckLaunch stops the run on, so a refused launch is already a status
+/// and not a silence - which is why the read below is not the statement and
+/// cannot be presented as one. What it adds is what the launcher's own read
+/// cannot see: an error raised after it, and, with the device synchronise beside
+/// it, a kernel that started and then failed. Both leave the output buffer
+/// holding whatever was put there, and both are the shape of failure this whole
+/// discipline exists for.
+void RequireLaunched(const char* entry, cudaError_t after) {
+    if (after == cudaSuccess)
+    {
+        return;
+    }
+
+    std::fprintf(stderr,
+                 "cuda gate: the launch of %s did not happen: %s\n",
+                 entry,
+                 cudaGetErrorString(after));
+    std::exit(2);
+}
+
+/// How many launches this gate has read the runtime's error back after. Printed,
+/// because a run that issued no launch is exactly the failure this section exists
+/// for and a count of zero is what it looks like.
+std::size_t& LaunchesChecked() {
+    static std::size_t checked = 0;
+    return checked;
+}
+
+/// The launch-error read, shown able to fail before anything is taken from it.
+///
+/// A check that cannot fail is worse than no check, and no input this gate
+/// accepts can show this one failing: a launch that worked is a success. The
+/// runtime is therefore asked for a failure deliberately - a launch naming no
+/// function - and the read is required to report it. A read that answered success
+/// there would certify every launch in the file, which is precisely what a reader
+/// must not take on faith.
+///
+/// What this proves and what it does not: that the runtime reaches the read with
+/// a refusal, so the read is live and a run in which it answers success is a run
+/// in which this process was not told of a refused launch. It does not prove that
+/// a library entry's refused launch reaches the read, because the library's
+/// launcher consumes the error first - that one reaches the caller through the
+/// status, and the read beside it is the second statement rather than the first.
+void ProveLaunchErrorBites() {
+    BeginLaunchedCall();
+    const cudaError_t refused = cudaLaunchKernel(nullptr, dim3(1), dim3(1), nullptr, 0, nullptr);
+
+    if (refused == cudaSuccess)
+    {
+        std::fprintf(stderr,
+                     "cuda gate: the runtime accepted a launch naming no kernel, so the "
+                     "launch-error read certifies nothing\n");
+        std::exit(2);
+    }
+
+    const cudaError_t read = cudaGetLastError();
+
+    if (read == cudaSuccess)
+    {
+        std::fprintf(stderr,
+                     "cuda gate: a launch the runtime refused left no error to read, so a "
+                     "launch that did not happen would pass the read\n");
+        std::exit(2);
+    }
+
+    BeginLaunchedCall();
+    std::printf("launch check : a launch naming no kernel reads back as \"%s\"; every launch "
+                "below is read for its own\n",
+                cudaGetErrorString(read));
+}
+
+// ---------------------------------------------------------------------------
+// The arms: launch, read, compare.
+// ---------------------------------------------------------------------------
+
+/// The argument type one lane's launched entries read. The floating lanes are
+/// handed the grid's own double; the half lane the same argument already rounded
+/// to the format it stores, because an entry that takes an F16 reads the value
+/// the reference's own half column states and not the double beside it.
+template <typename Out> struct ArmArg {
+    using type = double;
+};
+
+template <> struct ArmArg<boys::F16> {
+    using type = boys::F16;
+};
+
+template <typename In> In ConvertArmArg(double x) {
+    return static_cast<In>(x);
+}
+
+template <> inline boys::F16 ConvertArmArg<boys::F16>(double x) {
+    return boys::F16(static_cast<float>(x));
+}
+
+/// One lane's column of the committed reference: the argument the entry actually
+/// evaluated, the value at that argument, and that value's magnitude. The three
+/// lanes share one cell layout and differ in which column their own rounding
+/// produced, so a lane is a choice of column and never a second comparison.
+template <typename Out> struct ArmLane;
+
+template <> struct ArmLane<double> {
+    static const std::vector<double>& arg(const Reference& ref) {
+        return ref.x;
+    }
+
+    static const std::vector<double>& value(const Reference& ref) {
+        return ref.v;
+    }
+
+    static const std::vector<int>& decade(const Reference& ref) {
+        return ref.decade;
+    }
+
+    static double widen(double got, bool& unrepresentable) {
+        unrepresentable = Unrepresentable(got, -1022);
+        return got;
+    }
+};
+
+template <> struct ArmLane<float> {
+    static const std::vector<double>& arg(const Reference& ref) {
+        return ref.xf;
+    }
+
+    static const std::vector<double>& value(const Reference& ref) {
+        return ref.vf;
+    }
+
+    static const std::vector<int>& decade(const Reference& ref) {
+        return ref.decadeF;
+    }
+
+    static double widen(float got, bool& unrepresentable) {
+        const std::pair<double, bool> widened = Widen(got);
+        unrepresentable = widened.second;
+        return widened.first;
+    }
+};
+
+template <> struct ArmLane<boys::F16> {
+    static const std::vector<double>& arg(const Reference& ref) {
+        return ref.x16;
+    }
+
+    static const std::vector<double>& value(const Reference& ref) {
+        return ref.v16;
+    }
+
+    static const std::vector<int>& decade(const Reference& ref) {
+        return ref.decade16;
+    }
+
+    static double widen(boys::F16 got, bool& unrepresentable) {
+        const double widened = static_cast<double>(got);
+        unrepresentable = Unrepresentable(widened, kF16MinNormalExp);
+        return widened;
+    }
+};
+
+/// The argument column one lane's kernels are handed, at one of two sizes: the
+/// reference's own argument count for a batch entry, and the grid's cell count
+/// for a single-shape entry, which is handed one element per cell. Both are the
+/// same column read at a different stride, which is what the cell layout
+/// (element e = order e / count at argument e % count) makes true.
+template <typename In>
+std::vector<In> ArmArguments(const Reference& ref, std::size_t count) {
+    std::vector<In> out(count);
+
+    for (std::size_t e = 0; e < count; ++e)
+    {
+        out[e] = ConvertArmArg<In>(ref.x[e % ref.count]);
+    }
+
+    return out;
+}
+
+/// The bound one cell of an arm is measured at: the row's own documented figure,
+/// and for the half lane the figure its own cell states - the constant part plus
+/// half of the last representable digit of the value the entry returned, which is
+/// the form the header publishes. Both are read from the report and neither is
+/// transcribed, so relaxing a figure in the library's table relaxes every cell
+/// that measures it and no cell here keeps an older one.
+double ArmBound(const boys::DeviceOptionInfo& row, double got) {
+    if (row.precision == boys::DeviceOptionPrecision::kFp16)
+    {
+        return HalfBoundAt(got);
+    }
+
+    return row.bound;
+}
+
+/// How one arm's output array maps onto the reference's cells.
+///
+/// The single and ladder shapes both fill the grid's own layout - element e is
+/// order e / count at argument e % count - so they share one mapping. The all-N
+/// shape writes the sorted argument list, so an element's reference argument is
+/// the one the sorted order sent there. The each-order shape writes a whole
+/// ladder per element at the offsets this gate chose, so its element index splits
+/// into argument and order rather than into order and argument.
+enum class ArmLayout {
+    kCells,  ///< element e is order e/count at argument e%count
+    kSorted, ///< the same, over the argument list in non-decreasing order
+    kLadderPerElement, ///< element e is argument e/planes at order e%planes
+};
+
+/// One arm's values, compared cell by cell with the committed reference at the
+/// row's own bound, into the claim that carries the row's own name - which is
+/// what lets the coverage statement at the end of this file read this arm as a
+/// claim for that row rather than as a table beside it.
+template <typename Out>
+void MeasureArmCells(const Reference& ref,
+                     int claim,
+                     const boys::DeviceOptionInfo& row,
+                     const std::vector<Out>& got,
+                     ArmLayout layout,
+                     const SortedArgs& sorted) {
+    const std::size_t count = ref.count;
+    const std::size_t planes = static_cast<std::size_t>(boys::kMaxBoysOrder) + 1;
+    const std::vector<double>& arg = ArmLane<Out>::arg(ref);
+    const std::vector<double>& value = ArmLane<Out>::value(ref);
+    const std::vector<int>& decade = ArmLane<Out>::decade(ref);
+
+    for (std::size_t e = 0; e < got.size(); ++e)
+    {
+        std::size_t i = 0;
+        int n = 0;
+
+        if (layout == ArmLayout::kCells)
+        {
+            n = static_cast<int>(e / count);
+            i = e % count;
+        }
+        else if (layout == ArmLayout::kSorted)
+        {
+            n = static_cast<int>(e / count);
+            i = sorted.order[e % count];
+        }
+        else
+        {
+            n = static_cast<int>(e % planes);
+            i = e / planes;
+        }
+
+        bool unrepresentable = false;
+        const double widened = ArmLane<Out>::widen(got[e], unrepresentable);
+
+        Measure(claim,
+                n,
+                arg[i],
+                widened,
+                value[ref.Index(n, i)],
+                decade[ref.Index(n, i)],
+                ArmBound(row, widened),
+                unrepresentable);
+    }
+}
+
+/// One arm of the range shapes - the single shape and the ladder shape, which
+/// share a signature and differ only in what they fill.
+///
+/// The single shape is handed one element per cell, so a single launch covers
+/// every (order, argument) cell of the grid; the ladder shape is handed one
+/// element per argument with a whole ladder written behind each. Both fill the
+/// grid's own layout, which is why one measuring loop serves the two.
+template <typename Out, typename Fn>
+void SweepArmRange(const Reference& ref,
+                   const Grid& grid,
+                   const boys::DeviceOptionInfo& row,
+                   Fn launch) {
+    using In = typename ArmArg<Out>::type;
+    const bool single = row.shape == boys::DeviceOptionShape::kSingle;
+    const std::size_t count = single ? grid.cells : ref.count;
+
+    const int claim = AddClaim(row.name, "A..C", row.bound);
+    const std::vector<int> tops(count, boys::kMaxBoysOrder);
+    std::vector<Out> out(grid.cells);
+
+    {
+        DevBuf<int> dN(count);
+        DevBuf<In> dX(count);
+        DevBuf<Out> dOut(grid.cells);
+        dN.Upload(single ? grid.n : tops);
+        dX.Upload(ArmArguments<In>(ref, count));
+
+        BeginLaunchedCall();
+        const boys::BoysStatus status =
+            launch(dN.get(), dX.get(), dOut.get(), count, nullptr, kGateDivisionForm);
+        RequireLaunched(row.name, cudaGetLastError());
+        ++LaunchesChecked();
+        CheckLaunch(status, row.name);
+        dOut.Download(out);
+    }
+
+    RequireLaunched(row.name, cudaDeviceSynchronize());
+    MeasureArmCells(ref, claim, row, out, ArmLayout::kCells, SortedArgs{});
+}
+
+/// One arm of the all-N shape: one common top order, the argument list its own
+/// contract asks for (non-decreasing), and a whole ladder behind every argument.
+template <typename Out, typename Fn>
+void SweepArmAllN(const Reference& ref,
+                  const Grid& grid,
+                  const SortedArgs& sorted,
+                  const boys::DeviceOptionInfo& row,
+                  Fn launch) {
+    using In = typename ArmArg<Out>::type;
+    const std::size_t count = ref.count;
+    const int claim = AddClaim(row.name, "A..C", row.bound);
+
+    const std::vector<In> column = ArmArguments<In>(ref, count);
+    std::vector<In> hostX(count);
+
+    for (std::size_t j = 0; j < count; ++j)
+    {
+        hostX[j] = column[sorted.order[j]];
+    }
+
+    std::vector<Out> out(grid.cells);
+
+    {
+        DevBuf<In> dX(count);
+        DevBuf<Out> dOut(grid.cells);
+        dX.Upload(hostX);
+
+        BeginLaunchedCall();
+        const boys::BoysStatus status =
+            launch(boys::kMaxBoysOrder, dX.get(), dOut.get(), count, nullptr, kGateDivisionForm);
+        RequireLaunched(row.name, cudaGetLastError());
+        ++LaunchesChecked();
+        CheckLaunch(status, row.name);
+        dOut.Download(out);
+    }
+
+    RequireLaunched(row.name, cudaDeviceSynchronize());
+    MeasureArmCells(ref, claim, row, out, ArmLayout::kSorted, sorted);
+}
+
+/// One arm of the each-order shape, which is handed the offsets its ladders land
+/// at. The gate places element i's ladder at i * (kMaxBoysOrder + 1), so the
+/// output array is the grid's own layout and no two elements share a plane.
+template <typename Out, typename Fn>
+void SweepArmEach(const Reference& ref,
+                  const Grid& grid,
+                  const boys::DeviceOptionInfo& row,
+                  Fn launch) {
+    using In = typename ArmArg<Out>::type;
+    const std::size_t count = ref.count;
+    const int planes = boys::kMaxBoysOrder + 1;
+    const int claim = AddClaim(row.name, "A..C", row.bound);
+
+    const std::vector<int> tops(count, boys::kMaxBoysOrder);
+    std::vector<int> offsets(count);
+
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        offsets[i] = static_cast<int>(i) * planes;
+    }
+
+    std::vector<Out> out(grid.cells);
+
+    {
+        DevBuf<int> dN(count);
+        DevBuf<In> dX(count);
+        DevBuf<int> dOffset(count);
+        DevBuf<Out> dOut(grid.cells);
+        dN.Upload(tops);
+        dX.Upload(ArmArguments<In>(ref, count));
+        dOffset.Upload(offsets);
+
+        BeginLaunchedCall();
+        const boys::BoysStatus status = launch(
+            dN.get(), dX.get(), dOffset.get(), dOut.get(), count, nullptr, kGateDivisionForm);
+        RequireLaunched(row.name, cudaGetLastError());
+        ++LaunchesChecked();
+        CheckLaunch(status, row.name);
+        dOut.Download(out);
+    }
+
+    RequireLaunched(row.name, cudaDeviceSynchronize());
+    MeasureArmCells(ref, claim, row, out, ArmLayout::kLadderPerElement, SortedArgs{});
+}
+
+/// Whether a claim for a row is already in the book. The sections above register
+/// a row under the report's own name for it, so the name is the row's identity
+/// and a second arm for it would be a second reading of one arithmetic.
+bool ClaimNamed(const char* lane) {
+    for (const Accum& a : Claims())
+    {
+        if (a.lane == lane)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// One arm, launched by the driver its row's own shape and lane name.
+///
+/// The row decides and the arm answers, and a disagreement is a defect rather
+/// than a fallback: a row whose shape moved since the table was written would
+/// otherwise be measured by a driver that fills a different layout, which is a
+/// bound compared against the wrong cells. \p ran is false when the row was
+/// already claimed by a section above, in which case the entry is reached and
+/// this arm adds no second reading of it.
+void RunLaunchedArm(const Reference& ref,
+                    const Grid& grid,
+                    const SortedArgs& sorted,
+                    const LaunchedArm& arm,
+                    bool& ran) {
+    const boys::DeviceOptionInfo& row = DeviceRow(arm.entry, arm.exp);
+    ran = false;
+
+    const bool lane64 = arm.range64 != nullptr || arm.allN64 != nullptr || arm.each64 != nullptr;
+    const bool lane32 = arm.range32 != nullptr || arm.allN32 != nullptr || arm.each32 != nullptr;
+    const bool lane16 = arm.range16 != nullptr || arm.allN16 != nullptr || arm.each16 != nullptr;
+    const bool laneMatches = (row.precision == boys::DeviceOptionPrecision::kFp64 && lane64) ||
+                             (row.precision == boys::DeviceOptionPrecision::kFp32 && lane32) ||
+                             (row.precision == boys::DeviceOptionPrecision::kFp16 && lane16);
+
+    if (!laneMatches)
+    {
+        std::fprintf(stderr,
+                     "cuda gate: the arm for %s names a kernel of another lane than the row's\n",
+                     row.name);
+        std::exit(2);
+    }
+
+    if (ClaimNamed(row.name))
+    {
+        return;
+    }
+
+    switch (row.shape)
+    {
+    case boys::DeviceOptionShape::kSingle:
+    case boys::DeviceOptionShape::kAllOrders:
+        if (arm.range64 != nullptr)
+        {
+            SweepArmRange<double>(ref, grid, row, arm.range64);
+        }
+        else if (arm.range32 != nullptr)
+        {
+            SweepArmRange<float>(ref, grid, row, arm.range32);
+        }
+        else
+        {
+            SweepArmRange<boys::F16>(ref, grid, row, arm.range16);
+        }
+
+        break;
+
+    case boys::DeviceOptionShape::kAllN:
+        if (arm.allN64 != nullptr)
+        {
+            SweepArmAllN<double>(ref, grid, sorted, row, arm.allN64);
+        }
+        else if (arm.allN32 != nullptr)
+        {
+            SweepArmAllN<float>(ref, grid, sorted, row, arm.allN32);
+        }
+        else
+        {
+            SweepArmAllN<boys::F16>(ref, grid, sorted, row, arm.allN16);
+        }
+
+        break;
+
+    case boys::DeviceOptionShape::kEachOrder:
+        if (arm.each64 != nullptr)
+        {
+            SweepArmEach<double>(ref, grid, row, arm.each64);
+        }
+        else if (arm.each32 != nullptr)
+        {
+            SweepArmEach<float>(ref, grid, row, arm.each32);
+        }
+        else
+        {
+            SweepArmEach<boys::F16>(ref, grid, row, arm.each16);
+        }
+
+        break;
+
+    default:
+        // The report defines four shapes and every one of them has a driver
+        // above; a row carrying anything else is a row this gate was not built
+        // for, and a measurement started on it would be a bound compared against
+        // another shape's cells.
+        std::fprintf(stderr,
+                     "cuda gate: the row for %s carries a shape this gate has no driver for\n",
+                     row.name);
+        std::exit(2);
+    }
+
+    ran = true;
+}
+
+/// Every launched entry the report carries, against the arms above.
+///
+/// The report is the account of the surface and the arms are the instrument, and
+/// this is where the two are held to each other: an entry the report carries and
+/// no arm names is an entry whose documented bound no cell of this run carries,
+/// which is what it is printed as rather than passed over.
+///
+/// \returns the number of launched entries the report serves and no arm reaches.
+std::size_t SurveyLaunchedSurface(const Reference& ref,
+                                  const Grid& grid,
+                                  const SortedArgs& sorted) {
+    std::size_t launchedHere = 0;
+    std::size_t claimedAbove = 0;
+
+    for (const LaunchedArm& arm : kLaunchedArms)
+    {
+        bool ran = false;
+        RunLaunchedArm(ref, grid, sorted, arm, ran);
+        ran ? ++launchedHere : ++claimedAbove;
+    }
+
+    std::size_t armed = 0;
+    std::size_t served = 0;
+    std::size_t unarmed = 0;
+    std::vector<std::string> missing;
+
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
+    {
+        if (!row.built || row.group != boys::DeviceOptionGroup::kLaunched)
+        {
+            continue;
+        }
+
+        ++served;
+
+        bool named = false;
+
+        for (const LaunchedArm& arm : kLaunchedArms)
+        {
+            named = named || arm.entry == row.entry;
+        }
+
+        if (named)
+        {
+            ++armed;
+        }
+        else
+        {
+            ++unarmed;
+            missing.push_back(row.name);
+        }
+    }
+
+    std::printf("\n  the launched surface, from BoysDeviceOptions() and the arms above:\n");
+    std::printf("    %zu of %zu arm(s) for the %zu launched entr(ies) the report carries; "
+                "%zu launched here,\n    %zu already measured by a section above; %zu launched "
+                "entr(ies) the report carries and no\n    arm reaches\n",
+                armed,
+                std::size(kLaunchedArms),
+                served,
+                launchedHere,
+                claimedAbove,
+                unarmed);
+    std::printf("    %zu launch(es) read the runtime's error back after them\n",
+                LaunchesChecked());
+
+    if (!missing.empty())
+    {
+        std::printf("    no arm for:");
+
+        for (const std::string& name : missing)
+        {
+            std::printf(" %s", name.c_str());
+        }
+
+        std::printf("\n");
+        std::printf("    Each of those names its reason where its arm belongs in the table "
+                    "above: either\n    the row was added to the report and no arm was written "
+                    "for it, or the library\n    declares the entry and this revision defines no "
+                    "kernel for it, which the linker\n    reports as an unresolved external when "
+                    "an arm names it.\n");
+    }
+
+    return unarmed;
+}
+
+// ---------------------------------------------------------------------------
 // The coverage, and the two books' one number.
 //
 // The claims above are made for rows named by the library's report, so the
@@ -5379,6 +6365,11 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    // The wall time the run cost, printed at the end: the host gate runs in about
+    // sixteen seconds against a ten-minute budget, and a device gate that grew
+    // past that budget without saying so would be a gate nobody runs.
+    const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+
     std::printf("boys CUDA device accuracy gate\n");
 
     int deviceCount = 0;
@@ -5457,6 +6448,15 @@ int main(int argc, char** argv) {
     // first, beside the comparisons.
     CheckRefusals(tables);
     SweepDeviceLane(ref, grid, sorted, digits);
+
+    // The whole launched surface, one arm per entry the report carries, and the
+    // proof that the read which says a launch happened is able to say it did not.
+    // This runs after the sections above so that a row one of them already
+    // measured is counted rather than measured twice, and it is what turns the
+    // coverage statement below from a list of names into an account of the
+    // surface: an entry no arm launches is an entry no cell of this run measures.
+    ProveLaunchErrorBites();
+    const std::size_t launchedUnarmed = SurveyLaunchedSurface(ref, grid, sorted);
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
@@ -5664,12 +6664,35 @@ int main(int argc, char** argv) {
 
     const std::size_t uncovered = ReportDeviceOptionCoverage();
 
+    // What the run cost, so a gate that grew past the budget a gate is worth
+    // says so in its own output rather than in somebody's recollection of it.
+    {
+        const std::chrono::duration<double> elapsed =
+            std::chrono::steady_clock::now() - started;
+
+        std::printf("\n  wall time: %.1f s\n", elapsed.count());
+    }
+
     if (exceeded > 0)
     {
         std::printf("\n  RESULT: FAIL - %zu cells over their documented bound on this device "
                     "(exit status 1)\n",
                     exceeded);
         return 1;
+    }
+
+    // A launched entry the report carries and no arm reaches is a hole of its own
+    // kind, and it is reported as one: no cell was over a bound because no cell
+    // was compared. The status is its own so that a coverage gap and an accuracy
+    // failure cannot be read as the same answer.
+    if (launchedUnarmed > 0)
+    {
+        std::printf("\n  RESULT: FAIL - %zu launched entr(ies) the report carries and no arm "
+                    "reaches (exit\n  status 3): their documented bounds are certified by no cell "
+                    "of this run, which is a\n  coverage gap and not an accuracy figure - the "
+                    "arms above name them.\n",
+                    launchedUnarmed);
+        return 3;
     }
 
     if (carriageMissed > 0)
