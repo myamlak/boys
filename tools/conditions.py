@@ -42,10 +42,25 @@ PY = sys.executable
 # timeout is reported as a timeout rather than as a pass.
 CONDITIONS = [
     {
+        "n": 12,
+        "title": "Every comment is brief, and only where it is needed",
+        "cmd": [PY, "tools/check_comments_are_brief.py", "--check"],
+        "covers": "a run of ordinary comment lines longer than four, over every source in the "
+                  "tree. Documentation comments are exempt, by the rule itself: `///`, `/**` and "
+                  "`//!` are API rather than annotation, and a header that teaches a reader is "
+                  "the exception the owner named",
+        "does_not_cover": "the half of the rule a count cannot reach - a comment of two lines "
+                          "that restates the code under it, or an argument carried on beside code "
+                          "that already makes it. Those are read, not counted, and this command "
+                          "will pass them; the owner's condition is the rule, and this is the part "
+                          "of it that is derivable",
+        "timeout": 300,
+    },
+    {
         "n": 1,
         "title": "Complete option space (every class complete on all three legs)",
         "cmd": [PY, "tools/combination_matrix.py", "--report",
-                ".claude/lane-status/probes/host-report.txt"],
+                "tests/data/boys_option_probe_report.txt"],
         "covers": "per class (device, precision, shape): the combinations that can be instantiated, "
                   "how many the run measured, and which are missing by name — the owner's condition "
                   "read as one enumeration instead of three separate claims",
@@ -151,7 +166,7 @@ CONDITIONS = [
         "n": 1,
         "title": "Complete option space (the probe measures every combination of every class)",
         "cmd": [PY, "tools/check_class_combinations.py", "--report",
-                ".claude/lane-status/probes/host-report.txt", "--no-compile"],
+                "tests/data/boys_option_probe_report.txt", "--no-compile"],
         "covers": "every class's measured count against the combinations it can be instantiated at, "
                   "read from the report the probe wrote - the post-run validation of the space",
         "does_not_cover": "a run that has not happened: this reads a report, so it states nothing "
