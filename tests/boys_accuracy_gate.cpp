@@ -1,92 +1,22 @@
-// The accuracy gate: every documented per-lane, per-region bound measured
-// against an independent high-precision reference, with the ratio to the
-// bound reported as the maximum over the sweep and the location it falls at.
-//
-// It exists to find claims that are not met. Three things it does that the
-// gtest suite does not:
-//   * the reference is the committed mpmath grid
-//     (tests/data/boys_accuracy_gate_reference.csv), not the library - so the
-//     fp16/bf16 lanes, whose suite oracle is the certified double lane, are
-//     measured against something they cannot have influenced;
-//   * the sweep is dense over every region and every dispatch boundary of
-//     every order, and runs to x = 1e18, well past the 100 the suite's grid
-//     stops at;
-//   * a pass whose bound is larger than the function's own magnitude is
-//     counted and reported separately, so a lane that returns nothing usable
-//     cannot hide inside a green total.
-//
-// Every documented claim gets exactly one verdict - verified at this revision,
-// exceeded, or one of the two not-met-not-refuted verdicts: vacuous only (every
-// meeting point is bound-covered, so any value in range would pass) and
-// evidence absent from the tree (the claim rests on a measurement this revision
-// cannot re-run; the ceiling the claim must respect is computed and printed
-// beside it). Neither of the last two is counted as met, and the revision the
-// binary measured is printed at the top, from the tree at configure time.
-//
-// Why the reference is trusted. It is committed as data and re-derivable with
-// `python tools/gen_boys_accuracy_gate_reference.py`, a script that shares no
-// code with the library and none with the library's own committed grid. It
-// evaluates every cell in mpmath at dps = 80 and prints 25 significant digits,
-// by routes that are structurally different from each other - the incomplete
-// gamma closed form (with the elementary erf form for n = 0), direct
-// quadrature of the defining integral, and a small-x Taylor series - and it
-// prints their disagreement rather than asserting it. Re-run at this revision
-// on 561 validation points the routes agree to
-//   * incomplete gamma against quadrature: 1.05422e-81 (relative 2.05303e-81);
-//   * erf F_0 against the gamma route:     1.05422e-81;
-//   * Taylor series against the gamma route: 7.57923e-67;
-// and the three-term identity (2n+1)F_n - 2x F_(n+1) = e^-x, which a corrupted
-// table cannot satisfy, holds across the generated grid with a relative
-// residual of 1.88287e-65 below x = 40; the generator says where the identity
-// stops being informative, since past that the reference's own working
-// precision is what the residual measures.
-// That is 65 to 81 orders below the tightest bound this gate measures, so a
-// cell the gate calls exceeded is the lane's error and not the reference's.
-// The grid's argument coverage, and where it stops, are printed in the gate's
-// own coverage block; the gate reports a measured ratio only where a reference
-// cell exists, and names the arguments that have none.
-//
-// Exits non-zero, printing the offending numbers and naming every claim that is
-// not verified, whenever the count falls short of the claim book: a claim
-// measured exceeded, a claim measured vacuous only, and a claim whose evidence
-// this revision cannot re-run all leave the gate red. --strict is accepted and
-// is the same verdict. --per-order prints the delivered error beside the
-// claimed one for every lane, region and order, with the cells the bound binds
-// on and the cells it cannot fail on counted in their own columns, and
-// --probe n x prints one cell from every lane for a single argument.
-//
-// Run:  cmake --build <build> --config Release --target boys-accuracy-gate
-//       <build>/Release/boys-accuracy-gate [--per-order] [--strict]
-//       ctest --test-dir <build> -C Release -R boys-accuracy-gate
+// The accuracy gate: every documented per-lane, per-region bound measured against the committed
+// mpmath grid (tests/data/boys_accuracy_gate_reference.csv, re-derived by
+// tools/gen_boys_accuracy_gate_reference.py, whose routes agree to 1e-81 - 65 to 81 orders below
+// the tightest bound here). Any claim not verified at this revision exits non-zero.
 
 #include <boys/boys.hpp>
 #include <boys/f16.hpp>
 
-// The fp16/bf16 store-half lanes and the packed simd-half kernels behind them
-// are declared under the BoysFp16 build-time seam (include/boys/boys.hpp), which
-// a consumer may close: the format types arrive from boys/f16.hpp either way,
-// but the entries do not exist in a build whose seam is closed, so calling one
-// is a compile error rather than a wrong number. The same rule as the two lanes
-// below applies to them: the measurement is guarded here and the guard is stated
-// in the report, and the claim slots exist either way, so the count of claims
-// does not move with the seam - only their verdicts do.
+// The store-half lanes and the packed simd-half kernels are declared behind the BoysFp16
+// build-time seam, so a build whose seam is closed has no entry to call; the claim slots exist
+// either way, so only their verdicts move with the seam.
 #if BoysFp16
 #define BOYS_GATE_FP16 1
 #endif
 
-// The native packed half lane is a lane of its own and arrives on its own
-// branch. A revision that does not carry it must report the lane's claims as
-// evidence absent rather than skip them, so its measurement is guarded here and
-// the guard is stated in the report; the claim slots exist either way, so the
-// count of claims does not move when the lane lands - only their verdicts do.
-//
-// The header arriving is not the lane arriving. boys/half2.hpp declares the
-// packed type and is unconditional, while the two entries that take and return
-// it - BoysAllOrdersHalf2 and BoysAllNF16Native - are declared behind the same
-// BoysFp16 seam as the store-half lanes above. A build of this revision whose
-// seam is closed therefore has the type and no entry to pass it to, which is a
-// different fact from a revision that has no packed type at all; the two are
-// told apart below rather than reported as one.
+// The native packed half lane arrives on its own branch; a revision without it reports the
+// lane's claims as evidence absent rather than skipping them. boys/half2.hpp is unconditional
+// while the two entries that take it are behind the BoysFp16 seam, and the two facts are told
+// apart below rather than reported as one.
 #if __has_include("boys/half2.hpp")
 #include <boys/half2.hpp>
 #define BOYS_GATE_NATIVE_HALF_HEADER 1
@@ -112,24 +42,16 @@ constexpr const char* kNativeHalfAbsent =
     "";
 #endif
 
-// The region-A transform lane is an entry of its own and carries its own
-// header and its own published bounds. The same rule applies to it: a revision
-// that does not carry the header must report the lane's claims as evidence
-// absent rather than skip them, so its measurement is guarded here and the
-// guard is stated in the report; the claim slots exist either way, so the count
-// of claims does not move when the lane lands - only their verdicts do.
+// The region-A transform lane ships its own header; a revision without it reports the lane's
+// claims as evidence absent rather than skipping them.
 #if __has_include("boys/boys_transform.hpp")
 #include <boys/boys_transform.hpp>
 #define BOYS_GATE_TRANSFORM 1
 #endif
 
-// The device lane's arm is compiled where the build carries the CUDA lane, and
-// only there: the entries it calls are the CUDA surface's, the figure it reads
-// back is the card's, and the library they live in is the one CMake links when
-// BUILD_CUDA is ON. CMake states BOYS_GATE_CUDA and links boys-cuda together,
-// so a build without the lane carries no arm, no CUDA header and no device call
-// - and its cross counts the device members apart with the build's own reason
-// rather than with a claim about this host.
+// The device lane's arm is compiled only where CMake states BOYS_GATE_CUDA and links
+// boys-cuda, so a build without the lane carries no arm and no device call, and its cross counts
+// the device members apart with the build's own reason.
 #ifdef BOYS_GATE_CUDA
 
 #include <boys/boys_cuda.hpp>
@@ -165,11 +87,9 @@ constexpr const char* kNativeHalfAbsent =
 #define BoysGateRevision "unknown"
 #endif
 
-// The gate's instrument, the reference it reads and the row shape it prints come
-// from tests/boys_gate_reference.hpp, which the CUDA device gate includes as well:
-// a lane measured on either side is measured against one reference and printed in
-// one vocabulary. What stays here is this gate's own books - the lanes, the
-// evaluation schemes and the fit routes - and the bounds each of them is judged by.
+// The instrument, the reference and the row shape come from tests/boys_gate_reference.hpp,
+// shared with the CUDA device gate; this file's own books are the lanes, schemes, routes and the
+// bounds each is judged by.
 using namespace boys_gate;
 
 namespace {
@@ -187,18 +107,13 @@ constexpr double kBoundSingleC = 5.5e-14;
 constexpr double kBoundDoubleBatch = 5.5e-14;
 // README: float single / batch, every region.
 constexpr double kBoundFloat = 1.5e-7;
-// The bound the header's contract table applied to the whole of x < x0 before
-// this revision - a single region-A cell with no extended-band row, which is
-// the over-claim this gate found and the header has since stopped making. The
-// slot below still measures it, so the finding stays in the report and stays
-// re-measurable, but no live claim is judged by it.
+// The withdrawn header claim (1e-15 over every x < x0): its slot is still measured so the
+// finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
 
-// The native packed half lane (include/boys/half2.hpp): region C only, the
-// ladder in correctly rounded binary16, scaled by 2^15 so the running value
-// stays inside the format's normal range down to F_k(x) = 2^-29. Its published
-// bound is in ULP of the returned value rather than a region budget, and the
-// returned values are the scaled ones.
+// The native packed half lane (include/boys/half2.hpp): region C only, the ladder in binary16
+// scaled by 2^15 so it stays normal down to F_k(x) = 2^-29, and its published bound is in ULP of
+// the returned (scaled) value.
 constexpr double kNativeScale = 32768.0; // 2^15, the entry's per-order scale
 constexpr double kNativeUlpBound = 8.0;  // the published bound, in ULP
 constexpr double kNativeSmallestNormal = 6.103515625e-05; // 2^-14
@@ -206,49 +121,32 @@ constexpr double kNativeSmallestNormal = 6.103515625e-05; // 2^-14
 constexpr int kBf16MantissaBits = 7;
 constexpr int kBf16MinNormalExp = -126;
 
-// The field a binary16 value spans from its largest finite magnitude down to
-// its smallest subnormal: 65504 = 2^16 and 2^-24, so 2^40. A per-order
-// power-of-two scale can only move a value inside that field, which is what
-// bounds how far scaling can carry an order before the ladder's own span
-// exceeds it.
+// The field a binary16 value spans, largest finite magnitude to smallest subnormal: 65504 = 2^16
+// down to 2^-24, so 2^40. A per-order power-of-two scale can only move a value inside it.
 constexpr double kF16Field = 65504.0 * 16777216.0;        // 65504 * 2^24
 constexpr double kF16NormalField = 65504.0 * 16384.0;     // 65504 * 2^14
 
-// The region-A transform lane (include/boys/boys_transform.hpp): the double
-// table's two shared bands evaluated as one matrix product per band, in a mode
-// the caller names. Its published bounds are the double single lane's region-A
-// budget for kFp64 - the product adds nothing measurable to the coefficients'
-// own truncation - and that same budget plus the fp32 accumulator's own floor
-// for the two split modes. The two split modes' rows are a claim about the
-// modelled arithmetic and not about a tensor core on a card; the lane's own
-// preamble says which way the idealisation can be wrong, and the rows below
-// say it again rather than leaving it to a reader who starts at the table.
+// The region-A transform lane (include/boys/boys_transform.hpp): the double table's two shared
+// bands as one matrix product per band, in a caller-named mode. kFp64 carries the double single
+// region-A budget, the two split modes that plus the fp32 accumulator's own floor (2.5e-7); their
+// rows model that arithmetic rather than measuring a tensor core.
 constexpr double kTransformSplitFloor = 2.5e-7;
 constexpr double kTransformFp64Bound = kBoundSingleA; // 1e-15
 constexpr double kTransformSplitBound = kBoundSingleA + kTransformSplitFloor;
 
-// The delivered worst each mode publishes over region A - the table in
-// include/boys/boys_transform.hpp (1.110e-16, 1.916e-07, 1.946e-07), which the
-// prose in that header, in README and in docs/lane-contract.md rounds to
-// 1.11e-16, 1.92e-07 and 1.95e-07. The tighter of the two readings is the one
-// the rows hold the sweep to.
+// The delivered worst each mode publishes over region A: the header's table gives 1.110e-16,
+// 1.916e-07 and 1.946e-07, which README and docs/lane-contract.md round to 1.11e-16, 1.92e-07 and
+// 1.95e-07. The rows hold the sweep to the tighter reading.
 constexpr double kTransformFp64Delivered = 1.11e-16;
 constexpr double kTransformTf32x3Delivered = 1.916e-07;
 constexpr double kTransformBf16x6Delivered = 1.946e-07;
-// The figures above are stated to four figures, and that is the precision they
-// are claims at: the fp64 mode's 1.110e-16 is 2^-53 written to four figures -
-// the exact maximum is 1.11022e-16 - so a row comparing a sweep's own worst
-// against the printed digits without this would refute a document that is right
-// to the figure it printed. A delivered figure is a swept maximum and not a
-// bound; the bound is the B column beside it in the same table.
+// The figures above are claims to four figures: the fp64 mode's 1.110e-16 is 2^-53 - the exact
+// maximum is 1.11022e-16 - written that way. A delivered figure is a swept maximum, not a bound:
+// the bound is the B column beside it in the same table.
 constexpr int kTransformFigures = 4;
-// The evaluation-scheme book's accumulators, held apart from the claim book on
-// purpose. The RESULT line and the cell count beside it are the claim book's,
-// and they are the numbers a reader of this gate has seen before: a row added
-// for a new evaluation option must not move either. These slots are measured by
-// the same code and totalled, judged and reported in their own block at the end
-// of the run, and a row of theirs that is not met leaves the gate red exactly as
-// a claim book row does.
+// The evaluation-scheme book's accumulators, held apart from the claim book so that a row added
+// for a new evaluation option cannot move the RESULT line or the cell count; they are judged in
+// their own block, and a row of theirs that is not met leaves the gate red just the same.
 std::vector<Accum>& SchemeClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -263,14 +161,9 @@ int AddSchemeClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(SchemeClaims().size()) - 1;
 }
 
-// The packing axis's own accumulation, held apart from the claim book and from
-// the scheme book for the reason both of those give: the axis is a choice a
-// caller makes about which of a call's values a vector carries, and the cells
-// that measure it are not the lane cells the 39 of 39 claim count is quoted
-// against. Report order does not follow declaration order here - the axis is
-// declared before the route book and reported after the scheme book - because
-// the report's order is the order the books were added to it, and that order is
-// what keeps the earlier books' blocks byte-stable.
+// The packing axis's own book, apart from the claim and scheme books for the reason both give.
+// It is reported after them because the report's order is the order the books were added, which
+// keeps the earlier blocks byte-stable.
 std::vector<Accum>& PackClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -285,12 +178,8 @@ int AddPackClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(PackClaims().size()) - 1;
 }
 
-// The granularity axis's own accumulation, held apart from the three books
-// above for the reason each of them gives: the axis is a choice a caller makes
-// about how narrowly the fitted domain is cut, and the cells that measure it are
-// not the lane cells the claim book's count is quoted against. Its block is
-// printed after the scheme book's and after the packing axis's, so a row added
-// for it moves neither of those.
+// The granularity axis's own book, apart from the three above: its cells are not the lane cells
+// the claim book's count is quoted against, and its block is printed after theirs.
 std::vector<Accum>& GranularityClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -324,11 +213,9 @@ int AddRouteClaim(const char* lane, const char* region, double bound, bool judge
     return static_cast<int>(RouteClaims().size()) - 1;
 }
 
-// The float lane's policy combinations, kept apart from the three books above
-// for the reason each of those gives: a policy is a pair a call site names, and
-// the cells that measure one are not the lane cells the claim count is quoted
-// against. This book's rows are the pairs the float lane's own engines accept,
-// each measured over the interval its fits serve.
+// The float lane's policy combinations, counted apart from the books above: a policy is a pair
+// a call site names, and the cells that measure one are not the lane cells the claim count is
+// quoted against.
 std::vector<Accum>& F32PolicyClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -343,13 +230,9 @@ int AddF32PolicyClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(F32PolicyClaims().size()) - 1;
 }
 
-// The entry book's own accumulation, held apart from the five books above for
-// the reason each of them gives: an entry is a call shape a caller names, and
-// the cells that measure one are not the lane cells the claim count is quoted
-// against. The book exists because every other book reaches its combinations
-// through one entry per lane, so a combination the axes admit and another entry
-// refuses is in no book at all. Its block is printed after the granularity
-// book's, so a row added for it moves none of the books above.
+// The entry book, apart from the five books above: every other book reaches its combinations
+// through one entry per lane, so a combination these axes admit and another entry refuses is in
+// no book at all until it is counted here.
 std::vector<Accum>& EntryClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -364,11 +247,9 @@ int AddEntryClaim(const char* lane, const char* region, double bound) {
     return static_cast<int>(EntryClaims().size()) - 1;
 }
 
-// The region a double-single argument is dispatched in, by the README's
-// interval table. The library's code-path boundary inside the band is
-// per-order (kTierThresholds), but the published band cell is an interval and
-// the looser of the two candidate bounds covers it, so the claim is
-// interval-keyed.
+// The region a double-single argument is dispatched in, by the README interval table: the
+// library's own boundary inside the band is per-order, but the published band cell is an interval
+// and the looser of the two candidate bounds covers it.
 int SingleClaim(double x) {
     if (x < boys::detail::kExtendedBX0)
     {
@@ -454,12 +335,9 @@ const char* RouteLaneF32(boys::FitRoute route, boys::AccuracyRegion region) {
 template <boys::EvalScheme kScheme>
 using SchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
 
-// The same pair with the partition named, for the rows that ask whether the
-// packed region-A lane was reached. That lane holds one stored table and one
-// recurrence, so it is the shipped partition's and no other's: a probe that
-// left the partition to the default would lose the lane for every scheme at
-// once as soon as the default moved, and the row would then read the partition
-// while claiming to read the scheme.
+// The same pair with the partition named: the packed region-A lane holds one stored table and
+// one recurrence, so it is the shipped partition's and no other's - a probe that left the
+// partition to the default would read the partition while claiming to read the scheme.
 template <boys::EvalScheme kScheme>
 using SchemeLanePolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev,
@@ -468,11 +346,8 @@ using SchemeLanePolicy =
                      boys::PackAxis::kArguments,
                      boys::FitGranularity::kCoarsest>;
 
-// The policy the granularity book's rows are measured under: the shipped route
-// at the scheme the row names, at one of the two partitions. The partition is
-// the only difference from SchemePolicy, and naming it is the whole of the
-// axis: a call site reaches the narrow member by putting it in the policy it
-// already writes.
+// The granularity book's policy: the shipped route at the scheme the row names, with the
+// partition named, which is the whole of the axis.
 template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
 using GranularityPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev,
@@ -481,28 +356,10 @@ using GranularityPolicy =
                      boys::PackAxis::kArguments,
                      kGranularity>;
 
-// The asymptotic form, spelled the way the library spells it (boys_impl.hpp,
-// the region-C branch of the per-argument scalar entry): sqrt(pi)/2 over
-// sqrt(x), then one multiply-and-divide per order.
-//
-// The rows that measure the branch below x = 16 evaluate it here rather than
-// read it back out of boys::detail::BoysRegionCSimd. That entry is a
-// region-partitioned kernel, and the way it reaches the form is a property of
-// its x86 vector body: the body applies the form to four lanes whatever the
-// arguments are, so a full vector returns the form even for an argument below
-// kX1, and that is what those rows ask for. A host without AVX2 has no such
-// body - its fallback hands the whole run to the dispatching scalar entry,
-// which takes the region-B stored fit for an argument below kX1 - so the same
-// call measures the form on one host and a stored fit on another.
-//
-// The entry is not the thing at fault: outside region C two readings of it
-// disagree, on x86 as well (count = 1 against count = 4), by the ratio of the
-// fit's error to the form's value, so it is defined by neither body there. A
-// measurement that rested on it would be resting on an accident of the host.
-//
-// The spelling is pinned to the library rather than trusted: the shape row
-// requires bit equality with the library's own region-C value at every argument
-// at or above kX1, which is where the library does take this branch.
+// The asymptotic form as boys_impl.hpp spells it: sqrt(pi)/2 over sqrt(x), then one
+// multiply-and-divide per order. It is evaluated here rather than read back out of
+// BoysRegionCSimd, whose vector body applies the form to four lanes whatever the arguments
+// are while a host without AVX2 falls back to the scalar entry - so below kX1 neither defines it.
 inline double RegionCForm(int n, double x) noexcept {
     double f = boys::detail::kBoysHalfSqrtPi / std::sqrt(x);
 
@@ -535,11 +392,8 @@ double PartitionFitValue(boys::EvalLane lane, int n, double x) {
     return 0.0;
 }
 
-// The policy the packing book's rows are measured under: the shipped route and
-// the scheme the row names, at the orders axis. The axis is the only difference
-// from SchemePolicy, which is the point of the row: the two policies evaluate
-// the same stored fits, and the axis decides which of a call's values share a
-// vector register.
+// The packing book's policy: the shipped route and the scheme the row names at the orders axis,
+// which is the axis's only difference from SchemePolicy.
 template <boys::EvalScheme kScheme>
 using OrdersPackPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
@@ -572,11 +426,8 @@ bool InFitDomain(boys::EvalLane lane, int n, double x) {
     return false;
 }
 
-// A value's significand to `figures` figures, as an integer: two published
-// accuracy figures are compared at the precision the document states them at,
-// which is the only precision at which a rounded measurement is a claim at all.
-// It is an integer comparison so that the two sides cannot disagree over a
-// rounding of the comparison itself.
+// A value's significand to `figures` figures as an integer, so two published figures can be
+// compared at the precision the document states them at, without the comparison itself rounding.
 long long SignificantInt(double v, int figures) {
     if (v == 0.0 || !std::isfinite(v))
     {
@@ -604,11 +455,8 @@ std::string Fmt(const char* format, ...)
     return std::string(buffer);
 }
 
-// One line for a lane this build does not carry. The lane is named with the
-// reason and not omitted: a list of lanes with one missing from it reads as a
-// lane that was measured, and a reader has no way to tell the two apart.
-// It is compiled with the rows that print it: a build whose seam is open carries
-// every fp16 lane, so it has no line of this kind to print.
+// One line for a lane this build does not carry, named with its reason rather than omitted: a
+// lane missing from the list reads as a lane that was measured.
 #ifndef BOYS_GATE_FP16
 void PrintNotCarried(const char* lane)
 {
@@ -682,14 +530,10 @@ void RunProbe(const Reference& ref, int n, double x)
         const boys::Bf16 xb = boys::Bf16(xf);
         std::array<boys::F16, 33> out16{};
         std::array<boys::Bf16, 33> outb{};
-        // The division-form control for code.half_simd_budget. That row compares
-        // the 8-wide half-I/O bodies against the certified scalar half entry, and
-        // the two differ at an argument the half format rounds to infinity: the
-        // bodies form a plain reciprocal and answer zero, the scalar entry runs
-        // the float engine, whose step divides through the form the policy names.
-        // Naming each form here separates a formula from the entry that reaches
-        // it - if the answer at an infinite divisor were the engine's rather than
-        // the form's, all three rows would agree, and they do not.
+        // The division-form control for code.half_simd_budget: the 8-wide half-I/O bodies form a
+        // plain reciprocal and answer zero where the certified scalar half entry, running the float
+        // engine, divides through the form the policy names. Naming each form here separates a
+        // formula from the entry that reaches it - the engine's answer would make all three agree.
         {
             using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
                                             boys::kDefaultEvalScheme,
@@ -749,19 +593,10 @@ void RunProbe(const Reference& ref, int n, double x)
     }
 
     {
-        // The fp64 region kernels at count = 1 (the scalar tail) and count = 4
-        // (the vector path), which is the treatment the half-I/O kernels
-        // already get: a difference between the two shapes is exactly what a
-        // sweep cannot show, since a sweep only reports its maximum.
-        //
-        // Each shape is read against the reference and not against the other
-        // body. The two bodies are different arithmetic - the vector body
-        // applies the form to four lanes whatever the arguments are, and its
-        // region-C seed is sqrt(1/x) against the scalar form's 1/sqrt(x) - so
-        // requiring them to be bit-equal would be a pin of one spelling to
-        // another, which is the mistake the count=1 rows were already making in
-        // the other direction. Above kX1 both are the same form and both are
-        // judged by the same budget.
+        // The fp64 region kernels at count = 1 (the scalar tail) and count = 4 (the vector path).
+        // Each shape is read against the reference and not against the other: the two bodies are
+        // different arithmetic - the vector body applies the form to four lanes and its region-C
+        // seed is sqrt(1/x) - and above kX1 both are the same form judged by the same budget.
         const auto simdRow = [&](const char* lane, std::size_t count) {
             std::vector<double> xs(count, x);
             std::vector<double> out(count);
@@ -861,9 +696,8 @@ void RunProbe(const Reference& ref, int n, double x)
 }
 
 // ---------------------------------------------------------------------------
-// The reference, scanned: the published range statements are all of the shape
-// "the value leaves the format's normal range at x", so they are read back out
-// of the same table the errors are measured against rather than asserted.
+// The reference, scanned: the published range statements are all of the shape "the value
+// leaves the format's normal range at x", so they are read out of this table, not asserted.
 // ---------------------------------------------------------------------------
 
 double LargestXAbove(const Reference& ref, int order, double threshold)
@@ -917,33 +751,10 @@ double LargestXSparsable(const Reference& ref, int order, double field)
     return best;
 }
 
-// ---------------------------------------------------------------------------
-// The documented claims, and the verdict this run gives each one.
-// ---------------------------------------------------------------------------
-// Every published claim ends this run with exactly one of:
-//
-//   Verified       measured here, and met at a point that carries signal;
-//   Exceeded       measured here, and the delivered error is outside it;
-//   Vacuous        measured here, and every point that meets it is a point
-//                  where the documented bound is at least the function's own
-//                  magnitude - the pass is the format's floor, not the lane's,
-//                  so it is counted apart from the verified ones;
-//   EvidenceAbsent the artifact the claim names is not in this tree, so this
-//                  revision cannot check it. Counted apart again, and never
-//                  as a pass;
-//   NotCarried     this build does not carry the artifact the claim is about -
-//                  the half-precision entries it names are declared behind the
-//                  BoysFp16 seam, and this build's seam is closed - so the row
-//                  has no subject here and there is nothing to judge. This is
-//                  a fact about the build and not about the tree: the claim is
-//                  not withdrawn, the entry is not denied, and no measurement
-//                  is missing. The two are not the same state and must not
-//                  share one, because a consumer who closes that seam on
-//                  purpose is entitled to a suite that does not redden at a
-//                  row their build never had - while a claim whose evidence the
-//                  tree does not carry still fails, which is what the gate is
-//                  for. Counted apart, named with its reason, and neither a
-//                  pass nor a failure.
+// The documented claims, and the verdict this run gives each one. Vacuous: every point that
+// meets a claim is one where the bound is at least the function's own magnitude - the format's
+// floor, not the lane's. EvidenceAbsent: the artifact named is not in this tree. NotCarried:
+// this build closed the seam the claim's entries are behind, which is neither pass nor failure.
 enum class Verdict
 {
     Verified,
@@ -954,13 +765,9 @@ enum class Verdict
     NotCarried
 };
 
-// What the rows about the native packed half lane report when it was not
-// measured here. The two reasons are different facts and get different
-// verdicts: a revision with no boys/half2.hpp at all has not carried the lane's
-// evidence, which is the state the gate exists to catch, while a build that has
-// the type and a closed fp16 seam does not carry the lane's subject - there is
-// no entry to call, so nothing to judge. Either way the row stays in the book
-// and prints which of the two applies.
+// What the rows about the native packed half lane report when it was not measured here: a
+// revision with no boys/half2.hpp has not carried the lane's evidence, while a build that has
+// the type and a closed fp16 seam does not carry its subject - two different verdicts.
 constexpr Verdict kNativeHalfNotMeasured =
 #if defined(BOYS_GATE_NATIVE_HALF) || !defined(BOYS_GATE_NATIVE_HALF_HEADER)
     Verdict::EvidenceAbsent;
@@ -968,25 +775,17 @@ constexpr Verdict kNativeHalfNotMeasured =
     Verdict::NotCarried;
 #endif
 
-// A domain-scoped claim - one the document itself restricts to a stated set of
-// regions, orders or arguments - is met when it holds over that domain, and it
-// is recorded as met over the stated domain rather than as verified outright,
-// with the domain printed beside the verdict. It is a pass and it is a
-// different thing from the two verdicts below it: a restriction the document
-// states is not missing evidence, and it must not share a verdict with one.
+// A domain-scoped claim - one the document itself restricts to a stated set of regions,
+// orders or arguments - is met over that domain and recorded as such, with the domain printed
+// beside it: a restriction the document states is not missing evidence.
 bool IsMet(Verdict v)
 {
     return v == Verdict::Verified || v == Verdict::MetOverDomain;
 }
 
-// Whether a row leaves this run red. A row is a failure when it is not met and
-// the build carries the thing it is about: a claim this build carries and
-// cannot verify at this revision is the defect the gate exists to find, and it
-// fails here whatever the reason it could not be verified. A claim whose
-// subject the build does not carry is not one of those - there is no entry to
-// call, no cell to judge and no claim to make about it - so it is reported,
-// counted and named apart, and fails nothing. Not-carried rows are named in
-// full beside the row that carries the reason, never dropped.
+// A row leaves this run red when it is not met and this build carries its subject: a claim the
+// build carries and cannot verify at this revision is the defect the gate exists to find, and it
+// fails whatever the reason it could not be verified. Not-carried rows are named in full.
 bool FailsTheGate(Verdict v)
 {
     return !IsMet(v) && v != Verdict::NotCarried;
@@ -1077,17 +876,10 @@ const char* ClassFalsifier(Verdict v)
     return "?";
 }
 
-// What a claim's verdict is a verdict about.
-//
-// The distinction is the one a model cannot cross. A claim whose arithmetic ran
-// on the machine earned its verdict from a measurement of that arithmetic. A
-// claim that rests on a *model* of an accumulator - simulated in software
-// because no machine here has the hardware - earned its verdict from a
-// measurement of the model, and a model is not a card: a tensor core's fused
-// sum truncates and aligns its addends where the model rounds, which makes a
-// card worse than the model and never better. A green model-derived row is
-// therefore not evidence that a card is inside the bound, and such a row is
-// counted apart from the certified total for that reason and no other.
+// What a claim's verdict is a verdict about. A model-derived row earned its verdict from a
+// software model of an accumulator rather than from a card: a tensor core's fused sum truncates
+// and aligns where the model rounds, which can make a card worse and never better - so a green
+// model row is counted apart from the certified total for that reason and no other.
 enum class Evidence {
     kHardware, ///< the arithmetic the claim names ran on this machine
     kModel,    ///< arithmetic on a software model of an accumulator
@@ -1120,13 +912,10 @@ Verdict FromAccum(const Accum& a)
     return Verdict::Verified;
 }
 
-// Region B's amplification A_B(n) = prod_{j=1..n} (j + 1/2) / x0^n, the
-// quantity the seed-sizing argument bounds. It is evaluated in double-double
-// because the excess it measures at the top supported order is 1.8e-17, which
-// binary64 cannot represent beside 1.0 at all: a double-precision evaluation
-// would confirm "at most one" by rounding, which is exactly how a claim like
-// this survives. The accumulated error below is ~1e-30 relative, thirteen
-// orders under the excess.
+// Region B's amplification A_B(n) = prod_{j=1..n} (j + 1/2) / x0^n, the quantity the seed-sizing
+// argument bounds. Double-double is required: the excess it measures at the top supported order
+// is 1.8e-17, which binary64 cannot represent beside 1.0 at all, so a double evaluation would
+// confirm "at most one" by rounding - which is exactly how a claim like this survives.
 struct DD
 {
     double hi = 0.0;
@@ -1162,27 +951,9 @@ DD DivDD(DD a, DD b)
 
 #ifdef BOYS_GATE_CUDA
 // --- the device lane's arm: the entry a member is read through --------------
-//
-// The cross reaches a member of a lane through the entry that lane measures its
-// combinations through. On the three host lanes that is one entry per lane with
-// the four axes as template arguments: the entry's own dispatch reads them. The
-// device lane is not one entry but a surface of them, one name per (route,
-// partition, packing axis) and a second name over the rows whose scheme axis it
-// carries, so the axes of the cross are mapped to the entry that serves them
-// here - once, in one place - and the mapping is the library's own rather than
-// this gate's: src/boys.cpp's CarriesDevice states, route by route and
-// partition by partition, which entry of the lane a combination is reached
-// through, and the entries' rows in BoysDeviceOptions() (with the entry names
-// in src/boys_cuda.cpp) are the surface those statements are made of.
-//
-// Two members of the cross share an entry with a member beside them, and the
-// reason is the library's: the shipped float ladder is stored once and summed
-// one way, so both of its scheme names reach one entry - "The coarsest
-// partition's row is one row for both scheme names, exactly as kAllOrdersF32
-// is" (boys_cuda_options.hpp, the orders-axis rows) - and the two members are
-// measured and published all the same, because a member of the cross is a
-// claim a caller can name, and the reading of it is one reading whatever the
-// second name reaches. A reader sees the two rows carry one figure.
+// The lane is a surface of entries, one name per (route, partition, packing axis), mapped here to
+// the cross by the library's own statements (src/boys.cpp, CarriesDevice; boys_cuda_options.hpp).
+// Where it stores one arithmetic under two scheme names, both members read that one entry.
 
 /// The division form the carriage question below is asked at. Whether a lane
 /// carries a member is a property of the lane and the region and not of the
@@ -1341,11 +1112,9 @@ constexpr auto GateDeviceEntryF64(boys::FitRoute route,
     {
         if (rational)
         {
-            // One function carries both scheme names of this pair - its
-            // -Horner row is that same entry at kHorner (boys_cuda_options.hpp,
-            // kAllOrdersF64Rat and kAllOrdersF64RatHorner) - so both members of
-            // the cross are read through it rather than through a second entry
-            // the surface does not name.
+            // One function carries both scheme names of this pair (boys_cuda_options.hpp,
+            // kAllOrdersF64Rat and kAllOrdersF64RatHorner), so both members of the cross are
+            // read through it.
             return orders ? &boys::BoysCuda::AllOrdersF64OrdersRat
                           : &boys::BoysCuda::AllOrdersF64Rat;
         }
@@ -1815,13 +1584,9 @@ private:
     std::size_t mCount = 0;
 };
 
-// The device-callable arm of the fast-member reading: one kernel that calls the
-// lane's in-kernel entry at RegionBExp::kFast from inside itself, over this gate's own
-// grid (tests/boys_accuracy_gate_fast_device.cu, the shape
-// tests/boys_cuda_device_demo.cu states for a consumer). It is declared here because a
-// __device__ entry may only be included by a .cu and this gate's extension is not one;
-// the argument list below is the launched entries' own, so the sweep reads this arm
-// through the same call as the rest of them.
+// The device-callable arm of the fast-member reading, one kernel calling the lane's in-kernel
+// entry at RegionBExp::kFast (tests/boys_accuracy_gate_fast_device.cu). Declared here because a
+// __device__ entry may only be included by a .cu and this gate's extension is not one.
 extern "C" int BoysGateFastDeviceSingleF32(const boys::BoysDeviceTables* tables,
                                            const int* n,
                                            const double* x,
@@ -1835,11 +1600,9 @@ extern "C" int BoysGateFastDeviceSingleF32(const boys::BoysDeviceTables* tables,
 
 namespace {
 
-// The combination block's evaluation grid: two region-B members and three division
-// forms per cell, so six readings per (point, order, class). These are at namespace
-// scope because the block's cross reads them inside a template lambda nested in
-// another one, where a variable of the enclosing function becomes a captured
-// reference and stops being usable as a constant expression (MSVC C2131).
+// The combination block's evaluation grid: two region-B members and three division forms per
+// cell. At namespace scope because inside the nested template lambdas a variable of the enclosing
+// function is a captured reference and not a constant expression (MSVC C2131).
 constexpr std::size_t kCombMemberSlots = 2;
 constexpr std::size_t kCombFormsPerMember = 3;
 constexpr std::size_t kCombEvalReadings = kCombMemberSlots * kCombFormsPerMember;
@@ -2069,14 +1832,9 @@ int main(int argc, char** argv) {
         return 0;
     }
 
-    // Claim slots, in report order.
-    // The term the single-precision lane's contract row states for the plain
-    // reciprocal, and 0.0 on a lane whose row states none. README's contract row
-    // publishes the lane's figure per form - "float single / batch | <= 1.5e-7,
-    // or <= 2.5e-7 in the plain-reciprocal form" - and this is the difference
-    // between the two, read from the library's own row for this lane rather than
-    // transcribed a second time. Every bar below that belongs to a row's own
-    // arithmetic reads it where that row's form is the plain one.
+    // Claim slots, in report order. The term the float lane's contract row states for the plain
+    // reciprocal, read from the library's own row rather than transcribed (README: "<= 1.5e-7, or
+    // <= 2.5e-7 in the plain-reciprocal form"); 0.0 where the lane's row states none.
     const double floatPlainTerm = [&] {
         for (const boys::LaneContractInfo& row : boys::BoysLaneContracts())
         {
@@ -2089,27 +1847,17 @@ int main(int argc, char** argv) {
         return 0.0;
     }();
 
-    // The figure the float lane publishes for one division form. README's
-    // contract row states the lane's figure per form - "float single / batch |
-    // <= 1.5e-7, or <= 2.5e-7 in the plain-reciprocal form" (README.md, the
-    // accuracy contract) - so a row judged at one form's figure while dividing
-    // in the other is a row judged against an arithmetic it did not run, which
-    // is the same rule the granularity book's own rows state for the policies
-    // they sweep. The base is the transcribed constant the documents are held
-    // to; the term beside it belongs to the form in force.
+    // The figure the float lane publishes for one division form: the transcribed base plus the
+    // form's own term, so a row judged at one form's figure while dividing in the other - the
+    // mistake the granularity book's rows state for their policies - cannot happen.
     const auto floatFigureFor = [&](boys::DivisionForm form) {
         return kBoundFloat +
                (form == boys::DivisionForm::kPlainReciprocal ? floatPlainTerm : 0.0);
     };
 
-    // The form each claim below divides in. Those claims measure BoysSingleF32,
-    // BoysAllOrdersF32, BoysAllNF32 and the orders-axis policy, every one of
-    // which names no division form at its call site, so each divides in the form
-    // its own class's default carries - the row this build's seam gives that
-    // class, or the five where it gives none. Read off `kDefaultDivisionForm`
-    // alone the figure is the committed build's, and a seam that carries a row for
-    // one of these classes in another form would have that class's entry judged
-    // against an arithmetic it does not run.
+    // The form each claim below divides in: BoysSingleF32, BoysAllOrdersF32, BoysAllNF32 and the
+    // orders-axis policy name no form at their call site, so each divides in the one its own
+    // class's default carries - read from that default, not from kDefaultDivisionForm alone.
     const double floatSingleFigure =
         floatFigureFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kDivision);
     const double floatOrdersFigure = floatFigureFor(
@@ -2148,23 +1896,16 @@ int main(int argc, char** argv) {
     const int kBf16PackedA = AddClaim("bf16 simd-half", "A", kBoundHalfBase);
     const int kBf16PackedB = AddClaim("bf16 simd-half", "B", kBoundHalfBase);
     const int kBf16PackedC = AddClaim("bf16 simd-half", "C", kBoundHalfBase);
-    // The withdrawn header claim, measured for the record and not judged:
-    // "the double single lane holds 1e-15 across every x < x0". The last
-    // argument is what makes the slot's exceptions visible in the report
-    // rather than only here: no row carries this slot's verdict, so it is
-    // exceeded on every target that has ever run this gate and the run is
-    // still green.
+    // The withdrawn header claim ("1e-15 across every x < x0"), measured for the record and not
+    // judged: the last argument keeps its slots out of the report's verdicts.
     const int kHeaderA = AddClaim("double single", "header x<x0", kWithdrawnHeaderABound, false);
     // The native packed half lane: region C only, and its bound is in ULP of the
     // returned value rather than a region budget, so these slots carry no single
     // base bound (baseBound is display only).
     const int kNativeHalf2 = AddClaim("native packed half", "C", 0.0);
     const int kNativeHalfBatch = AddClaim("native packed half batch", "C", 0.0);
-    // The region-A transform lane's modes: one slot per mode, each carrying the
-    // mode's published bound over region A - both bands, every order, every
-    // argument of the band. The slots exist in every revision - the rows below
-    // read them - and carry no points where the tree has no
-    // boys/boys_transform.hpp.
+    // The region-A transform lane's modes: one slot per mode, carrying the mode's published
+    // bound over both bands, every order and argument. The slots exist in every revision.
     const int kTransformFp64 = AddClaim("transform kFp64", "A", kTransformFp64Bound);
     const int kTransformTf32x3 = AddClaim("transform kTf32x3", "A", kTransformSplitBound);
     const int kTransformBf16x6 = AddClaim("transform kBf16x6", "A", kTransformSplitBound);
@@ -2188,12 +1929,9 @@ int main(int argc, char** argv) {
                 boys::detail::kTierThresholds[17]);
     std::printf("AVX2 tier    : %s\n", boys::BoysAvx2Available() ? "present" : "absent");
 
-    // The arithmetic every scalar lane above was computed at. A fused step is
-    // an instruction where the target has one and a call into the C runtime
-    // where it does not, and the separate route replaces the call with two
-    // roundings — so the route names which of the two arithmetics the numbers
-    // below belong to, and a figure read off this output without it is a
-    // figure whose arithmetic is unstated.
+    // The arithmetic every scalar lane above was computed at: a fused step is an instruction
+    // where the target has one and a call into the C runtime where it does not, so a figure read
+    // off this output without the route beside it is a figure whose arithmetic is unstated.
     {
         const std::span<const boys::backend::BackendInfo> backends =
             boys::backend::BoysBackends();
@@ -2210,13 +1948,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // --strict is the default verdict, stated rather than toggled: the flag is
-    // accepted so a caller can name what they get either way. What it scopes
-    // over is the claims this build carries. A row the build does not carry has
-    // no entry to call and no claim to make about it, so it is named with its
-    // reason on a line of its own and fails nothing here; a row the build does
-    // carry that this revision cannot verify still fails, which is the
-    // semantics the flag exists for.
+    // --strict is the default verdict, accepted so a caller can name what they get either way.
+    // It scopes over the claims this build carries: a carried row this revision cannot verify
+    // fails the gate, while a row whose subject the build does not carry is named with its reason
+    // and fails nothing here.
     std::printf("verdict      : %s\n",
                 strict ? "strict (--strict: the default verdict, stated) - a claim this build "
                          "carries and cannot verify at this revision fails the gate, while a "
@@ -2263,13 +1998,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the region-A transform lane ---------------------------------------
-    // The double table's two shared bands as one matrix product per band, in
-    // each of the published modes, measured by the same instrument as every
-    // other lane: this gate's own committed reference, at the same arguments,
-    // every order, against the mode's published bound. The entry takes one
-    // band's arguments and neither sorts nor classifies them - the band a call
-    // is handed is its precondition - so the caller groups them here, which is
-    // also what keeps a cell from being measured against the other band's fit.
+    // The double table's two shared bands as one matrix product per band, in each published mode,
+    // measured against this gate's reference at every order and argument. The entry takes one
+    // band's arguments and does not sort them, so the caller groups them here.
 #ifdef BOYS_GATE_TRANSFORM
     {
         for (int band = 0; band < 2; ++band)
@@ -2445,14 +2176,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- double batch: the per-element top order entry ---------------------
-    // Two patterns, because the entry's shape is what makes the first one
-    // interesting and not what makes it complete. The ragged pattern gives each
-    // argument a top order of its own, so the columns stop at different depths
-    // and the planes above a column are the ones the entry must leave alone; it
-    // is swept on its own cells. The uniform pattern gives every argument the
-    // grid's own nmax, which puts the entry on exactly the cells the all-n block
-    // above measures - so a bound the ragged pattern's tops happen not to reach
-    // is still measured, on the same arguments and the same reference.
+    // Two patterns: the ragged one gives each argument its own top order, so the columns stop at
+    // different depths and the planes above a column are the ones the entry must leave alone; the
+    // uniform one gives every argument the grid's nmax, which puts the entry on the all-n cells.
     {
         std::vector<int> tops(count);
         std::vector<double> out(count * static_cast<std::size_t>(nmax + 1));
@@ -2501,15 +2227,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the certified fit routes -----------------------------------------
-    // A route is a way of serving a region rather than a lane the library
-    // always serves, so it is measured the way a lane is but counted apart from
-    // the lanes: adding one must not move a statement about a lane's coverage.
-    // Four things are measured here. What each route's own fit delivers over
-    // the interval its row of BoysFitRoutes states. What a caller receives from
-    // the selector, at every order, over the region the route serves. That
-    // naming a route changes nothing outside the interval that route covers -
-    // and that naming the default route is the default entry, value for value,
-    // a value outside the enumeration included.
+    // A route is a way of serving a region, not a lane the library always serves, so it is
+    // measured as a lane is and counted apart: each route's own fit over its row's interval, the
+    // selector's values over the region, and that naming a route changes nothing outside it.
     std::vector<int> routeSeedClaim;
     std::vector<int> routeLaneClaim;
 
@@ -2538,26 +2258,15 @@ int main(int argc, char** argv) {
     std::size_t routeDefaultDiff = 0;
     std::size_t routeUnknownDiff = 0;
 
-    // The class the unnamed calls of this section are made through: BoysAllOrders,
-    // the double lane's ladder entry. Every reading below that holds the entry's
-    // own axes fixed reads them off this class's row - the combination this
-    // build's seam gives the class, or the five where it carries none - because
-    // the row is what a call naming no policy compiles (boys/boys.hpp,
-    // DefaultPolicy). A reading that spelled the five would judge this build's
-    // selector against another combination's arithmetic.
+    // The class the unnamed calls of this section are made through: the combination this build's
+    // seam gives BoysAllOrders, which is what a call naming no policy compiles (boys/boys.hpp,
+    // DefaultPolicy).
     using RouteClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
-    // The domain the class's entries read, and the one a route's selector takes
-    // over in this build. A row of BoysFitRoutes states the intervals of the
-    // per-order partitions' fits; a class row naming the grid reads one fixed
-    // table instead, and that partition's domain is its own row of
-    // BoysFitGranularities - the grid covers [0, kFlatHi) whole, region A's and
-    // region B's arguments alike, and the body answers the whole of that domain
-    // from the table and returns before the region tests (boys_impl.hpp,
-    // AllOrdersBody: "The uniform route answers the whole of its table's domain
-    // from the table"). Where the class row names that partition, naming either
-    // route reaches every argument the partition covers, because each route's own
-    // member over the grid is what answers there (backend.hpp, RouteFit).
+    // The domain the class's entries read, and the one a route's selector takes over in this
+    // build. A class row naming the grid reads one fixed table whose domain is its own row of
+    // BoysFitGranularities: the grid covers [0, kFlatHi) whole and the body answers the whole of
+    // it from the table before the region tests (boys_impl.hpp, AllOrdersBody).
     const boys::FitGranularityInfo* routePartition = nullptr;
 
     for (const boys::FitGranularityInfo& partition : boys::BoysFitGranularities())
@@ -2580,11 +2289,8 @@ int main(int argc, char** argv) {
     std::size_t routeCarriageNamed = 0;
     std::size_t routeCarriageControls = 0;
 
-    // The route held to its own bar through the entries a consumer actually
-    // calls with a many-argument or fixed-order shape. The route book's own
-    // rows measure the per-argument entries, and a carriage row says only that
-    // the other two answer the route; what a consumer needs is the figure, so
-    // it is measured here and published as its own claim.
+    // The route held to its own bar through the entries a consumer actually calls: the route book
+    // measures the per-argument entries, so the figure for these two is measured here.
     std::size_t routeEntryCells = 0;
     std::size_t routeEntryOver = 0;
     double routeEntryWorst = 0.0;
@@ -2633,13 +2339,9 @@ int main(int argc, char** argv) {
                     covered = true;
                 }
 
-                // The domain a route's selector takes over, which is where
-                // naming it may change a value. A row whose fit reaches further
-                // than its selector claims the narrower interval here. Where the
-                // class row reads the grid, the partition's own cover is the
-                // domain and the rows' boundaries are read only for coverage:
-                // they describe the per-order partitions' fits, and this class
-                // reads neither of them.
+                // The domain a route's selector takes over, where naming it may change a value.
+                // A row whose fit reaches further than its selector claims the narrower interval;
+                // where the class row reads the grid, the partition's own cover is the domain.
                 if (!routeReadsGrid && x >= std::max(row.lo, row.servesFrom) && x < row.hi)
                 {
                     served = true;
@@ -2689,12 +2391,9 @@ int main(int argc, char** argv) {
 
                 if (row.region == boys::AccuracyRegion::kA)
                 {
-                    // Region A's fit is one piece per order rather than one
-                    // seed, so the route's own fit is measured piece by piece:
-                    // what the table holds for each order, at the row's bar.
-                    // Both readings are one body at the two fit policies, so
-                    // what this row compares is the two fits, not two code
-                    // paths that ought to agree.
+                    // Region A's fit is one piece per order rather than a seed, so the route's
+                    // fit is measured piece by piece. Both readings are one body at two fit
+                    // policies, so what this row compares is the two fits.
                     for (int n = 0; n <= nmax; ++n)
                     {
                         const double got =
@@ -2770,20 +2469,9 @@ int main(int argc, char** argv) {
         routeNames = boys::BoysFitRoutes().size();
 
         // ---- the carriage of a named route by each entry --------------------
-        // The accuracy rows above cannot show that the route was read. The two
-        // routes hold the same bar over the same intervals, so an entry that
-        // evaluated the other route's fits would pass every one of them and
-        // still be answering a selection it never opened. What is measured here
-        // is the other question: over the arguments a route's own selector takes
-        // over, does naming that route on the entry change any value at all? An
-        // entry that names a route and returns the default entry's values bit
-        // for bit over every served argument is an entry the selection does not
-        // reach, whatever its accuracy says.
-        //
-        // The default route is read the same way, as the control: there the
-        // count is required to be zero rather than more than zero, and the pair
-        // of counts is what separates "this entry carries the route it was
-        // given" from "this entry carries some route".
+        // The accuracy rows cannot show that the route was read: both routes hold the same bar over
+        // the same intervals, so an entry evaluating the other route's fits would pass every one.
+        // Measure instead whether naming it changes any value; the default route is the control.
         {
             // The arguments a route's selector takes over - where naming a route
             // may change a value at all.
@@ -2874,13 +2562,9 @@ int main(int argc, char** argv) {
             const auto orders = countOrders.template operator()<boys::FitRoute::kRationalMinimax>();
             routeCarriedBy("BoysAllOrders", orders.first, orders.second);
 
-            // The many-argument and fixed-order entries carry the route too, on
-            // the shapes that take their fit from the policy: the plane entry's
-            // per-argument path and the fixed-order entry's per-argument call.
-            // Measured the same way as the two rows above - the values a call
-            // returns with the route named, against the same call with none - so
-            // a carriage claim here is a difference in the values and not a
-            // sentence about the surface.
+            // The many-argument and fixed-order entries carry the route too, on the shapes that
+            // take their fit from the policy; measured the same way - a difference in the values
+            // and not a sentence about the surface.
             const auto countPlane = [&]<boys::FitRoute kRoute>() {
                 std::size_t cells = 0;
                 std::size_t differ = 0;
@@ -2956,12 +2640,9 @@ int main(int argc, char** argv) {
                            fixedDefault.second);
         }
 
-        // ---- the route's bar through the entries that carry it --------------
-        // The bar is the route's own for the region the argument falls in, read
-        // off BoysFitRoutes rather than repeated here, so a row whose bar moved
-        // would move this one with it. Both entries are swept over the whole
-        // committed grid: the plane entry in one call, the fixed-order entry one
-        // order at a time over the same arguments.
+        // ---- the route's bar through the entries that carry it: the route's own bar for the
+        // region the argument falls in, read off BoysFitRoutes so a moved bar moves this row with
+        // it. Both entries are swept over the whole committed grid.
         {
             const auto rationalBar = [](boys::AccuracyRegion region) {
                 for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
@@ -3030,19 +2711,13 @@ int main(int argc, char** argv) {
             }
         }
 
-        // ---- the run-time selector's two-argument form ----------------------
-        // The route and the scheme named together, which is the pair a
-        // compile-time call site reaches through one EvalPolicy. The values must
-        // be the same values and not merely inside the same bound: the selector
-        // exists so that a caller who cannot name the pair at compile time still
-        // gets the pair they named.
+        // ---- the run-time selector's two-argument form: route and scheme named together, the
+        // pair a compile-time call site reaches through one EvalPolicy. The values must be the same
+        // values, not merely inside the same bound.
         const auto runtimePair = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
-            // The entry a call site writes for this pair: the policy names the
-            // route and the scheme and leaves the entry's other axes to its own
-            // class, which is the reading the selector itself makes for the axes
-            // its caller did not name (src/boys.cpp, SelectorPolicy). Naming the
-            // pair alone would compare the selector against the five, and the two
-            // sides agree then only while the seam carries no row for the class.
+            // The entry a call site writes for this pair: the policy names the route and the
+            // scheme and leaves the other axes to the class, which is the reading the selector
+            // itself makes for the axes its caller did not name (src/boys.cpp, SelectorPolicy).
             using Counterpart = boys::EvalPolicy<kRoute,
                                                  kScheme,
                                                  RouteClass::kBudget,
@@ -3096,12 +2771,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        // The region-A table's own bookkeeping, read the way the kernel reads
-        // it: each piece's coefficients sit at its offset, the denominator
-        // column begins where the numerator column ends, and the offsets tile
-        // the coefficient array without a gap or an overlap. A row's stored
-        // count is then the array's size, which is what makes the two rows'
-        // counts comparable.
+        // The region-A table's own bookkeeping, read the way the kernel reads it: each piece's
+        // coefficients sit at its offset, and the offsets tile the coefficient array without a gap
+        // or an overlap.
         std::size_t ratACoeffsNeeded = 0;
 
         for (int p = 0; p < static_cast<int>(std::size(boys::detail::kPieces)); ++p)
@@ -3170,15 +2842,10 @@ int main(int argc, char** argv) {
                 ++routeServeMismatch;
             }
 
-            // The reported figure is a sweep on the grid the generator used and
-            // this one is a sweep on the committed reference grid, which is
-            // coarser: a fit that equioscillates at a degree's worth of ripples
-            // is not sampled at its own extrema from here, so this sweep reads a
-            // little under the generator's rather than beside it. What can be
-            // settled from this grid is therefore one-sided - the gate can find
-            // the fit worse than its row reports, never better, and a row whose
-            // reported figure would not cover what is measured here is a figure
-            // describing a fit other than the one the header holds.
+            // The reported figure is a sweep on the generator's grid and this one is a sweep on
+            // the committed reference grid, which is coarser: a fit that equioscillates is not
+            // sampled at its own extrema from here, so the reading is one-sided - the gate can
+            // find the fit worse than its row reports, never better.
             const double measured =
                 RouteClaims()[static_cast<std::size_t>(routeSeedClaim[r])].worstErr;
 
@@ -3304,11 +2971,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        // The same cells again, through the entry with the orders packing axis
-        // named: the entry the caller reaches by asking for that axis, so the
-        // claim the row above makes is measured on the axis as well as off it.
-        // The bound is the same one and the reference is the same grid, because
-        // a packing axis chooses which lane evaluates and not which fit.
+        // The same cells again through the entry with the orders packing axis named. The bound
+        // and the reference are the same, because a packing axis chooses which lane evaluates and
+        // not which fit.
         {
             for (std::size_t i = 0; i < count; ++i)
             {
@@ -3364,12 +3029,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the float lane's fit routes --------------------------------------
-    // The float lane's region-A table is its own, so its route report is its
-    // own entry's: a row here states what BoysSingleF32WithRoute delivers over
-    // the interval that row names. The rows are counted apart from the lanes
-    // for the reason the double lane's are - a route is a choice a caller
-    // makes, not a lane the library always serves - and they carry their own
-    // lane label, so a float row's cells are never read into a double one.
+    // The float lane's region-A table is its own, so its route rows state what
+    // BoysSingleF32WithRoute delivers over the interval each row names, carry their own lane label
+    // and are counted apart for the reason the double lane's are.
     std::vector<int> routeSeedClaimF32;
 
     for (const boys::FitRouteInfo& row : boys::BoysFitRoutesF32())
@@ -3471,11 +3133,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        // What naming a route changes, cell by cell, against the same call
-        // without one. The default route, a value outside the enumeration and
-        // the Chebyshev route must all be the default entry's value bit for
-        // bit; the rational route may differ only where a row of
-        // BoysFitRoutesF32 says its selector takes over.
+        // What naming a route changes, cell by cell: the default route, a value outside the
+        // enumeration and the Chebyshev route must all be the default entry's value bit for bit,
+        // and the rational route may differ only where a row of BoysFitRoutesF32 says its selector
+        // takes over.
         for (int n = 0; n <= nmax; ++n)
         {
             for (std::size_t i = 0; i < count; ++i)
@@ -3620,28 +3281,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the float lane's route and scheme combinations --------------------
-    // The float lane stores both forms of its Chebyshev family - the table the
-    // split Clenshaw recurrence reads and the same fits in monomial form for
-    // Horner - and one form of the rational family, whose numerator and
-    // denominator both go through Horner. Every (route, scheme) pair the double
-    // lane accepts is therefore reachable on this lane's own engines, and the
-    // rows below are the pairs a call site can name.
-    //
-    // A row is one (entry, policy, region): a public call with a pair this
-    // library carries, at every order, over the interval the fit serves, judged
-    // against the bar the float lane publishes for that region, on the reference
-    // grid and by the rule the route book above is measured on. Each row carries
-    // two readings. The first is its error against the committed reference. The
-    // second is the number of that row's cells where this policy's value differs
-    // from the shipped pair's at the same (n, x): a policy that never reaches
-    // the kernel it names leaves that count at zero whatever its error says,
-    // which is what makes a row evidence for the option rather than the table.
-    // The batch entry's region-A rows are the exception the count cannot be
-    // taken on: their value comes from the double lane's fit at the policy's own
-    // route and scheme, so a scheme change reaches them as a double-precision
-    // seed's last bits and a route change only where that lane's rational fits
-    // take over. Their counts are printed and reported, and the requirement is
-    // taken on the other six rows.
+    // The lane stores both forms of its Chebyshev family and one of the rational family, so every
+    // (route, scheme) pair the double lane accepts is reachable on its own engines. A row is one
+    // (entry, policy, region): its error, and its count of cells differing from the shipped pair's.
     std::size_t f32PolicyCells = 0;
     std::size_t f32PolicyOver = 0;
     std::size_t f32PolicyUncovered = 0;
@@ -3666,23 +3308,10 @@ int main(int argc, char** argv) {
     Verdict f32PolicyVerdict[2] = {Verdict::Verified, Verdict::Verified};
 
     {
-        // Every axis is named, the reference pair included. The reference is
-        // what the rows below call the shipped pair, and each other policy is
-        // that pair with one axis moved: a reference that left an axis to the
-        // default would differ from the policy it is read against in that axis
-        // as well, and a move of the default would make it a policy this block
-        // already has a row for.
-        //
-        // THE DIVISION FORM IS NAMED TOO, and it is named as the build's own:
-        // `kPolicyForm` below is that form, the five aliases take it as their
-        // sixth argument, and the bar beneath them is read from it. That matters
-        // because the lane publishes a figure per form - 2.5e-7 for the plain
-        // reciprocal where it publishes 1.5e-7 for the other two - so a row
-        // judged at one form's figure while dividing in the other is a row judged
-        // against an arithmetic it did not run. Naming it as the build's own, and
-        // not as one spelling, is what makes the tuned configure's move of that
-        // default a move these rows measure: the aliases resolve to the moved
-        // form and the bar resolves to that form's figure.
+        // Every axis is named, the reference pair included, so each other policy is that pair
+        // with one axis moved. THE DIVISION FORM IS NAMED AS THE BUILD'S OWN: the lane publishes
+        // 2.5e-7 for the plain reciprocal against 1.5e-7 for the others, and the bar beneath is
+        // read from this form, so a tuned configure's move of that default is measured here.
         constexpr boys::DivisionForm kPolicyForm = boys::kDefaultDivisionForm;
 
         using ShippedPair =
@@ -3742,21 +3371,16 @@ int main(int argc, char** argv) {
                                                    "chebyshev x Clenshaw x narrow",
                                                    "rational minimax x narrow"};
         const char* const regionName[kRegions] = {"A", "B"};
-        // The bar a row is judged by is the figure the lane publishes for the
-        // form that row names: the region's bar for the two base forms, plus the
-        // contract term the lane states for the plain reciprocal, which is 2.5e-7
-        // against 1.5e-7 on this lane. Read from `kPolicyForm`, the same form the
-        // aliases above take, so a row's arithmetic and the figure it is held to
-        // cannot name two forms between them.
+        // The bar a row is judged by: the region's bar for the two base forms plus the contract
+        // term the lane states for the plain reciprocal (2.5e-7 against 1.5e-7 on this lane), read
+        // from kPolicyForm so a row's arithmetic and its figure cannot name two forms.
         const double formAdd =
             kPolicyForm == boys::DivisionForm::kPlainReciprocal ? floatPlainTerm : 0.0;
         const double bar[kRegions] = {boys::detail::f32::kRegionAFitBar + formAdd,
                                       boys::detail::f32::kRegionBFitBar + formAdd};
-        // The narrow partition's rows carry a figure per multiply-add route,
-        // and this build evaluates in one of them: the row it is read against is
-        // that route's own, not the worse of the two, so a build whose route the
-        // table meets less well has to say so here rather than be judged on the
-        // other route's figure.
+        // The narrow partition's rows carry a figure per multiply-add route, and this build
+        // evaluates in one of them: the row is read against that route's own figure rather than
+        // the worse of the two.
         const auto narrowPick = [](double fused, double separate) {
             return boys::backend::detail::kSelectedRoute == boys::backend::MulAddRoute::kFused
                        ? fused
@@ -3869,11 +3493,9 @@ int main(int argc, char** argv) {
             }
         }
 
-        // The batch entry: its value at order n is the recursion's, so one call
-        // per argument produces every order and the cells are read off it. The
-        // seed is the point of this entry - region A's comes from the double
-        // lane's fit at the policy's route and scheme, region B's from this
-        // lane's - and a seed is what the bar is asked of here.
+        // The batch entry: one call per argument produces every order, and the seed is what the
+        // bar is asked of here - region A's from the double lane's fit at the policy's route and
+        // scheme, region B's from this lane's.
         for (int r = 0; r < kRegions; ++r)
         {
             std::array<float, 33> shipped{};
@@ -3911,15 +3533,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        // Totalled, judged and printed. The single-order entry's rows are the
-        // ones a fit's published figure can be held to, so the one-sided
-        // comparison the route book makes is made here too: a measured figure
-        // further above a row's own reported figure than a tenth of the row's
-        // bar is that figure to correct, not a bound the row misses. The
-        // published figures are the generator's, measured in the shipped form,
-        // so a configure whose default form is the plain reciprocal reads this
-        // count with that form's own rounding in the sweep and not in the figure
-        // it is compared with; the bar is what a row is judged by.
+        // Totalled, judged and printed. The single-order rows are the ones a fit's published
+        // figure can be held to, so the route book's one-sided comparison is made here too: a
+        // measured figure further above a row's own reported figure than a tenth of the row's bar
+        // is that figure to correct, not a bound the row misses.
         for (int e = 0; e < kEntries; ++e)
         {
             std::printf("\n  the float lane's %s entry at each policy it accepts, every order,\n"
@@ -4077,16 +3694,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the narrow partition's rational route -----------------------------
-    // The rational family fitted over the narrow partition is a table of its own:
-    // one numerator/denominator pair per narrow piece in each region, read at
-    // that piece's own interval and mapped argument, accepted in the arithmetic
-    // the kernel runs at both multiply-add routes. The rows below are where a
-    // consumer's figure for it meets a measurement, and they are held to the same
-    // bars the route book holds the shipped partition's rows to, because a
-    // partition is a trade in stored count and not a licence to leave the route's
-    // bound. The pieces are measured directly and the public batch entry is
-    // measured over the whole domain it serves, so a table that is right and an
-    // evaluation that is not are two rows rather than one assumption.
+    // A table of its own: one numerator/denominator pair per narrow piece in each region, read at
+    // that piece's own interval and mapped argument. The rows are held to the same bars the route
+    // book holds the shipped partition's rows to, and the pieces are measured directly.
     std::size_t narrowRatCells = 0;
     std::size_t narrowRatDiffers = 0;
     double narrowRatWorst = 0.0;
@@ -4271,13 +3881,9 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_FP16
 
     // ---- the half kernels' path divergence and their claimed domain --------
-    // The vector body against the certified scalar half entry, at the same
-    // cell: the two disagree by quanta of the half format (different
-    // arithmetic forms), so the claim they are held to is not equality but
-    // that neither returns a value the other's contract would not accept.
-    // Counted separately from either path's own error, because the failure
-    // this caught was one path returning zero where the other returned a
-    // usable value.
+    // The vector body against the certified scalar half entry at the same cell: they disagree by
+    // quanta of the half format, so the claim is not equality but that neither returns a value the
+    // other's contract would not accept - the failure this caught was one returning zero.
 #ifdef BOYS_GATE_FP16
     double driftUlp = 0.0;
     int driftOrder = -1;
@@ -4292,23 +3898,16 @@ int main(int argc, char** argv) {
     int driftScalarZeroN = -1;
     std::size_t driftUnforgivenZero = 0; // a path returns zero above its bound
     double driftUnforgivenRef = 0.0;
-    // The aggregate above says a cell has exactly one path out of bound but not
-    // which one, and the two sides are not the same finding: the body being out
-    // is the kernel's error, the scalar being out is the certified entry's. They
-    // are counted apart, per side and per (region, format), because a side that
-    // is out in one region only is a different object from one that is out
-    // everywhere.
+    // The aggregate above says a cell has exactly one path out of bound but not which one, and
+    // the two sides are not the same finding: the body being out is the kernel's error, the scalar
+    // being out is the certified entry's. They are counted apart, per side and per (region, format).
     std::size_t driftSimdOut = 0;   // the body outside its bound, the scalar inside
     std::size_t driftScalarOut = 0; // the scalar outside its bound, the body inside
     std::array<std::size_t, 6> driftSimdOutCell{};   // [region * 2 + isBf16]
     std::array<std::size_t, 6> driftScalarOutCell{};
-    // What the out-of-bound return actually is, per side. "Outside the bound"
-    // covers two different returns: a number the bound is too tight for, and a
-    // value that is not a number at all, which no bound can hold. The second is
-    // the one this row has fired on, so it is counted rather than left to be
-    // inferred from a worst-excess of zero, and the argument each set sits at is
-    // counted too, because a set that sits where a format rounds its argument
-    // away is a different finding from one spread over the domain.
+    // What the out-of-bound return actually is, per side: a number the bound is too tight for, or
+    // a value that is not a number at all, which no bound can hold. The second is the one this row
+    // has fired on, so it is counted, and the argument each set sits at is counted too.
     std::size_t driftSimdOutNaN = 0;
     std::size_t driftScalarOutNaN = 0;
     std::size_t driftSimdOutInfArg = 0;    // half argument is not a finite half
@@ -4328,11 +3927,9 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_FP16
 
     // ---- the 8-wide half-I/O region kernels --------------------------------
-    // Two half values per register, computed in binary32 and rounded to the
-    // half type on the store (the lane's own scalar tail calls the certified
-    // half entries). No public entry reaches these: the suite calls them
-    // directly, and so does this. Arguments are partitioned by the region
-    // each kernel documents as its precondition.
+    // Two half values per register, computed in binary32 and rounded to the half type on the store
+    // (the lane's own scalar tail calls the certified half entries). No public entry reaches these.
+    // Arguments are partitioned by the region each kernel documents as its precondition.
 #ifdef BOYS_GATE_FP16
     if (boys::BoysAvx2Available())
     {
@@ -4622,15 +4219,9 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_FP16
 
     // ---- the native packed half lane, if this revision carries it -----------
-    // Region C only, one precondition (x >= the lane's own fp16 rounding of x1),
-    // no fallback, returning 2^15 * F_k(x) so that the whole
-    // ladder stays inside binary16's normal range down to F_k(x) = 2^-29.
-    //
-    // Three things are measured apart, because the lane publishes them as three
-    // claims: the bound where the return is a normal half (its domain), the
-    // points past that domain's ceiling (counted, never passed), and the
-    // packing itself, which the error cannot show - see the distribution
-    // counters, which a widen-compute-round-once lane cannot produce.
+    // Region C only, one precondition (x >= the lane's own fp16 rounding of x1), no fallback,
+    // returning 2^15 * F_k(x) so the ladder stays normal down to F_k(x) = 2^-29. Measured apart:
+    // the bound where the return is a normal half, the points past that ceiling, and the packing.
     std::size_t nativeCells = 0;
     std::size_t nativeNoClaim = 0;
     double nativeNoClaimTruth = 0.0;
@@ -4722,11 +4313,9 @@ int main(int argc, char** argv) {
                         ++nativeBatchMismatch;
                     }
 
-                    // Past the ceiling the lane claims nothing: the return is a
-                    // subnormal half, then exactly zero, by design. Counted
-                    // here, and excused only inside that domain - a subnormal
-                    // return for a value the scaling was supposed to keep
-                    // normal is a failure and is measured as one.
+                    // Past the ceiling the lane claims nothing: the return is a subnormal half,
+                    // then exactly zero, by design. Excused only inside that domain - a subnormal
+                    // for a value the scaling should have kept normal fails.
                     const bool pastCeiling = returned < kNativeSmallestNormal;
 
                     if (pastCeiling && std::abs(want) > kNativeSmallestNormal)
@@ -4854,11 +4443,9 @@ int main(int argc, char** argv) {
     // The published statements that are not one lane x region cell.
     // ------------------------------------------------------------------
 
-    // The reference grid's own columns of that statement are read whatever the
-    // seam is: they are the table's, not a lane's. The lane's side of it - the
-    // published cell measured at x = 721 and the arguments the lane itself
-    // reached - needs an entry to call, so it is measured only where this build
-    // carries one.
+    // The reference grid's own columns of that statement are read whatever the seam is; the
+    // lane's side of it needs an entry to call, so it is measured only where this build carries
+    // one.
 #ifdef BOYS_GATE_FP16
     double cellErr = 0.0;
     double cellValue = 0.0;
@@ -4942,28 +4529,10 @@ int main(int argc, char** argv) {
     }
 #endif // BOYS_GATE_FP16
 
-    // The asymptotic branch outside its own domain: the published row says the
-    // error jumps five to eight orders below about x = 16, measured on the
-    // form as coded, against the same reference. The region-C kernel is that
-    // form, and the grid carries arguments on both sides of the stated edge.
-    //
-    // The form is evaluated by RegionCForm(), and why is set out where that
-    // function is defined. It used to be read out of the region-C kernel by
-    // asking for a full vector, four copies of the argument, on the reasoning
-    // that the kernel's vector body applies the form to all four lanes and that
-    // the first lane is then the value. That holds on a host with the vector
-    // body and not on one without it, where the entry hands the whole run to
-    // the dispatching scalar entry and a below-kX1 argument comes back as the
-    // region-B fit - the same error the count = 1 reading would have made, and
-    // one that no host reports as an error, because both numbers are values of
-    // something.
-    //
-    // A jump has to say over what window: the error of this form is smooth in
-    // x, so the ratio across the edge grows with the window and shrinks to one
-    // as the window closes. Both readings are measured - the single grid step
-    // straddling 16, and a two-unit window on each side - and the widest is
-    // reported beside them, so the published figure can be compared with the
-    // reading it fits rather than with a chosen one.
+    // The asymptotic branch outside its own domain: the published row says the error jumps five
+    // to eight orders below about x = 16, measured on the form as coded (RegionCForm, where the
+    // reason it is evaluated rather than read out of the kernel is stated). A jump has to say over
+    // what window, and this form's error is smooth in x, so both readings are reported.
     double asymErrBelow = 0.0;
     double asymErrInside = 0.0;
     double asymErrShipped = 0.0;
@@ -4977,11 +4546,9 @@ int main(int argc, char** argv) {
     double asymWinJumpMax = 0.0;
     double asymBelowRelMin = 0.0;
     double asymBelowRelMax = 0.0;
-    // The shape of the error through the boundary, as opposed to its size: the
-    // published sentence calls the lower edge a floor, and a floor is a
-    // threshold. A threshold would show as a pair of neighbouring arguments
-    // whose errors differ by orders of magnitude, and as an error that is not
-    // monotone in x across the window.
+    // The shape of the error through the boundary, as opposed to its size: the published sentence
+    // calls the lower edge a floor, and a threshold would show as neighbouring arguments whose
+    // errors differ by orders of magnitude and as an error not monotone in x.
     double asymStepRatioMax = 0.0;
     std::size_t asymPairs = 0;
     std::size_t asymBreaks = 0;
@@ -5027,11 +4594,9 @@ int main(int argc, char** argv) {
                 const double err = std::abs(RegionCForm(n, x) - ref.v[ref.Index(n, i)]);
                 const std::size_t sn = static_cast<std::size_t>(n);
                 const double trueValue = ref.v[ref.Index(n, i)];
-                // The shape is a property of the error as a function of x, and
-                // at these arguments the value itself moves by orders of
-                // magnitude between neighbouring nodes, so the comparison that
-                // means anything is between relative errors - and it means
-                // something below the edge, where the sentence puts the growth.
+                // The shape is a property of the error as a function of x, and at these
+                // arguments the value itself moves by orders of magnitude between neighbouring
+                // nodes, so the comparison that means anything is between relative errors.
                 const double relErr = trueValue != 0.0 ? err / std::abs(trueValue) : 0.0;
 
                 if (prevErr[sn] > 0.0 && relErr > 0.0 && x < 16.0 && prevX[sn] < 16.0)
@@ -5130,13 +4695,10 @@ int main(int argc, char** argv) {
                 asymWinJumpMax = std::max(asymWinJumpMax, jump);
             }
 
-            // The other reading a jump can have here: the error just below the
-            // edge against the error the branch delivers inside its domain,
-            // which the sweep measures as its 5.5e-14 budget. Comparing the
-            // budget with the branch's own measured in-domain error shows the
-            // two are the same number, so this is a comparison between the
-            // branch's two regimes rather than against a threshold pulled from
-            // thin air. Restricted to the orders callers use on this branch.
+            // The other reading a jump can have here: the error just below the edge against the
+            // error the branch delivers inside its domain, which the sweep measures as its 5.5e-14
+            // budget. The two are the same number, so this compares the branch's two regimes rather
+            // than against a threshold pulled from thin air.
             if (n <= 24 && stepBelow[sn] > 0.0)
             {
                 const double rel = stepBelow[sn] / kBoundSingleC;
@@ -5181,15 +4743,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Is a per-order power-of-two rescale exact? The packed-half paragraph's
-    // reason is one line: "the rescale is exact, so the scaled lane is
-    // bit-identical to the unscaled one at every order". That is a statement
-    // about binary16 arithmetic rather than about a prototype, so it is
-    // checkable here: rounding to binary16 and scaling by a power of two
-    // commute wherever neither end leaves the format's normal range. Both ends
-    // must be normal for the statement to be about rounding rather than about
-    // the subnormal field's shrinking significand, so a value that is itself
-    // subnormal is not evidence either way and is skipped.
+    // The packed-half paragraph's reason, checkable here: "the rescale is exact, so the scaled
+    // lane is bit-identical to the unscaled one at every order". Rounding to binary16 and scaling
+    // by a power of two commute wherever neither end leaves the format's normal range; a value that
+    // is itself subnormal is not evidence either way and is skipped.
     std::size_t rescaleChecked = 0;
     std::size_t rescaleViolations = 0;
     {
@@ -5228,12 +4785,10 @@ int main(int argc, char** argv) {
     }
 
 
-    // The float lane's own floor, relative rather than absolute: the published
-    // ceiling paragraph says the 24-bit significand resolves about 6e-8 and
-    // that the budget of 1.5e-7 absolute is within a factor of a few of
-    // it. The absolute sweep cannot see that floor - an absolute budget is
-    // generous wherever |F| is small - so it is measured where |F| >= 0.5,
-    // which is where a relative floor is what the caller gets.
+    // The float lane's own floor, relative rather than absolute: the published ceiling paragraph
+    // says the 24-bit significand resolves about 6e-8 and the 1.5e-7 absolute budget is within a
+    // factor of a few of it. The absolute sweep cannot see that floor, so it is measured where
+    // |F| >= 0.5, which is where a relative floor is what the caller gets.
     double floatWorstRel = 0.0;
     int floatWorstRelN = -1;
     double floatWorstRelX = 0.0;
@@ -5264,49 +4819,17 @@ int main(int argc, char** argv) {
     }
 
 
-    // ---- the evaluation-scheme book -----------------------------------------
-    // One accumulator per row the public surface enumerates and per entry that
-    // reads a scheme: every (scheme, stored fit) pair BoysEvalSchemeFits()
-    // reports, then every public double-precision entry whose policy names a
-    // scheme. A fit or a scheme added to either enumeration is measured and
-    // judged here without this block changing shape; the two schemes are the
-    // closed set the entries themselves switch over, so the dispatchers below
-    // are the entries' own.
-    //
-    // Each fit row is that fit over the whole interval it is defined on, at
-    // every order it serves, against the committed reference, judged against
-    // the bound the public surface reports for that pair in this build's
-    // multiply-add route. The row therefore holds the library to what it tells
-    // a consumer, in the arithmetic this build runs, and not to a number
-    // written beside the measurement.
-    //
-    // Each entry row is one public entry over the whole reference grid at one
-    // scheme, judged against the bound that entry documents. The entries are the
-    // ones a scheme reaches: the per-argument entries through the fits'
-    // summation, the many-argument and fixed-order entries through the region
-    // bodies they run. A fit row cannot show that an option is reachable from an
-    // entry, and an option that is implemented but unreachable is not delivered.
-    //
-    // Sweeping the entries is not on its own enough, and the carriage table
-    // below is why. Every one of these rows would pass at either scheme if an
-    // entry stopped passing the scheme to its call: the two schemes' fits hold
-    // the same bar, so dropping one for the other moves a value by a last-place
-    // digit and no bound can see it. So each entry is read at both schemes in
-    // the same pass and the cells where the two readings differ are counted. A
-    // row whose readings agree on every cell it covers is a row the selection
-    // does not reach, whatever its accuracy says - which is the check the
-    // accuracy column cannot make.
+    // The evaluation-scheme book: one accumulator per row the public surface enumerates and per
+    // entry that reads a scheme. A fit row is that fit over its interval at the bound the surface
+    // reports in this build's multiply-add route; an entry row is one public entry over the grid at
+    // one scheme. Both schemes hold the same bar, so each entry is read at both and cells counted.
     const std::span<const boys::EvalFitInfo> schemeFitRows = boys::BoysEvalSchemeFits();
     std::vector<int> schemeFitSlots;
     schemeFitSlots.reserve(schemeFitRows.size());
 
-    // The cells each row was read at under both schemes, and the cells where
-    // the two readings differed - per region, because a scheme reaches a row
-    // region by region: the batch entries read it in the region-A and region-B
-    // bodies and not in the asymptotic one, and a row that lost the argument in
-    // one of those bodies still differs in the others. Counted per region, a
-    // drop of one region's argument is a row of zeros beside three rows of
-    // numbers rather than a total that still looks healthy.
+    // The cells each row was read at under both schemes and the cells where the two readings
+    // differed, per region: a scheme reaches a row region by region, so a drop in one body is a row
+    // of zeros beside three rows of numbers rather than a total that still looks healthy.
     struct SchemeCarriage {
         const char* entry = "";
         std::array<std::size_t, 4> cells{};
@@ -5708,19 +5231,10 @@ int main(int argc, char** argv) {
         sweepEntry(e);
     }
 
-    // ---- the packed region-A lane, by scheme -------------------------------
-    // The many-argument entry hands its low-order region-A runs to the packed
-    // AVX2 lane where the build has one. That lane holds the shipped Chebyshev
-    // coefficients and the split Clenshaw recurrence, so it serves the shipped
-    // scheme and no other: a call naming another scheme is answered on the
-    // scalar body instead. What the caller loses there is a lane and not a
-    // value - the bound is the same and the values are the per-argument entry's
-    // own - so no accuracy row in any book can see it and no returned value can
-    // show it. The library states the scope in BoysPackedLaneServes instead, and
-    // what is measured here is that statement against the values: with the
-    // shipped scheme the entry's region-A runs differ from the per-argument
-    // entry's (that is what the lane is), and with the other scheme they agree
-    // with it bit for bit (that is the scalar body, which is that entry's own).
+    // The packed region-A lane, by scheme: the many-argument entry hands its low-order region-A
+    // runs to the packed AVX2 lane, which holds the shipped coefficients and recurrence and so
+    // serves the shipped scheme alone; a call naming another scheme gets the scalar body, a lane
+    // lost and not a value - the scope BoysPackedLaneServes states, held here to the values.
     struct LaneTier {
         boys::EvalScheme scheme = boys::EvalScheme::kSplitClenshaw;
         const char* name = "";
@@ -5777,14 +5291,9 @@ int main(int argc, char** argv) {
         laneTierOf.template operator()<boys::EvalScheme::kHorner>();
     }
 
-    // What a scheme reaches, region by region, read off the
-    // per-argument entry. That entry reads the scheme through the fits the lane
-    // is certified on - the route's own family at the scheme's own summation -
-    // and it is the reference every carriage row above is judged against: a row
-    // is required to differ where this one does, and nowhere is a region
-    // written down as one a scheme ought to reach. Where this reference shows no
-    // difference over a region, the region is one no scheme reaches through this
-    // entry, and no row is held to it.
+    // What a scheme reaches, region by region, read off the per-argument entry. It is the
+    // reference every carriage row above is judged against, and a region where it shows no
+    // difference is a region no scheme reaches through it, so no row is held to one.
     std::array<std::size_t, 4> schemeRefDiffer{};
 
     const auto referenceCarriage = [&](std::array<std::size_t, 4>& sink) {
@@ -5814,24 +5323,9 @@ int main(int argc, char** argv) {
     referenceCarriage(schemeRefDiffer);
 
     // ---- the packing book ---------------------------------------------------
-    // Two rows per scheme the orders axis carries, because the axis's answer
-    // and the entry's answer cover different intervals and only one of them is
-    // the packed lane:
-    //
-    //   "its own domain"  the arguments the packed lane evaluates, x < kX0,
-    //                     against the per-order region-A bar the fits are
-    //                     certified at. This is the row the axis is a claim
-    //                     about.
-    //   "whole grid"      every argument of the reference grid, against the
-    //                     single lane's per-region budgets. Past kX0 the entry
-    //                     runs the certified scalar single lane one order at a
-    //                     time, so this row measures the fallback rather than
-    //                     the lane, and it is here so that the fallback is
-    //                     measured rather than assumed.
-    //
-    // The axis itself has no cell of its own: it is a property of which values
-    // a call produces, so a row is judged on what the entry returned, at the
-    // bound the entry documents.
+    // Two rows per scheme the orders axis carries, because the axis's answer and the entry's cover
+    // different intervals: "its own domain" is x < kX0 at the bar the fits are certified at - the
+    // row the axis is a claim about - and "whole grid" runs to the scalar fallback past kX0.
     std::vector<int> packSlots;
     std::vector<boys::EvalScheme> packSchemes;
 
@@ -5866,13 +5360,10 @@ int main(int argc, char** argv) {
 
                     if (x < boys::detail::kX0)
                     {
-                        // The axis is served by the packed AVX2 lane where the host has
-                        // one and by the certified scalar single lane where it has not.
-                        // Two arithmetics over one domain deliver two figures, so the row
-                        // is judged against the figure for the host it ran on: the packed
-                        // lane's per-order bar where the lane is present, and the scalar
-                        // single lane's own per-region budget where the axis falls back to
-                        // it. Below the extended boundary the two figures are the same.
+                        // The axis is served by the packed AVX2 lane where the host has one and
+                        // by the certified scalar single lane where it has not, so the row is judged
+                        // against the figure for the host it ran on; below the extended boundary the
+                        // two figures are the same.
                         const double regionABound =
                             boys::BoysAvx2Available() ? kBoundSingleA : SingleBound(x);
 
@@ -5902,19 +5393,10 @@ int main(int argc, char** argv) {
     sweepPackAxis.template operator()<boys::EvalScheme::kSplitClenshaw>();
     sweepPackAxis.template operator()<boys::EvalScheme::kHorner>();
 
-    // The same axis on the plane entry, which carries it too. The rows are the
-    // all-orders entry's rows at the same bounds, and deliberately so: naming
-    // the axis on either entry returns the same values, because the plane
-    // entry's per-argument path IS the all-orders entry's body. What the two
-    // rows measure is therefore not the arithmetic - there is one arithmetic -
-    // but that the axis is carried on the second call shape at all, which is
-    // the thing that was refused before and is a claim about the surface.
-    //
-    // The row is judged on the plane entry's own contract, which is the double
-    // batch row: 5.5e-14 in every region, and inside the packed lane's
-    // interval the tighter per-order bar the lane's fits are certified at, the
-    // same two figures the all-orders rows use. The cells are the same grid
-    // cells, reached through the plane layout instead of the order vector.
+    // The same axis on the plane entry, which carries it too. The bounds are the all-orders
+    // rows' at the same figures, and deliberately so: naming the axis on either entry returns the
+    // same values, because the plane entry's per-argument path IS the all-orders entry's body - so
+    // what the two rows measure is that the axis is carried on the second call shape at all.
     std::vector<int> packPlaneSlots;
 
     for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
@@ -5968,11 +5450,9 @@ int main(int argc, char** argv) {
                                   Unrepresentable(got, -1022));
                     }
 
-                    // The plane entry's whole-grid row is the batch bound, not
-                    // the single lane's per-region table: a plane call promises
-                    // the batch row everywhere, and past the lane's interval it
-                    // runs the certified scalar single lane one order at a
-                    // time, which is far inside that.
+                    // The plane entry's whole-grid row is the batch bound, not the single
+                    // lane's per-region table: a plane call promises the batch row everywhere, and
+                    // past the lane's interval it runs the certified scalar single lane.
                     MeasureAt(PackClaims()[wholeGridSlot],
                               n,
                               x,
@@ -5990,20 +5470,9 @@ int main(int argc, char** argv) {
     sweepPlanePackAxis.template operator()<boys::EvalScheme::kHorner>();
 
     // ---- the rest of the axis: the other route, and the other partition -----
-    // The reference rows above are the axis on the shipped route over the
-    // shipped partition. The axis answers more than that - each route's region-A
-    // fits, at either scheme, on either call shape, over either partition - and
-    // an option a caller can name with no measured row beside it is exactly the
-    // silent gap this book exists to catch. So every one of them is measured
-    // here, through the same two entries, against the same reference and with
-    // the worst cell named.
-    //
-    // The bound a row is judged at is the figure the entry documents on this
-    // call shape: the shipped route's per-order fits are certified at the single
-    // lane's region-A bar, and the rational route's pairs at the batch figure
-    // the route's own selector rows are judged at. Where the host has no packed
-    // lane the entry is the certified scalar single lane, whose same per-region
-    // budget is the figure the reference row falls back to as well.
+    // The reference rows above are the axis on the shipped route over the shipped partition; the
+    // axis answers more, and an option a caller can name with no measured row beside it is the
+    // silent gap this book exists to catch. Rows are judged at the figure the entry documents.
     struct OpenedRow {
         const char* axis = "";
         std::string row;
@@ -6024,11 +5493,9 @@ int main(int argc, char** argv) {
     // axis did not carry.
     const char* const kRouteTag[2] = {"cheb", "rat"};
 
-    // The partition a row's region-A fits were read from. Every row above this
-    // block measured the shipped pieces; the narrow partition is the one the
-    // orders axis did not carry, and its pieces are cut per order, so the axis
-    // reaches them by fetching each order's own piece rather than by stepping
-    // one piece's coefficients at a fixed stride.
+    // The partition a row's region-A fits were read from. The narrow partition is the one the
+    // orders axis did not carry, and its pieces are cut per order, so the axis reaches them by
+    // fetching each order's own piece rather than by stepping one piece at a fixed stride.
     const char* const kPartitionTag[2] = {"", "narrow "};
 
     // The flat index of one combination's four labels: partition, route and row
@@ -6056,15 +5523,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // One slot per combination, addressed by the tuple the entry names: route,
-    // partition, scheme, entry and region, in that order. This table is how a
-    // sweep finds the row it fills: a combination's claim is the index held
-    // here for its tuple, so a tuple that grows a member - a partition, say -
-    // is measured where it is published and not wherever its combination
-    // happens to fall in the reading order. The reference rows' own eight are
-    // not in this book - they are the rows above - so their slots stay at -1,
-    // which no measurement below reads. The narrow partition has no rational
-    // route, so its rational slots are left at -1 as well.
+    // One slot per combination, addressed by the tuple the entry names: route, partition, scheme,
+    // entry and region, in that order. A sweep finds the row it fills through this table, so a
+    // tuple that grows a member is measured where it is published. The reference rows' own eight
+    // stay at -1, as do the narrow partition's rational slots, which it does not have.
     std::vector<int> openedSlots(2u * 2u * 2u * 2u * 2u, -1);
 
     const auto openedSlot = [](std::size_t routeIdx,
@@ -6090,18 +5552,10 @@ int main(int argc, char** argv) {
                 continue; // the narrow partition carries no rational region-A route
             }
 
-            // The figure a row is published at, which is the largest figure any
-            // of its own cells is judged at. Inside the packed lane's interval
-            // that figure is the bar the fits are cut for - the single lane's
-            // per-order region-A budget for the chebyshev route's table, the
-            // batch role's for the rational one, which is what its pair
-            // criterion spends. The narrow partition's own pieces are cut to a
-            // bar narrower than the shipped lane's, so the shipped figure bounds
-            // them too and one figure covers both partitions' rows. The whole
-            // grid is the entry's own documented 5.5e-14, which is the figure
-            // every other row in this report is judged at. Where the host has no
-            // packed lane the region-A rows are the certified scalar single
-            // lane's, whose loosest region-A figure is the band's.
+            // The figure a row is published at, the largest any of its own cells is judged at:
+            // inside the packed lane's interval the bar the fits are cut for, and the entry's
+            // documented 5.5e-14 over the whole grid. The narrow pieces are cut under a narrower
+            // bar, so one figure covers both partitions' rows.
             const double packedBar = (routeIdx == 1) ? kBoundDoubleBatch : kBoundSingleA;
             const double regionARow = boys::BoysAvx2Available()
                                           ? packedBar
@@ -6137,14 +5591,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // What a cell of an opened row is judged against, by route and by host. The
-    // shipped route's rows are the rows above, so they are judged the way those
-    // are: the packed lane's per-order bar inside its own interval and the
-    // scalar single lane's per-region budgets everywhere else, which past the
-    // lane's interval is the arithmetic the entry runs. The rational route is
-    // judged at its own documented 5.5e-14: its region-A fits hold a wider bar
-    // than the shipped table's, on every host, and below the band's left edge
-    // both routes answer from that table, so one figure covers the row.
+    // What a cell of an opened row is judged against, by route and by host: the shipped route's
+    // rows as the rows above are - the packed lane's per-order bar inside its own interval and the
+    // scalar single lane's per-region budgets everywhere else - and the rational route at its own
+    // documented 5.5e-14.
     const auto openedRegionABound = [&](double x, std::size_t routeIdx) {
         if (routeIdx == 1)
         {
@@ -6158,21 +5608,10 @@ int main(int argc, char** argv) {
         return (routeIdx == 1) ? kBoundDoubleBatch : SingleBound(x);
     };
 
-    // One combination, measured through both entries that can carry the axis:
-    // the all-orders entry one argument at a time, and the plane entry in one
-    // call over the whole committed grid. Each answers the same two questions
-    // about its own layout - the packed lane's interval at the bar the fits are
-    // cut for, and every argument of the grid at the entry's own documented
-    // figure - so a combination is four rows and all four are swept here, each
-    // with the worst cell recorded against it.
-    //
-    // The combination includes the partition, because a partition is not a
-    // property of the axis's values but of what it reads to reach them: the
-    // shipped pieces share an interval, a degree and a stride from one order to
-    // the next, and the narrow partition's pieces are cut per order, so the
-    // lane fetches each of its four orders' own piece instead. One arithmetic
-    // per partition, and a row per partition so that a reading is never taken
-    // from one and published under the other's name.
+    // One combination, measured through both entries that can carry the axis. Each answers the
+    // same two questions about its own layout - the packed lane's interval at the bar the fits are
+    // cut for, and every grid argument at the entry's documented figure - so a combination is four
+    // rows, and the partition is part of it because it decides what the axis reads.
     const auto measureOpened =
         [&]<boys::EvalScheme kScheme,
             boys::FitRoute kRoute,
@@ -6187,11 +5626,10 @@ int main(int argc, char** argv) {
                                             boys::PackAxis::kOrders,
                                             kPart>;
 
-            // The claim a combination fills is the one the table above holds for
-            // its tuple. Reading it back rather than deriving it from the
-            // reading order is what keeps a sweep and its row together: the
-            // order the sweeps run in and the order the rows are published in
-            // are two different orders, and only the table knows the second.
+            // The claim a combination fills is the one the table above holds for its tuple.
+            // Reading it back rather than deriving it from the reading order is what keeps a sweep
+            // and its row together: the two orders are different and only the table knows the
+            // second.
             const auto claimSlot = [&](std::size_t partIdx,
                                        std::size_t schemeIdx,
                                        std::size_t entry,
@@ -6247,11 +5685,9 @@ int main(int argc, char** argv) {
                                   Unrepresentable(viaPlane, -1022));
                     }
 
-                    // The plane entry's whole-grid row is the batch figure rather
-                    // than the single lane's per-region table: a plane call
-                    // promises the batch row in every region, and past the lane's
-                    // interval it runs the certified scalar single lane one order
-                    // at a time, which is far inside that.
+                    // The plane entry's whole-grid row is the batch figure rather than the
+                    // single lane's per-region table: a plane call promises the batch row in every
+                    // region.
                     MeasureAt(PackClaims()[ordersGrid],
                               n,
                               x,
@@ -6272,11 +5708,9 @@ int main(int argc, char** argv) {
             }
         };
 
-    // Every combination the axis answers beyond the rows above: the other route,
-    // and the other partition. Named rather than looped, because the route, the
-    // scheme and the partition are template arguments - the entries are
-    // instantiated per policy - and a reader comparing two rows can see which
-    // two they are.
+    // Every combination the axis answers beyond the rows above: the other route, and the other
+    // partition. Named rather than looped, because the route, the scheme and the partition are
+    // template arguments a reader comparing two rows can see.
     constexpr auto kSplit = boys::EvalScheme::kSplitClenshaw;
     constexpr auto kHorner = boys::EvalScheme::kHorner;
     constexpr auto kCheb = boys::FitRoute::kChebyshev;
@@ -6295,64 +5729,9 @@ int main(int argc, char** argv) {
     measureOpened.template operator()<kHorner, kCheb, boys::FitGranularity::kNarrow>();
 
     // ---- the granularity axis ----------------------------------------------
-    // Two partitions of the fitted domain, and the axis is which one a call
-    // reads. The rows ask the questions the two books above ask - the stored
-    // fits read directly, and the entries read end to end - and they are judged
-    // at the bars the lanes already document, so the axis stands on the footing
-    // the shipped partition stands on rather than on one of its own.
-    //
-    // The two are the derived partitions, and the library ships a third the book
-    // does not hold: the uniform grid, whose row is enumerated by
-    // BoysFitGranularities beside these two and whose cells are measured in the
-    // combination book below at the one route and the one packing axis it is
-    // served at. It is not a member here because its stored fits are one table
-    // over the whole of [0, kFlatHi) rather than a region-A cut beside a region-B
-    // seed, so the arm this book's `granStoredFit` reads the two members through
-    // has no third branch to take. That is work rather than impossibility: the
-    // arm is a body on the kernel's side and a table on this book's, and until
-    // it exists the partition's delivered accuracy is measured where it is
-    // served, by the combination book and by the accuracy suite.
-    //
-    // Every entry row is cast over region A or narrower, and that is the
-    // difference from the two books above rather than a convenience. An entry
-    // row over the whole grid is won by region C at the top order, where no
-    // partition of the fitted domain is read at all: measured here, those rows
-    // report 5e-14 at n=32, x=kX1 for both partitions, so they are a row about
-    // the asymptotic path and about nothing the axis decides. The region-A rows
-    // are the ones that can see the axis, and one whole-grid row is kept beside
-    // them so the axis is tied to the single-order lane's published
-    // whole-domain claim as well.
-    //
-    // Each row's domain is the cell the published table itself uses, not the
-    // whole of region A: that table's 1e-15 cell is x below the band's left
-    // edge, and the band from there to x0 is its own 3e-14 cell. Judging the
-    // single-order entry over x < x0 at 1e-15 would re-make the over-claim this
-    // gate has already found and withdrawn - the withdrawn claim's record row
-    // is in the book above, and its worst cells are the band's, at 1.8e-15 -
-    // so the single-order row takes the table's own cell, and the batch rows,
-    // whose lane documents one bar over the whole line, also take the
-    // fallback's domain below that edge.
-    //
-    // Two of the region-A readings are worth saying out loud, because the rows
-    // are where they are measured. A piece of region A is read twice: once as
-    // the single-order lane's own value, under the 1e-15 bar region A
-    // documents, and once as the seed the batch entry's downward recursion
-    // starts from, where the recursion multiplies the piece's error by
-    // seed_weight(n, b) on the way down to F_0. That gain's envelope over the
-    // region reaches 1.04e5, at order 12 and the region's right edge, but the
-    // seeding fallback is taken only below the band's left edge, where the gain
-    // is the calling order's own and so is at most 2.18. The narrow pieces are
-    // cut under the tighter of those two readings, so the orders-entry rows are
-    // the ones that can see the second: the below-the-band row reads the
-    // amplified value end to end over exactly the arguments that seeding
-    // fallback is taken at, while the single-entry rows and the region-A fit row
-    // read each piece at its own size.
-    //
-    // The carriage count is the axis's reachability, taken the way the schemes'
-    // and the packing axis's are: every row is read at both members in the same
-    // pass and the cells whose two readings differ are counted. A member whose
-    // readings agree everywhere is a member no entry reaches, whatever its
-    // accuracy says.
+    // Which of two partitions a call reads. The uniform grid is not a member: its fits are one
+    // table over [0, kFlatHi) rather than a region-A cut beside a region-B seed, so the arm reading
+    // the members here has no third branch - work, not impossibility. Entry rows take the table's cell.
     enum class GranKind : std::uint8_t {
         kFitsA,       // region A's stored fits, read directly, over x < kX0
         kSeedB,       // region B's stored seed, read directly
@@ -6388,12 +5767,9 @@ int main(int argc, char** argv) {
         {"orders entry, region B", GranKind::kOrdersB, GranBar::kFixed, kBoundDoubleBatch},
         {"single entry, region A", GranKind::kSingleA, GranBar::kFixed, kBoundSingleA},
         {"single entry, A..C", GranKind::kSingleWhole, GranBar::kPerRegion, 0.0},
-        // The fixed-order entry is the shape a caller that needs one order over
-        // an array of arguments reaches for, and it has its own branch on the
-        // partition, so a row here is what says that branch reads the table its
-        // policy names. It is judged at the single-order lane's per-region
-        // figure, which is the bar the entry is published at: one order at one
-        // argument is that lane's shape, taken over an array.
+        // The fixed-order entry - the shape a caller that needs one order over an array of
+        // arguments reaches for - has its own branch on the partition, and this row says that branch
+        // reads the table its policy names. Judged at the single-order lane's per-region figure.
         {"fixed-order entry, A..C", GranKind::kFixedN, GranBar::kPerRegion, 0.0},
         {"plane entry, band and below", GranKind::kPlaneA, GranBar::kFixed, kBoundDoubleBatch},
     };
@@ -6449,13 +5825,9 @@ int main(int argc, char** argv) {
     std::vector<std::size_t> granCells(granSlots.size(), 0);
     std::vector<std::size_t> granDiffer(granSlots.size(), 0);
 
-    // Both members' readings of the whole grid, held between the members'
-    // passes so that the second member's reading of a cell is an array read
-    // and not a second call: the carriage count below asks every row at both
-    // members, and a call taken inside that loop would be taken per row.
-    //
-    // One array per member per call shape. The entries' readings are the same
-    // numbers their own books read, taken once here and measured twice.
+    // Both members' readings of the whole grid, held between the members' passes so that the
+    // second member's reading of a cell is an array read and not a second call: one array per
+    // member per call shape.
     std::array<std::vector<double>, kGranMembers> ordersGrid;
     std::array<std::vector<double>, kGranMembers> planeGrid;
     std::array<std::vector<double>, kGranMembers> singleGrid;
@@ -6622,11 +5994,9 @@ int main(int argc, char** argv) {
 
                         case GranKind::kOrdersB:
                         {
-                            // Region B's row: the batch entry seeds its upward
-                            // recursion from the order-0 seed and carries it to
-                            // the top order, so the seed's own partition is
-                            // amplified here by A_B(n), which the seed-sizing
-                            // argument bounds by one.
+                            // Region B's row: the batch entry seeds its upward recursion from
+                            // the order-0 seed and carries it to the top order, so the seed's own
+                            // partition is amplified here by A_B(n).
                             if (x < boys::detail::kX0 || x >= boys::detail::kX1)
                             {
                                 continue;
@@ -6640,12 +6010,9 @@ int main(int argc, char** argv) {
                         case GranKind::kSingleA:
                         case GranKind::kSingleWhole:
                         {
-                            // The published table changes cell at the band's
-                            // left edge: below it a piece is documented at the
-                            // lane's own 1e-15, above it the band's 3e-14 holds.
-                            // So this row is the piece read at its own size
-                            // under its own bar, which is not the same row as
-                            // the fits read directly above.
+                        // The published table changes cell at the band's left edge: below it a
+                        // piece is documented at the lane's own 1e-15, above it the band's 3e-14
+                        // holds. So this row is the piece read at its own size under its own bar.
                             if (granRows[r].kind == GranKind::kSingleA &&
                                 x >= boys::detail::kExtendedBX0)
                             {
@@ -6741,81 +6108,9 @@ int main(int argc, char** argv) {
                 "  no value = of those, points where the lane returned zero or a subnormal\n");
 
     // ---- the entry book: the batched entries on the uniform partition --------
-    // A combination is not a point in an axis space, it is a call, and a call has
-    // an entry. Every book above names its cells by axes and reaches them through
-    // one entry per lane - the cross through BoysAllOrders, the packing book
-    // through the two entries the axis is carried on - so a combination these
-    // axes admit and an entry refuses has no cell in any of them: the space the
-    // arithmetic below counts has no entry factor in it. This book is that
-    // factor, at the partition the batched bodies refuse on the paths that carry
-    // no branch for it.
-    //
-    // The entries it crosses, as a declared list rather than an implied one:
-    //
-    //   plane entry          BoysAllN(nmax, x, out, count, workspace) - every
-    //                        order over an array of arguments (boys.hpp:1316)
-    //   plane entry, sorted  the same entry under its BoysSortedArgs overload,
-    //                        for arguments the caller declared ordered
-    //                        (boys.hpp:1345)
-    //   per-element tops     BoysAllNAtOrders(n, x, out, count) - each argument's
-    //                        own top order (boys.hpp:1397)
-    //   fixed-order entry    BoysFixedN(n, x, out, count, stride) - one order over
-    //                        the same array (boys.hpp:1222)
-    //
-    // The first three are the many-argument all-orders entries. The fourth is the
-    // fixed-order entry beside them, and it is here because its uniform refusal is
-    // a cell of the same class - the same partition named on a call shape whose
-    // body has no branch for it, guarded in both of its Chebyshev paths
-    // (boys_impl.hpp:3251 and :3316) - and because it is the shape that gives this
-    // book its third state: a call producing one order has no second order to
-    // fill a packed lane with, so the orders axis cannot be formed on it at all
-    // (boys_impl.hpp:3209).
-    //
-    // What this book does NOT cross, each for a reason the report already
-    // carries: the per-argument entries (BoysSingle, BoysAllOrders), whose grid
-    // rows are the scheme book's entry rows and the cross's; the
-    // single-precision and half lanes' entries, whose rows the float and half
-    // books carry; and the device lane's entries, not runnable on this host.
-    //
-    // Every combination is exactly one of three states, and there is no fourth:
-    //
-    //   measured        the entry serves the call at this revision: the
-    //                   combination runs over the whole committed grid and is
-    //                   judged at the figure the double batch lane publishes for
-    //                   that shape, 5.5e-14.
-    //   refused, and owed
-    //                   the entry's body has no branch for the grid on that path
-    //                   and refuses the policy where it is named. The row prints
-    //                   the library's own assertion, so a refusal is a named
-    //                   reason on the row and not an absence. No combination of
-    //                   this book is in this state at this revision: the three
-    //                   entries that refused the grid - the plane entry, its
-    //                   sorted overload and the fixed-order entry - serve it now,
-    //                   and their six cells are measurements below.
-    //   not applicable to the entry's shape
-    //                   the call shape cannot form the axis at all. No branch and
-    //                   no revision of that entry changes it, which is what
-    //                   separates it from the state above.
-    //
-    // The refused state is the one this book cannot measure by calling: the call
-    // it would make does not build, and not building is the property. It is
-    // measured the way every other refusal in this file is - by compiling the
-    // call in a configure probe - and every refused cell would have a probe of
-    // its own, named for the cell, entry and scheme together. The six probes that
-    // stood here came out with the refusals they measured, because these rows
-    // call the entries: a revision that put one of those guards back would fail
-    // to build this gate, which is a louder reading than a probe's. What keeps a
-    // refusal from being merely the entry's is the rows beside it: the same
-    // route, scheme, axis and partition measured through an entry that does serve
-    // them, which is what said the refusal belonged to the entry's body and not
-    // to the combination's tables - and the rows beside it are what says the six
-    // cells are served now.
-    //
-    // The partition is not an axis of this book: it is the uniform member of the
-    // partition axis that the batched entries are crossed against, and the grid
-    // stores one degree for every order and every interval rather than a cut of a
-    // stored fit (src/boys.cpp, the uniform row) - the other two partitions are
-    // swept by the two books above.
+    // The books above reach their cells through one entry per lane, so a combination the axes
+    // admit and an entry refuses has no cell in any of them. Four batched entries are crossed with
+    // the uniform partition, each measured, refused and owed, or not applicable to its shape.
     enum class BatchEntry : std::uint8_t {
         kPlane,       // BoysAllN: every order over an array of arguments
         kPlaneSorted, // BoysAllN, the BoysSortedArgs overload
@@ -6837,11 +6132,9 @@ int main(int argc, char** argv) {
         BatchEntry kind;
     };
 
-    // The entry list, written here by hand and labelled as such: the library has
-    // no accessor that names its entries, which is the piece the axis is missing,
-    // so this list is the coverage this book claims. Every name in it is a public
-    // entry of boys.hpp, and the states below are decided off the entry's own
-    // branch, not off this list.
+    // The entry list, written here by hand and labelled as such: the library has no accessor that
+    // names its entries, so this list is the coverage this book claims. Every name in it is a public
+    // entry of boys.hpp, and the states are decided off the entry's own branch, not off this list.
     constexpr std::array<EntryBody, 4> entryBodies{{
         {"plane entry", BatchEntry::kPlane},
         {"plane entry, sorted", BatchEntry::kPlaneSorted},
@@ -6867,13 +6160,9 @@ int main(int argc, char** argv) {
         int slot = -1;
     };
 
-    // The assertion a shape-limit row prints, quoted from the library. It is the
-    // library's sentence and not this book's, so a reader of such a row reads the
-    // reason the library states where the call is named rather than one written
-    // here beside it. The uniform guard's own sentence stood here beside this one
-    // until the six cells it named were served; no row of this book reaches it
-    // now, and the guard itself stays in the library as the contract of the
-    // bodies that cannot answer the grid.
+    // The assertion a shape-limit row prints, quoted from the library (boys_impl.hpp,
+    // BoysFixedNImpl, :3209) rather than written here, so a reader of such a row reads the reason
+    // the library states where the call is named.
     constexpr const char* kEntryOrdersShapeLimit =
         "the orders axis cannot be formed on this entry: a packed lane keeps four "
         "orders of one argument in a register, and this call produces exactly one "
@@ -6882,13 +6171,9 @@ int main(int argc, char** argv) {
         "arguments axis"
         " (boys_impl.hpp, BoysFixedNImpl, the assertion at :3209)";
 
-    // What a refused row prints here is the library's own assertion and nothing
-    // else. The book carried six configure probes until the cells they named were
-    // served, each probe compiling one cell's call to say whether the guard was
-    // still there; the probes came out with the refusals they measured, because a
-    // row that measures a cell calls it, so a revision that put one of those
-    // guards back would fail to build this file rather than print a refusal no
-    // probe stands behind any more.
+    // What a refused row prints here is the library's own assertion and nothing else. The six
+    // configure probes that stood here went because these rows call the entries: a revision that put
+    // one of those guards back would fail to build this file rather than print a refusal.
 
     // One combination at one policy. The refused and shape-limit states are
     // decided by `if constexpr` on the entry's own branch condition - the same two
@@ -6909,17 +6194,10 @@ int main(int argc, char** argv) {
             {
             case BatchEntry::kPlane:
             case BatchEntry::kPlaneSorted:
-                // Every combination of this entry is served at this revision, the
-                // uniform partition among them, so the row is a measurement. The
-                // partitioned path is the shipped route's arguments axis and
-                // carries no uniform branch - its region bodies reach
-                // ChebyshevFit<scheme, kUniform>, whose else branch is the NARROW
-                // member - so the entry hands a uniform policy to its per-argument
-                // path instead, the path the orders axis and every route other
-                // than the shipped one already take. That path hands every
-                // argument to BoysAllOrdersImpl, whose uniform branch reads the
-                // grid's own table below the join and the asymptotic form above
-                // it.
+                // Every combination of this entry is served at this revision, the uniform
+                // partition among them. The partitioned path is the shipped route's arguments axis
+                // and carries no uniform branch - its region bodies reach ChebyshevFit<scheme,
+                // kUniform>, whose else branch is NARROW - so the per-argument path takes it.
             {
                 open();
 
@@ -6964,13 +6242,9 @@ int main(int argc, char** argv) {
 
             case BatchEntry::kAtOrders:
             {
-                // No guard reaches this entry at any route, scheme or axis: it
-                // hands every element to BoysAllOrdersImpl at that element's own
-                // top order, and that body reads the grid where the policy names
-                // it. The row is measured rather than excused for exactly that
-                // reason - it is the entry the two beside it take their values
-                // from, so a row of theirs that parted from this one's numbers
-                // would be a partition's fits under another partition's name.
+                // No guard reaches this entry at any route, scheme or axis: it hands every
+                // element to BoysAllOrdersImpl at that element's own top order, and that body
+                // reads the grid where the policy names it. The row is measured, not excused.
                 open();
 
                 std::vector<int> tops(count);
@@ -7017,16 +6291,10 @@ int main(int argc, char** argv) {
                 }
                 else
                 {
-                    // Every remaining combination of this entry is served at this
-                    // revision, the uniform partition among them, so the row is a
-                    // measurement. The Chebyshev branch reaches its
-                    // values through PolicyRegionAValue and PolicyRegionBSeed,
-                    // and those resolve the partition to ChebyshevFit, whose else
-                    // branch is the NARROW member - so the entry hands a uniform
-                    // policy to BoysSingleImpl instead, the same delegation a
-                    // route other than the shipped one already takes. That body
-                    // reads the grid's own table below the join and the region
-                    // tests above it.
+                    // Every remaining combination of this entry is served at this revision, the
+                    // uniform partition among them. The Chebyshev branch resolves the partition to
+                    // ChebyshevFit, whose else branch is NARROW, so the entry hands a uniform policy
+                    // to BoysSingleImpl, which reads the grid below the join.
                     open();
 
                     std::vector<double> values(count);
@@ -7057,12 +6325,10 @@ int main(int argc, char** argv) {
             }
         };
 
-    // The arms this book writes its policies from: the two routes, two schemes
-    // and two packing axes the entries' own branches test. That set is a list
-    // written here, so it is reconciled against the tables that report those
-    // axes in both directions where the book reports - an arm no table names
-    // cannot be swept, and a table member no arm covers would otherwise be left
-    // unswept and unrefused. Either turns the run red.
+    // The arms this book writes its policies from: the two routes, two schemes and two packing
+    // axes the entries' own branches test, reconciled in both directions against the tables that
+    // report those axes. An arm no table names cannot be swept, and a table member no arm covers
+    // would be left unswept; either turns the run red.
     struct EntryArm {
         boys::FitRoute route;
         boys::EvalScheme scheme;
@@ -7208,11 +6474,9 @@ int main(int argc, char** argv) {
                            row.scheme.c_str(),
                            row.axis.c_str());
 
-            // The dispatch: one arm per combination of the three selections the
-            // entries' branches test, flat rather than nested, so that a member
-            // added to any axis is an arm this list does not have - which the
-            // reconciliation above names and fails on - rather than a nested
-            // fall-through that measures it under another member's policy.
+            // The dispatch: one arm per combination of the three selections the entries' branches
+            // test, flat rather than nested, so that a member added to any axis is an arm this list
+            // does not have rather than a nested fall-through measuring it under another's policy.
             switch (a)
             {
             case 0:
@@ -7264,11 +6528,9 @@ int main(int argc, char** argv) {
 
                 break;
             default:
-                // An arm with no case above. The row is not built, and the
-                // arithmetic below counts the rows that exist against the arms
-                // the tables report - so an arm added to the table without its
-                // case turns the run red instead of printing a state the row does
-                // not have.
+                // An arm with no case above: the row is not built, and the arithmetic below
+                // counts the rows that exist against the arms the tables report, so such an arm
+                // turns the run red instead of printing a state the row does not have.
                 continue;
             }
 
@@ -7546,11 +6808,10 @@ int main(int argc, char** argv) {
                    a.worstBound);
     };
 
-    // The half lanes' two sides, totalled across the cells a claim covers: the
-    // domain where the bound is tighter than the value, and the return's state
-    // inside it. A subnormal return inside the bound is allowed - the claim is
-    // about the error, not about the exponent - but a zero return is not, and
-    // neither is a value outside the bound.
+    // The half lanes' two sides, totalled across the cells a claim covers: the domain where the
+    // bound is tighter than the value, and the return's state inside it. A subnormal return inside
+    // the bound is allowed - the claim is about the error, not the exponent - but a zero return is
+    // not, and neither is a value outside the bound.
     struct Domain {
         std::size_t points = 0;
         std::size_t subnormal = 0;
@@ -7702,13 +6963,9 @@ int main(int argc, char** argv) {
             floatWorstRelX));
 
     // ---- the region-A transform lane ---------------------------------------
-    // The lane's own header and the three published documents state its
-    // accuracy claims; these six rows are those claims. Three carry the bound a
-    // caller is held to and three the delivered worst the documents publish.
-    // The two split modes' rows say again what those bounds are - an
-    // idealisation of a 32-bit tensor-core accumulator, measured here in
-    // software - so a green row is not read as a statement about a card. No row
-    // here says anything about speed, and the lane's own preamble claims none.
+    // The six rows are that lane's published accuracy claims: three carry the bound a caller is
+    // held to and three the delivered worst the documents publish. The two split modes' rows say
+    // again that their bounds idealise a 32-bit tensor-core accumulator, measured here in software.
     {
         const Accum& fp64 = Claims()[static_cast<std::size_t>(kTransformFp64)];
         const Accum& tf32 = Claims()[static_cast<std::size_t>(kTransformTf32x3)];
@@ -8026,12 +7283,9 @@ int main(int argc, char** argv) {
         "carries no such lane reports the claim as one it does not carry");
 #endif // BOYS_GATE_FP16
 
-    // The half lane binds where |F_n(x)| exceeds its ceiling, and F_n falls
-    // with x, so region C is entirely past the ceiling for an order exactly
-    // when the branch's left edge is. That is the onset order the paragraph
-    // claims, so the row measures the onset rather than a proxy for it. Every
-    // return at that magnitude is subnormal, and a subnormal half has one
-    // quantum, so each of those orders sits against the same ceiling.
+    // The half lane binds where |F_n(x)| exceeds its ceiling, and F_n falls with x, so region C
+    // is entirely past the ceiling for an order exactly when the branch's left edge is - the onset
+    // order the paragraph claims. Every return at that magnitude is subnormal.
 #ifdef BOYS_GATE_FP16
     const double subnormalCeiling =
         kBoundHalfBase + 0.5 * UlpOf(0.0, kF16MantissaBits, kF16MinNormalExp);
@@ -8139,13 +7393,9 @@ int main(int argc, char** argv) {
         "reports the claim as one it does not carry");
 #endif // BOYS_GATE_FP16
 
-    // Withdrawn: "a per-order power-of-two scale carries order 3 to x ~ 361,
-    // order 4 to 129, order 8 to 30". The reaches themselves rest on the
-    // packed-half prototype, which is not in this tree; what is in this tree is
-    // the ceiling any such scale runs into, which LC.half.no_scaling_past_38
-    // and LC.half.range_from_order3 measure from the reference. A row whose
-    // evidence is absent is exactly the defect this gate exists to find, so the
-    // claim goes rather than staying visible but unverified.
+    // Withdrawn: "a per-order power-of-two scale carries order 3 to x ~ 361, order 4 to 129, order
+    // 8 to 30". The reaches rest on a prototype that is not in this tree; the ceiling any such scale
+    // runs into is what LC.half.no_scaling_past_38 and LC.half.range_from_order3 measure instead.
 
     add("LC.half.no_scaling_past_38",
         "beyond about x ~ 35-38 no scaling reaches order 8 at all",
@@ -8157,15 +7407,9 @@ int main(int argc, char** argv) {
             refSpanNormalX[8],
             refSpanSubnormalX[8]));
 
-    // Withdrawn: "packed half (two per register, every operation correctly
-    // rounded to half): 2.39x its budget at order 0 failing on 25.1% of the
-    // branch, 2.35x at order 1 (5.7%)". Those numbers are the prototype's, and
-    // the prototype is not in this tree. The technique now is: LC.packed.bound
-    // below measures the native packed lane that does ship, against its own
-    // published ceiling, and the store-half lanes it replaces are the rows
-    // above. The prototype's number and this lane's number are not the same
-    // measurement and the row says so rather than substituting one for the
-    // other.
+    // Withdrawn: "packed half ... 2.39x its budget at order 0 failing on 25.1% of the branch,
+    // 2.35x at order 1 (5.7%)" - the prototype's numbers, and the prototype is not in this tree.
+    // LC.packed.bound below measures the native packed lane that does ship, against its own ceiling.
 
     add("LC.packed.rescale_exact",
         "a per-order power-of-two rescale does not repair the packed lane because the rescale "
@@ -8268,12 +7512,9 @@ int main(int argc, char** argv) {
             driftScalarOutRefZero));
 #else
         Verdict::NotCarried,
-        // The seam is the reason here and not the target: with it closed this
-        // build has neither the 8-wide kernels nor the certified scalar half
-        // entry they are compared against, on any target, so the row is not
-        // carried whatever the tier is. The tier is printed anyway, because
-        // with the seam open it is the thing that decides whether the row is
-        // judged or scoped.
+        // The seam is the reason here and not the target: with it closed this build has neither
+        // the 8-wide kernels nor the certified scalar half entry they are compared against, on any
+        // target. The tier is printed anyway, because with the seam open it decides the row.
         Fmt("this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O "
             "region kernels nor the certified scalar half entry they are compared against: the "
             "claim has no subject in this build, and no cell of it was measured. The reference "
@@ -8351,13 +7592,10 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_FP16
     }
 
-    // The native packed half lane, in the shape its own contract uses: one
-    // domain, one bound, one verdict each. Its suite already measures all three
-    // against the certified double lane and its own sweep; what these rows add
-    // is the same three claims against this gate's committed mpmath reference,
-    // on this gate's grid, over the region-C arguments the grid carries in
-    // binary16 - and the packing claim, which no accuracy oracle can see, is
-    // refuted rather than confirmed: see the distribution numbers in its row.
+    // The native packed half lane, in the shape its own contract uses: one domain, one bound, one
+    // verdict each, measured against this gate's committed mpmath reference over the region-C
+    // arguments the grid carries in binary16 - and the packing claim, which no accuracy oracle can
+    // see, refuted rather than confirmed.
     {
         const Accum& packedAcc = Claims()[static_cast<std::size_t>(kNativeHalf2)];
         const Accum& batchAcc = Claims()[static_cast<std::size_t>(kNativeHalfBatch)];
@@ -8507,13 +7745,10 @@ int main(int argc, char** argv) {
     }
 
     {
-        // Region B's amplification at every supported order, in both readings.
-        // The sentence in the tree writes it as prod(j+1/2)/x0^l, whose value
-        // at l = 32 is 65 by this measurement, not one: the only reading under
-        // which "<= A_B(0) = 1" is even nearly true is the gain normalised by
-        // the ladder - prod(2j-1)/(2 x0)^l - which the band edge x0 is chosen
-        // to make exactly 1 at l = 32. That is the reading the independent
-        // oracle used, and it is 1.846e-17 above one with the shipped double.
+        // Region B's amplification at every supported order, in both readings: the tree's sentence
+        // writes prod(j+1/2)/x0^l, which measures 65 at l = 32 and not one. The reading under which
+        // "<= A_B(0) = 1" is even nearly true is the ladder-normalised prod(2j-1)/(2 x0)^l, which x0
+        // makes exactly 1 at l = 32 - the independent oracle's reading, 1.846e-17 above one here.
         double amplLiteralTop = 0.0;
         double amplNormExcess = 0.0;
         int amplNormMaxAt = -1;
@@ -8609,11 +7844,9 @@ int main(int argc, char** argv) {
     }
 
     {
-        // What the sweep's arguments cover, per format, and the rule that keeps
-        // a lane from outgrowing the grid. The rule is the generator's, stated
-        // in grid(): every format narrower than binary64 is carried to its own
-        // largest finite value, with every representable value in its last band
-        // when the format's spacing leaves one wider than a grid step.
+        // What the sweep's arguments cover, per format, and the generator's rule that keeps a lane
+        // from outgrowing the grid: every format narrower than binary64 is carried to its own largest
+        // finite value, with every representable value in its last band where the spacing leaves one.
         std::size_t halfFinite = 0;
         std::size_t regionCArgs = 0;
         double halfArgMax = 0.0;
@@ -8681,15 +7914,10 @@ int main(int argc, char** argv) {
             "argument stops being reached");
     }
 
-    // Every division form the axis carries, at region C's own budget. This was
-    // a pin - the library's own value on region C had to be this spelling's, bit
-    // for bit - and it cannot be one any more: the recurrence's division is a
-    // policy field, so the library has three values on this branch and not one.
-    // What a consumer relies on is not that the library computes what this file
-    // spells but that every form it offers is inside the branch's bound, and
-    // that is what is measured here. A form that leaves the bound fails the row;
-    // a form that agrees with the library by construction no longer can, which
-    // is the difference between a measurement and a transcription.
+    // Every division form the axis carries, at region C's own budget. This was a pin - the
+    // library's own value on region C had to be this spelling's, bit for bit - and it cannot be one
+    // any more: the recurrence's division is a policy field. What a consumer relies on is that
+    // every form the library offers is inside the branch's bound, which is what is measured here.
     std::size_t formChecked = 0;
     std::size_t formOutside = 0;
     double formWorst = 0.0;
@@ -8841,11 +8069,9 @@ int main(int argc, char** argv) {
         "tree command, run by the operator, not by this binary: "
         "`ctest --test-dir build --output-on-failure`");
 
-    // Withdrawn: "orders 0 through 3 are 95.2% of the calls measured in a
-    // production integral engine". The counts are not in this tree, and a
-    // distribution measured elsewhere describes the interface that produced it
-    // rather than this library's argument range; a row resting on it would be
-    // unverifiable here by construction.
+    // Withdrawn: "orders 0 through 3 are 95.2% of the calls measured in a production integral
+    // engine". The counts are not in this tree, and a distribution measured elsewhere describes the
+    // interface that produced it rather than this library's argument range.
 
     // ---- the verdict table --------------------------------------------------
     std::printf("\ndocumented claims, each with one verdict:\n");
@@ -8968,12 +8194,9 @@ int main(int argc, char** argv) {
                 absent,
                 notCarried);
 
-    // The rows this build does not carry, named in full with the reason they
-    // are not carried. A reader of this build has to be able to see which rows
-    // of the published book it does not have, and why - the alternative, a row
-    // that vanishes with the seam, is how a claim stops being checked without
-    // anyone deciding to stop checking it. Each of these rows prints the same
-    // reason in place of a measurement, and none of them is a pass.
+    // The rows this build does not carry, named in full with the reason: a row that vanishes with
+    // the seam is how a claim stops being checked without anyone deciding to stop. Each prints the
+    // same reason in place of a measurement, and none of them is a pass.
     if (notCarried > 0)
     {
         std::printf("          %d of those rows are not carried by this build: the entries "
@@ -8998,12 +8221,9 @@ int main(int argc, char** argv) {
         std::printf("\n");
     }
 
-    // The certified total, stated apart from the book's. A row whose arithmetic
-    // ran on this machine is certified by its measurement; a row resting on a
-    // software model of an accumulator is not, however green it is, because the
-    // model is not the hardware the bound would be relied on against. The book
-    // line above counts both, and this line is the number a reader who wants
-    // only what hardware confirmed should quote.
+    // The certified total, stated apart from the book's: a row measured on this machine is
+    // certified by that measurement, a row resting on a software model of an accumulator is not,
+    // however green, because the model is not the hardware the bound would be relied on against.
     if (modelDerived > 0)
     {
         const int certified = verified + metOverDomain - modelDerived;
@@ -9015,11 +8235,9 @@ int main(int argc, char** argv) {
                     modelDerived);
     }
 
-    // The count in the RESULT line is only as wide as the cells that can
-    // discriminate, so the qualification prints inside the same line rather
-    // than beside it: a reader who quotes the verdict gets the fraction the
-    // verdict rests on, and a reader who quotes only the first line has
-    // dropped something the gate did not drop.
+    // The count in the RESULT line is only as wide as the cells that can discriminate, so the
+    // qualification prints inside the same line rather than beside it: a reader who quotes the
+    // verdict gets the fraction the verdict rests on.
     if (gateCells > 0)
     {
         std::printf("          carried by the %zu of %zu comparison cells (%.1f%%) that can "
@@ -9033,14 +8251,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the route verdict table --------------------------------------------
-    // The routes get their own rows and their own count. The lane count is
-    // quoted by documents outside this file, so folding route rows into it
-    // would move a number those documents rest on: a route measured apart is
-    // counted apart.
-    // A book that is not met does not end the run: the books after it are
-    // measured and printed too, and the exit status is taken once at the end. A
-    // gate that stopped at its first failure would hide every number the later
-    // books carry, which is the opposite of what a report is for.
+    // The routes get their own rows and their own count: the lane count is quoted by documents
+    // outside this file, so a route measured apart is counted apart. A book that is not met does
+    // not end the run - the books after it are printed too and the exit status is taken at the end.
     bool failed = false;
 
     std::vector<DocClaim> routeBook;
@@ -9437,14 +8650,9 @@ int main(int argc, char** argv) {
         int rAbsent = 0;
         int rNotCarried = 0;
 
-        // The carriage table first: the rows below are the routes' contracts,
-        // and whether an entry reads the route it is handed is the question
-        // those contracts rest on, so it is printed before them rather than
-        // after. The arguments are the ones a route's selector takes over; the
-        // count beside each entry is how many of them the entry answered
-        // differently once the route was named. Its tallies are taken where the
-        // table is filled, so the claim below reads a number rather than a
-        // hope that the loop above ran first.
+        // The carriage table first: the rows below are the routes' contracts, and whether an entry
+        // reads the route it is handed is the question those contracts rest on. The count beside
+        // each entry is how many served arguments it answered differently once the route was named.
         std::printf("\nthe carriage of a named route by each entry that takes a policy: over the "
                     "arguments\nits selector takes over, how many of them the entry answers "
                     "differently once the route is\nnamed. The default route is read the same "
@@ -9473,12 +8681,9 @@ int main(int argc, char** argv) {
                     routeCarriageNamed,
                     routeCarriageControls);
 
-        // The entries that do not carry the route refuse the policy that names
-        // it, and a compile-time refusal is measured by compiling the call
-        // rather than by making it - the configure probe does exactly that, and
-        // this is what it found. Same shape as the packed lane's statement: an
-        // option the library does not serve is named where a consumer meets it
-        // instead of being answered with something else.
+        // The entries that do not carry the route refuse the policy that names it, and a
+        // compile-time refusal is measured by compiling the call rather than by making it: the
+        // configure probe does exactly that, and this is what it found.
 #ifdef BOYS_GATE_BATCH_REFUSES_ROUTE
         std::printf("\n  and, measured by compiling the call in a configure probe rather than "
                     "by making\n  it, these entries refuse the policy naming the rational route:\n");
@@ -9539,10 +8744,8 @@ int main(int argc, char** argv) {
         }
 
         // ---- what this book does not sweep, printed with the number ---------
-        // The route book's own boundary, stated the way the scheme book states
-        // its own: a site that reads a route and is not one of the rows above
-        // is named here, so the count below is read with what it leaves out
-        // visible rather than assumed empty.
+        // A site that reads a route and is not one of the rows above is named here, so the count
+        // below is read with what it leaves out visible rather than assumed empty.
         struct RouteUncoveredSite {
             const char* site;
             const char* why;
@@ -9606,16 +8809,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The verdict is strict over the claims this build carries: a claim that is
-    // carried and not met at this revision - whether it was measured exceeded,
-    // measured vacuous only, or rests on evidence this revision cannot re-run -
-    // leaves the gate red and names itself below. A claim whose subject this
-    // build does not carry is named above with its reason and is not counted
-    // here: there is no measurement to fail with, and reddening a suite over a
-    // row a consumer's build never had is not a verdict about anything. The
-    // rows the build does not carry are still printed and still counted in the
-    // RESULT line, so nothing leaves this report silently. --strict is accepted
-    // for callers that pass it and is the same verdict.
+    // Strict over the claims this build carries: a carried claim that is not met at this revision
+    // - measured exceeded, measured vacuous only, or resting on evidence this revision cannot
+    // re-run - leaves the gate red and names itself below. A claim whose subject the build does not
+    // carry is named above with its reason and still counted in the RESULT line.
     if (verified + metOverDomain + notCarried < static_cast<int>(book.size()))
     {
         std::printf("  NOT MET at this revision:");
@@ -9640,14 +8837,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the evaluation-scheme rows, counted apart --------------------------
-    // Their own block, their own cell count and their own RESULT line, because
-    // the ones above are the existing book's and a new evaluation option must
-    // not move them. The rows are judged exactly as the book's are: a row whose
-    // slot carries a failure, or whose every counted cell is one where the
-    // bound cannot be reached, is not met, and a not-met row leaves the run red
-    // below. The routes are printed because the bound each row is judged
-    // against is the one this build's arithmetic delivers, which is measured
-    // rather than chosen.
+    // Their own block, their own cell count and their own RESULT line, because the rows above are
+    // the existing book's and a new evaluation option must not move them. Judged exactly as that
+    // book's rows are: a failure or a wholly bound-covered row is not met and leaves the run red.
     boys::backend::MulAddRoute routeInForce = boys::backend::MulAddRoute::kFused;
 
     for (const boys::backend::BackendInfo& b : boys::backend::BoysBackends())
@@ -9750,19 +8942,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the carriage table ------------------------------------------------
-    // The accuracy column above cannot see a dropped argument. Both schemes'
-    // stored fits hold the same bar, so an entry that evaluates the wrong one
-    // moves a value by a last-place digit and stays inside its bound; the row
-    // would pass at either scheme if the scheme never reached it. What the
-    // table below measures instead is whether the two readings are the same
-    // reading, region by region, and it is judged with the rows above.
-    //
-    // The requirement on a row is read off the per-argument entry rather than
-    // written down here: where that entry's two schemes differ over a region,
-    // every other row must differ there too, and where it does not differ no
-    // row is held to anything. A region the reference says nothing about is a
-    // region no scheme reaches through this entry at all - region C, whose
-    // asymptotic form has no coefficient table to select.
+    // The accuracy column cannot see a dropped argument: both schemes' stored fits hold the same
+    // bar, so an entry that evaluates the wrong one moves a value by a last-place digit and stays
+    // inside its bound. Measured instead: whether the two readings are one reading, region by region.
     std::printf("\n  the carriage of every row above by the scheme it names: each row is read "
                 "at both\n  schemes in the same pass, and the cells where the two readings "
                 "differ are counted per\n  region. A region where the per-argument entry's two "
@@ -9886,13 +9068,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the packed region-A lane's scope, stated and held to the values ----
-    // A lane a caller does not get is not an accuracy fact and no bound can
-    // carry it, so the library states its scope (BoysPackedLaneServes) and the
-    // rows below hold that statement to what the values do. A row here is met
-    // when the entry reached the lane exactly where the statement says it does,
-    // which is a claim either side of the boundary can fail: a lane built later
-    // for another scheme fails it until the statement moves with it, and a lane
-    // that stopped being reached under the shipped scheme fails it as well.
+    // A lane a caller does not get is not an accuracy fact and no bound can carry it, so the
+    // library states its scope (BoysPackedLaneServes) and these rows hold that statement to what
+    // the values do - a claim either side of the boundary can fail.
     std::printf("\n  the packed region-A lane, per scheme: whether the many-argument entry's "
                 "low-order\n  region-A runs are answered by the lane, read as a difference from "
                 "the per-argument\n  entry's own body. The lane holds one stored table and one "
@@ -9934,14 +9112,9 @@ int main(int argc, char** argv) {
     std::printf("  %s\n", std::string(176, '-').c_str());
 
     // ---- what this book does not sweep, printed with the number ------------
-    // A count is a claim about coverage, and a reader cannot check one without
-    // being told what the count leaves out. Every site that reads an evaluation
-    // scheme and is not one of the rows above is named here, with what it reads
-    // and why no sweep reaches it, so the SCHEME RESULT line below is read with
-    // its boundary visible rather than with the boundary assumed empty. A site
-    // that is not swept and is not named here would be the failure this list
-    // exists to prevent, so the list is printed before the number rather than
-    // after it.
+    // A count is a claim about coverage, and a reader cannot check one without being told what it
+    // leaves out: every site that reads an evaluation scheme and is not a row above is named here
+    // with what it reads, so the SCHEME RESULT line is read with its boundary visible.
     struct UncoveredSite {
         const char* site;
         const char* reads;
@@ -10022,35 +9195,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the option-space check --------------------------------------------
-    // Every option this library exposes in its own enumerations, asked the three
-    // questions an option has to answer before it is delivered:
-    //
-    //   supported   it runs: a call naming it returns values, over a domain
-    //   bounded     a row here measures it against this gate's committed
-    //               reference, over a named domain, and it holds
-    //   reachable   a public entry can select it, and naming it changes what
-    //               that entry answers with
-    //
-    // A member that fails any of the three is named below with the ones it
-    // lacks, and the check fails. It is a failure and not a note on purpose: an
-    // option that is advertised and not delivered, or implemented and
-    // unreachable, or reachable and uncertified, must not be able to pass by
-    // being absent from a table somebody maintained by hand.
-    //
-    // The members are read off the enumerations themselves - BoysEvalSchemes(),
-    // BoysFitRoutes(), BoysEvalSchemeFits(), BoysBackends(), and the granularity
-    // enumerator walked to its last member - so a member added to any of them is
-    // checked by
-    // this block without the block being edited. The one list that is written
-    // here by hand is the refusal record below, and it is labelled as such and
-    // backed by a configure probe rather than by a sentence.
-    //
-    // A limit stands in for the three only where it is stated by the library at
-    // the call site and named here with its backing. None of the ones this
-    // revision carries is an impossibility - each is a table or a body that has
-    // not been built - so each is an outstanding work item and the block says
-    // so, rather than being filed as a refusal and forgotten. "Not built yet"
-    // is never impossibility and never silences this check.
+    // Every option the library's own enumerations report, asked whether it is supported (it runs),
+    // bounded (measured here against the committed reference) and reachable (a public entry selects
+    // it, and naming it changes what that entry answers with). A member failing any fails the check.
     struct OptionMember {
         const char* kind = "";
         std::string member;
@@ -10214,15 +9361,9 @@ int main(int argc, char** argv) {
         optionSpace.push_back(std::move(m));
     }
 
-    // The granularity axis, walked from its enumerator: the library reports no
-    // table of this axis, so its members are the enumerator's own, and one added
-    // to it is counted here
-    // without this block being edited. The cells are the granularity book's,
-    // read from its own accumulators and not from the lane books', and the
-    // reachability figure is that book's carriage count - the cells where
-    // naming this member changes a value over naming the other. That is the
-    // question the axis is a choice about: a member no cell can tell apart from
-    // the other is a member no entry reaches, whatever its accuracy says.
+    // The granularity axis, walked from its enumerator because the library reports no table of
+    // this axis, so a member added to it is counted here without this block being edited. The cells
+    // are the granularity book's own, and the reachability figure is that book's carriage count.
     for (int g = 0; g <= static_cast<int>(boys::FitGranularity::kNarrow); ++g)
     {
         const boys::FitGranularity gran = static_cast<boys::FitGranularity>(g);
@@ -10256,20 +9397,10 @@ int main(int argc, char** argv) {
         optionSpace.push_back(std::move(o));
     }
 
-    // The refusal record: the combinations this build refuses, and what backs
-    // each. A refusal is admissible in place of the three only where the
-    // library refuses the call at compile time - the combination cannot be
-    // answered rather than has not been built - and each entry here is backed
-    // by a configure probe that compiles exactly the refused call, so the
-    // refusal is a result rather than a sentence. This is the one list in this
-    // block written by hand; it is labelled as such and it is checked against
-    // the probes, not trusted.
-    //
-    // `unbuilt` is what separates the two kinds the print below names: a body
-    // or a table this library has not written, which is owed work and counts
-    // with the outstanding combinations, and a limit of the call itself, which
-    // no revision of the entry can lift. A refusal records the first kind only
-    // where the second is not available - the count of the first is the debt.
+    // The refusal record: the combinations this build refuses, and what backs each. A refusal
+    // stands in for the three questions only where the library refuses the call at compile time,
+    // and each entry is backed by a configure probe that compiles exactly the refused call.
+    // `unbuilt` separates a body nobody has written - owed work - from a limit no revision lifts.
     struct Refusal {
         const char* member;
         const char* why;
@@ -10277,15 +9408,10 @@ int main(int argc, char** argv) {
         bool unbuilt = false;
     };
 
-    // The other direction, and the one this block must not be quiet about: a
-    // refusal whose probe COMPILED the call is a limit this revision does not
-    // have. That is not a defect in itself - a capability landing is the point
-    // - but a capability that lands while nothing measures it is a silent hole,
-    // and silence is the thing this block exists to prevent. So a lifted
-    // refusal fails here and names the book that has to carry the row before
-    // the gate can go green again. The count is declared before the refusals it
-    // is incremented beside, because each probe that lifts a refusal increments
-    // it where that refusal would have been pushed.
+    // The other direction, and the one this block must not be quiet about: a refusal whose probe
+    // COMPILED the call is a limit this revision does not have. That is not a defect in itself -
+    // a capability landing is the point - but one that lands while nothing measures it is a silent
+    // hole, so a lifted refusal fails here and names the book that has to carry the row.
     std::size_t liftedRefusals = 0;
 
     std::vector<Refusal> refusals;
@@ -10307,11 +9433,9 @@ int main(int argc, char** argv) {
                         true});
 #endif
 #ifdef BOYS_GATE_F32_SINGLE_REFUSES_ORDERS
-    // A one-order entry has one order, so it has nothing to pack and refuses the
-    // axis for that reason alone. This is a property of the call and not of the
-    // axis - the same shape limit BoysFixedN carries below - so it is booked as
-    // one, and the debt count is left to the rows that name a table or a body
-    // nobody has built.
+    // A one-order entry has one order, so it has nothing to pack and refuses the axis for that
+    // reason alone: a property of the call and not of the axis, so it is booked as a shape limit
+    // and the debt count is left to the rows naming a table or body nobody has built.
     refusals.push_back({"orders axis on the one-order single-precision entry",
                         "this entry produces one order at one argument, so there are not four "
                         "orders on this shape to fill a vector lane with; the probe compiles the "
@@ -10347,12 +9471,9 @@ int main(int argc, char** argv) {
                         true,
                         true});
 #else
-    // The axis is implemented and measured. The refusal above is printed only
-    // where the probe finds the call does not build; here the probe compiled
-    // it, and the row it owes is carried by the float book under "all, orders
-    // axis", measured against the committed reference grid at the lane's own
-    // bar. Neither direction is silent: the probe decides which of the two
-    // lines prints.
+    // The axis is implemented and measured: the probe compiled the call, and the row it owes is
+    // carried by the float book under "all, orders axis", measured against the committed reference
+    // grid at the lane's own bar. Neither direction is silent.
     std::printf("  CARRIED: the single-precision engines compile a policy naming the orders "
                 "packing axis,\n  and the float book above carries the row it owes at the lane's "
                 "own bar, measured\n  against the committed reference grid beside the per-order "
@@ -10393,12 +9514,9 @@ int main(int argc, char** argv) {
                     o.note.c_str());
     }
 
-    // The members of the granularity axis this book's own slots do not hold. The
-    // book above sweeps the shipped and narrow partitions; the uniform partition
-    // is not one of those slots and is named here rather than left out of the
-    // list above in silence. Both of its members are measured in the cross
-    // below, which enumerates the partition from BoysFitGranularities and counts
-    // every cell of it this build refuses.
+    // The members of the granularity axis this book's own slots do not hold: the uniform partition
+    // is named here rather than left out of the list above in silence. Both of its members are
+    // measured in the cross below, which enumerates the partition from BoysFitGranularities.
     for (const boys::FitGranularityInfo& row : boys::BoysFitGranularities())
     {
         if (static_cast<std::size_t>(row.granularity) < kGranMembers)
@@ -10436,13 +9554,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The other direction, and the one this block must not be quiet about: a
-    // refusal whose probe COMPILED the call is a limit this revision does not
-    // have. That is not a defect in itself - a capability landing is the point
-    // - but a capability that lands while nothing measures it is a silent hole,
-    // and silence is the thing this block exists to prevent. So a lifted
-    // refusal fails here and names the book that has to carry the row before
-    // the gate can go green again.
+    // A refusal whose probe COMPILED the call is a limit this revision does not have; a capability
+    // that lands while nothing measures it is a silent hole, so a lifted refusal fails here and
+    // names the book that has to carry the row before the gate can go green again.
 #ifndef BOYS_GATE_BATCH_REFUSES_ROUTE
     // The refusal is gone: the entries compile the call and the route-carriage
     // rows below measure what they answer with it. Nothing is silent - the
@@ -10466,29 +9580,18 @@ int main(int argc, char** argv) {
                 "A revision\n  that reaches this line has changed what the entry is\n");
 #endif
 #ifndef BOYS_GATE_F32_REFUSES_ORDERS
-    // The orders axis was a limit on the single-precision engines until this
-    // revision, and it is not one any more: the call compiles, runs, and the row
-    // that landing owes is measured rather than promised. The float book's "all,
-    // orders axis" claim above is that row - the same cells as the per-order row,
-    // the same reference grid and the same bound, through the entry with the axis
-    // named - and it is judged inside the README.float lane claim, so a revision
-    // that carried the call without the row would leave that lane row evidence
-    // absent and be red there. The line here names where the row is, the way the
-    // retired orders-axis limits above it do; the tripwire that stood here was
-    // for the revision that had no such row.
+    // The orders axis was a limit on the single-precision engines until this revision, and it is
+    // not one any more: the call compiles and runs, and the row that landing owes is measured rather
+    // than promised. The float book's "all, orders axis" claim above is that row.
     std::printf("  CARRIED: the single-precision engines accept an orders-axis policy, and the "
                 "float\n  book above carries the row it owes at the lane's own bar, measured "
                 "against the\n  committed reference grid beside the per-order entry's row over "
                 "the same cells. The\n  probe is the reading that says so; a revision that "
                 "dropped the axis would print the\n  refusal instead\n");
 #endif
-    // The orders axis carried two limits until this revision, and both are
-    // gone: it answers a route other than the shipped one, and it answers the
-    // narrow partition of region A. Neither landing is silent - the packing-axis
-    // rows above measure both routes and both partitions, through both entries
-    // that carry the axis, each against the figure that combination documents -
-    // so the lines here name where those rows are rather than what is missing,
-    // the way the route-carriage line above does.
+    // The orders axis carried two limits until this revision, and both are gone: it answers a route
+    // other than the shipped one, and the narrow partition of region A. Neither landing is silent -
+    // the packing-axis rows above measure both routes and both partitions, through both entries.
     std::printf("  CARRIED: the orders axis reads a route other than the shipped one: the\n"
                 "  rational route's region-A fits cover the same per-order intervals as the\n"
                 "  shipped piece table, and the packing-axis rows above measure them on both\n"
@@ -10537,130 +9640,10 @@ int main(int argc, char** argv) {
         failed = true;
     }
 
-    // ---- the combinations: the whole option space, crossed and counted ------
-    //
-    // A consumer chooses one combination out of this library's space and reads
-    // the bound that combination delivers. The space has five axes, and every
-    // member of every one of them is read off a table the library itself
-    // publishes rather than off a list written here:
-    //
-    //   precision   the lanes BoysLaneContracts() reports - the double lane,
-    //               the single-precision lane, the half-precision lane and the
-    //               device lane - so a lane added to the library with a row of
-    //               its own is a member here without an edit
-    //   route       the distinct routes that lane's own report names,
-    //               BoysFitRoutes() for the double and device lanes and
-    //               BoysFitRoutesF32() for the single and half ones
-    //   scheme      BoysEvalSchemes()
-    //   partition   BoysFitGranularities()
-    //   axis        BoysPackAxes()
-    //
-    // The division form is a sixth axis and is not crossed here, and both
-    // halves of that sentence are the point. It is an axis: a policy field, an
-    // arithmetic the library carries three of, an accessor of its own, and the
-    // one axis the option probe crosses that this block did not - so the three
-    // forms were measured for speed by the probe and against no published bound
-    // by anything, which is a cell offered and never checked.
-    //
-    // It is not crossed *here* because nothing about a combination's state
-    // depends on it. DivisionFormInfo carries no coverage fields where
-    // PackAxisInfo and FitGranularityInfo carry them, and its own comment says
-    // why: "there is no cell this axis is refused on". Multiplying this block's
-    // count by three would therefore report three times the library's
-    // outstanding work for one unbuilt table, which is the arithmetic a reader
-    // is entitled to trust.
-    //
-    // What it multiplies instead is the measurement. Every cell below on a lane
-    // whose entries carry the axis is evaluated at every form the accessor
-    // answers, each form is judged against the figure its own lane publishes for
-    // that form, and the delivered figure the row prints is the worst of the
-    // forms it was read at. A form that leaves its figure fails the row it
-    // belongs to. A lane whose plain reciprocal rounds once
-    // more per step publishes the term that costs apart from its base, and this
-    // block reads it: the alternative is a lane judged against a figure it never
-    // claimed for that arithmetic, which fails a correct implementation. Where the forms deliver one value the row says that
-    // too, in the counts printed after the cross, so a lane that runs one
-    // arithmetic is reported as running one rather than credited with three.
-    //
-    // Every combination is exactly one of three states, and there is no fourth:
-    //
-    //   certified and published    the library carries it, and this row measured
-    //                              it against the committed reference over the
-    //                              whole grid, at the figure the lane publishes
-    //                              for that shape. The delivered figure is
-    //                              printed beside the bound it is judged
-    //                              against, so the number a consumer reads is
-    //                              this number.
-    //   refused, and owed          the library does not carry the call, and this
-    //                              row prints the library's own reason. Citing
-    //                              that reason as the reason no bound is owed
-    //                              would be circular: none of these is an
-    //                              impossibility, each is a table or a body
-    //                              nobody has built, so each is counted as a
-    //                              debt with the work item on the row.
-    //   not runnable on this host  the library carries it and this run cannot
-    //                              execute it: a build without the CUDA lane has
-    //                              none of the device lanes' entries in its
-    //                              binary, a build that has them needs a device
-    //                              to run them on, the half device lane's
-    //                              entries need this build's half seam open, and
-    //                              a device that refuses an allocation measures
-    //                              nothing on the lane whose arm asked for it. A
-    //                              fact about the build, the machine and this
-    //                              gate rather than about the lane - the row
-    //                              carries which of them it is - and it is
-    //                              counted apart rather than failing.
-    //
-    // The arithmetic the block prints is the thing that makes a missing cell
-    // visible rather than a smaller number nobody notices:
-    //
-    //     total = measured + refused + not runnable on this host
-    //
-    // with `total` also computed a second way, as the product of the axis sizes
-    // read from those same tables. A cell dropped from either side breaks the
-    // equality and turns the gate red. The failure this exists to close is a
-    // combination the library offers and no measured row covers, and that
-    // failure is silent in every book that is smaller than the space.
-    //
-    // The condition this block carries is the owner's: every *runnable*
-    // combination has its bound measured and published. So the failure here is
-    // an offered, runnable combination whose bound is unmet or covered by no
-    // cell - a contract violation. Failing on a combination the library does
-    // not offer would make a green pull request red for work that is not owed.
-    //
-    // A loose true bound is honest and a tight false one is the defect, so a
-    // runnable combination delivering worse than it promises is reported as a
-    // defect with its worst cell, not as a category of its own.
-    //
-    // Each row is judged at the figure the lane publishes for that shape, read
-    // from BoysLaneContracts() - m x 5.5e-14 for the double lane, m x 1.5e-7 for
-    // the single-precision one, and m x 1.5e-7 for the half-precision one, whose
-    // lanes run that arithmetic and add the half-ULP term their store carries -
-    // which is the same table the accessor below answers from and the same
-    // figures README.md publishes, so a figure a consumer reads off this table is
-    // the figure the library hands them.
-    //
-    // The half-precision lane's bound is a claim only where the value exceeds
-    // it: a return whose magnitude is at or below the published figure plus half
-    // a representable digit of that return is the format's floor and not the
-    // arithmetic's, and this block counts those cells rather than passing them.
-    // The count is printed on the row. The clause rows below judge at the tighter
-    // base the fits are cut for, m x 1e-7, over the wider domain that base
-    // carves - a test stricter than the published claim, never a looser one.
-    //
-    // The *entries* are a further axis and are not crossed here, which is a
-    // boundary and not a claim of coverage: they are measured by the scheme
-    // book above (every entry at both schemes), by the packing book (both
-    // entries the axis is carried on) and by the granularity book (each entry
-    // the partition is read through). The axes crossed here are reached through
-    // one entry per lane - BoysAllOrders for the double and device lanes,
-    // BoysAllOrdersF32 for the single and half ones - and a shape that entry
-    // does not have is not a member of this cross.
-    // The forms the sweep below writes out as policies. The instantiations are
-    // compile-time and the accessor's answer is not, so the list is written once
-    // and reconciled against the accessor where the cross reports: a fourth form
-    // added to BoysDivisionForms() turns that row red instead of leaving the
-    // axis swept at three while the library offers four.
+    // The combinations: the whole option space, crossed and counted. Five axes - precision
+    // (BoysLaneContracts), route (BoysFitRoutes / BoysFitRoutesF32), scheme, partition and packing
+    // axis - every member read off a table the library publishes. Each combination is certified and
+    // published, refused and owed (debt, not impossibility), or not runnable on this host.
     constexpr std::size_t kCombForms = 3;
 
     // The plain reciprocal as a column index, for the places that read the bar
@@ -10679,25 +9662,18 @@ int main(int argc, char** argv) {
         std::size_t over = 0;
         double delivered = 0.0;
         double bound = 0.0;
-        // The widest bar the row was judged against, which is the figure it is
-        // certified under. It differs from `bound` exactly where a lane publishes
-        // the plain reciprocal's own figure beside its base, and the printed row
-        // shows this one so that a delivered figure above the base cannot read as
-        // a contradiction.
+        // The widest bar the row was judged against, which is the figure it is certified under: it
+        // differs from `bound` exactly where a lane publishes the plain reciprocal's own figure
+        // beside its base, and it is printed so a figure above the base cannot read as a defect.
         double judgedBound = 0.0;
         double accessorBound = 0.0;
-        // The same answer for the form this build's unnamed calls divide in,
-        // which is the form the tolerance query and BoysAccuracyDelivered read:
-        // neither names one, so both read the build's default. The query's
-        // `bound` is this figure and not `accessorBound` wherever the two forms
-        // publish different figures for the lane, and the check below holds the
-        // query to the answer it is the same question as.
+        // The same answer for the form this build's unnamed calls divide in, which is what the
+        // tolerance query and BoysAccuracyDelivered read: neither names a form, so both read the
+        // build's default, and the query's `bound` is this figure, not `accessorBound`.
         double accessorFormBound = 0.0;
-        // The accessor's figure for the plain reciprocal, and the bar the arms
-        // judged that form by. A row that publishes a term for that form
-        // publishes a second figure, and these two are what say the figure the
-        // arms hold the form to is the one a consumer reads from the accessor
-        // at that form.
+        // The accessor's figure for the plain reciprocal, and the bar the arms judged that form
+        // by: a row that publishes a term for that form publishes a second figure, and these two
+        // say the figure the arms held the form to is the one a consumer reads from the accessor.
         double accessorPlainBound = 0.0;
         double plainBar = 0.0;
         double accessorDelivered = 0.0;
@@ -10720,12 +9696,9 @@ int main(int argc, char** argv) {
         double formWorstX[kCombForms] = {};
     };
 
-    // The lanes, in the order BoysLaneContracts() reports them. Four of them are the device's -
-    // kFp64Device, kFp32Device, kFp16Device and kBf16Device (boys/boys.hpp, Precision) - and the
-    // arms below launch all four: a device cell is counted apart where nothing here could run it,
-    // which off a CUDA build is every cell of all four lanes. The half lane's two stores are two
-    // lanes here for the reason they are two classes in the seam: an arm of the fp16 lane cannot
-    // measure a cell of the bf16 one, because the entry it launches returns the other format.
+    // The lanes, in the order BoysLaneContracts() reports them: four of them are the device's, and
+    // the arms below launch all four. The half lane's two stores are two lanes here for the reason
+    // they are two classes in the seam - an fp16 arm cannot measure a bf16 cell.
     const std::span<const boys::LaneContractInfo> combLaneRows = boys::BoysLaneContracts();
     const int combLaneCount = static_cast<int>(combLaneRows.size());
     // maybe_unused: only the CUDA arms below read this one, and a build with
@@ -10743,11 +9716,9 @@ int main(int argc, char** argv) {
                lane == static_cast<int>(boys::Precision::kBf16Device);
     };
 
-    // Each lane's route axis: the distinct routes that lane's own report names,
-    // in the order the report first names them.
-    // The device's lanes read the double lane's table for region A - the fp16 one included, whose
-    // own lane states that its region A is still the double piece table - so the device's three
-    // enumerate their routes from BoysFitRoutes() with the double lane.
+    // Each lane's route axis: the distinct routes that lane's own report names, in the order the
+    // report first names them. The device's lanes read the double lane's table for region A, so they
+    // enumerate their routes from BoysFitRoutes() with it.
     const auto combRoutesFor = [](int lane) {
         return lane == static_cast<int>(boys::Precision::kFp64) ||
                        lane == static_cast<int>(boys::Precision::kFp32Device) ||
@@ -10782,11 +9753,10 @@ int main(int argc, char** argv) {
     const std::size_t combPartitions = boys::BoysFitGranularities().size();
     const std::size_t combAxes = boys::BoysPackAxes().size();
 
-    // The division forms, read off the accessor that names them for the reason
-    // the five axis sizes above are read off theirs: a member added to the axis
-    // moves this number rather than leaving a list written here to drift from
-    // it. It is not a factor of the cross's arithmetic - see the block comment
-    // above - so it arrives in the measurement and not in the count.
+    // The division forms, read off the accessor that names them for the reason the axis sizes above
+    // are read off theirs: a member added moves this number rather than leaving a list to drift. It
+    // is not a factor of the cross's arithmetic - DivisionFormInfo carries no coverage field, "there
+    // is no cell this axis is refused on" - so it arrives in the measurement and not in the count.
     const std::span<const boys::DivisionFormInfo> combFormRows = boys::BoysDivisionForms();
     const std::size_t combForms = combFormRows.size();
 
@@ -10802,12 +9772,9 @@ int main(int argc, char** argv) {
                        combPartitions * combAxes;
     }
 
-    // The measurement side. One row per cell this revision's library carries,
-    // measured over the whole committed grid through the entry that carries all
-    // of the cell's axes at once. It is a list of explicit instantiations rather
-    // than a loop because the refusals are compile-time ones - the entries
-    // instantiate per policy and a policy the library refuses does not build -
-    // and the claim side below is what catches a cell this list is missing.
+    // The measurement side: one row per cell this revision's library carries, measured over the
+    // whole committed grid through the entry that carries all of the cell's axes at once. A list of
+    // explicit instantiations rather than a loop, because the refusals are compile-time ones.
     struct CombCell {
         int lane;
         int route;
@@ -10829,21 +9796,15 @@ int main(int argc, char** argv) {
         std::size_t moved;    // values a form past the first delivered differently
         std::size_t compared; // values a form past the first was asked for
         std::size_t movedByForm[kCombForms]; // the same, one count per form
-        // Each form's own worst over the points this cell was read at, and the
-        // point it was found at. The delivered column above is the worst over
-        // the forms; on a lane whose row states a figure for a form past the
-        // first, this is the figure that form's own statement is held to, and
-        // it is what the row's sentence prints where the lane is a device lane.
+        // Each form's own worst over the points this cell was read at, and the point it was found
+        // at. On a lane whose row states a figure for a form past the first, this is the figure that
+        // form's own statement is held to.
         double formWorst[kCombForms];
         int formWorstN[kCombForms];
         double formWorstX[kCombForms];
-        // The bar this cell's plain-reciprocal form was judged by, as the arm
-        // composed it: the lane's base plus the term the row publishes for that
-        // form plus the member term. It is the figure that form's statement is
-        // held to, and the accessor's own composition is held to it below, so
-        // that the figure a row publishes per form is the figure a consumer
-        // reads from BoysAccuracyGuaranteed at that form rather than a number
-        // this gate composes and judges by.
+        // The bar this cell's plain-reciprocal form was judged by, as the arm composed it: the
+        // lane's base plus the term the row publishes for that form plus the member term. The
+        // accessor's own composition is held to it below.
         double plainBar;
     };
 
@@ -10859,21 +9820,13 @@ int main(int argc, char** argv) {
         // its own for it; zero means the lane publishes one figure for every
         // form, which is the case on every row whose forms deliver one value.
         double formBar[kCombForms] = {};
-        // The widest bar this cell was judged against. It is `bound` on every lane
-        // whose forms publish one figure, and the plain form's own figure where a
-        // lane publishes one for it: the figure the row is certified under is the
-        // widest of them, and printing the base beside a delivered figure above it
-        // would read as a contradiction the run does not have.
+        // The widest bar this cell was judged against: `bound` on every lane whose forms publish
+        // one figure, and the plain form's own figure where a lane publishes one for it - the
+        // figure the row is certified under, printed so a delivered figure above the base reads.
         double judgedTo = 0.0;
-        // What set that bar, kept as the two terms it added beside the lane's base:
-        // the plain form's own figure where the row was read at that form, and the
-        // lane's per-value term where its figure carries one. A report printing the
-        // bar is owed the terms that are in the number beside it and no others, and
-        // which they are is a fact of the cell that produced the bar rather than of
-        // the lane's row: the half lane's widest bar may come from a form whose
-        // figure carries the plain term or from one whose figure does not, and a
-        // sentence read off the lane's row alone would name a term the widest bar
-        // did not add.
+        // What set that bar, kept as the two terms it added beside the lane's base: a report
+        // printing the bar is owed the terms that are in the number beside it and no others, and
+        // which they are is a fact of the cell that produced the bar rather than of the lane's row.
         double judgedPlain = 0.0;
         double judgedValue = 0.0;
         double ceiling = 0.0; // above this magnitude the bound is claimed
@@ -10956,19 +9909,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        // One (order, argument) as every form the axis carries delivered it.
-        //
-        // The first form is judged and kept as the baseline; each form past it
-        // is judged against the same figure and compared against that baseline.
-        // So the row's delivered figure is the worst over the forms, the cells
-        // it counted are the cells it read times the forms it read them at, and
-        // the pair of counts at the end says how far this lane's arithmetic
-        // moved when the form was changed - which is what tells a lane that runs
-        // three forms from one that runs three names for one form.
-        //
-        // The per-form ulp is the half lane's: its bar carries half a
-        // representable digit of the value the form returned, so the term is the
-        // form's own and not the first form's.
+        // One (order, argument) as every form the axis carries delivered it: the first form is
+        // judged and kept as the baseline, each form past it judged against the same figure and
+        // compared with the baseline, so the pair of counts says how far this lane's arithmetic
+        // moved when the form changed. The per-form ulp is the half lane's.
         void addAtForms(int n, double x, const double* got, std::size_t countForms, double want,
                         const double* ulp = nullptr) noexcept
         {
@@ -10991,77 +9935,9 @@ int main(int argc, char** argv) {
     };
 
     // ---- the host lanes' cross: every class, every member -------------------
-    //
-    // One row per (lane, route, scheme, axis, partition), as before - the row book
-    // is keyed by the lane because the accessor is: BoysAccuracyGuaranteed takes no
-    // Shape, so the figure it answers belongs to the lane. What the accessor cannot
-    // say, this cross measures. A figure read off a lane is a claim about five
-    // classes of that lane, and the entries of the library are per class: each
-    // entry's own default policy is the library's statement of the class it answers
-    // for (DefaultPolicy<Precision::kFp64, Shape::kAllOrders> and so on). So every
-    // combination of every row is read through the entry of every class its lane
-    // carries, and the class book printed below names, per class, the entry that
-    // produced that class's cells - the record of which shape a figure came from.
-    //
-    // The five shapes are boys::Shape's own enumerators, in the library's order:
-    //
-    //   Shape::kSingle         one order at one argument    boys::BoysSingle<...>
-    //                          F32/F16/Bf16 variants        boys::BoysSingleF32<...>
-    //                          and so on for every shape:  boys::BoysFixedN<...>
-    //   Shape::kFixedN         one order over an array      boys::BoysFixedNF32<...>
-    //   Shape::kAllN           0..nmax over an array        boys::BoysAllN<...>
-    //   Shape::kAllNAtOrders   0..n[i] over an array        boys::BoysAllNAtOrders<...>
-    //   Shape::kAllOrders      0..nmax at one argument      boys::BoysAllOrders<...>
-    //
-    // and the entry of each is called in one place, GateClassLadder, at every point
-    // of the committed grid, at every division form and at both region-B members.
-    //
-    // Two of the five carry the arguments axis only: Shape::kSingle and
-    // Shape::kFixedN evaluate exactly one order, so PackAxis::kOrders has no
-    // meaning for them and their entry refuses it where it is named - a
-    // static_assert at the call site rather than a run-time refusal. The
-    // orders-axis rows are therefore read through the three shapes that carry that
-    // axis, and the two that do not are counted, in the class book, as refused with
-    // that reason on them: a combination a shape does not carry is a combination
-    // the library does not carry, and leaving it out of the book would read as a
-    // cell that passed.
-    //
-    // The region-B member is the axis the earlier block did not cross at all. Every
-    // cell here is read at both members the library carries - BoysRegionBExps() is
-    // the table and this block reads it, and its size is held against the two
-    // policies instantiated below - and each reading is judged at the figure the
-    // accessor answers for that member: the lane's base, plus the term its row
-    // states under the member the row names (LaneContractInfo::additiveMember)
-    // where that is the member read, plus the plain reciprocal's own term at the
-    // plain form. On the four host lanes the term beside the base is 0.0 under
-    // either member, so the two members answer one figure and the delivered value
-    // the row prints is the worst over both; the member book printed below counts
-    // the cells each member was read at and how many of them the two delivered
-    // differently, so a reader asking whether the exponential changes an answer
-    // reads a count rather than an assurance.
-    //
-    // The four device lanes cross this axis as far as their surface carries it and
-    // no further: their arms launch entries of the launched all-orders family,
-    // those rows state one member each (BoysDeviceOptions()), and each cell is
-    // judged at the figure the accessor answers for that member - on fp32-device
-    // 1.5e-07, and not the 2.3e-07 its row publishes for the fast member the entry
-    // does not run. A lane whose family named a second member is failed on where
-    // the arms are set up, rather than judged at one of the two, and the table the
-    // device arms print names the member each of them read.
-    //
-    // The two half families are judged with the format's own digit: the figure a
-    // half lane's row states beside its base carries half of the last representable
-    // digit of the value returned, and that digit is the format's width - binary16
-    // keeps 10 explicit mantissa bits, bfloat16 keeps 7 - so the term is derived
-    // here from the width and the value's exponent rather than read off a sentence,
-    // and the class book prints the width it was derived from beside each half
-    // class's figure.
-    //
-    // The evaluation count is the old sweep's times the classes and the members:
-    // each point of the grid is evaluated (5 classes x 3 forms x 2 members) per row
-    // instead of (1 class x 3 forms x 1 member), and the arithmetic printed among
-    // the books below carries that factor as the measured cells of each book rather
-    // than as a sentence here.
+    // One row per (lane, route, scheme, axis, partition), keyed by the lane because
+    // BoysAccuracyGuaranteed takes no Shape. Each shape is measured through the entry GateClassLadder
+    // names, and every cell is read at both region-B members and at every division form.
 
     // The member book: per lane, the cells this cross read at each region-B member,
     // how many of them the two delivered differently, and each member's own worst.
@@ -11074,11 +9950,9 @@ int main(int argc, char** argv) {
 
     std::vector<CombMemberBook> combMemberBook(static_cast<std::size_t>(combLaneCount));
 
-    // The class book's accumulation: per (lane, shape), every cell this cross read
-    // through that class's own entry, and the count of combinations it measured
-    // there. The cells are counted through the entries named in GateClassLadder, so
-    // a class whose entry this cross does not name is a class with no cells here
-    // and the book prints it as such rather than borrowing another class's figure.
+    // The class book's accumulation, per (lane, shape): every cell this cross read through that
+    // class's own entry, and the combinations it measured there - a class whose entry this cross
+    // does not name is a class with no cells and is printed as such.
     std::vector<std::array<CombAccum, 5>> combClassCells(static_cast<std::size_t>(combLaneCount));
     std::vector<std::array<std::size_t, 5>> combClassCombos(static_cast<std::size_t>(combLaneCount));
 
@@ -11104,13 +9978,10 @@ int main(int argc, char** argv) {
     const std::size_t combIdxAccurate = combMemberIndexOf(boys::RegionBExp::kAccurate);
     const std::size_t combIdxFast = combMemberIndexOf(boys::RegionBExp::kFast);
 
-    // The class space: what each (lane, shape) is measured against, off the same
-    // tables the row book is built from. It is the lane's whole space for every
-    // shape - not the one-order shapes' with the orders half already taken out -
-    // so that the combinations those shapes cannot carry are counted as refused
-    // with the library's reason on them rather than by shrinking the space until
-    // the arithmetic closes. A space computed to fit what was measured would say
-    // nothing about what was not.
+    // The class space: what each (lane, shape) is measured against, the lane's whole space for
+    // every shape rather than the one-order shapes' with the orders half already taken out, so
+    // combinations those shapes cannot carry are counted as refused rather than by shrinking the
+    // space until the arithmetic closes.
     std::vector<std::array<std::size_t, 5>> combClassSpace(static_cast<std::size_t>(combLaneCount));
 
     for (int lane = 0; lane < combLaneCount; ++lane)
@@ -11208,12 +10079,9 @@ int main(int argc, char** argv) {
                 classCells.ceiling = a.ceiling;
             }
 
-            // The column of arguments this family's entries are handed and the
-            // column of correctly-rounded values their cells are judged against.
-            // The grid carries one pair per family (tests/boys_gate_reference.hpp);
-            // the half pairs are the half-rounded ones, so a half cell is judged
-            // against the value the format can hold rather than against the double
-            // value behind it.
+            // The column of arguments this family's entries are handed and the column of
+            // correctly-rounded values their cells are judged against; the half pairs are the
+            // half-rounded ones, so a half cell is judged against the value the format can hold.
             const double* argCol = ref.x.data();
             const double* wantCol = ref.v.data();
 
@@ -11281,12 +10149,10 @@ int main(int argc, char** argv) {
                             }
                         }
 
-                        // Each member at the figure the accessor answers for it:
-                        // the lane's base plus the term its row states under that
-                        // member where the member read is the one the row names,
-                        // plus the plain reciprocal's own term at the plain form.
-                        // The row's own figure - the one the cell prints and the
-                        // arithmetic above counts - is restored after the loop.
+                        // Each member at the figure the accessor answers for it: the lane's
+                        // base plus the term its row states under the member read, plus the plain
+                        // reciprocal's own term at the plain form. The row's own figure is restored
+                        // after the loop.
                         for (std::size_t m = 0; m < kCombMemberSlots; ++m)
                         {
                             const double* const gotM = m == 0 ? gotA : gotB;
@@ -11786,24 +10652,18 @@ int main(int argc, char** argv) {
                                       boys::PackAxis::kOrders,
                                       boys::FitGranularity::kUniform>();
 
-    // Which of the four device lanes an arm of this build measured here, and
-    // the sentence a member of a lane is counted apart with where none did.
-    // Held per lane and not per build: a lane whose arm ran on this host, and
-    // which holds no cell for a member of its cross, is the hole the cross
-    // exists to find - and that is a different statement from this host having
-    // no device at all or this binary having no CUDA surface. The arms below
-    // fill both, and each lane's own arm is the one that clears its own flag.
+    // Which of the four device lanes an arm of this build measured here, and the sentence a member
+    // of a lane is counted apart with where none did. Held per lane: a lane whose arm ran and which
+    // holds no cell for a member of its cross is the hole the cross exists to find, and that is a
+    // different statement from this host having no device at all.
     std::vector<char> combDeviceLaneArmed(static_cast<std::size_t>(combLaneCount), 0);
     std::vector<std::string> combDeviceLaneReason(static_cast<std::size_t>(combLaneCount));
 
 #ifdef BOYS_GATE_CUDA
 
-    // Half of the last representable digit of the returned value: the term a
-    // half lane's own figure carries beside its base. The digit is the format's,
-    // so it is not one number for both half lanes: binary16 has ten significand
-    // bits, which puts a digit of it at 2^-11 of the binade, and bfloat16 has
-    // seven, which puts its at 2^-8 (src/boys.cpp, the kFp16Device and kBf16Device
-    // rows, the second naming that figure as 2^-8 = 3.90625e-03).
+    // Half of the last representable digit of the returned value, the term a half lane's own
+    // figure carries beside its base: binary16 has ten significand bits, which puts a digit of it
+    // at 2^-11 of the binade, and bfloat16 has seven, which puts its at 2^-8.
     const auto halfUlp = [](double value, int mantissaBits) {
         const int exponent = std::ilogb(value);
 
@@ -11811,21 +10671,10 @@ int main(int argc, char** argv) {
                    ? 0.0
                    : std::ldexp(1.0, exponent - mantissaBits - 1);
     };
-    // The region-B member each device lane's arms read, read off the library's own
-    // option table rather than transcribed here, and the term the figure carries
-    // for it. Every device arm below launches an entry of the launched all-orders
-    // family its map returns, and those rows state the member they run
-    // (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp), so the members
-    // those rows name are the members these arms read. The set is held rather than
-    // a member: a lane whose family named a second one is a lane this gate owes a
-    // second arm for, which is printed and failed on rather than judged at the
-    // wrong figure.
-    //
-    // The member decides the figure. A lane row's term beside the base belongs to
-    // the member that row names (LaneContractInfo::additiveMember, src/boys.cpp,
-    // the composition BoysAccuracyGuaranteed makes), so a cell read at the other
-    // member is judged without it - on fp32-device 1.5e-07 against 2.3e-07, which
-    // are two claims about two arithmetics and not one figure under two names.
+    // The region-B member each device lane's arms read, off the library's own option table: every
+    // arm launches an entry of the family its map returns, and those rows state the member they run.
+    // A lane row's term beside the base belongs to the member that row names, so the two members are
+    // two figures - 1.5e-07 against 2.3e-07 on fp32-device - and not one figure under two names.
     const auto combDeviceOptionPrecision = [](int lane) {
         switch (static_cast<boys::Precision>(lane))
         {
@@ -11883,19 +10732,10 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The region-B member the cross's device rows are read at: the member the four maps
-    // above launch. Every one of them names a launched all-orders entry of the accurate
-    // family (GateDeviceEntry, GateDeviceEntryF64, GateDeviceEntryF16, GateDeviceEntryBf16),
-    // so the figure
-    // these rows are judged at is that member's - on fp32-device 1.5e-07, where the
-    // family's other member is 2.3e-07. The family's second member is read by the
-    // fast-member arm below and not by these rows: a row judged at two members would be
-    // judging a figure the arm did not take.
-    //
-    // Stated once, here, because it is a statement about the maps and not a reading of
-    // the library's table: the launched all-orders family names two members since the
-    // fast entries landed, so a set read off the table no longer says which member the
-    // entry an arm launches runs.
+    // The region-B member the cross's device rows are read at: the member the four maps above
+    // launch, all of which name a launched all-orders entry of the accurate family. Stated once,
+    // because it is a statement about the maps and not a reading of the library's table - the
+    // family names two members since the fast entries landed.
     constexpr boys::RegionBExp kCombDeviceRowMember = boys::RegionBExp::kAccurate;
 
     // The term beside the base for that member: the lane row's own where the row names
@@ -11919,56 +10759,14 @@ int main(int argc, char** argv) {
     }();
 
     // ---- the device lanes' arms ---------------------------------------------
-    //
-    // The four device lanes' reading, taken on the card this build was compiled
-    // for: kFp32Device, kFp64Device, kFp16Device and kBf16Device. It is the reading
-    // the four arms above take - the committed grid, cell by cell, each value judged
-    // against the figure this row of the cross is claimed at - and it is taken
-    // through the lanes' own entries, because these lanes have no host entry to
-    // call: the CUDA surface is device pointers and a stream, and the figure
-    // that comes back is the card's. A host lane standing in for one of them
-    // would measure another arithmetic and report it under that lane's name,
-    // which is the substitution this whole block exists to refuse.
-    //
-    // Each lane is handed the argument its own entries take and judged against
-    // that argument's own column of the committed reference:
-    //
-    //  * the float lane is handed the float the fp32 lane above evaluates at
-    //    (the reference's `xf`) and judged against `vf`: its kernels take x as
-    //    a double and cast it to float (src/boys_cuda.cu, the fp32 launchers),
-    //    so xf is the argument the arithmetic actually sees, and the two
-    //    lanes' figures are comparable cell by cell rather than only in the
-    //    aggregate;
-    //  * the double lane is handed `x` and judged against `v` - the argument
-    //    and the figure its own entries take, and the pair the sibling gate
-    //    measures these same entries at (tests/boys_cuda_accuracy_gate.cpp,
-    //    the AllOrdersF64 rows);
-    //  * the half lane is handed the half `x16` is and judged against `v16`,
-    //    at the half lane's own bar rather than at its base: its figure is the
-    //    base plus half an ULP of the value the entry returned, and a cell
-    //    whose reference value is at or below that bar is counted below it
-    //    rather than judged (tests/boys_gate_reference.hpp, HalfBound, which
-    //    the half lanes above read the same way);
-    //  * the half lane's other store is handed the bfloat16 the same column's
-    //    value rounds to and judged against `v16` at its own bar, which is the
-    //    half lane's bar: the two stores are two classes of one lane and the
-    //    figure each is held to carries its own format's digit (src/boys.cpp,
-    //    the kBf16 and kBf16Device rows), so the coarser store is judged at
-    //    the coarser digit and neither class is judged at the other's.
-    //
-    // A host that answers no device, or whose device cannot be opened, measures
-    // no member of any of the four: no arm runs, the cross counts their
-    // members apart, and the sentence they are counted apart with is this
-    // host's own, recorded here and not a statement about the library or about
-    // a CUDA build in general.
+    // The four device lanes' reading, taken on the card this build was compiled for and through the
+    // lanes' own entries: these have no host entry to call, and a host lane standing in would measure
+    // another arithmetic under its name. A host that answers no device measures none of the four.
     bool deviceLaneUsable = false;
 
-    // Why no arm of this build could run on this host: null while the device is
-    // usable, and set on every path that leaves it unusable. The state is a
-    // pair and not a default sentence for a stated reason - a lane that is not
-    // measured is counted apart with this sentence, so a sentence saying the
-    // arm did not run is a claim about a run, and it has to be one this gate
-    // can be asked about rather than one it assumes.
+    // Why no arm of this build could run on this host: null while the device is usable, and set on
+    // every path that leaves it unusable. The state is a pair and not a default sentence because a
+    // lane that is not measured is counted apart with this sentence, so it is a claim about a run.
     const char* deviceUnusable = nullptr;
 
     {
@@ -12021,13 +10819,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Which device lanes this build has a second arm for: the fast-member arm below,
-    // which launches the lane's single-order entry at RegionBExp::kFast
-    // (GateDeviceEntryFast on the float lane, GateDeviceEntryF16Fast on the half one).
-    // Which lanes those are is read from the revision's own option table - a lane whose
-    // table carries no built launched single-order row at that member is a lane no arm
-    // here can measure that member on - and the two entries this gate reaches the
-    // member through are named here and nowhere else.
+    // Which device lanes this build has a second arm for, read from the revision's own option
+    // table: a lane whose table carries no built launched single-order row at RegionBExp::kFast is
+    // a lane no arm here can measure that member on.
     const std::vector<char> combDeviceLaneFastArmed = [&] {
         std::vector<char> armed(static_cast<std::size_t>(combLaneCount), 0);
 
@@ -12066,12 +10860,9 @@ int main(int argc, char** argv) {
         return armed;
     }();
 
-    // The arms per lane this gate has are a reading of the members above: the cross's
-    // arm reads the member the launched all-orders family's own rows run, and the
-    // fast-member arm below reads the other one where this build's surface carries the
-    // lane's single-order entry at it. A member the family names that no arm of this
-    // gate reads is printed and failed on here, before anything is measured, rather
-    // than passed over while the figure below is composed for one of them.
+    // The arms per lane are a reading of the members above: the cross's arm reads the member the
+    // launched all-orders family's rows run, and the fast-member arm reads the other where this
+    // build's surface carries the lane's single-order entry at it. A member no arm reads fails here.
     for (int lane = 0; lane < combLaneCount; ++lane)
     {
         if (!combIsDeviceLane(lane) || !deviceLaneUsable)
@@ -12130,13 +10921,9 @@ int main(int argc, char** argv) {
     GateDeviceBuffer<double> combDeviceX(ref.count);
     GateDeviceBuffer<float> combDeviceValues(combDeviceCells);
 
-    // The buffers are the sweep's own and the arm below reads them, so what
-    // they could not do is asked once, here, rather than inside the sweep: a
-    // device that refuses an allocation or an upload is a device this lane
-    // measures nothing on, and the cross says so in the same words the three
-    // cases above are said in - about this lane and not about its neighbours,
-    // whose arms hold their own allocations and are asked for them where they
-    // are taken.
+    // The buffers are the sweep's own and the arm below reads them, so what they could not do is
+    // asked once, here, rather than inside the sweep: a device that refuses an allocation or an
+    // upload is a device this lane measures nothing on, and the cross says so about this lane.
     if (deviceLaneUsable &&
         (!combDeviceN.Upload(combDeviceTops) || !combDeviceX.Upload(ref.xf) ||
          !combDeviceValues.ok()))
@@ -12148,21 +10935,10 @@ int main(int argc, char** argv) {
             "was measured";
     }
 
-    // The forms these arms launch their cells at: the three the axis answers,
-    // written out for the reason the host sweeps' three are - the form is a
-    // template argument of the device engine, so a form an arm names is an
-    // instantiation, and only three of them exist.
-    //
-    // Each cell of the device arms is read at every one of them, which is what
-    // the two arms above do and what the axis's own carriage implies: the form
-    // is a trailing parameter of every launched entry and the device option
-    // space crosses each entry with all three (boys_cuda_options.hpp,
-    // DeviceOptionAxis::kDivision). A device figure per form is what a lane that
-    // runs three arithmetics owes, so the cells are read at each of the three
-    // and the worst of them is judged against the figure that form's own row
-    // states. The reconciliation at the end of the division-form block holds
-    // this list to BoysDivisionForms() the way the sweep's own list is held to
-    // it.
+    // The forms these arms launch their cells at: the three the axis answers, written out for the
+    // reason the host sweeps' three are - the form is a template argument of the device engine, so a
+    // form an arm names is an instantiation. Each cell is read at every one and the worst judged
+    // against the figure that form's own row states; the list is reconciled with the accessor.
     constexpr std::array<boys::DivisionForm, kCombForms> kDeviceForms = {
         boys::DivisionForm::kExactDivision,
         boys::DivisionForm::kPlainReciprocal,
@@ -12207,15 +10983,9 @@ int main(int argc, char** argv) {
                 out.resize(combDeviceCells);
             }
 
-            // The figure the row is judged by, computed the way the
-            // accessor computes it (src/boys.cpp, BoysAccuracyGuaranteed):
-            // the lane's base, plus the term the lane adds beside it where
-            // the member read is the one the lane's row names the term
-            // under - on fp32-device the fast region-B exponential's
-            // corrected seed, which the base does not carry and which this
-            // arm's accurate entry is not owed - and, under the plain
-            // reciprocal, that form's own figure where the lane's row
-            // states one.
+            // The figure the row is judged by, computed the way the accessor computes it: the
+            // lane's base, plus the term the lane adds beside it where the member read is the one
+            // its row names the term under, plus the plain reciprocal's own figure where stated.
             a.bound = laneBound + laneMemberAdd;
             a.formBar[static_cast<std::size_t>(boys::DivisionForm::kPlainReciprocal)] =
                 laneBound + lanePlainAdd + laneMemberAdd;
@@ -12284,11 +11054,9 @@ int main(int argc, char** argv) {
                                     a.formBar[kPlainFormIndex]});
         };
 
-    // The float lane's arm, over every member of the cross that lane claims:
-    // four axes of the space read off the same tables the cross enumerates them
-    // from. The count is the cross's own arithmetic for this lane
-    // (routes x schemes x partitions x axes) and the claim side below is what
-    // holds this list to it.
+    // The float lane's arm, over every member of the cross that lane claims: four axes of the
+    // space read off the same tables the cross enumerates them from. The count is the cross's own
+    // arithmetic for this lane and the claim side below is what holds this list to it.
     if (combDeviceLaneArmed[static_cast<std::size_t>(combDeviceLane)])
     {
         combDeviceSweep.template operator()<boys::FitRoute::kChebyshev,
@@ -12391,44 +11159,25 @@ int main(int argc, char** argv) {
                                             boys::FitGranularity::kUniform>(combDeviceLane);
     }
 
-    // ---- the double and half device lanes' arms ------------------------------
-    //
-    // The two lanes beside the float one, read the way the float lane's arm
-    // above reads its own: one reading per member of the lane's own cross, over
-    // the whole committed grid, judged cell by cell against the figure the
-    // committed reference holds for the arithmetic the lane runs. The three
-    // arms differ where the lanes differ - the argument type their entries
-    // take, the value type they return, the reference column the cells are
-    // judged against, and the terms of the figure - and nothing else about them
-    // is written a second time.
-    //
-    // A member the lane's own carrier refuses is not a member of this arm: its
-    // row is the cross's "refused - owed", the carrier's own sentence names the
-    // work it is owed, and a reading taken here would be a reading of
-    // arithmetic the lane does not run (src/boys.cpp, CarriesDeviceF64 and
-    // CarriesDeviceF16). A member the carrier carries and this arm cannot serve
-    // is the other case, and it is printed and failed on rather than passed
-    // over: the arm's map of the surface is what would be missing there, and
-    // the run says so instead of leaving a member unread.
-    //
-    // \tparam TVal the value type the lane's entries return
-    //
-    // \param lane     the lane being measured
-    // \param entryOf  the lane's map from a member of the cross to its entry
-    // \param args     the arguments the lane's entries take, per reference
-    //                 argument, in the reference's own order
-    // \param want     the reference column the cells are judged against,
-    //                 indexed Reference::Index(n, i)
-    // \param halfLane whether the lane's figure is the half lane's - the base
-    //                 plus half a representable digit of the value the entry
-    //                 returned, with the cells at or below that bar counted
-    //                 below it rather than judged, which is how the half lane's
-    //                 own arm above reads its cells
-    // \param mantissaBits the significand width of the format the lane stores
-    //                 in: half a digit of the returned value is 2^(ilogb(value)
-    //                 - mantissaBits - 1). Passed beside halfLane because the
-    //                 two half lanes of this surface are two formats, and one
-    //                 term spelled for both holds one of them to the other's
+/// The two lanes beside the float one, read the way the float lane's arm above reads its own:
+/// one reading per member of the lane's own cross, over the whole committed grid, judged cell by
+/// cell against the figure the committed reference holds for the arithmetic the lane runs. A member
+/// the lane's own carrier refuses is not a member of this arm, and a member the carrier carries and
+/// this arm cannot serve is printed and failed on rather than passed over.
+///
+/// \tparam TVal the value type the lane's entries return
+///
+/// \param lane     the lane being measured
+/// \param entryOf  the lane's map from a member of the cross to its entry
+/// \param args     the arguments the lane's entries take, per reference argument, in the
+///                 reference's own order
+/// \param want     the reference column the cells are judged against, indexed
+///                 Reference::Index(n, i)
+/// \param halfLane whether the lane's figure is the half lane's - the base plus half a
+///                 representable digit of the value the entry returned, with the cells at or
+///                 below that bar counted below it rather than judged
+/// \param mantissaBits the significand width of the format the lane stores in: half a digit of
+///                 the returned value is 2^(ilogb(value) - mantissaBits - 1)
     const auto combDeviceRunLane =
         [&]<typename TVal>(int lane, auto entryOf, const auto& args,
                            const std::vector<double>& want, bool halfLane,
@@ -12527,17 +11276,10 @@ int main(int argc, char** argv) {
 
                             CombAccum a;
 
-                            // The figure the row is judged by, computed the way
-                            // the accessor computes it (src/boys.cpp,
-                            // BoysAccuracyGuaranteed): the lane's base, plus the
-                            // term the lane adds beside it where the member read
-                            // is the one its row names the term under - and on the
-                            // half lane plus half a representable digit of the
-                            // value each cell returned, which is the term that
-                            // lane's own figure carries and the term its arm above
-                            // judges its cells with. Under the plain reciprocal
-                            // it is that form's own figure where the lane's row
-                            // states one.
+                            // The figure the row is judged by, computed the way the accessor
+                            // computes it: the lane's base, plus the term the lane adds where the
+                            // member read is the one its row names the term under - and on the half
+                            // lane plus half a representable digit of the value the cell returned.
                             a.bound = laneBound + laneMemberAdd;
                             a.formBar[static_cast<std::size_t>(
                                 boys::DivisionForm::kPlainReciprocal)] =
@@ -12650,11 +11392,9 @@ int main(int argc, char** argv) {
             0);
     }
 
-    // The half lane: the argument is the half the reference's `x16` column is
-    // and the cells are judged against `v16`, that column's own values. `x16`
-    // is the half the double rounds to, and the reference loader checks the two
-    // agree for every finite entry (tests/boys_gate_reference.hpp), so the
-    // rounding is the grid's own statement rather than this arm's.
+    // The half lane: the argument is the half the reference's `x16` column is, and the cells are
+    // judged against `v16`. The reference loader checks x16 is the half the double rounds to for
+    // every finite entry, so the rounding is the grid's own statement rather than this arm's.
 #ifdef BOYS_GATE_FP16
     if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp16Device)])
     {
@@ -12674,15 +11414,9 @@ int main(int argc, char** argv) {
             kF16MantissaBits);
     }
 
-    // The half lane's other store: the argument rounded to this format, judged
-    // against the reference column that goes with it. The arm below hands its
-    // entries `xb`, so what it owes them is `vb`, F_n at that argument - which is
-    // the pair every other bf16 arm of this gate reads (the host bf16 lane's, and
-    // the device classes' own book). The finer column's `v16` belongs to `x16`, and
-    // judging this arm against it charges the lane for the distance between two
-    // arguments rather than for the error of its call. The class's figure, the one
-    // this lane's row of BoysLaneContracts states with 2^-8 in it, is what its cells
-    // are held to.
+    // The half lane's other store: the argument rounded to this format, judged against `vb`, the
+    // column that goes with it - the pair every other bf16 arm of this gate reads. Judging it
+    // against the finer column's `v16` would charge the lane for the distance between two arguments.
     if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kBf16Device)])
     {
         std::vector<boys::Bf16> bf16Args(ref.count);
@@ -12701,14 +11435,9 @@ int main(int argc, char** argv) {
             kBf16MantissaBits);
     }
 #else
-    // The CUDA surface's fp16 entries are declared behind the BoysFp16 seam
-    // (include/boys/boys_cuda.hpp), which this build has closed: the lane's one
-    // carried member has no entry in this binary to measure, and the arm above
-    // is not compiled. The lane's carrier still states the member carried
-    // (src/boys.cpp, CarriesDeviceF16), so what this build is missing is an
-    // entry and not the arithmetic's existence - and the member is counted
-    // apart with that sentence rather than measured under the float lane's
-    // name.
+    // The CUDA surface's fp16 entries are declared behind the BoysFp16 seam this build has closed,
+    // so the half lane's carried member has no entry in this binary to measure - an entry missing,
+    // not the arithmetic's existence - and the member is counted apart with that sentence.
     combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp16Device)] = 0;
     combDeviceLaneReason[static_cast<std::size_t>(boys::Precision::kFp16Device)] =
         "this build's CUDA surface carries its fp16 entries behind the BoysFp16 seam, which this "
@@ -12721,39 +11450,10 @@ int main(int argc, char** argv) {
         "measure; a build with the seam open measures that member on the card";
 #endif // BOYS_GATE_FP16
 
-    // ---- the fast member of each device lane ---------------------------------
-    //
-    // The region-B exponential is not a policy argument on a device lane: a launched
-    // entry is a function of its own and the option table states the member it runs
-    // (DeviceOptionInfo::regionBExp). The arms above launch the lane's launched
-    // all-orders family, which the revision this gate's record names carries at
-    // RegionBExp::kAccurate alone, so they read one member of each lane; the member
-    // they do not read is launched here, through the entry this build reaches it
-    // through - the lane's single-order launch, SingleF32<RegionBExp::kFast> on the
-    // float lane and SingleF16Fast on the half one.
-    //
-    // The double lane is named rather than measured. This build's table carries rows of
-    // that lane at RegionBExp::kFast and no arm of this gate launches one: the entry
-    // the lane's single-order fast launch is named by (BoysCuda::SingleF64Fast) is a
-    // declaration this build's header carries and the library's sources define nowhere,
-    // so a call of it is a link error rather than a measurement. The sentence below is
-    // a reading of the table's own rows and of what this build defines, and the count
-    // in it moves with them.
-    //
-    // The figure each cell is judged at is the accessor's own for the member read: the
-    // lane's base plus the term its row publishes under THAT member
-    // (LaneContractInfo::additiveMember, src/boys.cpp, the composition
-    // BoysAccuracyGuaranteed makes) - on fp32-device the row's 8e-8 belongs to the fast
-    // member, which is why the arms above are judged at 1.5e-07 and this one at 2.3e-07
-    // - plus the half lane's own term of the value the call returned.
-    //
-    // The cells are every (order, argument) of the committed grid at each of the three
-    // forms, read through the entry's own layout: a single-order entry answers one value
-    // per argument, so the sweep names one order for the whole batch per launch and
-    // reads the grid's column for that order.
-    // `mantissaBits` is the argument `combDeviceRunLane` takes and the same fact:
-    // a half lane's per-value term is half a digit of the format it stores in, so
-    // the two stores of this surface are each judged at their own format's digit.
+    // The region-B member the arms above do not read is launched here, through the lane's
+    // single-order fast entry; the double lane is only named, because this build declares
+    // BoysCuda::SingleF64Fast and defines it nowhere, so a call of it is a link error. Each cell is
+    // judged at the accessor's own figure for the member read - 2.3e-07 on fp32-device.
     const auto combDeviceFastMember =
         [&]<typename TArg, typename TVal>(int lane, const char* entryName, auto entry,
                                           const std::vector<TArg>& args,
@@ -12998,14 +11698,10 @@ int main(int argc, char** argv) {
     }
 #endif // BOYS_GATE_CUDA
 
-    // Whether each device lane was measured here, and the sentence its members
-    // are counted apart with where it was not, are the two vectors the arms
-    // above wrote into - per lane, because the two facts are per lane: a member
-    // of a device lane is either a row this run measured on the card, or it is
-    // counted apart for a reason this build and this host can be asked about,
-    // and never for the lane's identity. A build whose CUDA surface is absent
-    // altogether states that once for all four lanes, because the reason is
-    // one fact.
+    // Whether each device lane was measured here, and the sentence its members are counted apart
+    // with where it was not, are the two vectors the arms above wrote into - per lane, because a
+    // member is either a row this run measured on the card or one counted apart for a reason this
+    // build and this host can be asked about, and never for the lane's identity.
 #ifndef BOYS_GATE_CUDA
     const char* const combDeviceLaneAbsent =
         "this build has no CUDA lane (BUILD_CUDA=OFF), so the device lanes' entries are not in "
@@ -13022,11 +11718,9 @@ int main(int argc, char** argv) {
     }
 #endif
 
-    // How much of the device surface this record answers for, stated once and in
-    // a form a reader can hold the record to. Every arm above can clear its own
-    // lane, so the count is taken here, after the last of them, rather than from
-    // the device's own answer - a lane the card is present for and whose entry
-    // this build does not define is a lane this record did not measure.
+    // How much of the device surface this record answers for: taken here, after the last arm,
+    // because a lane the card is present for and whose entry this build does not define is a lane
+    // this record did not measure.
     {
         std::size_t combDeviceLanesMeasured = 0;
         std::size_t combDeviceLanes = 0;
@@ -13085,30 +11779,10 @@ int main(int argc, char** argv) {
                     {
                         const boys::PackAxisInfo& axisRow =
                             boys::BoysPackAxes()[static_cast<std::size_t>(ai)];
-                        // The division form is named, and it is the one
-                        // argument this call was leaving to the build. The
-                        // accessor answers the figure for the form it is
-                        // given - the single-precision lane publishes
-                        // 2.5e-7 for the plain reciprocal where it publishes
-                        // 1.5e-7 for the other two - and the figure this row
-                        // is judged by, `c.bound` below, is the lane's base:
-                        // the form named here is the one that base belongs
-                        // to, so the two are one number rather than two that
-                        // agree whenever the build's default happens to be a
-                        // base form. A build whose default is the plain
-                        // reciprocal moved this answer and not the bound,
-                        // and the check below read that as a disagreement.
-                        //
-                        // The region-B member is named for the reason the form
-                        // is: a device lane's rows are read at the member its
-                        // launched all-orders entries name, so the accessor is
-                        // asked for the member the row was read at and the two
-                        // are one number - on fp32-device 1.5e-07, where the
-                        // build's default member answers 2.3e-07 and the check
-                        // below read that as a disagreement. A host lane's rows
-                        // are read at both members and the two answer one figure
-                        // there (the term beside the base is 0.0), so the
-                        // build's own default is the member those rows stand for.
+                        // The division form is named, and it is the one argument this call was
+                        // leaving to the build: the accessor answers the figure for the form it is
+                        // given, and the figure this row is judged by is the lane's base, so the two
+                        // are one number. The region-B member is named for the same reason.
 #ifdef BOYS_GATE_CUDA
                         // The member the device arm read this row at, which is the member
                         // its figure was taken at (kCombDeviceRowMember above). A build
@@ -13126,28 +11800,20 @@ int main(int argc, char** argv) {
                             partition.granularity,
                             boys::DivisionForm::kRefinedReciprocal,
                             rowExp);
-                        // The same figure for the form this build's unnamed
-                        // calls divide in, which is what the two entries
-                        // below answer for: neither BoysAccuracyDelivered nor
-                        // QueryCombination takes a form, so both read the
-                        // build's default one, and the tolerance query's own
-                        // `bound` is this figure. It is held here rather than
-                        // left implicit because the query is asked at a
-                        // tolerance and answers a bound, and a query asked at
-                        // one form's figure while answering another's has
-                        // been given a request no bound of its own can meet.
+                        // The same figure for the form this build's unnamed calls divide in,
+                        // which is what the two entries below answer for: neither BoysAccuracy
+                        // Delivered nor QueryCombination takes a form, so both read the build's
+                        // default one, and the tolerance query's own `bound` is this figure.
                         const boys::AccuracyFigure guaranteedForm =
                             boys::BoysAccuracyGuaranteed(static_cast<boys::Precision>(lane),
                                                          route,
                                                          scheme,
                                                          axisRow.axis,
                                                          partition.granularity);
-                        // The same accessor read at the form a row publishes a
-                        // figure of its own for. On a row that states no term
-                        // for that form this is the figure above; on one that
-                        // does, it is the base plus the term, and the row's own
-                        // arm judged that form by the bar this figure is held to
-                        // below.
+                        // The same accessor read at the form a row publishes a figure of its
+                        // own for: on a row that states no term for that form this is the figure
+                        // above; on one that does, it is the base plus the term, and the row's own
+                        // arm judged that form by the bar this figure is held to below.
                         const boys::AccuracyFigure guaranteedPlain = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
                             route,
@@ -13176,24 +11842,10 @@ int main(int argc, char** argv) {
                         c.accessorDelivered = delivered.value;
                         c.accessorDeliveredKnown = delivered.available;
 
-                        // The tolerance query, asked twice on every row: at
-                        // the figure the row is judged by, which a bound at or
-                        // below itself must answer inside, and at half of it,
-                        // which nothing at that figure can answer inside. The
-                        // two together are what says the entry compares the
-                        // request with the figure it reports rather than
-                        // answering from somewhere else; a refused row is
-                        // asked the same two questions and must answer
-                        // neither, with no figures at all.
-                        //
-                        // The figure the request is made at is the one the
-                        // query answers with - `guaranteedForm`, the accessor
-                        // read the way the query reads it - and not the
-                        // figure this row's bound belongs to: a query asked
-                        // at one form's bound and answering another's would
-                        // be asked a question about itself and answer about
-                        // the build, which is the shape of a check that
-                        // cannot pass.
+                        // The tolerance query, asked twice on every row: at the figure the row is
+                        // judged by, which a bound at or below itself must answer inside, and at
+                        // half of it, which nothing at that figure can. The two together say the
+                        // entry compares the request with the figure it reports - `guaranteedForm`.
                         const boys::CombinationCoverage askedAtBound =
                             boys::QueryCombination(static_cast<boys::Precision>(lane),
                                                    route,
@@ -13256,13 +11908,9 @@ int main(int argc, char** argv) {
                             c.state = c.over == 0
                                           ? "certified and published"
                                           : "DEFECT: delivers outside its documented bound";
-                            // A bar wider than the lane's base is wider for the terms
-                            // the cell's widest bar added beside that base, and the
-                            // sentence names those and no others: the half lanes'
-                            // bars carry a term of the value the call returned, and a
-                            // sentence saying the plain reciprocal's term where the
-                            // cell added the value's own would be a reason for a
-                            // number that is not the number beside it.
+                            // A bar wider than the lane's base is wider for the terms the
+                            // cell's widest bar added beside that base, and the sentence names those
+                            // and no others: a reason for a number that is not the number beside it.
                             std::string barTerms;
 
                             if (cell->plainTerm > 0.0)
@@ -13283,15 +11931,10 @@ int main(int argc, char** argv) {
                                             "and not of the call";
                             }
 
-                            // A row read at more than one form on a device lane also states
-                            // the figure each of them delivered: the device lanes are the
-                            // ones whose per-form figures this gate is the only instrument
-                            // for - the host lanes' are carried by the sweeps of
-                            // tests/boys_backend_test.cpp at their named cells - and a row
-                            // that now delivers a figure per form is owed the numbers they
-                            // were read from. The clause this string trails already says
-                            // the row was read at every form, so the figures hang off a
-                            // colon rather than repeating it.
+                            // A row read at more than one form on a device lane also states the
+                            // figure each of them delivered: the device lanes' per-form figures are
+                            // ones this gate is the only instrument for, so a row that delivers a
+                            // figure per form is owed the numbers they were read from.
                             std::string formFigures;
 
                             if (combIsDeviceLane(lane) && cell->forms > 1)
@@ -13331,19 +11974,10 @@ int main(int argc, char** argv) {
                             c.source = guaranteed.reason;
                         } else if (combIsDeviceLane(lane))
                         {
-                            // A member of a device lane that no measured cell
-                            // above covers. Two states and not one, read from
-                            // the lane's own arm: a lane no arm of this build
-                            // could run is counted apart with the reason this
-                            // build and this host are asked about - no CUDA in
-                            // this binary, no device on this host, or this
-                            // build's half seam closed - and it is never the
-                            // lane's identity, which is what this sentence used
-                            // to be. A lane whose arm DID run and which holds no
-                            // cell for this member is the other state: the hole
-                            // the block below exists to find, and the one this
-                            // branch must not cover with a sentence about an arm
-                            // that ran.
+                            // A member of a device lane that no measured cell above covers, in
+                            // two states read from the lane's own arm: a lane no arm of this build
+                            // could run is counted apart with the reason this build and host are
+                            // asked about, and a lane whose arm ran and holds no cell here is a hole.
                             if (combDeviceLaneArmed[static_cast<std::size_t>(lane)])
                             {
                                 c.state = "OFFERED AND COVERED BY NO CELL";
@@ -13387,13 +12021,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the accessor, read against the row and against the measurement ------
-    //
-    // The accessor is the consumer's way to this table without running a gate.
-    // It answers from BoysLaneContracts() and from the route, partition and
-    // scheme rows, which are the tables these rows are judged by, so the check
-    // below is not that two numbers agree today but that they are one number:
-    // the guarantee is compared for exact equality, and the delivered figure is
-    // compared against what the whole call measured.
+    // The accessor answers from the same tables these rows are judged by, so the check below is
+    // not that two numbers agree today but that they are one number: the guarantee is compared for
+    // exact equality, the delivered figure against what the whole call measured.
     std::size_t combAccessorDisagreeing = 0;
     std::size_t combAccessorRefused = 0;
     std::size_t combAccessorHostOnly = 0;
@@ -13440,13 +12070,9 @@ int main(int argc, char** argv) {
             ++combAccessorDisagreeing;
         }
 
-        // The same equality for the form a row publishes its own figure for: the
-        // bar the arm judged that form by is the accessor's answer for it, which
-        // is what makes the per-form figure in the row above a figure a consumer
-        // reads rather than one this gate composed. On a row that states no term
-        // for the plain reciprocal the two sides are the accessor's figure and
-        // the lane's base, exactly as the check above is, so the row's own
-        // arithmetic is what decides which of the two numbers is the larger.
+        // The same equality for the form a row publishes its own figure for: the bar the arm
+        // judged that form by is the accessor's answer for it, which is what makes the row's
+        // per-form figure one a consumer reads rather than one this gate composed.
         if (c.accessorPlainBound != c.plainBar)
         {
             ++combAccessorDisagreeing;
@@ -13454,12 +12080,9 @@ int main(int argc, char** argv) {
 
         if (c.accessorDeliveredKnown)
         {
-            // The accessor's figure is the worst over the fits the combination
-            // names, so it is a floor on what the whole call delivers and must
-            // not sit above it. A figure above the measurement would be the
-            // accessor claiming less accuracy than the call achieves, which is
-            // the harmless direction, or more than it achieves, which is not;
-            // the one that fails is the second, and the first is counted.
+            // The accessor's figure is the worst over the fits the combination names, so it is
+            // a floor on what the whole call delivers and must not sit above it: the harmless
+            // direction is counted, the other fails.
             if (c.accessorDelivered > c.delivered)
             {
                 ++combAccessorDeliveredShort;
@@ -13481,14 +12104,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the tolerance query, judged against the same rows -------------------
-    //
-    // The query answers the question the two accessors above are the inputs to,
-    // so it is judged against them and not against a list of its own: the figure
-    // it reports at a tolerance the row itself supplies is the accessor's
-    // figure, its verdict is the comparison, and on a refused row it is a
-    // refusal with no figure at all. Every count below is zero and the run goes
-    // red on any that is not, so the one number a caller with a target reads is
-    // tied to the two numbers a reader can check it against.
+    // The query answers the question the two accessors above are the inputs to, so it is judged
+    // against them: the figure it reports at a tolerance the row supplies is the accessor's figure,
+    // its verdict is the comparison, and a refused row is a refusal with no figure at all.
     std::size_t combToleranceCarried = 0;
     std::size_t combToleranceHalfAsked = 0;
     std::size_t combToleranceHalfUnasked = 0;
@@ -13562,18 +12180,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the accessor beside the figure it is judged by ---------------------
-    //
-    // One row per lane, printed so that a reader sees the numbers a consumer
-    // gets from the library and the numbers this gate judged the same
-    // combination by, side by side. The four columns are two pairs and the
-    // headings say which is which: `bound` is the figure the lane documents for
-    // the combination, which is what a calculation's safety rests on, and
-    // `delivered` is the figure the combination's own rows were measured to
-    // deliver, which is what ranks two combinations; `row bound` and `call
-    // measured` are the same two questions asked of this row by this gate. The
-    // figures below are one number and not two that agree: the check above
-    // compares them for exact equality on every row of the cross, and this
-    // prints what it compared.
+    // One row per lane: `bound` is the figure the lane documents for the combination, `delivered`
+    // what the combination's own rows were measured to deliver, and `row bound` and `call measured`
+    // are the same two questions asked of this row by this gate. The figures are one number.
     std::printf("\n  the accessor beside the figure the row is judged by, one combination per "
                 "lane.\n  `bound` is what a caller may rely on, `delivered` is what the "
                 "combination's fits were\n  measured to deliver, and the last two are the same "
@@ -13631,13 +12240,9 @@ int main(int argc, char** argv) {
                     deliveredText.c_str(),
                     rowBoundText.c_str(),
                     measuredText.c_str(),
-                    // A row this run measured prints its lane's own source for
-                    // the figures. A row it did not prints the row's own
-                    // reason - which is the reason that row was counted apart
-                    // with, and not a sentence about the lane: the device lane
-                    // is measured on the card in a build that carries it, and
-                    // "this host cannot run the lane" was a claim about every
-                    // such build rather than about this run.
+                    // A row this run measured prints its lane's own source for the figures; a row
+                    // it did not prints the row's own reason - the reason that row was counted apart
+                    // with, and not a sentence about the lane.
                     shown->state.rfind("certified", 0) == 0
                         ? combLaneRows[static_cast<std::size_t>(lane)].source
                         : shown->source.c_str());
@@ -13809,12 +12414,9 @@ int main(int argc, char** argv) {
                 combSchemes,
                 combPartitions,
                 combAxes);
-    // The entry factor, which the arithmetic above has none of on its own: the
-    // cross reaches every one of its cells through one entry per lane, so a
-    // combination these axes admit and another entry refuses is in no book at all
-    // until it is counted here. The three states of the entry book are added to
-    // the same total, and the book's own space is read off the same tables a
-    // second way below it.
+    // The entry factor, which the arithmetic above has none of on its own: the cross reaches
+    // every one of its cells through one entry per lane, so a combination these axes admit and
+    // another entry refuses is in no book at all until it is counted here.
     std::printf("                 the entry book's own %zu cell(s), the factor this arithmetic "
                 "has none of:\n                 %zu measured + %zu refused with the library's own "
                 "reason and owed +\n                 %zu not applicable to the entry's shape = "
@@ -13869,34 +12471,10 @@ int main(int argc, char** argv) {
                 combToleranceRefused,
                 combToleranceDisagreeing);
 
-    // ---- the class book: every combination, and the class that produced it ----
-    //
-    // A figure read off BoysAccuracyGuaranteed is a lane's: the accessor takes no
-    // Shape. Every class of that lane answers with an entry of its own, and the
-    // cross above read every combination of every row through the entry the class's
-    // own shape names - boys::BoysSingle<Policy>, boys::BoysFixedN<Policy>,
-    // boys::BoysAllN<Policy>, boys::BoysAllNAtOrders<Policy> and
-    // boys::BoysAllOrders<Policy> for the double lane; boys::BoysSingleF32<Policy>,
-    // boys::BoysFixedNF32<Policy>, boys::BoysAllNF32<Policy>,
-    // boys::BoysAllNAtOrdersF32<Policy>, boys::BoysAllOrdersF32<Policy> for the
-    // float lane; boys::BoysSingleF16<Policy>, boys::BoysFixedNF16<Policy>,
-    // boys::BoysAllNF16<Policy>, boys::BoysAllNAtOrdersF16<Policy>,
-    // boys::BoysAllOrdersF16<Policy> for the half lane; and
-    // boys::BoysSingleBf16<Policy>, boys::BoysFixedNBf16<Policy>,
-    // boys::BoysAllNBf16<Policy>, boys::BoysAllNAtOrdersBf16<Policy>,
-    // boys::BoysAllOrdersBf16<Policy> for the bfloat lane. This book is where that
-    // attribution is recorded: per class, the combinations the lane's space holds
-    // for it, the combinations this run measured through that class's own entry,
-    // the cells they were read at, the worst value delivered and the entry's name.
-    // A class with no cell is printed as such and not passed over: a class
-    // borrowing another class's figure is what this book exists to make impossible
-    // to read.
-    //
-    // The space is the lane's whole space for every shape, so the combinations a
-    // one-order shape cannot carry are printed as refused with the library's own
-    // reason on them - the entry refuses PackAxis::kOrders where it is named, a
-    // static_assert at the call site, so those combinations are ones the library
-    // does not carry rather than ones this run skipped.
+    // The class book: BoysAccuracyGuaranteed takes no Shape, so a figure read off it is a lane's,
+    // while every class of that lane answers with an entry of its own - boys::BoysSingle<Policy>,
+    // BoysAllN<Policy> and so on, per lane. This book records which class produced which cells, and
+    // a class with no cell is printed as such rather than borrowing another class's figure.
     {
         // The entry each class is measured through, in the library's own spelling:
         // the name a caller writes at the call site the cross makes.
@@ -13990,11 +12568,9 @@ int main(int argc, char** argv) {
                     classRefused,
                     classOver);
 
-        // The device lanes' classes: three each - Shape::kSingle, Shape::kAllN and
-        // Shape::kAllOrders, the shapes the device surface's entries answer for -
-        // and the arms below measure Shape::kAllOrders of each through its own
-        // entry. What this record does not carry for them is stated here rather
-        // than left to a reader's inference.
+        // The device lanes' classes: three each - Shape::kSingle, kAllN and kAllOrders, the shapes
+        // the device surface's entries answer for - and what this record does not carry for them is
+        // stated here rather than left to a reader's inference.
         std::printf("  the device lanes: three class(es) each - Shape::kSingle, Shape::kAllN "
                     "and\n  Shape::kAllOrders - and the arms below measure Shape::kAllOrders of "
                     "each through\n  its own entry, the boys::BoysCuda::AllOrdersF32<...>,\n"
@@ -14014,16 +12590,10 @@ int main(int argc, char** argv) {
                     "own lane publishes for the member it read.\n");
 
 #ifdef BOYS_GATE_CUDA
-        // The member those device arms read, and the figure that follows from it.
-        // It is read off the library's own option table and not written here: each
-        // arm launches an entry of the launched all-orders family its map names,
-        // and those rows state the member they run (boys/boys_cuda_options.hpp,
-        // DeviceOptionInfo::regionBExp), so the member a lane's family names is the
-        // member its arm read. The figure moves with it, because a lane row's term
-        // beside the base belongs to the member that row names
-        // (LaneContractInfo::additiveMember, src/boys.cpp): a lane whose two members
-        // answer different figures is judged at the figure of the member its entry
-        // runs, which is the claim that entry's own row publishes.
+        // The member those device arms read, off the library's own option table: each arm launches
+        // an entry of the launched all-orders family its map names, and those rows state the member
+        // they run. A lane whose two members answer different figures is judged at the figure of the
+        // member its entry runs - the claim that entry's own row publishes.
         std::printf("  the region-B member the device arms above read, off the library's own\n"
                     "  option table: each of them launches an entry of the launched all-orders\n"
                     "  family its map names, and those rows state the member they run\n"
@@ -14069,17 +12639,10 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_CUDA
     }
 
-    // ---- the member book: the region-B axis, both of its members ---------------
-    //
-    // Every cell of the cross above was read at both members BoysRegionBExps()
-    // answers - the sweep instantiates a policy per member - and this is where the
-    // two readings are reported apart. On the host lanes the term a row states
-    // beside its base belongs to the member the row names, so the two members
-    // answer one figure and the row's delivered value above is the worst over
-    // both. What a reader asking whether the exponential changes an answer here is
-    // owed is the count: how many cells each member was read at, and how many of
-    // those the two delivered differently at the same order, argument, class and
-    // form.
+    // The member book: every cell of the cross above was read at both members BoysRegionBExps()
+    // answers, each judged against the figure the row's own lane answers for that member. The two
+    // answer one figure on the host lanes, so what the reader is owed is the count of cells each was
+    // read at and of those the two delivered differently at the same order, argument, class and form.
     {
         std::printf("\n  the region-B member: every host cell of the cross above was read at "
                     "each of the %zu\n  member(s) BoysRegionBExps() answers, each reading judged "
@@ -14132,18 +12695,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The division form, on the cells the cross measured. Every cell above was
-    // read at each form the axis carries, and this is where the sweep says what
-    // it found: the values a form past the first delivered differently from the
-    // first form's at the same order and argument, against the values it was
-    // asked for.
-    //
-    // A row whose count of moved values is zero is a lane the axis selects no
-    // arithmetic on - the names reach one body - and that is a measurement of
-    // this build rather than a claim about the source. It is printed rather than
-    // passed over because a row that swept three forms and found one arithmetic
-    // has not certified three, and a reader comparing this library's forms
-    // against another's is owed the difference.
+    // The division form, on the cells the cross measured: the values a form past the first
+    // delivered differently from the first's at the same order and argument, against the values it
+    // was asked for. A zero count is a lane the axis selects no arithmetic on - measured here.
     {
         struct FormRow {
             int lane = -1;
@@ -14247,12 +12801,9 @@ int main(int argc, char** argv) {
 
         std::printf("\n");
 
-        // The sweep writes its forms out as policies - the instantiations are
-        // compile-time - and the axis is enumerated by an accessor, which is not.
-        // The two are reconciled here rather than assumed equal: a fourth form
-        // added to BoysDivisionForms() without a fourth policy below would leave
-        // the axis swept at three while the library offers four, and that is a
-        // cell offered and never checked again.
+        // The sweep writes its forms out as policies, while the axis is enumerated by an accessor,
+        // and the two are reconciled here rather than assumed equal: a fourth form added to
+        // BoysDivisionForms() without a fourth policy would leave the axis swept at three.
         if (combForms != kCombForms)
         {
             std::printf("\n  DIVISION-FORM SWEEP FAIL: the axis answers %zu form(s) from "
@@ -14266,24 +12817,16 @@ int main(int argc, char** argv) {
         }
     }
 
-    // combAccessorDeliveredShort is reported and not fatal. The two figures it
-    // compares are two different measurements of the same quantity: the
-    // accessor answers the fits' own worst, swept densely over each piece's
-    // interval, while the call's figure is this gate's sweep of the committed
-    // reference grid. The certified-routes book above states the relation -
-    // this grid "is the coarser of the two and reads a little under it on a fit
-    // that equioscillates" - so on a row whose fit dominates the call, the
-    // accessor's figure sits above this grid's reading by construction and not
-    // by a claim that failed. The figure is published so a reader can see it.
+    // combAccessorDeliveredShort is reported and not fatal: the two figures are two measurements
+    // of the same quantity - the accessor's dense sweep of each piece against this gate's coarser
+    // grid - so on a row whose fit dominates, the accessor's figure sits above this grid's reading
+    // by construction and not by a claim that failed.
     if (combTotal != combClaimed || combTotal != combAccounted || combUncovered > 0 ||
         combOfferedBad > 0 || combAccessorDisagreeing > 0 ||
         combToleranceDisagreeing > 0 ||
-        // The entry factor, on both sides of the identity: the book's rows are
-        // the cells the cross has no entry for, and its own total is read off the
-        // tables a second way. A member added to any axis of either arithmetic
-        // moves one side and not the other, and that is the difference this
-        // catches - the hole the entry book exists to close, where a combination
-        // a caller can name is refused and no arithmetic has a term for it.
+        // The entry factor, on both sides of the identity: a member added to any axis of either
+        // arithmetic moves one side and not the other, which is the hole the entry book exists to
+        // close - a combination a caller can name, refused, with no term for it in the arithmetic.
         entryBookRows != entryBookMeasured + entryBookRefused + entryBookShapeLimit ||
         combTotal + entryBookRows != combClaimed + entryBookClaimed)
     {
@@ -14325,11 +12868,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the packing-axis rows, counted apart ------------------------------
-    // Their own block, their own cell count and their own RESULT line. The two
-    // books above are the numbers a reader has seen before and the axis must
-    // not move either of them: this book's cells are the axis's own, and the
-    // fraction below is the share of them that can discriminate, so it is the
-    // axis's discriminating fraction and not a re-reading of the lane's.
+    // Their own block, their own cell count and their own RESULT line: the books above are the
+    // numbers a reader has seen before and the axis must not move them, so the fraction below is
+    // the axis's own discriminating fraction and not a re-reading of the lane's.
     std::size_t packCells = 0;
     std::size_t packNonDiscriminating = 0;
 
@@ -14396,11 +12937,9 @@ int main(int argc, char** argv) {
                 PackClaims()[static_cast<std::size_t>(packSlots[2 * row + 1])]);
     }
 
-    // The plane entry's rows, beside the all-orders entry's and not folded into
-    // them: the axis's values are the same on the two shapes - the plane
-    // entry's per-argument path is the all-orders entry's body - so the rows
-    // are the same two questions asked of a different call. Keeping them apart
-    // is what lets a reader see that the axis is carried on both.
+    // The plane entry's rows, beside the all-orders entry's and not folded into them: the axis's
+    // values are the same on the two shapes - the plane entry's per-argument path is the all-orders
+    // entry's body - so keeping them apart is what lets a reader see the axis on both.
     for (std::size_t row = 0; row < packSchemes.size(); ++row)
     {
         const char* axis = boys::EvalSchemeName(packSchemes[row]);
@@ -14414,14 +12953,10 @@ int main(int argc, char** argv) {
                 PackClaims()[static_cast<std::size_t>(packPlaneSlots[2 * row + 1])]);
     }
 
-    // The rest of the axis: the other route and the other partition, at both
-    // schemes, on both entries. A row's name is the partition its region-A fits
-    // were read from ("narrow" where it is the per-order pieces, absent where it
-    // is the shipped table), the route (cheb, rat), and which entry and interval
-    // it covers - "A" is inside the packed lane's own interval, "A..C" the whole
-    // committed grid, and "pl" marks the plane entry's rows. Every one of them
-    // is judged at the figure printed beside it, which is the figure that entry
-    // documents for that combination.
+    // The rest of the axis: the other route and the other partition, at both schemes, on both
+    // entries. A row's name is its partition ("narrow" where the region-A fits are the per-order
+    // pieces, absent where they are the shipped table), its route (cheb, rat) and which entry and
+    // interval it covers - "A" the packed lane's interval, "A..C" the whole grid, "pl" the plane.
     std::printf("  %s\n", std::string(160, '-').c_str());
 
     for (const OpenedRow& row : openedRows)
@@ -14461,22 +12996,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the granularity-axis rows, counted apart ---------------------------
-    // Their own block, their own cell count and their own RESULT line, for the
-    // reason the packing axis's block gives: the books above are the numbers a
-    // reader has seen before and a new axis must not move them. Two rows are
-    // read at both members' stored fits directly - region A's pieces and region
-    // B's seed, each under the bar its own lane documents - and six are the
-    // entries read end to end over the region the axis is cut in, so that a
-    // member whose fits are fine but whose evaluation is not is a row rather
-    // than an assumption. The row list and why the entry rows are cast there
-    // rather than over the whole grid is stated where the list is defined.
-    //
-    //
-    // The trade is printed with the rows and not in place of them, because the
-    // axis is not a saving: one evaluation reads fewer coefficients, and the
-    // table that makes that possible stores more of them and holds more rows to
-    // find the piece in. Every figure in that line is read from the generated
-    // tables at compile time rather than written here.
+    // Their own block, cell count and RESULT line, for the reason the packing axis's block gives:
+    // two rows read both members' stored fits directly and six read the entries end to end over the
+    // region the axis is cut in, and the trade is printed with the rows and not in place of them.
     std::size_t granCellCount = 0;
     std::size_t granNonDiscriminating = 0;
 
@@ -14563,11 +13085,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The rational route's rows over the narrow partition are in this book too:
-    // the rational family takes no scheme, and what they measure is a partition
-    // rather than a member of the axis, so they are read out here - judged and
-    // counted with the rows above rather than beside them, so a table that
-    // misses its bar is a failure of this axis and not a note.
+    // The rational route's rows over the narrow partition are in this book too: the rational family
+    // takes no scheme, and what they measure is a partition rather than a member of the axis, so they
+    // are judged and counted with the rows above rather than beside them.
     {
         struct NarrowRatRow {
             const char* row;
@@ -14630,11 +13150,9 @@ int main(int argc, char** argv) {
                     narrowRows,
                     boys::detail::kNarrowADeg + 1);
 
-        // The same partition on the route whose pieces are degree pairs: the
-        // rows and the intervals are the partition's, so the table differs in
-        // what each row stores and what an evaluation reads out of it. The
-        // read is the piece's own pair - its numerator p_0..p_m and the
-        // denominator's k coefficients - so the span is read off the pieces.
+        // The same partition on the route whose pieces are degree pairs: the rows and the intervals
+        // are the partition's, so the table differs in what each row stores - the read is the piece's
+        // own numerator p_0..p_m and denominator coefficients.
         int ratReadLow = 0;
         int ratReadHigh = 0;
 
@@ -14683,22 +13201,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the entry book's rows, counted apart -------------------------------
-    // The block above the report's arithmetic counts the space the axes describe;
-    // this one counts the space a caller names, and it is the only place a
-    // combination the axes admit and an entry refuses is printed at all: every
-    // other book reaches its cells through one entry per lane, so the refusal has
-    // no cell in any of them. Its own rows, its own cell count and its own RESULT
-    // line, for the reason the three blocks above give: the numbers a reader has
-    // seen before must not move, and this axis is added to the report rather than
-    // folded into theirs.
-    //
-    // The three states are printed and not summarised, because two of them are
-    // not measurements and a count alone would hide which combination is which. A
-    // refused row carries the library's own assertion underneath it, so what the
-    // reader of a gap gets is the reason the library states where the call is
-    // named. A row in the shape-limit state carries the entry's own assertion,
-    // and the difference between the two is the debt: the first is a branch
-    // nobody has written, the second is a shape no branch can serve.
+    // This counts the space a caller names, and it is the only place a combination the axes admit
+    // and an entry refuses is printed at all. Its own rows and RESULT line; the three states are
+    // printed rather than summarised, since a refused row carries the library's own assertion.
     std::printf("\nthe entry book: the batched double-precision entries crossed with the uniform\n"
                 "partition, per route, per scheme and per packing axis.\n"
                 "Every combination is measured, refused by the library's own guard, or not\n"
@@ -14771,12 +13276,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The two states that are not measurements are printed with their counts
-    // again, in the book's own arithmetic, so that a reader who takes only the
-    // numbers still sees them. The identity is checked with the run's arithmetic
-    // above - the same total read off the tables a second way - and the arms are
-    // reconciled against the tables that report the three axes here, both ways:
-    // an arm no table names, and a table member no arm covers.
+    // The two states that are not measurements are printed with their counts again, in the book's
+    // own arithmetic, so that a reader who takes only the numbers still sees them. The arms are
+    // reconciled against the tables that report the three axes, both ways.
     std::printf("  %s\n", std::string(170, '-').c_str());
     std::printf("  ENTRY RESULT: %d of %zu measured entry row(s) met at this revision (%zu "
                 "refused and owed,\n                %zu not applicable to the entry's shape; the "
@@ -14824,53 +13326,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---- the uniform grid's carriage on the batched entries -----------------
-    // Every row of the entry book above is an accuracy reading, and the uniform
-    // partition and the narrow member hold the same bound over the same
-    // interval - so an entry that answered a policy naming the grid out of the
-    // narrow tables would print the same numbers, inside the same bound, and
-    // every row of that book would stay green. That is the substitution the
-    // partition axis exists to prevent, and no bound can see it: the two
-    // readings are the same size, and the entry that returns the wrong one
-    // returns it at the right accuracy.
-    //
-    // A difference sees it. The two partitions are different fits of the same
-    // function over the same interval, so where both read a fit their values
-    // differ by far more than the last place. A row below reads its entry twice
-    // in one pass - once under a policy naming the grid, once under a policy
-    // naming the narrow member - and counts the cells where the two readings
-    // differ. Both sides are computed on this leg by this compiler in the same
-    // pass, so a route that moves a value moves both: this cannot go red on an
-    // arithmetic difference between legs, and it goes red the day a policy
-    // naming the grid is answered from the narrow member's fits.
-    //
-    // The reference the rows are held to is the per-argument entry's own
-    // separation, region by region - the reference the scheme carriage table
-    // uses, and for the same reason. A region where the per-argument entry's
-    // two readings agree is a region where no cell can discriminate and no row
-    // is held to it: region C is what that looks like, because above the grid's
-    // top edge both partitions reach the asymptotic form, which reads no table
-    // at all.
-    //
-    // It is asked per region rather than once over the whole grid, because
-    // "differs somewhere" is not the property a substitution detector needs.
-    // The uniform decision is one branch per entry, but the body that branch
-    // hands the call to dispatches on the region again, so a body reading the
-    // grid below its join and the narrow fits above it would differ somewhere
-    // and still be a substitution over part of the line. A region where the
-    // per-argument entry separates and this row does not is a region this row
-    // answered from the other partition's fits, whatever its accuracy says.
-    //
-    // One arm per entry, and that is the axis rather than a sample of it. At the
-    // shipped route and the arguments axis the uniform policy takes the branch
-    // written for it; every other arm of the route, scheme and packing axes
-    // reaches one of the same two bodies by a branch taken for another reason.
-    // The partitioned path, which is the one body with no uniform branch in it,
-    // is reached only from the shipped arm, and the guard stands on it - a
-    // revision that sent a uniform policy there would fail to build this file
-    // rather than print a red row. So an arm added to any of those three axes is
-    // this same call with another coefficient table or another gather, over the
-    // same two bodies, and the row below already covers it.
+    // The uniform grid's carriage on the batched entries: the entry book's rows are accuracy
+    // readings, and the two partitions hold the same bound over the same interval - so an entry
+    // answering a grid policy out of the narrow tables would print the same numbers and stay green.
+    // Each entry is read twice in one pass, once under each partition, differing cells counted.
     std::array<std::size_t, 4> partitionRefDiffer{};
 
     for (std::size_t i = 0; i < count; ++i)
@@ -15136,49 +13595,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // ---- the uniform grid's carriage on the single-precision entries -------
-    // The block above asks this question of the double lane's batched entries,
-    // and the float lane's cells on the same partition are measured in the
-    // combination book above by rows that ask it of nothing. An entry that
-    // answered a policy naming the grid out of the narrow member's tables would
-    // print the same numbers, inside the same bound, because the two partitions
-    // hold the same bar over the same interval - so no accuracy row can tell
-    // them apart, and the rows of that book would stay green while a certified
-    // figure was published under a name it did not earn.
-    //
-    // The rows below are that question asked of the single-precision entries, in
-    // the shape the block above uses: each entry is read twice in one pass, once
-    // under a policy naming the grid and once under a policy naming the narrow
-    // member, and the cells where the two readings differ are counted per region
-    // against the per-argument entry's own separation at the same budget, route
-    // and scheme. The reference is the per-argument single entry's two readings
-    // for the reason the block above gives: a region where they agree is a region
-    // where no cell can discriminate, and no row is held to it.
-    //
-    // The sweep is every host arm the combination book above holds a row for,
-    // rather than one arm standing for the partition. It reads the two entries
-    // the rows carry - the per-argument all-orders entry and the all-N plane
-    // entry - each beside the per-argument single entry's two readings, which
-    // are the reference below. The lane's array entries - the fixed-N entry and
-    // the all-N-at-orders entry - are loops over those two bodies, so their
-    // readings are these at the same policy. Each is read on both packing axes, on both
-    // routes, at both schemes and at both engine budgets - the axis names which of
-    // the lane's two bodies runs past the join, the packed orders lane and the
-    // scalar per-argument one, and below it the grid's own branch answers either
-    // axis - and an arm left out of this sweep would be a host row of that book
-    // nothing below asks this of.
-    //
-    // Region C is where this lane's two readings agree by construction rather
-    // than by their tables: the float lane's grid ends at kFlatHiF32 = 18.625,
-    // inside region B rather than above it, so past the join a policy naming the
-    // grid is answered by the route's shipped region-B seed - the narrow member's
-    // own body reads its own seed over that same band, which is why the
-    // per-argument entry separates there - and above kX1 by the asymptotic form
-    // and a recurrence that read no coefficient of either partition, the same
-    // lines under either. So the per-argument entry separates nowhere in C at any
-    // arm, which each arm's own reference line below reports as C 0, and no row is
-    // held to C; the rows are held to every region that entry does separate in -
-    // A, the band and B.
+    // The uniform grid's carriage on the single-precision entries: the block above asks this of
+    // the double lane; the float lane's cells on the same partition are measured in the combination
+    // book by rows that ask it of nothing. Each entry is read twice in one pass, once under each
+    // partition, and the differing cells counted per region against the per-argument entry's own.
     struct PartitionCarriageRowF32 {
         std::string entry;
         std::array<std::size_t, 4> refDiffer{};
