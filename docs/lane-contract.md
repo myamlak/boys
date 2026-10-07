@@ -1492,8 +1492,8 @@ and every lane publishes a figure to halve. The owed book reads zero above, so n
 left to answer with no verdict and no figure; a member a later revision has not derived would be
 asked the same question and would answer with the accessor's own reason.
 Those counts are the accuracy gate's own tolerance block, and the block this page quotes is the one
-the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, revision 6e7b397, whose
-build's lane table is the eight rows this revision's `BoysLaneContracts()` publishes.
+the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, whose build's lane table
+is the eight rows this revision's `BoysLaneContracts()` publishes.
 `boys-consumer-umbrella` — a check whose translation unit includes `<boys/boys.hpp>` and nothing
 else, and links the library — prints the same comparison in its accuracy section, and its four
 requests above are its own.
