@@ -1413,7 +1413,7 @@ One combination per lane, and the grid's rational member beside them, from this 
 | fp64, chebyshev, split-clenshaw, shipped, arguments | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
 | fp32, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.7514e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
 | fp16, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | no figure | 1.5e-07 | 1.7514e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
-| fp32-device, chebyshev, split-clenshaw, shipped, arguments | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured in that run — the configuration it was taken in could not execute the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
+| fp32-device, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.42109e-14 | 1.5e-07 | 1.48716e-07 | bound: the row's base figure; "plus 8e-8 under the fast region-B exponential" is the term its fast member adds, and this class's entry does not select that member. delivered: `BoysFitRoutes()` |
 | fp64, rational-minimax, split-clenshaw, narrow, arguments | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
 
 **The delivered figure is a measurement of the fits and never a bound, and the bound is never a
