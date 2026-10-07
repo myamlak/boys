@@ -378,11 +378,11 @@ region):
 
 | Lane | Region | Worst delivered | Bound claimed |
 |---|---|---|---|
-| double single | A | 2.22e-16 | 1e-15 |
-| double single | band | 3.22e-15 | 3e-14 |
-| double single | B | 7.52e-16 | 3e-14 |
-| double single | C | 5e-14 | 5.5e-14 |
-| float single | all | 6.36e-08 | 1.5e-07 |
+| double single | A | 1.11e-16 | 1e-15 |
+| double single | band | 1.11e-16 | 3e-14 |
+| double single | B | 5.55e-17 | 3e-14 |
+| double single | C | 4.94e-14 | 5.5e-14 |
+| float single | all | 5.2e-08 | 1.5e-07 |
 | fp16 store-half | single | 0.000122 | 0.000122 |
 | bf16 store-half | single | 0.000976 | 0.000977 |
 
