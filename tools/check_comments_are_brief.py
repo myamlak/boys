@@ -105,6 +105,8 @@ def main(argv: list[str]) -> int:
     paths = named or sorted(p for p in root.rglob("*") if wanted(p))
 
     findings = []
+    spliced = []
+
     for path in paths:
         if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
             continue
@@ -112,16 +114,33 @@ def main(argv: list[str]) -> int:
             if not doc and length > options.limit:
                 findings.append((path, first, length))
 
-    for path, first, length in findings:
-        try:
-            shown = path.relative_to(root)
-        except ValueError:
-            shown = path
-        print(f"{shown}:{first}: {length} ordinary comment line(s)")
+        # A `//` comment whose line ends in a backslash. The backslash splices the line into
+        # the next one before the compiler reads it, so the comment swallows the line below -
+        # and gcc says so as `-Wcomment: multi-line comment`, which the build's -Werror makes
+        # fatal. Two seam fixtures carried one and no leg could compile them; this is the
+        # sentence that would have said it before a CI run did.
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            stripped = line.rstrip()
+            if stripped.lstrip().startswith(LINE_COMMENT) and stripped.endswith("\\"):
+                spliced.append((path, number, stripped.strip()[:100]))
 
-    total = len(findings)
-    print(f"check_comments_are_brief: {total} comment run(s) longer than {options.limit} "
-          f"line(s) over {len(paths)} file(s)")
+    def shown(path: Path) -> str:
+        try:
+            return str(path.relative_to(root))
+        except ValueError:
+            return str(path)
+
+    for path, first, length in findings:
+        print(f"{shown(path)}:{first}: {length} ordinary comment line(s)")
+
+    for path, number, text in spliced:
+        print(f"{shown(path)}:{number}: a line comment the backslash splices into the next line "
+              f"- gcc refuses it under -Werror: {text}")
+
+    total = len(findings) + len(spliced)
+    print(f"check_comments_are_brief: {len(findings)} comment run(s) longer than "
+          f"{options.limit} line(s) and {len(spliced)} spliced line comment(s) over "
+          f"{len(paths)} file(s)")
 
     if options.check and total:
         return 1

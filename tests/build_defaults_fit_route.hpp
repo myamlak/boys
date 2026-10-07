@@ -3,8 +3,7 @@
 // BOYS_BUILD_DEFAULTS option, so a configure that fails can say which axis failed:
 // tests/build_defaults_tuned.hpp moves three at once - scheme, division form and granularity.
 
-//   cmake -S . -B build-defaults-fit-route \
-//       -DBOYS_BUILD_DEFAULTS=tests/build_defaults_fit_route.hpp
+//   Point a build at it: -DBOYS_BUILD_DEFAULTS=tests/build_defaults_fit_route.hpp
 
 // A fixture and not a measurement: the value it moves is one the library carries and certifies for
 // every build, and none of it is a claim about any machine. Neither guard a replacement may define

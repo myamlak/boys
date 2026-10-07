@@ -3,8 +3,7 @@
 // pointed at with BOYS_BUILD_DEFAULTS and is a fixture, not a measurement: the member it names is
 // one this library carries and certifies, and none of it is a claim about any machine.
 
-//   cmake -S . -B build-uniform \
-//       -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
+//   Point a build at it: -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
 
 // A build that has measured its own machine writes the host, the date and the option probe's own
 // figures beside its choices; include/boys/boys_build_defaults.hpp states the contract a
