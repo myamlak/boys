@@ -1252,8 +1252,11 @@ def narrow_region_b():
 # The envelope is held and the reachable gain is much smaller, because the
 # fallback is taken only below the band's left edge and the gain is then the
 # call's own order's: 1 at every order from 3 up, 1.58 at order 2 and 2.18 at
-# order 1. The walk holds the envelope rather than that figure so that no
-# piece's reading depends on which order an entry seeds from.
+# order 1. For a fixed x the ratio x^n / prod(j + 1/2) rises with n only until n
+# passes x - 1/2 and falls after, so below the band edge its largest value at an
+# order of 3 or more is order 3's, which at the edge itself is 0.68 and so is
+# still short of 1. The walk holds the envelope rather than that figure so that
+# no piece's reading depends on which order an entry seeds from.
 #
 # The gain is not transcribed here: the same seed_weight the shipped fits are
 # weighted by is the one the walk is budgeted with, so a change to the shipped
@@ -1341,36 +1344,12 @@ def narrow_a_block_lines(narrow_a):
     shipped = narrow_a["shipped"]
     shipped_rows = sum(len(pieces) for pieces in shipped)
     shipped_stored = sum(len(p[3]) for pieces in shipped for p in pieces)
-    shipped_degs = sorted(p[2] for pieces in shipped for p in pieces)
     deg = NARROW_DEG
     lines = [
-        "// The narrow partition of region A: every order's interval cut at",
-        f"// degree {deg}, each piece as wide as the tighter of the two readings the",
-        "// region is read under lets it be (the generator's region_a_piece_budget).",
-        "// The batch entry seeds its downward recursion from the top order's piece,",
-        "// and that recursion amplifies the seed's error by seed_weight(n, b) at",
-        "// the piece's right end b. The envelope over the region reaches 1.04e5 at",
-        "// order 12 and the region's right edge, while the fallback is taken only",
-        "// below the band's left edge, x < kExtendedBX0, where the gain a call",
-        "// reaches is that order's own: 1 at every order from 3 up, 1.58 at order 2",
-        "// and 2.18 at order 1. For a fixed x the ratio x^n / prod(j + 1/2) rises",
-        "// with n only until n passes x - 1/2 and falls after, so below the band",
-        "// edge its largest value at an order of 3 or more is order 3's, which at",
-        "// the edge itself is 0.68 and so is still short of 1. The walk holds the",
-        "// envelope and not that reachable figure, so that no piece's reading",
-        "// depends on which piece an entry happens to seed from. The single-order",
-        "// lane reads the piece at its own size under region A's 1e-15 bar, and",
-        "// both readings are held, so a high order's last pieces come back narrower",
-        "// than either alone.",
-        "//",
-        "// Same fields, same meaning and the same lookup shape as kPieces gives the",
-        "// shipped partition: one row per piece carrying its own interval, degree",
-        "// and offset, so one scan serves either table. Naming this partition is a",
-        "// trade of coefficients per evaluation for table rows and a piece lookup,",
-        f"// not a saving: this table is {total} rows where the shipped partition is",
-        f"// {shipped_rows}, and it stores {total * (deg + 1)} coefficients where the shipped",
-        f"// stores {shipped_stored}, while one evaluation reads kNarrowADeg + 1 = {deg + 1}",
-        f"// instead of the shipped pieces' {shipped_degs[0] + 1} to {shipped_degs[-1] + 1}.",
+        f"// The narrow partition of region A: every order's interval cut at degree {deg}, each",
+        "// piece as wide as the tighter of its two readings lets it be",
+        f"// (region_a_piece_budget). Same fields and lookup as kPieces, but {total} rows",
+        f"// to the shipped {shipped_rows}: {total * (deg + 1)} coefficients against {shipped_stored}.",
         f"inline constexpr int kNarrowADeg = {deg};",
         deg_assert("kNarrowADeg"),
         "inline constexpr auto kNarrowAPieces = std::to_array<OrderPiece>({",
@@ -1403,13 +1382,10 @@ def narrow_a_block_lines(narrow_a):
     lines.append("static_assert(std::size(kNarrowAMonoCoeffs) == std::size(kNarrowACoeffs),\n"
                  "              \"the monomial table must parallel the Chebyshev table\");")
     lines.append("")
-    lines.append("// The narrow region-A partition's certification rows: the bound each")
-    lines.append("// scheme delivers on it in each multiply-add route, worst over its")
-    lines.append("// pieces, published as a power-of-two round-up so it bounds a sweep")
-    lines.append("// and not only the one that measured it. The pieces are measured at")
-    lines.append("// their own size; the gain the batch entry's recursion applies to a")
-    lines.append("// piece it seeds with is bounded by the budget the walk placed the")
-    lines.append("// pieces under, which is what makes both readings hold at once.")
+    lines.append("// The narrow region-A partition's certification rows: the bound each scheme")
+    lines.append("// delivers on it in each multiply-add route, worst over its pieces, rounded")
+    lines.append("// up to a power of two so it bounds a sweep and not only its own. The")
+    lines.append("// pieces are measured at their own size; the recursion gain is budget-bounded.")
     lines.append("struct NarrowARow { int scheme, deg, pieces, stored;")
     lines.append("                    double fused, separate; };")
     lines.append("inline constexpr auto kNarrowARows = std::to_array<NarrowARow>({")
@@ -1529,6 +1505,20 @@ def flat_block_lines(flat):
     the read rule in a line. A stride the coefficients do not have reads a
     correct table wrongly, and no check of the coefficients alone would catch
     it.
+
+    Two things separate it from the derived partitions, and the option probe
+    measures both. The grid is equal-width and derived, so the interval an
+    argument falls in is one multiply and a truncation rather than a scan of
+    piece edges. And no order is built from another, so a ladder is a set of
+    independent polynomials where the derived routes recur upward from a seed,
+    a serial dependency chain over the orders that no amount of
+    instruction-level parallelism can shorten. What that costs is storage and a
+    floor on the work per order: the derived partitions spend coefficients
+    where the function needs them and charge one multiply for a high order once
+    the seed is paid, while here every order pays its own interval's degree.
+    The grid is one width for all orders rather than a per-order walk, and each
+    interval's degree is the smallest the proved truncation bound carries under
+    the bound the region is held to.
     """
     grid = flat["grid"]
     degs = grid["degs"]
@@ -1541,31 +1531,10 @@ def flat_block_lines(flat):
         raise RuntimeError("the uniform table's fits are not on the grid the block "
                            "writer is emitting: the degrees disagree")
     lines = [
-        "// The uniform table: one derived grid over [0, kFlatHi), every interval",
-        f"// the same width (kFlatWidth = {mp.nstr(grid['width'], 8)}), every order",
-        "// fitted independently at its interval's own degree (kFlatDegs), at the",
-        f"// read cap kFlatReadCap = {cap} or below.",
-        "//",
-        "// Two things separate it from the derived partitions, and they are the",
-        "// two the option probe measures. The grid is equal-width and derived, so",
-        "// the interval an argument falls in is one multiply and a truncation and",
-        "// not a scan of piece edges. And no order is built from another, so a",
-        "// ladder is a set of independent polynomials: the derived routes recur",
-        "// upward from a seed, which is a serial dependency chain over the orders",
-        "// that no amount of instruction-level parallelism can shorten.",
-        "//",
-        "// What that costs is storage and a floor on the work per order. The",
-        "// derived partitions spend coefficients where the function needs them",
-        "// and recur, so a high order costs one multiply once the seed is paid;",
-        "// here every order pays its own interval's degree. The grid is one width",
-        "// for all orders rather than a per-order walk, and each interval's degree",
-        "// is the smallest the proved truncation bound carries under the bound the",
-        "// region is held to - lower than the cap wherever F_n is smaller or",
-        "// decays faster, which is every interval past the first few.",
-        "//",
-        "// The read rule, because the table has no single stride:",
-        "//   kFlatCoeffs[kFlatOffsets[iv] + order * (kFlatDegs[iv] + 1) + k]",
-        "// and the same for kFlatMonoCoeffs, for k <= kFlatDegs[iv].",
+        f"// The uniform table: one derived grid over [0, kFlatHi), width kFlatWidth = {mp.nstr(grid['width'], 8)},",
+        f"// every order fitted at its interval's own degree (kFlatDegs), cap kFlatReadCap = {cap}.",
+        "// Read at kFlatCoeffs[kFlatOffsets[iv] + order * (kFlatDegs[iv] + 1) + k] and the",
+        "// same for kFlatMonoCoeffs, for k <= kFlatDegs[iv].",
         f"inline constexpr int kFlatReadCap = {cap};",
         deg_assert("kFlatReadCap"),
         f"inline constexpr int kFlatIntervals = {intervals};",
@@ -1602,14 +1571,10 @@ def flat_block_lines(flat):
     lines.append(f"static_assert(kFlatOffsets[kFlatIntervals] == {stored},\n"
                  "              \"the offsets must reach the end of the uniform table\");")
     lines.append("")
-    lines.append("// The uniform table's certification rows, in the same form as the")
-    lines.append("// derived partitions': the bound each scheme delivers in each")
-    lines.append("// multiply-add route, worst over the whole table, published as a")
-    lines.append("// power-of-two round-up so it bounds a sweep and not only the one")
-    lines.append("// that measured it. The table is not read through a recurrence, so")
-    lines.append("// there is no seeding gain to bound and the figure is the table's")
-    lines.append("// own measured worst. deg is the read cap; the stored count is the")
-    lines.append("// sum over the intervals of their own degrees.")
+    lines.append("// The uniform table's certification rows, in the derived partitions' form:")
+    lines.append("// the bound each scheme delivers in each multiply-add route, worst over the")
+    lines.append("// whole table, rounded up to a power of two so it bounds a sweep. No")
+    lines.append("// recurrence is read, so no seeding gain. deg is the cap; stored sums the degrees.")
     lines.append("struct FlatRow { int scheme, deg, intervals, stored;")
     lines.append("                 double fused, separate; };")
     lines.append("inline constexpr auto kFlatRows = std::to_array<FlatRow>({")
@@ -1938,6 +1903,16 @@ def flat_rat_block_lines(frat):
     offsets and its own degree columns and states its read rule in a line - a
     stride the coefficients do not have reads a correct table wrongly, and no
     check of the coefficients alone would catch it.
+
+    The pair is chosen as this file's other rational routes choose theirs: the
+    ladder is walked from the smallest stored pair up until one holds half the
+    bound the grid's cells are held to, and the entry kept is the one among the
+    first few that hold whose delivered error is smallest. At the cells that set
+    the member's figure the entries differ only by how their own coefficients
+    round, and the published row is a power-of-two round-up, so which entry is
+    taken decides which figure is published. Every figure read is the delivered
+    error in the kernel's own arithmetic, at both multiply-add routes with the
+    worse taken.
     """
     grid = frat["grid"]
     intervals = grid["intervals"]
@@ -1952,31 +1927,10 @@ def flat_rat_block_lines(frat):
         raise RuntimeError("the rational member's stored count is not the sum of its "
                           "intervals' pairs")
     lines = [
-        "// The rational minimax family over the uniform grid: one numerator/",
-        "// denominator pair per interval, fitted over that interval's own cell and",
-        "// read at the mapped argument the grid's locator builds for it. The",
-        "// partition is the grid's - the intervals are the cells the width law",
-        "// derived, not a cut this family makes - so what this table brings to it is",
-        "// the pairs.",
-        "//",
-        "// Each row stores the numerator p_0..p_m and then the denominator's",
-        "// q_1..q_k with q_0 held at 1, the stored form RationalFit reads; the",
-        "// degree columns say how many of each. The pair is chosen as this file's",
-        "// other rational routes choose theirs: the ladder is walked from the",
-        "// smallest stored pair up until one holds half the bound the grid's cells",
-        "// are held to, and the entry kept is the one among the first few that",
-        "// hold whose delivered error is smallest - at the cells that set this",
-        "// member's figure the entries differ only by how their own coefficients",
-        "// round, and the row below is a power-of-two round-up, so which entry is",
-        "// taken decides which figure is published. Every figure read here is the",
-        "// delivered error in the kernel's own arithmetic, at BOTH multiply-add",
-        "// routes with the worse taken: a bound taken at one route is not a bound",
-        "// on the other's evaluation, so the row below is the reading of both.",
-        "//",
-        "// The read rule, because this table has no single stride either:",
-        "//   kFlatRatCoeffs[kFlatRatOffsets[iv] + order * kFlatRatStored[iv] + j]",
-        "// for j <= kFlatRatNumDeg[iv] + kFlatRatDenDeg[iv], the numerator's",
-        "// coefficients first and the denominator's q_1..q_k after them.",
+        "// The rational minimax family over the uniform grid: one numerator/denominator pair",
+        "// per interval at the grid's own cells (the cells the width law derived, not a",
+        "// cut this family makes). Row = p_0..p_m then q_1..q_k, q_0 = 1; chosen by the",
+        "// ladder, read at kFlatRatCoeffs[kFlatRatOffsets[iv] + order * kFlatRatStored[iv] + j].",
         f"inline constexpr int kFlatRatIntervals = {intervals};",
         f"inline constexpr int kFlatRatStoredTotal = {stored};",
         "inline constexpr auto kFlatRatNumDeg = std::to_array<int>({",
@@ -2028,11 +1982,10 @@ def flat_rat_block_lines(frat):
                  "              \"the rational member is read at the Chebyshev member's "
                  "own grid\");")
     lines.append("")
-    lines.append("// What the rational member delivers, at each multiply-add route,")
-    lines.append("// against the bound the grid's cells are held to. Measured on each")
-    lines.append("// cell's own certification grid - offset half a step from the grid")
-    lines.append("// the fits were made on - on the stored coefficients, which is what")
-    lines.append("// the acceptance above read.")
+    lines.append("// What the rational member delivers, at each multiply-add route, against")
+    lines.append("// the bound the grid's cells are held to. Measured on each cell's own")
+    lines.append("// certification grid - offset half a step from the fit grid - on the stored")
+    lines.append("// coefficients, which is what the acceptance above read.")
     lines.append("struct FlatRatRow { int stored; double fused, separate; };")
     lines.append("inline constexpr auto kFlatRatRows = std::to_array<FlatRatRow>({")
     lines.append(f"  {{{stored}, {fmt(frat['worst'][0])}, {fmt(frat['worst'][1])}}},")
@@ -2065,18 +2018,10 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
     order; region B's are one per narrow region-B piece, in that order.
     """
     lines = [
-        "// The rational minimax family over the narrow partition: its own degree",
-        "// pair per narrow piece, over that piece's own interval and mapped",
-        "// argument. The intervals are the Chebyshev route's narrow ones - a",
-        "// partition is a cut of the region and not a property of a family - so",
-        "// this table carries pairs only and is read at kNarrowAPieces' intervals.",
-        "// Each row stores the numerator p_0..p_m and then the denominator's",
-        "// q_1..q_k with q_0 held at 1; the degree columns say how many of each.",
-        "// Every row was accepted at the bare 3e-14-class criterion the shipped",
-        "// rational pieces were accepted at, read in the kernel's own arithmetic",
-        "// at BOTH multiply-add routes with the worse taken (see the generator).",
-        "// A bound taken at one route is not a bound on the other's evaluation,",
-        "// so these rows are the reading of both.",
+        "// The rational minimax family over the narrow partition: one degree pair per",
+        "// narrow piece, read at kNarrowAPieces' intervals and mapped arguments (a",
+        "// partition is a cut of the region, not a family's). Row = p_0..p_m then",
+        "// q_1..q_k, q_0 = 1; accepted at the shipped 3e-14 bar, worse of both routes.",
     ]
     per_order = narrow_rat_a["orders"]
     a_coeffs = []
@@ -2161,28 +2106,21 @@ def narrow_b_block_lines(narrow):
     generation is hours and this block is seconds, so --narrow-only writes
     these lines and the block's byte-identity is checked without the rest of
     the table. write_header writes the same lines, so the two cannot drift.
+
+    The extended band is the same fit at either granularity, because nothing
+    amplifies its seed - the upward recursion it feeds runs the other way, so
+    an error in it stays the size it is. Region A's pieces are read the other
+    way round and are partitioned separately, by the gain the batch entry's
+    downward recursion applies to them rather than by this bound alone. Naming
+    this partition leaves the shipped seed's coefficients untouched.
     """
     pieces = narrow["pieces"]
     deg = pieces[0][2]
     lines = [
-        "// The narrow partition of region B: the same interval [kX0, kX1) cut",
-        f"// into {len(pieces)} pieces at degree {deg}, each as wide as the proved a-priori",
-        "// truncation bound lets it be at the 1e-14 target (see --derive-partition).",
-        "// One evaluation reads kNarrowBDeg + 1 coefficients from the one piece the",
-        "// argument falls in, against the shipped seed's kBDeg + 1 from its single",
-        "// row - a trade of coefficients per evaluation against table rows, not a",
-        "// saving: the table is kNarrowBPieces rows where the shipped seed is one.",
-        "// Every piece is at the same degree, so piece i's coefficients start at",
-        "// i * (kNarrowBDeg + 1) and no offset table is stored. The shipped seed's",
-        "// coefficients above are untouched by this and are the same bytes whether",
-        "// or not the partition is named.",
-        "//",
-        "// Region A's own narrow partition and the extended band: the extended band",
-        "// is the same fit at either granularity, because nothing amplifies its",
-        "// seed - the upward recursion it feeds runs the other way, so an error in",
-        "// it stays the size it is. Region A's pieces are read the other way round,",
-        "// and are partitioned above; their criterion is the gain the batch entry's",
-        "// downward recursion applies to them, not this bound alone.",
+        f"// The narrow partition of region B: the same interval [kX0, kX1) cut into {len(pieces)}",
+        f"// pieces at degree {deg}, each as wide as the proved a-priori truncation bound lets",
+        "// it be at the 1e-14 target (see --derive-partition). One degree throughout, so",
+        "// no offset table: piece i starts at i * (kNarrowBDeg + 1). The seed is unchanged.",
         f"inline constexpr int kNarrowBDeg = {deg};",
         deg_assert("kNarrowBDeg"),
         f"inline constexpr int kNarrowBPieces = {len(pieces)};",
@@ -2202,12 +2140,10 @@ def narrow_b_block_lines(narrow):
                  "                  && std::size(kNarrowBMonoCoeffs) == std::size(kNarrowBcoeffs),\n"
                  "              \"the narrow partition's pieces must tile [kX0, kX1)\");")
     lines.append("")
-    lines.append("// The narrow partition's certification rows, the same shape as the")
-    lines.append("// scheme rows below and measured the same way: the bound each scheme")
-    lines.append("// delivers on it in each multiply-add route, worst over its pieces,")
-    lines.append("// published as a power-of-two round-up so it bounds a sweep and not")
-    lines.append("// only the one that measured it. Counted apart from the shipped rows")
-    lines.append("// because it is a second partition and not a row of the first.")
+    lines.append("// The narrow partition's certification rows, the same shape and measured")
+    lines.append("// the same way as the scheme rows below: the bound each scheme delivers on")
+    lines.append("// it in each multiply-add route, worst over its pieces, rounded up to a")
+    lines.append("// power of two. Counted apart from the shipped rows: a second partition.")
     lines.append("struct NarrowRow { int scheme, deg, stored;")
     lines.append("                   double fused, separate; };")
     lines.append("inline constexpr auto kNarrowRows = std::to_array<NarrowRow>({")
@@ -4639,20 +4575,19 @@ def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
     The same shape `kRatAPieces`/`kRatACoeffs` and the region-B pair have, at
     the narrow pieces' own intervals: a piece table with its own degree pair
     per row, so a bisected piece is a row like any other.
+
+    Every row was searched at the narrow partition's own aim, half the lane's
+    tolerance, and asked again at the lane's own target where an order's
+    binary32 floor stands above the aim; it ships only where the lane's own
+    weighted target holds, read in the lane's own binary32 at both multiply-add
+    routes with the worse taken, which is the arithmetic the entry runs and not
+    the exact reading its shipped pieces were accepted on. The figure the block
+    carries is that worse reading, swept.
     """
-    f.write("\n// The float lane's rational route over its own narrow partition: the\n"
-            "// family's own degree pair per piece, at each piece's own interval and\n"
-            "// mapped argument. The partitions are the narrow Chebyshev ones - a\n"
-            "// partition is a cut of the region, not a property of a family - so a\n"
-            "// piece the family could not hold the target on is bisected, and the\n"
-            "// piece table carries the result. Every row was searched at the narrow\n"
-            "// partition's own aim, half the lane's tolerance, and asked again at the\n"
-            "// lane's own target where an order's binary32 floor stands above the aim;\n"
-            "// it ships only where the lane's own weighted target holds, read in the\n"
-            "// lane's own binary32, at BOTH multiply-add routes with the worse taken,\n"
-            "// which is the arithmetic the entry runs and not the exact reading its\n"
-            "// shipped pieces were accepted on. The figure below is that worse\n"
-            "// reading, swept.\n")
+    f.write("\n// The float lane's rational route over its own narrow partition: one degree pair\n"
+            "// per piece at each piece's own interval and mapped argument. The partitions\n"
+            "// are the narrow Chebyshev ones; a piece it could not hold the target on is\n"
+            "// bisected, and the piece table carries it. Accepted on the lane's own binary32.\n")
     a_pieces = [piece for n in range(MAX_ORDER + 1) for piece in narrow_rat_f32["orders"][n]]
     a_coeffs = []
     a_offsets = []
@@ -4717,18 +4652,17 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     A function of its own because the block is what --narrow-only
     reproduces on its own: write_f32_namespace calls it and so does that
     path, so the two cannot drift.
+
+    The shipped pieces are untouched by these tables and are the same bytes
+    whether or not the partitions are named.
     """
     # The lane's own narrow partition: the same fitted regions at a narrower
     # degree, placed by the lane's own bisection law and measured in the lane's
     # own binary32 arithmetic at both multiply-add routes.
-    f.write("\n// The float lane's narrow partition of region A: the lane's own\n"
-            "// weighted 1e-7 law and the same midpoint bisection the shipped pieces\n"
-            f"// were placed by, at degree {F32_NARROW_DEG} instead of the lane's degree cap.\n"
-            "// A lower degree accepts a narrower interval, so the partition comes\n"
-            "// back with more pieces of fewer coefficients each: the trade the\n"
-            "// granularity axis names, and not a saving. The shipped pieces above\n"
-            "// are untouched by this and are the same bytes whether or not the\n"
-            "// partition is named.\n")
+    f.write("\n// The float lane's narrow partition of region A: the lane's own weighted 1e-7 law\n"
+            "// and the same midpoint bisection the shipped pieces were placed by, at degree\n"
+            f"// {F32_NARROW_DEG} instead of the lane's degree cap. A lower degree accepts a narrower\n"
+            "// interval: more pieces of fewer coefficients each, the granularity axis's trade.\n")
     f.write("inline constexpr int kNarrowADegF32 = " + str(F32_NARROW_DEG) + ";\n")
     f.write(deg_assert("kNarrowADegF32"))
     narrow_a32 = []
@@ -4764,15 +4698,10 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     f.write("static_assert(std::size(kNarrowAPieceStartF32) == kMaxOrder + 2,\n"
             "              \"narrow piece-start table must cover kMaxOrder\");\n")
 
-    f.write("\n// The float lane's narrow partition of region B: the same interval\n"
-            "// [kX0, kX1) cut until the figure the lane's own recurrence carries\n"
-            "// is under half the lane's budget. Region B has no walk of its own\n"
-            "// to inherit, and the seed's error is amplified by the steps that\n"
-            "// follow it, so a piece is placed by the carried figure and not by\n"
-            "// its fit residual alone: the pieces nearest kX0 come out narrowest.\n"
-            "// One evaluation reads kNarrowBDegF32 + 1 coefficients from the one piece\n"
-            "// the argument falls in, against the shipped seed's kBDeg + 1 from its\n"
-            "// single row.\n")
+    f.write("\n// The float lane's narrow partition of region B: [kX0, kX1) cut until the figure\n"
+            "// the lane's own recurrence carries is under half its budget. The seed's error\n"
+            "// is amplified by the steps that follow it, so a piece is placed by the carried\n"
+            "// figure and not its fit residual: the pieces nearest kX0 come out narrowest.\n")
     f.write("inline constexpr int kNarrowBDegF32 = " + str(F32_NARROW_DEG) + ";\n")
     f.write(deg_assert("kNarrowBDegF32"))
     nbp = narrow_b_f32["pieces"]
@@ -4799,13 +4728,10 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     # What the narrow partition stores and what it delivers, in the lane's own
     # arithmetic at each multiply-add route: the figure a row published for it
     # is the worse of the two.
-    f.write("\n// What the lane's narrow partition stores and what it delivers, per\n"
-            "// multiply-add route. Measured on each piece's own grid against the\n"
-            "// lane's reference, in binary32 on the coefficients as stored, under\n"
-            "// both schemes the lane's entries sum by - which is the arithmetic the\n"
-            "// entries run and not the binary64 sweep the pieces were placed by. A\n"
-            "// swept maximum on a finite grid: the bar is kRegionAFitBar and, for\n"
-            "// region B, kRegionBFitBar.\n"
+    f.write("\n// What the lane's narrow partition stores and what it delivers, per multiply-add\n"
+            "// route, against the lane's reference: measured on each piece's own grid in\n"
+            "// binary32 on the stored coefficients, under both schemes the entries sum by.\n"
+            "// A swept maximum, not a bound: the bar is kRegionAFitBar, kRegionBFitBar for B.\n"
             "struct NarrowRowF32 { int scheme, deg, pieces, stored;\n"
             "                      double fused, separate; };\n"
             "inline constexpr auto kNarrowARowsF32 = std::to_array<NarrowRowF32>({\n")
@@ -4851,32 +4777,10 @@ def flat_f32_block_lines(f, flat_f32):
     if [iv[2] for iv in per_order[0]] != list(degs):
         raise RuntimeError("the float uniform table's fits are not on the grid the "
                            "block writer is emitting: the degrees disagree")
-    f.write(f"\n// The float lane's uniform table: the lane's own derived grid over\n"
-            f"// [0, kFlatHiF32), every interval the same width (kFlatWidthF32 =\n"
-            f"// {mp.nstr(grid['width'], 8)}), every order fitted independently at its\n"
-            f"// interval's own degree (kFlatDegsF32), at the read cap\n"
-            f"// kFlatReadCapF32 = {cap} or below.\n"
-            "//\n"
-            "// The grid is the lane's own and not the double table's: it is derived\n"
-            "// from this lane's bound, this lane's format and this lane's read cap,\n"
-            "// so its interval count, its join and its degrees are the double\n"
-            "// lane's only by coincidence.\n"
-            f"// Degree {cap} is the smallest ClenshawSplit reads - it takes its top\n"
-            "// odd coefficient at c[2m-1] and requires an even degree of at least\n"
-            "// 4 - and half an ulp of 1 in binary32 is 5.96e-8 against this lane's\n"
-            "// 1e-7 bar, so on the first cell - the worst one - the delivered\n"
-            "// figure is 7.747e-8 in the split Clenshaw route and 3.745e-8 in\n"
-            "// Horner, against a truncation bound of 8.436e-9. What this table\n"
-            "// delivers is the lane's rounding and not its truncation, and a\n"
-            "// higher even degree buys nothing for two more coefficients per\n"
-            "// order.\n"
-            "//\n"
-            "// Layout is the double table's: interval-major,\n"
-            "// [interval][order][coefficient], so an argument's whole ladder is one\n"
-            "// contiguous block instead of 33 rows apart - read at\n"
-            "//   kFlatCoeffsF32[kFlatOffsetsF32[iv] + order * (kFlatDegsF32[iv] + 1)]\n"
-            "// because the degrees differ per interval and the table has no single\n"
-            "// stride.\n")
+    f.write(f"\n// The float lane's uniform table: the lane's own derived grid over [0, kFlatHiF32),\n"
+            f"// width kFlatWidthF32 = {mp.nstr(grid['width'], 8)}, every order fitted at its interval's\n"
+            f"// own degree (kFlatDegsF32), cap kFlatReadCapF32 = {cap}. Layout is the double table's,\n"
+            "// interval-major: kFlatCoeffsF32[kFlatOffsetsF32[iv] + order * (kFlatDegsF32[iv] + 1)].\n")
     f.write(f"inline constexpr int kFlatReadCapF32 = {cap};\n")
     f.write(deg_assert("kFlatReadCapF32"))
     f.write(f"inline constexpr int kFlatIntervalsF32 = {intervals};\n")
@@ -4913,16 +4817,10 @@ def flat_f32_block_lines(f, flat_f32):
     f.write(f"static_assert(kFlatOffsetsF32[kFlatIntervalsF32] == {stored},\n"
             "              \"the offsets must reach the end of the float uniform "
             "table\");\n")
-    f.write("\n// The float uniform table's certification rows, in the same form as\n"
-            "// the double table's and the lane's other rows: the bound each scheme\n"
-            "// delivers in each multiply-add route, worst over the whole table,\n"
-            "// published as a power-of-two round-up so it bounds a sweep and not\n"
-            "// only the one that measured it. The figures were read in the lane's\n"
-            "// own binary32, on the coefficients as stored, with the worse of the\n"
-            "// two multiply-add routes kept - which is the arithmetic the entries\n"
-            "// run and not the binary64 sweep the double lane's fit is judged by.\n"
-            "// deg is the read cap; the stored count is the sum over the intervals\n"
-            "// of their own degrees.\n"
+    f.write("\n// The float uniform table's certification rows, in the double table's form: the\n"
+            "// bound each scheme delivers in each multiply-add route, worst over the whole\n"
+            "// table, rounded up to a power of two so it bounds a sweep. Read in the lane's\n"
+            "// own binary32 on the stored coefficients. deg is the cap; stored sums them.\n"
             "struct FlatRowF32 { int scheme, deg, intervals, stored;\n"
             "                    double fused, separate; };\n"
             "inline constexpr auto kFlatRowsF32 = std::to_array<FlatRowF32>({\n")
@@ -5297,32 +5195,10 @@ def flat_rat_f32_block_lines(frat):
         raise RuntimeError("the float rational member's stored count is not the sum "
                           "of its intervals' pairs")
     lines = [
-        "// The rational minimax family over the float lane's uniform grid: one",
-        "// numerator/denominator pair per interval, fitted over that interval's",
-        "// own cell and read at the mapped argument the float locator builds for",
-        "// it. The partition is the grid's - the intervals are the cells the width",
-        "// law derived, not a cut this family makes - so what this table brings to",
-        "// it is the pairs.",
-        "//",
-        "// Each row stores the numerator p_0..p_m and then the denominator's",
-        "// q_1..q_k with q_0 held at 1, the stored form the lane's rational reader",
-        "// uses; the degree columns say how many of each. The pair is chosen as the",
-        "// double member's is: the ladder is walked from the smallest stored pair",
-        "// up until one holds the bound the grid's cells are held to, and the entry",
-        "// kept is the one among the first few that hold whose delivered error is",
-        "// smallest - at the cells that set this member's figure the entries differ",
-        "// only by how their own coefficients round, and the row below is a",
-        "// power-of-two round-up, so which entry is taken decides which figure is",
-        "// published. Every figure read here is the delivered error in the lane's",
-        "// own binary32, at BOTH multiply-add routes with the worse taken, on the",
-        "// coefficients as stored, and on the points the accuracy gate reads this",
-        "// lane at as well as the cell's own.",
-        "//",
-        "// The read rule, because this table has no single stride either:",
-        "//   kFlatRatCoeffsF32[kFlatRatOffsetsF32[iv] + order * kFlatRatStoredF32[iv]",
-        "//                    + j]",
-        "// for j <= kFlatRatNumDegF32[iv] + kFlatRatDenDegF32[iv], the numerator's",
-        "// coefficients first and the denominator's q_1..q_k after them.",
+        "// The rational minimax family over the float lane's uniform grid: one numerator/",
+        "// denominator pair per interval at the grid's own cells, read at the mapped",
+        "// argument the float locator builds. Row = p_0..p_m then q_1..q_k, q_0 = 1;",
+        "// read at kFlatRatCoeffsF32[kFlatRatOffsetsF32[iv] + order * kFlatRatStoredF32[iv] + j].",
         f"inline constexpr int kFlatRatIntervalsF32 = {intervals};",
         f"inline constexpr int kFlatRatStoredTotalF32 = {stored};",
         "inline constexpr auto kFlatRatNumDegF32 = std::to_array<int>({",
@@ -5378,11 +5254,10 @@ def flat_rat_f32_block_lines(frat):
                  "              \"the float rational member is read at the float "
                  "Chebyshev member's own grid\");")
     lines.append("")
-    lines.append("// What the float rational member delivers, at each multiply-add")
-    lines.append("// route, against the bound the grid's cells are held to. Measured on")
-    lines.append("// each cell's own certification view - the fit grid offset half a step,")
-    lines.append("// the lane's acceptance grid and the accuracy gate's cells - on the")
-    lines.append("// stored coefficients, which is what the acceptance above read.")
+    lines.append("// What the float rational member delivers, at each multiply-add route,")
+    lines.append("// against the bound the grid's cells are held to. Measured on each cell's own")
+    lines.append("// certification view - the fit grid offset half a step, the acceptance grid")
+    lines.append("// and the gate's cells - on the stored coefficients, as the acceptance read.")
     lines.append("struct FlatRatRowF32 { int stored; double fused, separate; };")
     lines.append("inline constexpr auto kFlatRatRowsF32 = "
                  "std::to_array<FlatRatRowF32>({")
@@ -5408,7 +5283,18 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
                         narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
                         flat_rat_f32):
     """The float lane's tables: the shipped lane, the rational route, the narrow
-    partition under both routes, the uniform table."""
+    partition under both routes, the uniform table.
+
+    The region-A figures cover the lane's two routes over [0, kX0): the
+    Chebyshev table is stored once and read by both schemes, so it carries one
+    delivered figure for each and one stored count and piece list for the two.
+    The rational route's selector takes over at kRatARouteLo and, per order,
+    from that order's own end, where the lane stops reading the order from its
+    own fit and documents the band's 3e-14 rather than the per-order 1e-15;
+    below such an end the lane is documented at 1e-15, which these pieces do
+    not hold. The rational pieces were accepted below the bar rather than at
+    it, so the bar survives a certifying sweep on a different grid.
+    """
     f.write("\nnamespace boys::detail::f32 {\n\n")
     all_coeffs = []
     all_mono = []
@@ -5468,12 +5354,10 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             pieces.append((n, pc))
             stored.extend(fmtf(v) for v in pc["p"])
             stored.extend(fmtf(v) for v in pc["q"])
-    f.write("\n// The float lane's rational route: a weighted minimax fit of each\n"
-            "// order's interval, evaluated as num / (1 + t*horner(q, t)) in the\n"
-            "// same mapped argument the Chebyshev piece uses, and read in the\n"
-            "// lane's own precision. It is an offered alternative, not a\n"
-            "// replacement: the Chebyshev tables above are the default route and\n"
-            "// are unchanged by its presence.\n")
+    f.write("\n// The float lane's rational route: a weighted minimax fit of each order's\n"
+            "// interval, evaluated as num / (1 + t*horner(q, t)) in the same mapped\n"
+            "// argument the Chebyshev piece uses, read in the lane's own precision. An\n"
+            "// offered alternative, not a replacement: the Chebyshev tables are the default.\n")
     f.write("inline constexpr auto kRatACoeffs = std::to_array<float>({\n")
     for i in range(0, len(stored), 6):
         f.write("  " + ", ".join(stored[i:i + 6]) + ",\n")
@@ -5521,20 +5405,10 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     # kRegionAFitBar. Every figure here is the worse of the two multiply-add
     # routes, because a build runs one of them and a figure that covers one
     # understates the other.
-    f.write("\n// The two region-A routes as the generator measures them, over\n"
-            "// [0, kX0): the stored coefficients each evaluates and the worst\n"
-            "// |F_n - fit| each reaches over each order's own intervals, read at\n"
-            "// every argument of the region's acceptance grid and at every cell\n"
-            "// the accuracy gate sweeps in the region, in the lane's own\n"
-            "// arithmetic - the evaluation the single-precision single entry\n"
-            "// performs - and on the coefficients as stored. A swept maximum on a\n"
-            "// finite grid, not a bound: the bar both routes are certified against\n"
-            "// is kRegionAFitBar. Every figure here is the worse of the two\n"
-            "// multiply-add routes, because a build runs one of them and a figure\n"
-            "// that covers one understates the other. The Chebyshev table is\n"
-            "// stored once and read by\n"
-            "// both schemes, so it carries one delivered figure for each and one\n"
-            "// stored count and piece list for the two.\n"
+    f.write("\n// The two region-A routes as the generator measures them, over [0, kX0), in\n"
+            "// binary32 on the stored coefficients, the worse of both multiply-add routes:\n"
+            "// the stored count each evaluates and the worst |F_n - fit| each reaches on each\n"
+            "// order's intervals, at the acceptance grid and the gate's cells. Bar: kRegionAFitBar.\n"
             f"inline constexpr double kRegionAFitBar = {fmt(rat_a_f32['bound'])};\n"
             "inline constexpr int kRegionAFitChebStored = "
             + str(rat_a_f32["cheb_stored"]) + ";\n"
@@ -5548,14 +5422,10 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             + fmt(rat_a_f32["delivered"]) + ";\n")
 
     # The region-B seeds, the two routes over one interval.
-    f.write("\n// The two region-B seeds as the generator measures them: the stored\n"
-            "// coefficients each evaluates and the worst |F_0 - fit| each reaches\n"
-            "// over [kX0, kX1), on the same points as the region-A figures above -\n"
-            "// region B's acceptance grid and the gate's cells in the interval -\n"
-            "// against the same reference and in the same arithmetic, the worse of\n"
-            "// the two multiply-add routes taken. A swept\n"
-            "// maximum, not a bound: the bar both seeds are certified against is\n"
-            "// kRegionBFitBar.\n"
+    f.write("\n// The two region-B seeds as the generator measures them: the stored count each\n"
+            "// evaluates and the worst |F_0 - fit| each reaches over [kX0, kX1), on the\n"
+            "// region-A points above, in the same arithmetic, the worse of both multiply-add\n"
+            "// routes. A swept maximum, not a bound: the bar is kRegionBFitBar.\n"
             f"inline constexpr double kRegionBFitBar = {fmt(rat_a_f32['bound'])};\n"
             "inline constexpr int kRegionBFitChebStored = "
             + str(rat_b_f32["cheb_stored"]) + ";\n"
@@ -5587,14 +5457,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
                  flat_f32, flat_rat, flat_rat_f32):
     with open(path, "w", newline="\n") as f:
-        f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT.\n")
-        f.write("// Piecewise Chebyshev (split Clenshaw) fits of F_n(x), region A seeds\n")
-        f.write("// weighted against downward-recursion amplification; validated against a\n")
-        f.write("// 30-digit mpmath reference (definitive check: tests/boys_test.cpp).\n")
+        f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT. Not API: the tables the\n")
+        f.write("// entries are compiled from - split-Clenshaw Chebyshev fits of F_n(x): region A seeds\n")
+        f.write("// weighted against downward-recursion gain (definitive check tests/boys_test.cpp).\n")
         f.write("/// \\cond\n")
-        f.write("// Not API: the generated tables the entries are compiled from. The\n")
-        f.write("// header ships because the entries' kernels are header-defined; the\n")
-        f.write("// API reference documents the entries.\n")
         f.write("#pragma once\n#include <array>\n#include <cstddef>\n\n")
         f.write("namespace boys::detail {\n\n")
         f.write(f"inline constexpr int kMaxOrder = {MAX_ORDER};\n")
@@ -5661,11 +5527,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
             a_dendeg.append(fit["k"])
             a_coeffs.extend(fmt(float(c)) for c in fit["p"])
             a_coeffs.extend(fmt(float(c)) for c in fit["q"])
-        f.write("// The region-A rational route: a weighted minimax fit of each\n"
-                "// shipped piece's interval, evaluated as num / (1 + t*horner(q, t))\n"
-                "// in the same mapped argument the Chebyshev piece uses. It is an\n"
-                "// offered alternative, not a replacement: the Chebyshev tables\n"
-                "// above are the default route and are unchanged by its presence.\n")
+        f.write("// The region-A rational route: a weighted minimax fit of each shipped piece,\n"
+                "// evaluated as num / (1 + t*horner(q, t)) in the same mapped argument the\n"
+                "// Chebyshev piece uses. An offered alternative, not a replacement: the\n"
+                "// Chebyshev tables above are the default route and are unchanged.\n")
         f.write("inline constexpr auto kRatACoeffs = std::to_array<double>({\n")
         for i in range(0, len(a_coeffs), 6):
             f.write("  " + ", ".join(a_coeffs[i:i + 6]) + ",\n")
@@ -5686,12 +5551,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
                 "                  && std::size(kRatANumDeg) == std::size(kPieces)\n"
                 "                  && std::size(kRatADenDeg) == std::size(kPieces),\n"
                 "              \"the rational region-A route must cover every piece\");\n\n")
-        f.write("// Where the route's selector takes over in region A: the lowest of the\n"
-                "// per-order ends of the region, which is the boundary the order is read\n"
-                "// from the band seed above and from its own fit below. The tables above\n"
-                "// still cover every piece from zero; this is the argument from which\n"
-                "// naming the route changes any value, and the report says so rather than\n"
-                "// claiming the wider domain the fits cover.\n")
+        f.write("// Where the route's selector takes over in region A: the lowest of the per-order\n"
+                "// ends, the boundary the order is read from the band seed above and from its own\n"
+                "// fit below. The tables still cover every piece from zero; naming the route\n"
+                "// changes a value only from here, the domain the report claims.\n")
         f.write(f"inline constexpr double kRatARouteLo = {fmt(rat_a['lo'])};\n")
         f.write(f"inline constexpr double kRatARouteHi = {fmt(rat_a['hi'])};\n\n")
         deg, cs, mono = b_cheb
@@ -5718,12 +5581,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
             f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
-        f.write("// The extended band: an F0 fit on\n")
-        f.write("// [kExtendedBX0, kX0) evaluated by the same split Clenshaw; the\n")
-        f.write("// upward recursion from it is certified per kmax tier - an order n\n")
-        f.write("// takes the extended seed exactly when x >= kTierThresholds[n], the\n")
-        f.write("// per-order dispatch thresholds (the values the generator certifies,\n")
-        f.write("// rounded up to the next double).\n")
+        f.write("// The extended band: an F0 fit on [kExtendedBX0, kX0) evaluated by the same\n")
+        f.write("// split Clenshaw; the upward recursion from it is certified per kmax tier, so\n")
+        f.write("// an order n takes the extended seed exactly when x >= kTierThresholds[n] (the\n")
+        f.write("// values the generator certifies, rounded up to the next double).\n")
         f.write(f"inline constexpr double kExtendedBX0 = {fmt(XNEW0)};\n")
         f.write("inline constexpr auto kExtendedBcoeffs = std::to_array<double>({\n")
         for i in range(0, len(ext_cs), 6):
@@ -5777,11 +5638,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # high-precision reference the fits themselves are validated against.
         # A swept maximum on a finite grid, not a bound: the bar both are
         # certified against is kRegionBFitBar, and both sit under it.
-        f.write("// The two region-B routes as the generator measures them: the stored\n")
-        f.write("// coefficients each evaluates and the worst |F0 - fit| each reaches\n")
-        f.write("// over [kX0, kX1], in the kernel's double arithmetic and against the\n")
-        f.write("// reference the fits are validated against. A swept maximum, not a\n")
-        f.write("// bound: the bar both routes are certified against is kRegionBFitBar.\n")
+        f.write("// The two region-B routes as the generator measures them: the stored count\n")
+        f.write("// each evaluates and the worst |F0 - fit| each reaches over [kX0, kX1], in the\n")
+        f.write("// kernel's double arithmetic against the reference the fits are validated\n")
+        f.write("// against. A swept maximum, not a bound: the bar is kRegionBFitBar.\n")
         f.write(f"inline constexpr double kRegionBFitBar = {fmt(float(rat_b['bar']))};\n")
         f.write(f"inline constexpr int kRegionBFitChebStored = {rat_b['cheb_stored']};\n")
         f.write("inline constexpr double kRegionBFitChebDelivered = "
@@ -5793,21 +5653,18 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # The region-A route's two columns, measured the same way over the same
         # domain: every shipped piece for the Chebyshev route, every route piece
         # for the rational, against the same reference and in the same
-        # arithmetic, so the counts and the errors are one comparison.
-        f.write("// The two region-A routes as the generator measures them, over the\n"
-                "// domain the two tables cover - every order's own pieces, from zero to\n"
-                "// kX0: the stored coefficients each evaluates and the worst\n"
-                "// |F_n - fit| each reaches, swept on a stride-1 grid of each piece's own\n"
-                "// interval, in the kernel's double arithmetic and against the reference\n"
-                "// the fits are validated against. A swept maximum on a finite grid, not\n"
-                "// a bound: the bar both routes are certified against is kRegionAFitBar.\n"
-                "// The rational route's selector takes over at kRatARouteLo - the lowest\n"
-                "// of region A's per-order ends - and per order from that order's own\n"
-                "// end, which is where the lane stops reading the order from its own fit\n"
-                "// and documents the band's 3e-14 rather than the per-order 1e-15. Below\n"
-                "// such an end the lane is documented at 1e-15, which these pieces do not\n"
-                "// hold. The rational pieces were accepted below the bar rather than at\n"
-                "// it, so the bar survives a certifying sweep on a different grid.\n")
+        # arithmetic, so the counts and the errors are one comparison. The
+        # rational route's selector takes over at kRatARouteLo - the lowest of
+        # region A's per-order ends - and per order from that order's own end,
+        # which is where the lane stops reading the order from its own fit and
+        # documents the band's 3e-14 rather than the per-order 1e-15. Below such
+        # an end the lane is documented at 1e-15, which these pieces do not
+        # hold. The rational pieces were accepted below the bar rather than at
+        # it, so the bar survives a certifying sweep on a different grid.
+        f.write("// The two region-A routes as the generator measures them, over the domain the\n"
+                "// two tables cover - every order's pieces, from zero to kX0 - swept on a\n"
+                "// stride-1 grid of each piece's interval, in the kernel's double arithmetic\n"
+                "// against the reference. A swept maximum, not a bound: the bar is kRegionAFitBar.\n")
         f.write(f"inline constexpr double kRegionAFitBar = {fmt(float(rat_a['bound']))};\n")
         f.write(f"inline constexpr int kRegionAFitChebStored = {rat_a['cheb_stored']};\n")
         f.write("inline constexpr double kRegionAFitChebDelivered = "
@@ -5824,14 +5681,10 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # The domain is the fit's own interval (region A: every piece of every
         # order; region B: [kX0, kX1); the extended band: [kExtendedBX0, kX0)).
         # Region C has no stored fit and no row.
-        f.write("// The evaluation schemes, one row per (scheme, stored fit): the\n")
-        f.write("// degree and stored count the fit uses, and the bound each scheme is\n")
-        f.write("// held to on it against the 60-digit reference, in each multiply-add\n")
-        f.write("// route. scheme 0 = split Clenshaw, 1 = Horner; lane 0 = region A\n")
-        f.write("// (kCoeffs), 1 = region B (kBcoeffs), 2 = the extended band\n")
-        f.write("// (kExtendedBcoeffs). Each bound is the worst error a sweep over the\n")
-        f.write("// fit's own interval reached, rounded up to the next power of two, so\n")
-        f.write("// it is a bound and not the sweep's reading.\n")
+        f.write("// The evaluation schemes, one row per (scheme, stored fit): the degree and stored\n")
+        f.write("// count the fit uses, and each scheme's bound against the 60-digit reference, per\n")
+        f.write("// multiply-add route. scheme 0 = split Clenshaw, 1 = Horner; lane 0 = kCoeffs,\n")
+        f.write("// 1 = kBcoeffs, 2 = kExtendedBcoeffs: the worst sweep, rounded up to a power of two.\n")
         f.write("struct SchemeRow { int scheme, lane, region, deg, stored;\n")
         f.write("                   double fused, separate; };\n")
         f.write("inline constexpr auto kSchemeRows = std::to_array<SchemeRow>({\n")
