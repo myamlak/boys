@@ -252,12 +252,10 @@ FREEZE = [
     },
     # Two checks that used to stand here have moved to CONDITIONS, and the reason is the whole
     # point of a gate: both read the report a probe run PRODUCES - check_class_combinations and
-    # combination_matrix are handed `.claude/lane-status/probes/host-report.txt` - so a freeze that
+    # combination_matrix are handed `tests/data/boys_option_probe_report.txt` - so a freeze that
     # required them would be a gate whose opening needs the artifact it guards. It could never
     # open, and the run it blocks is the only thing that would open it. This is the same
-    # circularity the host/device space entries below call out, and it is worse here because the
-    # stale report on disk is not evidence about the current probe at all: it was written before
-    # the space became per-class.
+    # circularity the host/device space entries below call out.
     #
     # What gates a run is what exists BEFORE it: the space's own closure, the class surface, the
     # entries the probe calls, and the recorded gate run. What validates the run's output is a

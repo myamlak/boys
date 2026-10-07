@@ -61,7 +61,11 @@ if [ "$status" -ne 0 ]; then
     echo "pre-commit: this commit does not compile under the compilers CI uses." >&2
     echo "            Fix the sources above, or commit with --no-verify to skip." >&2
     echo "            If the check could not run, configure a build directory with:" >&2
-    echo "              cmake -S . -B $build_dir -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" >&2
+    echo "              cmake -S . -B build-checkgate -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" >&2
+    echo "              cmake -S . -B build-checkgate-cuda -DBUILD_CUDA=ON \\" >&2
+    echo "                    -DCMAKE_EXPORT_COMPILE_COMMANDS=ON" >&2
+    echo "            A source no build directory names is a source no leg builds:" >&2
+    echo "            check the target that carries it, or that it is this tree's at all." >&2
     exit 1
 fi
 
