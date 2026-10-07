@@ -16,8 +16,8 @@
  * \ingroup boys
  */
 
-#ifndef BOYSYMETRIAD_BOYS_C_H
-#define BOYSYMETRIAD_BOYS_C_H
+#ifndef BOYS_BOYS_C_H
+#define BOYS_BOYS_C_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,4 +103,4 @@ int BoysDoubleBatchAtOrders(const int* n, int count, const double* x, double* ou
 } /* extern "C" */
 #endif
 
-#endif /* BOYSYMETRIAD_BOYS_C_H */
+#endif /* BOYS_BOYS_C_H */

@@ -55,8 +55,10 @@ Nine words carry the design. Each means something narrower here than it means el
 
 ## Entry points
 
-All CPU entries are `noexcept` and total. Their preconditions are n in [0, 32], x >= 0, and output
-spans of the documented size. The CUDA lane reports through \ref boys::BoysStatus instead.
+All CPU entries are `noexcept`. Their preconditions are n in [0, 32], x >= 0, and output spans of
+the documented size; **outside them the behaviour is undefined** - a release build faults on x < 0
+and on a NaN in a batch, and answers a wrong value for n > 32. The CUDA lane reports through
+\ref boys::BoysStatus instead.
 
 Every CPU entry is templated on one policy, the five structural axes a call site names once and the
 compiler resolves where it is written (\ref boys::EvalPolicy). The CUDA lane's entries carry no

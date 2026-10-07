@@ -1,10 +1,10 @@
 #pragma once
 
 /// \file
-/// The choices a call site that names no policy resolves to, as the build that
-/// compiled it fixed them: the host lane's five - the fit route, the evaluation
-/// scheme, the packing axis, the division form and the fit granularity - beside
-/// the device lane's two, the division form its entries take and the region-B
+/// The choices a call site that names no policy resolves to, as the build that compiled it fixed
+/// them. A class resolves to **seven** settings: the host lane's five - the fit route, the
+/// evaluation scheme, the packing axis, the division form and the fit granularity - and, on a
+/// device class, the device lane's two - the division form its entries take and the region-B
 /// exponential its tables read.
 ///
 /// They are macros rather than constants of their own because the enumerations
@@ -29,8 +29,8 @@
 /// file states the seven for its unnamed classes and the rows for the classes it
 /// names.
 ///
-/// A replacement carries the seven names below, and `BOYS_BUILD_DEFAULT_ROWS` or
-/// not - a replacement with no list is one whose every class takes the five. It
+/// A replacement carries the seven names below, `BOYS_BUILD_DEFAULT_ROWS` or not -
+/// a replacement with no list is one whose every class takes the seven. It
 /// does not define `BOYS_BUILD_DEFAULTS_COMMITTED`; it defines
 /// `BOYS_BUILD_DEFAULTS_REPLACED` instead (CMakeLists.txt does, with the option),
 /// and this file refuses to compile under that define, because a translation unit
@@ -79,9 +79,9 @@
 /// the precision lane an entry is built at, and the question that entry answers -
 /// and a row is the combination that class's entries compile when the call site
 /// names no policy. The names above are the **fallback** and not the whole
-/// answer: a class this list carries no row for resolves to the host's five at
-/// its own lane's budget, or to the device lane's two beside the four host
-/// choices its lane composes.
+/// answer: a class this list carries no row for resolves to those seven - the
+/// host's five at its own lane's budget, and, on a device class, the device
+/// lane's two as well.
 ///
 /// **The precision cell is a LANE, and each half format is a lane of its own.**
 /// `kFp16` and `kBf16` are one engine at one budget that store different digits -

@@ -150,6 +150,24 @@ defined on the documentation's landing page, together with the full API referenc
 
 The bound is |F̂_n(x) − F_n(x)| ≤ B, for every supported n, x and lane.
 
+**B is an absolute bound, and it does not bound the relative error.** Where F is small the two part
+company. Measured for `BoysSingle(n, x)` against this repository's own 45-digit reference grid
+(`tests/data/boys_accuracy_gate_reference.csv`, 56,694 cells), the worst relative error per order
+and argument band is:
+
+| n \ x | [0, 2) | [2, 12) | [12, 100) | [100, 500) |
+|---|---|---|---|---|
+| 0 | 1.60e-16 | 2.83e-16 | 2.63e-14 | 1.99e-16 |
+| 8 | 2.06e-16 | 3.53e-13 | 2.24e-06 | 1.07e-15 |
+| 16 | 2.09e-16 | 8.21e-13 | **4.60e-03** | 1.76e-15 |
+| 32 | 2.00e-16 | 1.20e-12 | **2.55e+00** | 3.34e-15 |
+
+The worst cell is `n = 32, x = 29`: F = 1.93e-14, delivered 6.87e-14 — inside the absolute bound
+and **3.5× the true value**. Outside 12 ≤ x < 100 the relative error is at rounding level. A caller
+who recurses in n, forms ratios of F values, or reasons in relative error in that band must not use
+this bound as a relative one. To reproduce: read the grid's `value` column, call the entry at the
+same `(n, x)`, and take the largest `|(delivered − value)/value|` over the rows of a band.
+
 The library evaluates the function differently at different argument sizes, and one lane is tighter
 over part of the range than over the rest. Every figure below holds for **all** x ≥ 0:
 
@@ -703,8 +721,9 @@ pinning the release tag, the compiler and the build flags.
 
 ## Building and consuming
 
-Requires CMake (>= 3.25), git, and a C++23 compiler. The leg-by-leg record of what is built and
-tested is the "Supported platforms" table below.
+Requires CMake (>= 3.25) and git. **Consuming the library needs C++20**; the tests and the
+benchmark drivers are the targets that want C++23, and each is behind its own flag. The
+leg-by-leg record of what is built and tested is the "Supported platforms" table below.
 
 Optional builds: `-DBUILD_BENCHMARKS=ON` for the CPU benchmark drivers, which are local-only by
 design, and `-DBUILD_CUDA=ON`, which needs the CUDA toolkit.

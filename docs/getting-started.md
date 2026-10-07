@@ -60,9 +60,11 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
     F_0(30)    = 0.1618021593796416
     F_6(30)    = 3.6049670926598394e-08
 
-All four are `noexcept` and total. The requirements on the values are `n` in `[0, 32]` and `x >= 0`,
-and both hold for anything a basis set produces. The three calls that write into an array ask one
-thing more: the buffer has to hold the values the call writes. Nothing checks it.
+All four are `noexcept`. The requirements on the values are `n` in `[0, 32]` and `x >= 0`, and both
+hold for anything a basis set produces. **Outside them the behaviour is undefined, and it is not
+benign**: in a release build `x < 0` and a `NaN` anywhere in a batch fault, and `n > 32` returns a
+wrong number with no diagnostic. The three calls that write into an array ask one thing more: the
+buffer has to hold the values the call writes. Nothing checks that either.
 
 **Next:** if you want one of these three shapes specifically, read on. If you want the whole
 catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).

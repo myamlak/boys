@@ -296,8 +296,9 @@ worth reading before changing which legs run.
   warnings.
 - **Raw arrays:** 3-vector coordinates use `std::array<double, 3>`. Pointer-plus-count APIs use
   `std::span`. Raw arrays only where an ABI mandates them.
-- **Errors:** no exceptions. The CPU lanes are total functions with documented preconditions. The
-  CUDA lane reports through the `BoysStatus` enum. New fallible surfaces follow the same pattern.
+- **Errors:** no exceptions. The CPU lanes are `noexcept` with documented preconditions and are
+  **not total**: input outside them is undefined behaviour, measured to fault in a release build.
+  The CUDA lane reports through the `BoysStatus` enum. New fallible surfaces follow the same pattern.
 - **Comments:** brief, self-contained and why-focused. The reasoning always stays; only the pointer
   to somewhere the reader cannot go is dropped.
 
