@@ -1,12 +1,7 @@
-// The dispatch assertion, built by every CI leg (CMake option BOYS_EXPECT_AVX2)
-// and run as the boys-avx2-probe ctest case.
-//
-// It fails a leg whose BoysAvx2Available() disagrees with the architecture:
-// true on x86_64, false on arm64. The SIMD correctness tests soft-skip on that
-// same predicate with a GTEST_SKIP, so a wrong CPUID bit would leave CI green
-// with the whole vector tier dead - this turns that silent skip into a red leg.
-// It observes the predicate, not the dispatch: an entry point that ignored the
-// predicate would still pass here unless the predicate itself were wrong.
+// The dispatch assertion, built by every CI leg (CMake option BOYS_EXPECT_AVX2) and run as the
+// boys-avx2-probe ctest case: it fails a leg whose BoysAvx2Available() disagrees with the
+// architecture (true on x86_64, false on arm64), which the SIMD tests' GTEST_SKIP would otherwise
+// leave green with the vector tier dead. It observes the predicate, not the dispatch.
 
 #include <boys/boys.hpp>
 #include <cstdio>
