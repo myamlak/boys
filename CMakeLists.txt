@@ -1304,6 +1304,24 @@ if (BUILD_CUDA)
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
 
+        # The axis-sensitivity check built and NOT registered as a test: for every row of
+        # BoysDeviceOptions(), does the entry the row names read the axes the row states? It
+        # reports the members of each axis the row carries more than one of that deliver
+        # identical values - the shape a row whose entry ignores a stated axis has. It is built
+        # so the tree compiles these two sources and so the pre-commit hook can check them; it
+        # is not registered because it currently reports 120 cells on the scheme axis, every one
+        # of them a pair this library documents as one arithmetic under two names, so a test
+        # here would pin a red leg for a reason that is not the defect it exists to find. The
+        # registration waits on the scheme axis being settled. A device is needed to run it, as
+        # for the gate above, and `--collapse=<axis>` is its deliberate-defect control.
+        add_executable(boys-cuda-axis-sensitivity
+            tests/boys_cuda_axis_sensitivity.cpp
+            tests/boys_cuda_axis_sensitivity_device.cu)
+        target_link_libraries(boys-cuda-axis-sensitivity PRIVATE boys-cuda boys)
+        target_include_directories(boys-cuda-axis-sensitivity PRIVATE src)
+        target_compile_features(boys-cuda-axis-sensitivity PRIVATE cxx_std_23)
+        boys_strict_warnings(boys-cuda-axis-sensitivity)
+
         # The CUDA consumer's own check of the lane's default, in two
         # translation units because the lane's headers split that way: the host
         # half includes <boys/boys_cuda.hpp> - the batch entry's home - and the
