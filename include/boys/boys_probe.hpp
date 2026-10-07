@@ -1082,9 +1082,9 @@ struct OptionProbeClosure {
     /// \c classPossible against \c total, \c classServed plus \c classRefused against
     /// \c classPossible, and \c classMeasured against \c measured.
     std::size_t classPossible = 0;
-    std::size_t classServed = 0;
-    std::size_t classMeasured = 0;
-    std::size_t classRefused = 0;
+    std::size_t classServed = 0;    ///< classes this run served at every cell it asked for
+    std::size_t classMeasured = 0;  ///< classes whose served cells this run measured
+    std::size_t classRefused = 0;   ///< classes the library refuses at a cell this run asked for
 
     /// Rows this run's own option table carries: \c OptionProbeReport::measurements.
     std::size_t rows = 0;

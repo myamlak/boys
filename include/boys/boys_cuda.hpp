@@ -237,6 +237,12 @@ public:
     ///   combination it has none for is a compile error naming the combination.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp32Device, Shape::kSingle, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus SingleF32WithPolicy(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
@@ -281,6 +287,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp32Device, Shape::kAllOrders, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllOrdersF32WithPolicy(
         const int* n, const double* x, float* out, std::size_t count, void* stream);
 
@@ -329,6 +341,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp32Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllNF32WithPolicy(
         int nmax, const double* x, float* out, std::size_t count, void* stream);
 
@@ -363,6 +381,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp64Device, Shape::kSingle, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus SingleF64WithPolicy(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
@@ -400,6 +424,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp64Device, Shape::kAllOrders, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllOrdersF64WithPolicy(
         const int* n, const double* x, double* out, std::size_t count, void* stream);
 
@@ -869,6 +899,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64Orders
     /// \c AllOrdersF64Orders at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF64OrdersFast(
@@ -879,6 +910,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64Narrow
     /// \c AllOrdersF64Narrow at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowFast(
@@ -889,6 +921,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64NarrowOrders
     /// \c AllOrdersF64NarrowOrders at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowOrdersFast(
@@ -899,6 +932,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64Mono
     /// \c AllOrdersF64Mono at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF64MonoFast(
@@ -909,6 +943,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64OrdersMono
     /// \c AllOrdersF64OrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF64OrdersMonoFast(
@@ -919,6 +954,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64NarrowMono
     /// \c AllOrdersF64NarrowMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowMonoFast(
@@ -929,6 +965,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64NarrowOrdersMono
     /// \c AllOrdersF64NarrowOrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowOrdersMonoFast(
@@ -939,6 +976,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64Rat
     /// \c AllOrdersF64Rat at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's, and both of that entry's scheme names reach this one
     /// member for the reason the block states.
@@ -950,6 +988,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64OrdersRat
     /// \c AllOrdersF64OrdersRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF64OrdersRatFast(
@@ -960,6 +999,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64NarrowRat
     /// \c AllOrdersF64NarrowRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowRatFast(
@@ -970,6 +1010,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF64NarrowOrdersRat
     /// \c AllOrdersF64NarrowOrdersRat at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF64NarrowOrdersRatFast(
@@ -1622,6 +1663,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp64Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllNF64WithPolicy(
         int nmax, const double* x, double* out, std::size_t count, void* stream);
 
@@ -1748,6 +1795,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp16Device, Shape::kSingle, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus SingleF16WithPolicy(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
@@ -1783,6 +1836,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp16Device, Shape::kAllOrders, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllOrdersF16WithPolicy(
         const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
@@ -1821,6 +1880,12 @@ public:
     ///   Defaults to this build's row for the class.
     template <EvalPolicyLike Policy =
                   DefaultPolicy<Precision::kFp16Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
     static BoysStatus AllNF16WithPolicy(
         int nmax, const F16* x, F16* out, std::size_t count, void* stream);
 
@@ -2378,6 +2443,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32Orders
     /// \c AllOrdersF32Orders at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF32OrdersFast(
@@ -2388,6 +2454,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32Narrow
     /// \c AllOrdersF32Narrow at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowFast(
@@ -2398,6 +2465,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowOrders
     /// \c AllOrdersF32NarrowOrders at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowOrdersFast(
@@ -2408,6 +2476,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32Mono
     /// \c AllOrdersF32Mono at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF32MonoFast(
@@ -2418,6 +2487,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32OrdersMono
     /// \c AllOrdersF32OrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32OrdersMonoFast(
@@ -2428,6 +2498,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowMono
     /// \c AllOrdersF32NarrowMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowMonoFast(
@@ -2438,6 +2509,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowOrdersMono
     /// \c AllOrdersF32NarrowOrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowOrdersMonoFast(
@@ -2448,6 +2520,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32Rat
     /// \c AllOrdersF32Rat at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF32RatFast(
@@ -2458,6 +2531,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32RatHorner
     /// \c AllOrdersF32RatHorner at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF32RatHornerFast(
@@ -2468,6 +2542,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32OrdersRat
     /// \c AllOrdersF32OrdersRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF32OrdersRatFast(
@@ -2478,6 +2553,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32OrdersRatHorner
     /// \c AllOrdersF32OrdersRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32OrdersRatHornerFast(
@@ -2488,6 +2564,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowRat
     /// \c AllOrdersF32NarrowRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowRatFast(
@@ -2498,6 +2575,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowRatHorner
     /// \c AllOrdersF32NarrowRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowRatHornerFast(
@@ -2508,6 +2586,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowOrdersRat
     /// \c AllOrdersF32NarrowOrdersRat at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowOrdersRatFast(
@@ -2518,6 +2597,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF32NarrowOrdersRatHorner
     /// \c AllOrdersF32NarrowOrdersRatHorner at the region-B exponential the block above states;
     /// its parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF32NarrowOrdersRatHornerFast(
@@ -2558,6 +2638,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllNF64
     /// \c AllNF64 at the region-B exponential the block above states; its parameters and its
     /// precondition are that entry's.
     static BoysStatus AllNF64Fast(
@@ -2568,6 +2649,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllNF32
     /// \c AllNF32 at the region-B exponential the block above states; its parameters and its
     /// precondition are that entry's.
     static BoysStatus AllNF32Fast(
@@ -2689,6 +2771,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16Orders
     /// \c AllOrdersF16Orders at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF16OrdersFast(
@@ -2699,6 +2782,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16Narrow
     /// \c AllOrdersF16Narrow at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowFast(
@@ -2709,6 +2793,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowOrders
     /// \c AllOrdersF16NarrowOrders at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowOrdersFast(
@@ -2719,6 +2804,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16Mono
     /// \c AllOrdersF16Mono at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF16MonoFast(
@@ -2729,6 +2815,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16OrdersMono
     /// \c AllOrdersF16OrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16OrdersMonoFast(
@@ -2739,6 +2826,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowMono
     /// \c AllOrdersF16NarrowMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowMonoFast(
@@ -2749,6 +2837,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowOrdersMono
     /// \c AllOrdersF16NarrowOrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowOrdersMonoFast(
@@ -2759,6 +2848,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16Rat
     /// \c AllOrdersF16Rat at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersF16RatFast(
@@ -2769,6 +2859,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16RatHorner
     /// \c AllOrdersF16RatHorner at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF16RatHornerFast(
@@ -2779,6 +2870,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16OrdersRat
     /// \c AllOrdersF16OrdersRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF16OrdersRatFast(
@@ -2789,6 +2881,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16OrdersRatHorner
     /// \c AllOrdersF16OrdersRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16OrdersRatHornerFast(
@@ -2799,6 +2892,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowRat
     /// \c AllOrdersF16NarrowRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowRatFast(
@@ -2809,6 +2903,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowRatHorner
     /// \c AllOrdersF16NarrowRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowRatHornerFast(
@@ -2819,6 +2914,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowOrdersRat
     /// \c AllOrdersF16NarrowOrdersRat at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowOrdersRatFast(
@@ -2829,6 +2925,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersF16NarrowOrdersRatHorner
     /// \c AllOrdersF16NarrowOrdersRatHorner at the region-B exponential the block above states;
     /// its parameters and its precondition are that entry's.
     static BoysStatus AllOrdersF16NarrowOrdersRatHornerFast(
@@ -2839,6 +2936,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllNF16
     /// \c AllNF16 at the region-B exponential the block above states; its parameters and its
     /// precondition are that entry's.
     static BoysStatus AllNF16Fast(
@@ -3503,6 +3601,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16Orders
     /// \c AllOrdersBf16Orders at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersBf16OrdersFast(
@@ -3513,6 +3612,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16Narrow
     /// \c AllOrdersBf16Narrow at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowFast(
@@ -3523,6 +3623,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowOrders
     /// \c AllOrdersBf16NarrowOrders at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowOrdersFast(
@@ -3533,6 +3634,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16Mono
     /// \c AllOrdersBf16Mono at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersBf16MonoFast(
@@ -3543,6 +3645,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16OrdersMono
     /// \c AllOrdersBf16OrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16OrdersMonoFast(
@@ -3553,6 +3656,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowMono
     /// \c AllOrdersBf16NarrowMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowMonoFast(
@@ -3563,6 +3667,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowOrdersMono
     /// \c AllOrdersBf16NarrowOrdersMono at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowOrdersMonoFast(
@@ -3573,6 +3678,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16Rat
     /// \c AllOrdersBf16Rat at the region-B exponential the block above states; its parameters and
     /// its precondition are that entry's.
     static BoysStatus AllOrdersBf16RatFast(
@@ -3583,6 +3689,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16RatHorner
     /// \c AllOrdersBf16RatHorner at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersBf16RatHornerFast(
@@ -3593,6 +3700,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16OrdersRat
     /// \c AllOrdersBf16OrdersRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersBf16OrdersRatFast(
@@ -3603,6 +3711,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16OrdersRatHorner
     /// \c AllOrdersBf16OrdersRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16OrdersRatHornerFast(
@@ -3613,6 +3722,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowRat
     /// \c AllOrdersBf16NarrowRat at the region-B exponential the block above states; its parameters
     /// and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowRatFast(
@@ -3623,6 +3733,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowRatHorner
     /// \c AllOrdersBf16NarrowRatHorner at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowRatHornerFast(
@@ -3633,6 +3744,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowOrdersRat
     /// \c AllOrdersBf16NarrowOrdersRat at the region-B exponential the block above states; its
     /// parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowOrdersRatFast(
@@ -3643,6 +3755,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllOrdersBf16NarrowOrdersRatHorner
     /// \c AllOrdersBf16NarrowOrdersRatHorner at the region-B exponential the block above states;
     /// its parameters and its precondition are that entry's.
     static BoysStatus AllOrdersBf16NarrowOrdersRatHornerFast(
@@ -3653,6 +3766,7 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// \copydoc AllNBf16
     /// \c AllNBf16 at the region-B exponential the block above states; its parameters and its
     /// precondition are that entry's.
     static BoysStatus AllNBf16Fast(

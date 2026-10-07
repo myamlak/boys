@@ -574,6 +574,8 @@ enum class DeviceEntry : int {
 /// The row that is the same arithmetic as \p entry under another name, or \p entry when
 /// its name is that arithmetic's only one.
 ///
+/// \return that row: \p entry itself where no other row names its arithmetic.
+///
 /// Two rows are one arithmetic when their entries reach one kernel (a launched row) or one
 /// device body (a device-callable one) over one lane, precision, shape, question, region-B
 /// exponential and bound. The relation is read from the library's own bodies rather than
@@ -773,6 +775,8 @@ constexpr DeviceEntry DeviceEntryArithmeticOf(DeviceEntry entry) noexcept {
 
 /// Whether following an alias twice is following it once: the relation maps the space onto
 /// the rows that are an arithmetic of their own.
+///
+/// \return true when every row reaches a row that is its own arithmetic.
 constexpr bool DeviceEntryArithmeticsAreClosed() noexcept {
     for (int i = 0; i < static_cast<int>(DeviceEntry::kCount); ++i)
     {
@@ -792,6 +796,7 @@ static_assert(DeviceEntryArithmeticsAreClosed(),
               "boys_cuda_options.hpp is stale, run tools/gen_entry_aliases.py");
 
 /// How many of the space's rows are an arithmetic no other row offers.
+/// \return the number of rows no other row names as its arithmetic.
 constexpr std::size_t DeviceEntryDistinctArithmeticCount() noexcept {
     std::size_t distinct = 0;
 
@@ -806,6 +811,7 @@ constexpr std::size_t DeviceEntryDistinctArithmeticCount() noexcept {
 }
 
 /// How many of the space's rows are a second name for an arithmetic another row offers.
+/// \return the number of rows that are a second name.
 constexpr std::size_t DeviceEntryAliasRowCount() noexcept {
     return static_cast<std::size_t>(DeviceEntry::kCount) - DeviceEntryDistinctArithmeticCount();
 }
