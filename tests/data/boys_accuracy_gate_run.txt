@@ -102,7 +102,7 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 7238324
+accuracy gate, revision b14c943
   reference: C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -574,6 +574,12 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
     - orders axis on the one-order single-precision entry
         this entry produces one order at one argument, so there are not four orders on this shape to fill a vector lane with; the probe compiles the call and it does not build. This one is a property of the call and not a lane nobody wrote: no revision of this entry produces four orders for the axis to pack, and the same lane's all-orders and many-argument entries carry the axis
         backing: configure probe (compiled and refused)
+  the fp32-device lane's fast member (BoysCuda::SingleF32<RegionBExp::kFast>): 170082 cell(s) over the committed grid at each of the 3 form(s), worst 1.44436e-07 at n=32, x=11.9447, judged at 2.3e-07, 0 outside it
+  the fp32-device lane's fast member (BoysDeviceSingleF32<kForm, RegionBExp::kFast>): 170082 cell(s) over the committed grid at each of the 3 form(s), worst 1.44436e-07 at n=32, x=11.9447, judged at 2.3e-07, 0 outside it
+  the fp64-device lane's fast member (BoysCuda::SingleF64Fast): 170082 cell(s) over the committed grid at each of the 3 form(s), worst 5e-14 at n=32, x=28.9893, judged at 5.5e-14, 0 outside it
+  the fp16-device lane's fast member (BoysCuda::SingleF16Fast): 170082 cell(s) over the committed grid at each of the 3 form(s), worst 0.0002438 at n=0, x=2.06641, judged at 0.000488481, 0 outside it
+  the bf16-device lane's fast member (BoysCuda::SingleBf16Fast): 170082 cell(s) over the committed grid at each of the 3 form(s), worst 0.00195088 at n=0, x=0.65625, judged at 0.00390645, 0 outside it
+device lanes : 4 of 4 measured on a card
   fp32, chebyshev, split-clenshaw, shipped, orders           the accessor answers 1.23617e-07, above the 1.05761e-07 the whole call measured
   fp32, chebyshev, split-clenshaw, narrow, orders            the accessor answers 1.23617e-07, above the 1.02681e-07 the whole call measured
   fp32, chebyshev, split-clenshaw, uniform, arguments        the accessor answers 1.23617e-07, above the 7.99295e-08 the whole call measured
@@ -599,11 +605,11 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   fp64, chebyshev, split-clenshaw, shipped, arguments        5.5e-14        4.45751e-14    5.5e-14        5e-14          throughout, every region
   fp32, chebyshev, split-clenshaw, shipped, arguments        1.5e-07        1.23617e-07    1.5e-07        1.7514e-07     every region, at exact division and the refined reciprocal
   fp16, chebyshev, split-clenshaw, shipped, arguments        1.5e-07        no figure      1.5e-07        0.0002438      the single-precision lane's own figure, plus half of the last representable digit of the returned value and claimed only where the value exceeds the sum. The half lane computes in that arithmetic and stores what it returns, so it cannot be more accurate than the lane whose arithmetic it runs: a bar below that figure is one no conforming host can keep, and a host whose rounding differs delivers the fit's own error through it. Beside the base, and under the same division form: the fp16 and bf16 entries run the single-precision engine's own bodies and round at the boundary (BoysAllOrdersF16, boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this lane's too, before the format's own half digit is added to it
-  fp32-device, chebyshev, split-clenshaw, shipped, arguments 2.3e-07        1.42109e-14    2.3e-07        not measured   this build has no CUDA lane (BUILD_CUDA=OFF), so the device lanes' entries are not in this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lanes and measures these members on the card, and this sentence is replaced there by the card's own reading
-  fp64-device, chebyshev, split-clenshaw, shipped, arguments 5.5e-14        4.45751e-14    5.5e-14        not measured   this build has no CUDA lane (BUILD_CUDA=OFF), so the device lanes' entries are not in this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lanes and measures these members on the card, and this sentence is replaced there by the card's own reading
-  fp16-device, chebyshev, split-clenshaw, shipped, arguments 1e-07          no figure      1e-07          not measured   this build has no CUDA lane (BUILD_CUDA=OFF), so the device lanes' entries are not in this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lanes and measures these members on the card, and this sentence is replaced there by the card's own reading
+  fp32-device, chebyshev, split-clenshaw, shipped, arguments 1.5e-07        1.42109e-14    1.5e-07        1.48716e-07    plus 8e-8 under the fast region-B exponential, which is the corrected seed's own contribution. The device lane carries the division axis - the form is a trailing parameter of every launched entry, and DeviceOptionAxis::kDivision crosses each entry of the device option space with all three (boys/boys_cuda_options.hpp) - and the accuracy gate reads every cell of this lane's rows at each of the three forms, judging each against the figure this row publishes for it. The three forms share that figure: over the lane's whole grid the plain reciprocal delivers 1.48716e-07 at worst and the two forms that divide exactly deliver 1.28793e-07, and both are inside the 2.3e-07 the row states. The axis is live on this lane rather than three names for one body: the plain reciprocal's values differ from the exact form's in 194120 of the cells on the arguments axis and 133158 on the orders axis, while the refined reciprocal's differ in none, which is the bit-identity the library documents of that form. So the row states one figure for all three forms and no plain term beside it
+  fp64-device, chebyshev, split-clenshaw, shipped, arguments 5.5e-14        4.45751e-14    5.5e-14        5e-14          the double lane's figure over the whole of x >= 0 on this lane's own entries, which publish it as "|error| <= 5.5e-14" (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). It is the host double lane's number because it is the same arithmetic over the same pieces; it is this row's because the lane is this lane's - a device class asked for its bound is answered here and not by the host row beside this one. The lane carries the division axis like every device lane, and the accuracy gate reads every cell of its rows at each of the three forms: all three deliver 5e-14 at worst, which is inside the 5.5e-14 above, so the row states one figure for the axis and no plain term beside it. The forms are not one body under three names there either - the plain reciprocal's values differ from the exact form's in 302586 cells on the arguments axis and 250542 on the orders axis - but the difference stays inside the figure the row publishes, and the refined reciprocal's values differ in none
+  fp16-device, chebyshev, split-clenshaw, shipped, arguments 1e-07          no figure      1e-07          0.0002438      plus half of the last representable digit of the returned value, which is a term of the value the caller receives and not of the call: the lane computes in the float lane's bodies and stores half, so it cannot be more accurate than the format it stores in, and where the value falls at or below the format's floor no accuracy is claimed at all. The base is the figure the device lane's own half entries publish (boys/boys_cuda.hpp, SingleF16 and AllOrdersF16). The lane carries the division axis like the other device lanes, and the accuracy gate reads every cell of its rows at each of the three forms, judging each against the figure this row states for it. Under the two forms that divide exactly the lane delivers 2.43800e-04 at worst over the grid, which is the half digit of the sentence above and not a term of the form; under the plain reciprocal the values differ from the exact form's in 98 cells on the arguments axis and 82 on the orders axis, and the difference is that form's own rounding at a result the half format stores as a subnormal: at n = 32, x = 11.9453125 the value is 1.53895485e-07, the two forms that divide exactly deliver 1.78813934e-07 and 1.1920929e-07 there, and the plain reciprocal delivers zero. That is 1.53895485e-07 from the value and outside the 1e-07 base, so this row states the plain form's figure apart, in the term the struct documents for it and beside the same half-digit term
   bf16, chebyshev, split-clenshaw, shipped, arguments        1.5e-07        no figure      1.5e-07        0.00195088     the single-precision lane's own figure, plus half of the last representable digit of the returned value, which in this format is 2^-8 = 3.90625e-03, and claimed only where the value exceeds the sum. The half lane computes in that arithmetic and stores what it returns, so it cannot be more accurate than the lane whose arithmetic it runs: a bar below that figure is one no conforming host can keep, and a host whose rounding differs delivers the fit's own error through it. It is the fp16 lane's figure on this format's store and not the fp16 class's row: the two are two classes of one lane, each stating its own format's half digit, and this format's is the coarser of the two - 2^-8 against 2^-11. The fp16 row beside this one states that term in words; this row names its number. Beside the base, and under the same division form: the fp16 and bf16 entries run the single-precision engine's own bodies and round at the boundary (BoysAllOrdersBf16, boys_impl.hpp), so the plain reciprocal's larger figure on that lane - 1.75140e-07 at n = 0, x = 9.74054909, 6.67e-8 above that lane's own worst of 1.08354e-07 - is this lane's too, before the format's own half digit is added to it
-  bf16-device, chebyshev, split-clenshaw, shipped, arguments 1e-07          no figure      1e-07          not measured   this build has no CUDA lane (BUILD_CUDA=OFF), so the device lanes' entries are not in this binary and no cell here can run them. A build with BUILD_CUDA=ON carries the lanes and measures these members on the card, and this sentence is replaced there by the card's own reading
+  bf16-device, chebyshev, split-clenshaw, shipped, arguments 1e-07          no figure      1e-07          0.00195088     plus half of the last representable digit of the returned value, which in this format is 2^-8 = 3.90625e-03, and claimed only where the value exceeds the sum. The half ULP is this format's and the constant part is the figure the device lane's own bfloat16 entries publish (boys/boys_cuda.hpp, SingleBf16 and AllOrdersBf16, which state "|error| <= 1e-7 + 1/2 ULP of the returned value"). The lane computes in the float lane's bodies and stores what they return, so it cannot be more accurate than the format it stores in: a bar below that figure is one no conforming device can keep. It is the fp16-device lane's figure on this format's store and not that lane's class: the two are two classes of one lane, each stating its own format's half digit, and this format's is the coarser of the two - 2^-8 against 2^-11, where that lane's sentence says "half of the last representable digit of the returned value" and this one names its number. The lane carries the division axis like the other device lanes, and the accuracy gate reads every cell of its rows at each of the three forms, judging each against the figure this row states for it
 
   the combinations: every combination this library's own tables offer, each one either
   measured against the committed reference at the figure its lane publishes, or refused
@@ -686,78 +692,78 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   fp16, rational-minimax, horner, narrow, orders               1020492         0 0.0002438     0.000488531   certified and published
   fp16, rational-minimax, horner, uniform, arguments           1700820         0 0.0002438     0.000488531   certified and published
   fp16, rational-minimax, horner, uniform, orders              1020492         0 0.0002438     0.000488531   certified and published
-  fp32-device, chebyshev, split-clenshaw, shipped, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, shipped, orders            0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, narrow, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, narrow, orders             0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, uniform, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, split-clenshaw, uniform, orders            0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, shipped, arguments                 0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, shipped, orders                    0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, narrow, arguments                  0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, narrow, orders                     0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, uniform, arguments                 0         0 0             2.3e-07       not runnable on this host
-  fp32-device, chebyshev, horner, uniform, orders                    0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, shipped, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, shipped, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, narrow, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, narrow, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, uniform, arguments         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, split-clenshaw, uniform, orders         0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, shipped, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, shipped, orders             0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, narrow, arguments           0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, narrow, orders              0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, uniform, arguments          0         0 0             2.3e-07       not runnable on this host
-  fp32-device, rational-minimax, horner, uniform, orders             0         0 0             2.3e-07       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, shipped, arguments         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, shipped, orders            0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, narrow, arguments          0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, narrow, orders             0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, uniform, arguments         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, split-clenshaw, uniform, orders            0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, shipped, arguments                 0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, shipped, orders                    0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, narrow, arguments                  0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, narrow, orders                     0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, uniform, arguments                 0         0 0             5.5e-14       not runnable on this host
-  fp64-device, chebyshev, horner, uniform, orders                    0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, shipped, arguments         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, shipped, orders         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, narrow, arguments         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, narrow, orders         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, uniform, arguments         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, split-clenshaw, uniform, orders         0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, shipped, arguments          0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, shipped, orders             0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, narrow, arguments           0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, narrow, orders              0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, uniform, arguments          0         0 0             5.5e-14       not runnable on this host
-  fp64-device, rational-minimax, horner, uniform, orders             0         0 0             5.5e-14       not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, shipped, arguments         0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, shipped, orders            0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, narrow, arguments          0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, narrow, orders             0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, uniform, arguments         0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, split-clenshaw, uniform, orders            0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, shipped, arguments                 0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, shipped, orders                    0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, narrow, arguments                  0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, narrow, orders                     0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, uniform, arguments                 0         0 0             1e-07         not runnable on this host
-  fp16-device, chebyshev, horner, uniform, orders                    0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, shipped, arguments         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, shipped, orders         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, narrow, arguments         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, narrow, orders         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, uniform, arguments         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, split-clenshaw, uniform, orders         0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, shipped, arguments          0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, shipped, orders             0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, narrow, arguments           0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, narrow, orders              0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, uniform, arguments          0         0 0             1e-07         not runnable on this host
-  fp16-device, rational-minimax, horner, uniform, orders             0         0 0             1e-07         not runnable on this host
+  fp32-device, chebyshev, split-clenshaw, shipped, arguments    170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, shipped, orders       170082         0 1.28793e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, narrow, arguments     170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, narrow, orders        170082         0 7.175e-08     1.5e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, uniform, arguments    170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, split-clenshaw, uniform, orders       170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, shipped, arguments            170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, shipped, orders               170082         0 1.28793e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, narrow, arguments             170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, narrow, orders                170082         0 6.89097e-08   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, uniform, arguments            170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, uniform, orders               170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, shipped, arguments    170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, shipped, orders    170082         0 1.28793e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, narrow, arguments    170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, narrow, orders    170082         0 6.99534e-08   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, uniform, arguments    170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, split-clenshaw, uniform, orders    170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, shipped, arguments     170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, shipped, orders        170082         0 1.28793e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, narrow, arguments      170082         0 1.48716e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, narrow, orders         170082         0 6.99534e-08   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, uniform, arguments     170082         0 1.19971e-07   1.5e-07       certified and published
+  fp32-device, rational-minimax, horner, uniform, orders        170082         0 1.19971e-07   1.5e-07       certified and published
+  fp64-device, chebyshev, split-clenshaw, shipped, arguments    170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, split-clenshaw, shipped, orders       170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, split-clenshaw, narrow, arguments     170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, split-clenshaw, narrow, orders        170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, split-clenshaw, uniform, arguments    170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, chebyshev, split-clenshaw, uniform, orders       170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, chebyshev, horner, shipped, arguments            170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, horner, shipped, orders               170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, horner, narrow, arguments             170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, horner, narrow, orders                170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, chebyshev, horner, uniform, arguments            170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, chebyshev, horner, uniform, orders               170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, shipped, arguments    170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, shipped, orders    170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, narrow, arguments    170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, narrow, orders    170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, uniform, arguments    170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, uniform, orders    170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, shipped, arguments     170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, shipped, orders        170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, narrow, arguments      170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, narrow, orders         170082         0 5e-14         5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, uniform, arguments     170082         0 4.93593e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, uniform, orders        170082         0 4.93593e-14   5.5e-14       certified and published
+  fp16-device, chebyshev, split-clenshaw, shipped, arguments    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, split-clenshaw, shipped, orders       170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, split-clenshaw, narrow, arguments     170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, split-clenshaw, narrow, orders        170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, split-clenshaw, uniform, arguments    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, split-clenshaw, uniform, orders       170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, shipped, arguments            170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, shipped, orders               170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, narrow, arguments             170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, narrow, orders                170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, uniform, arguments            170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, chebyshev, horner, uniform, orders               170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, shipped, arguments    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, shipped, orders    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, narrow, arguments    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, narrow, orders    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, uniform, arguments    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, split-clenshaw, uniform, orders    170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, shipped, arguments     170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, shipped, orders        170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, narrow, arguments      170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, narrow, orders         170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, uniform, arguments     170082         0 0.0002438     0.000488481   certified and published
+  fp16-device, rational-minimax, horner, uniform, orders        170082         0 0.0002438     0.000488481   certified and published
   bf16, chebyshev, split-clenshaw, shipped, arguments          1700820         0 0.00195088    0.0039065     certified and published
   bf16, chebyshev, split-clenshaw, shipped, orders             1020492         0 0.00195088    0.0039065     certified and published
   bf16, chebyshev, split-clenshaw, narrow, arguments           1700820         0 0.00195088    0.0039065     certified and published
@@ -782,30 +788,30 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   bf16, rational-minimax, horner, narrow, orders               1020492         0 0.00195088    0.0039065     certified and published
   bf16, rational-minimax, horner, uniform, arguments           1700820         0 0.00195088    0.0039065     certified and published
   bf16, rational-minimax, horner, uniform, orders              1020492         0 0.00195088    0.0039065     certified and published
-  bf16-device, chebyshev, split-clenshaw, shipped, arguments         0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, split-clenshaw, shipped, orders            0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, split-clenshaw, narrow, arguments          0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, split-clenshaw, narrow, orders             0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, split-clenshaw, uniform, arguments         0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, split-clenshaw, uniform, orders            0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, shipped, arguments                 0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, shipped, orders                    0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, narrow, arguments                  0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, narrow, orders                     0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, uniform, arguments                 0         0 0             1e-07         not runnable on this host
-  bf16-device, chebyshev, horner, uniform, orders                    0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, shipped, arguments         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, shipped, orders         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, narrow, arguments         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, narrow, orders         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, uniform, arguments         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, split-clenshaw, uniform, orders         0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, shipped, arguments          0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, shipped, orders             0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, narrow, arguments           0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, narrow, orders              0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, uniform, arguments          0         0 0             1e-07         not runnable on this host
-  bf16-device, rational-minimax, horner, uniform, orders             0         0 0             1e-07         not runnable on this host
+  bf16-device, chebyshev, split-clenshaw, shipped, arguments    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, split-clenshaw, shipped, orders       170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, split-clenshaw, narrow, arguments     170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, split-clenshaw, narrow, orders        170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, split-clenshaw, uniform, arguments    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, split-clenshaw, uniform, orders       170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, shipped, arguments            170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, shipped, orders               170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, narrow, arguments             170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, narrow, orders                170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, uniform, arguments            170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, chebyshev, horner, uniform, orders               170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, shipped, arguments    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, shipped, orders    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, narrow, arguments    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, narrow, orders    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, uniform, arguments    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, split-clenshaw, uniform, orders    170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, shipped, arguments     170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, shipped, orders        170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, narrow, arguments      170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, narrow, orders         170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, uniform, arguments     170082         0 0.00195088    0.00390645    certified and published
+  bf16-device, rational-minimax, horner, uniform, orders        170082         0 0.00195088    0.00390645    certified and published
   ------------------------------------------------------------------------------------------------------------------------------------------------------
   fp32, chebyshev, split-clenshaw, shipped, arguments        measured here over the whole committed grid. The bound shown is 2.5e-07, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and the row was read at every form
   fp32, chebyshev, split-clenshaw, shipped, orders           measured here over the whole committed grid. The bound shown is 2.5e-07, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and the row was read at every form
@@ -855,6 +861,30 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   fp16, rational-minimax, horner, narrow, orders             measured here over the whole committed grid. The bound shown is 0.000488531, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   fp16, rational-minimax, horner, uniform, arguments         measured here over the whole committed grid. The bound shown is 0.000488531, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   fp16, rational-minimax, horner, uniform, orders            measured here over the whole committed grid. The bound shown is 0.000488531, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
+  fp16-device, chebyshev, split-clenshaw, shipped, arguments measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, split-clenshaw, shipped, orders    measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, split-clenshaw, narrow, arguments  measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, split-clenshaw, narrow, orders     measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, split-clenshaw, uniform, arguments measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, split-clenshaw, uniform, orders    measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, shipped, arguments         measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, shipped, orders            measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, narrow, arguments          measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, narrow, orders             measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, uniform, arguments         measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, chebyshev, horner, uniform, orders            measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, shipped, arguments measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, shipped, orders measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, narrow, arguments measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, narrow, orders measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, uniform, arguments measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, split-clenshaw, uniform, orders measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, shipped, arguments  measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, shipped, orders     measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, narrow, arguments   measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, narrow, orders      measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, uniform, arguments  measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
+  fp16-device, rational-minimax, horner, uniform, orders     measured here over the whole committed grid. The bound shown is 0.000488481, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.0002438 at worst over the forms that share the lane's base, and 0.0002438 under the plain reciprocal at n=0, x=2.06641
   bf16, chebyshev, split-clenshaw, shipped, arguments        measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   bf16, chebyshev, split-clenshaw, shipped, orders           measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   bf16, chebyshev, split-clenshaw, narrow, arguments         measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
@@ -879,6 +909,30 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   bf16, rational-minimax, horner, narrow, orders             measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   bf16, rational-minimax, horner, uniform, arguments         measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
   bf16, rational-minimax, horner, uniform, orders            measured here over the whole committed grid. The bound shown is 0.0039065, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call, and the row was read at every form
+  bf16-device, chebyshev, split-clenshaw, shipped, arguments measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, split-clenshaw, shipped, orders    measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, split-clenshaw, narrow, arguments  measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, split-clenshaw, narrow, orders     measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, split-clenshaw, uniform, arguments measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, split-clenshaw, uniform, orders    measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, shipped, arguments         measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, shipped, orders            measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, narrow, arguments          measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, narrow, orders             measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, uniform, arguments         measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, chebyshev, horner, uniform, orders            measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, shipped, arguments measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, shipped, orders measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, narrow, arguments measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, narrow, orders measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, uniform, arguments measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, split-clenshaw, uniform, orders measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, shipped, arguments  measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, shipped, orders     measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, narrow, arguments   measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, narrow, orders      measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, uniform, arguments  measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
+  bf16-device, rational-minimax, horner, uniform, orders     measured here over the whole committed grid. The bound shown is 0.00390645, not the lane's base: it is that base plus the plain reciprocal's own rounding, which that form adds beside the base, and half of the last representable digit of the value the call returned, which is a term of the value and not of the call: 0.00195088 at worst over the forms that share the lane's base, and 0.00195088 under the plain reciprocal at n=0, x=0.65625
   fp16, chebyshev, split-clenshaw, shipped, arguments        963230 of 1700820 cell(s) sit at or below the figure the lane claims over,
                                                              where the return is the format's floor rather than the arithmetic's, and they
                                                              are counted here rather than passed
@@ -949,6 +1003,78 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
                                                              where the return is the format's floor rather than the arithmetic's, and they
                                                              are counted here rather than passed
   fp16, rational-minimax, horner, uniform, orders            577938 of 1020492 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, shipped, arguments 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, shipped, orders    95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, narrow, arguments  95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, narrow, orders     95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, uniform, arguments 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, split-clenshaw, uniform, orders    95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, shipped, arguments         95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, shipped, orders            95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, narrow, arguments          95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, narrow, orders             95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, uniform, arguments         95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, chebyshev, horner, uniform, orders            95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, shipped, arguments 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, shipped, orders 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, narrow, arguments 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, narrow, orders 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, uniform, arguments 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, split-clenshaw, uniform, orders 95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, shipped, arguments  95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, shipped, orders     95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, narrow, arguments   95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, narrow, orders      95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, uniform, arguments  95571 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  fp16-device, rational-minimax, horner, uniform, orders     95571 of 170082 cell(s) sit at or below the figure the lane claims over,
                                                              where the return is the format's floor rather than the arithmetic's, and they
                                                              are counted here rather than passed
   bf16, chebyshev, split-clenshaw, shipped, arguments        958240 of 1700820 cell(s) sit at or below the figure the lane claims over,
@@ -1023,14 +1149,86 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   bf16, rational-minimax, horner, uniform, orders            574944 of 1020492 cell(s) sit at or below the figure the lane claims over,
                                                              where the return is the format's floor rather than the arithmetic's, and they
                                                              are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, shipped, arguments 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, shipped, orders    95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, narrow, arguments  95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, narrow, orders     95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, uniform, arguments 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, split-clenshaw, uniform, orders    95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, shipped, arguments         95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, shipped, orders            95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, narrow, arguments          95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, narrow, orders             95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, uniform, arguments         95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, chebyshev, horner, uniform, orders            95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, shipped, arguments 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, shipped, orders 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, narrow, arguments 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, narrow, orders 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, uniform, arguments 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, split-clenshaw, uniform, orders 95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, shipped, arguments  95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, shipped, orders     95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, narrow, arguments   95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, narrow, orders      95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, uniform, arguments  95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
+  bf16-device, rational-minimax, horner, uniform, orders     95054 of 170082 cell(s) sit at or below the figure the lane claims over,
+                                                             where the return is the format's floor rather than the arithmetic's, and they
+                                                             are counted here rather than passed
   ------------------------------------------------------------------------------------------------------------------------------------------------------
-  COMBINATIONS: 96 of 192 member(s) of the option space are certified and published
+  COMBINATIONS: 192 of 192 member(s) of the option space are certified and published
                 0 refused with the library's own reason and owed
                 0 call-site limit(s) name unbuilt work and are owed the same way
-                96 not runnable on this host, counted apart and not against the library
+                0 not runnable on this host, counted apart and not against the library
                 0 offered and covered by no cell of this block
                 0 delivering outside the bound its lane publishes
-  the arithmetic: 96 + 0 + 96 + 0 + 0 = 192
+  the arithmetic: 192 + 0 + 0 + 0 + 0 = 192
                  the space read off the tables a second way: 192 member(s) over 8 lane(s),
                  a route axis of 2 2 2 2 2 2 2 2 route(s), 2 scheme(s), 3 partition(s),
                  2 axis(es)
@@ -1040,15 +1238,15 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
                  the entry book's space read off the same tables a second way: 4 entry(ies) x 2 route(s) x 2 scheme(s),
                  2 axis(es) = 32
                  the run's total with the entry factor: 192 + 32 = 224 cell(s)
-  the cross: 96 of 192 member(s) the accessor claims the library carries are certified and
+  the cross: 192 of 192 member(s) the accessor claims the library carries are certified and
                 published by the rows above
-  the accessor: 0 row(s) refused without a figure, 96 answered for a lane this host
+  the accessor: 0 row(s) refused without a figure, 0 answered for a lane this host
                 cannot run, 0 whose guarantee differs from the figure the row is judged by,
                 and 16 whose delivered figure sits above what the whole call measured
                 the accessor's delivered figure is the worst over the fits the combination
                 names, and the call adds its recurrences over them: on this grid it sits
-                strictly below the whole call's measurement on 32 row(s), which is that relation
-                and not a disagreement, and it has no delivered figure at all on 48 row(s) -
+                strictly below the whole call's measurement on 80 row(s), which is that relation
+                and not a disagreement, and it has no delivered figure at all on 96 row(s) -
                 the half lane's error is the format's
   the tolerance query: 192 carried row(s) asked at the figure each row is judged by and
                 answered inside it, 192 of them asked at half of that figure and answered
@@ -1107,6 +1305,22 @@ the one the launched all-orders rows of their lane name, and each cell is
   callable entry this host-only gate has no kernel to run. Every device cell
   this run does carry is counted in the row book above and judged against the
   figure its own lane publishes for the member it read.
+  the region-B member the device arms above read, off the library's own
+  option table: each of them launches an entry of the launched all-orders
+  family its map names, and those rows state the member they run
+  (boys/boys_cuda_options.hpp, DeviceOptionInfo::regionBExp)
+    fp32-device                    40  accurate        1.5e-07
+    fp64-device                    40  accurate        5.5e-14
+    fp16-device                    40  accurate        1e-07
+    bf16-device                    40  accurate        1e-07
+    the figure column is the lane's base plus the term its row states under
+    the member named, which is the member the four device maps launch and
+    the member these rows are judged at; the half lane adds half a
+    representable digit of each returned value beside it, as its own row
+    states. The row count is the launched all-orders rows of the lane in
+    BoysDeviceOptions(), and that family names a second member where this
+    build carries one: those rows are read by the fast-member arm, which
+    measures the member rather than folding it into these rows.
 
   the region-B member: every host cell of the cross above was read at each of the 2
   member(s) BoysRegionBExps() answers, each reading judged against the figure the
@@ -1150,7 +1364,15 @@ the one the launched all-orders rows of their lane name, and each cell is
     fp32                        orders        12245904         3     8163936      799308           0
     fp16                        orders        12245904         3     8163936         642           0
     bf16                        orders        12245904         3     8163936        9792           0
-    total                                                           87081984     6769502           0
+    fp32-device                 arguments      2040984         3     1360656      194120           0
+    fp32-device                 orders         2040984         3     1360656      133158           0
+    fp64-device                 arguments      2040984         3     1360656      302586           0
+    fp64-device                 orders         2040984         3     1360656      250542           0
+    fp16-device                 arguments      2040984         3     1360656          98           0
+    fp16-device                 orders         2040984         3     1360656          82           0
+    bf16-device                 arguments      2040984         3     1360656        1711           0
+    bf16-device                 orders         2040984         3     1360656        1711           0
+    total                                                           97967232     7653510           0
   OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
