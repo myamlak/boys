@@ -6108,9 +6108,14 @@ int main(int argc, char** argv) {
                 "  no value = of those, points where the lane returned zero or a subnormal\n");
 
     // ---- the entry book: the batched entries on the uniform partition --------
-    // The books above reach their cells through one entry per lane, so a combination the axes
-    // admit and an entry refuses has no cell in any of them. Four batched entries are crossed with
-    // the uniform partition, each measured, refused and owed, or not applicable to its shape.
+    // The books above reach their cells through one entry per lane, so a combination the axes admit
+    // and an entry refuses has no cell in any of them. The four batched entries listed below are
+    // crossed with the uniform partition, each measured, refused and owed, or not applicable.
+
+    //   plane entry          BoysAllN(nmax, x, out, count, workspace)
+    //   plane entry, sorted  the same entry under its BoysSortedArgs overload
+    //   per-element tops     BoysAllNAtOrders(n, x, out, count)
+    //   fixed-order entry    BoysFixedN(n, x, out, count, stride)
     enum class BatchEntry : std::uint8_t {
         kPlane,       // BoysAllN: every order over an array of arguments
         kPlaneSorted, // BoysAllN, the BoysSortedArgs overload
@@ -9640,10 +9645,10 @@ int main(int argc, char** argv) {
         failed = true;
     }
 
-    // The combinations: the whole option space, crossed and counted. Five axes - precision
-    // (BoysLaneContracts), route (BoysFitRoutes / BoysFitRoutesF32), scheme, partition and packing
-    // axis - every member read off a table the library publishes. Each combination is certified and
-    // published, refused and owed (debt, not impossibility), or not runnable on this host.
+    // ---- the combinations: the whole option space, crossed and counted ------
+    // Five axes, every member read off a table the library publishes: precision (BoysLaneContracts),
+    // route (BoysFitRoutes / BoysFitRoutesF32), scheme, partition and packing axis. Each combination
+    // is certified and published, refused and owed, or not runnable on this host.
     constexpr std::size_t kCombForms = 3;
 
     // The plain reciprocal as a column index, for the places that read the bar
