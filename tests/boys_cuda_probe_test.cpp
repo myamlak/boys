@@ -1,15 +1,11 @@
-// The device option probe (boys/boys_cuda_probe.hpp): what it reports about the
-// card, and what it does when the caller names a card that is not there.
-//
-// No cost is asserted here, a figure being the property of the card it was taken
-// on. What is asserted is the shape of the report: ratios formed inside a round
-// and pooled over every round, a pass the canary flagged used rather than
-// dropped, a canary no pass read told apart from a silent one, every name taken
-// from a clock rather than off the library's tables, and a class being one
-// precision and one question shape.
-//
-// ATieNamesEveryRivalAndTheBandItFellIn is the exception: it hunts a tie through
-// the refinement stage and takes tens of minutes on a real card.
+// The device option probe (boys/boys_cuda_probe.hpp): what it reports about the card, and what it
+// does when the caller names a card that is not there. No cost is asserted here - a figure is the
+// property of the card it was taken on - only the report's shape: ratios formed inside a round and
+// pooled over every round, a pass the canary flagged used rather than dropped, names off a clock.
+
+// A canary no pass read is told apart from a silent one, and a class is one precision and one
+// question shape. ATieNamesEveryRivalAndTheBandItFellIn hunts a tie through the refinement stage
+// and takes tens of minutes on a real card.
 
 #include "boys/boys_cuda_probe.hpp"
 
@@ -218,12 +214,14 @@ TEST(DeviceProbe, AFigureIsAWithinRoundRatioOverEveryPooledRound) {
         EXPECT_EQ(measurement.rounds, report.pairedRounds) << measurement.name;
         // Both ends are ratios of two entries timed in one round, so hi cannot be below lo.
         EXPECT_GE(measurement.ratioHi, measurement.ratioLo) << measurement.name;
-        // An in-kernel row resolves when the difference it was reduced to stood above
-        // its own baseline; a launched row always does, its cell being its own reading
-        // rather than a difference that could be floored. The band's lower end may still
-        // be the zero it was floored at, so only the figure decides whether it is ordered.
+        // An in-kernel row resolves when the difference it was reduced to stood above its own
+        // baseline, the middle of its rounds and the lower quartile the readings beside the figure
+        // are taken at: a difference not positive there is the instrument's floor and not a cost,
+        // so the row carries no figure. A launched row always resolves, its cell not a difference.
         EXPECT_EQ(measurement.subtractionResolved,
-                  measurement.launchedByLibrary || measurement.nsPerArgument > 0.0)
+                  measurement.launchedByLibrary ||
+                      (measurement.nsPerArgument > 0.0 && measurement.nsPerArgumentAtCount > 0.0 &&
+                       measurement.nsPerArgumentAtPairCount > 0.0))
             << measurement.name;
         EXPECT_GE(measurement.spread, 1.0) << measurement.name;
 
@@ -381,14 +379,10 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             const DeviceProbeRanking& ranking = clause.ranking;
             EXPECT_FALSE(ranking.asked.empty());
 
-            // This class is one precision and one question shape: a row outside that key
-            // is no member of it.
-            //
-            // Three counts over its rows. A row has *measured* when its rounds produced a
-            // reading; it carries a *figure* when the run has a cost to print beside it; it
-            // is *placeable* when the run's own checks would order it - its figure resolved
-            // and its repetition control agreed. A row of the other kinds is printed among the
-            // rows the class set aside, with the check that set it aside.
+            // This class is one precision and one question shape: a row outside that key is no
+            // member of it. Three counts over its rows: *measured* when its rounds produced a
+            // reading, *figure* when the run has a cost to print beside it, *placeable* when the
+            // run's own checks would order it. The rest are printed among the rows set aside.
             std::size_t measuredRows = 0;
             std::size_t figureRows = 0;
             std::size_t placeableRows = 0;
@@ -465,8 +459,7 @@ TEST(DeviceProbe, AShapeItsRoundsCouldNotOrderIsNamedByTheRefinementStage) {
             // The invariant the report rests on: no name is handed to a reader beside a table
             // that contradicts it without the report saying so. Where the vote named the entry
             // the shape's own figures put first, no row the run could place may be faster than
-            // that entry; where it named another, the entry those figures put first is printed
-            // beside the name.
+            // it; where it named another, the first is printed beside the name.
             const DeviceProbeMeasurement* namedRow = nullptr;
 
             for (const DeviceProbeMeasurement& measurement : report.measurements) {
@@ -572,14 +565,10 @@ TEST(DeviceProbe, ATieNamesEveryRivalAndTheBandItFellIn) {
 
             ASSERT_NE(named, nullptr) << ranking.recommended;
 
-            // Which entry the shape ends with, by the route it was reached by. A tie the
-            // shape's own rounds could not break is settled by which entry was fastest in
-            // most of the refinement runs, so that entry is the one the shape names - the
-            // vote decides which entry, and defaultHow states how it was reached. The entry
-            // the shape's own figures put first is the record of the shorter protocol: it is
-            // printed beside the name, and where the two differ the difference is what says
-            // the shape's top entries cannot be separated. Where no vote named an entry, the
-            // name is the one those figures put first.
+            // Which entry the shape ends with, and the route it was reached by. A tie the
+            // shape's own rounds could not break is settled by which entry was fastest in most
+            // refinement runs, and defaultHow states that. The entry those figures put first is
+            // printed beside the name: where the two differ, the shape's top could not be split.
             const bool voted = ranking.refinement.ran && !ranking.refinement.winner.empty();
 
             if (voted) {
@@ -1271,11 +1260,10 @@ TEST(DeviceProbe, ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows) {
               std::string::npos)
         << text;
 
-    // The per-row column counts the row's own members rather than a flag about a suffix
-    // somewhere: the denominator is the forms the row stands at, so every row this build
-    // serves reads "of 3" beside its name. The numerator is the places of those that carry
-    // a figure, and this grid carries none - it is the grid without the card or the clock -
-    // so the count is the zero the report is owed rather than a claim of three figures.
+    // The per-row column counts the row's own members rather than a flag about a suffix: the
+    // denominator is the forms the row stands at, so every row this build serves reads "of 3".
+    // The numerator is the places of those carrying a figure, and this grid carries none - no
+    // card, no clock - so the zero is what the report is owed, not a claim of three figures.
     EXPECT_NE(text.find("0 of " + std::to_string(forms) + " measured here"), std::string::npos)
         << text;
 }
