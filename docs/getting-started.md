@@ -174,9 +174,10 @@ boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top 
     every value positive and at most one
 
 This is the entry to reach for when the arguments are the batch and the orders are the ladder: it
-groups the arguments once for the whole call rather than a ladder at a time, which the header records
-as considerably cheaper than `nmax + 1` single evaluations. The planes come out order-major, so
-nothing has to be transposed afterwards, and the arguments may arrive in any order.
+groups the arguments once for the whole call rather than a ladder at a time, and it hands the planes
+back order-major, so nothing has to be transposed afterwards. The arguments may arrive in any order.
+[What the batch and the ladder each cost on a measured machine](#what-the-double-lane-costs), and
+what that run does and does not separate, is below.
 
 When the arguments do not share a top order — a quartet whose four shells differ — the padded call
 pays for cells nobody asked for, 17 of the 45 in the run above. `BoysAllNAtOrders` writes only the
@@ -323,6 +324,52 @@ your probe measured. `CONTRIBUTING.md` describes the second route.
 
 ---
 
+## What the double lane costs
+
+The probe above answers for your machine. This tree also carries one recorded run of its full
+protocol — `tests/data/boys_option_probe_report.txt`, the report `boys-option-probe` writes — and
+that run answers for the machine, the build and the process it was taken on.
+
+The report's own header says what it is: *this result is about this machine, this build and this
+process*, 12 logical processors with the AVX2+FMA tier present, and a build whose four arithmetic
+backends — scalar and AVX2, fp64 and fp32 — each leave a bare `a * b + c` as two roundings. It served
+every combination its classes hold, 2,592 of them and no refusals, and measured 2,448 on this host.
+Its workload is 16,384 arguments, x log-uniform over [1e-3, 4e1], each argument's own highest order
+drawn as the sum of two shell angular momenta over 0..16, up to nmax 32.
+
+One row per question shape, for the double lane, each the fastest entry of its class and all of them
+documented at 5.5e-14:
+
+| the class's question | the fastest measured entry | ns per argument | options the run could not place behind it |
+|---|---|---|---|
+| F_n(x) for one order at one argument, one call per order — `BoysSingle` | `single-uniform-horner-plain-reciprocal-accurate-fp64` | 302.68 | 3 |
+| F_0..F_n(x) at one argument, one ladder call — `BoysAllOrders` | `uniform-pack-orders-horner-plain-reciprocal-accurate-fp64` | 88.66 | 1 |
+| F_n(x_i) at one order over the array — `BoysFixedN` | `fixed-n-uniform-horner-plain-reciprocal-fp64` | 674.53 | 1 |
+| F_0..F_nmax(x) at every argument, one call — `BoysAllN` | `all-n-uniform-pack-orders-horner-plain-reciprocal-fp64-sorted` | 98.17 | 5 |
+| ...each argument at its own top order — `BoysAllNAtOrders` | `all-n-at-orders-uniform-pack-orders-horner-plain-reciprocal-accurate-fp64` | 140.56 | 3 |
+
+**A nanosecond figure describes the machine, the build and the run it was taken on, and not the
+design.** It moves with the processor, the clock, the flags, and with what else the machine was doing
+while the round ran — which is why the probe compares paired inside a round rather than across runs.
+What carries from one host to another is the shape of the answer: which entries sit together at the
+top, and how long the tail behind them is. Read the last column beside the third: 302.68 ns per
+argument is the head of a class whose next three entries the run could not separate from it, and
+98.17 the head of one whose next five it could not.
+
+**Each class is ranked inside itself, and nothing here is ranked across two of them.** A class is one
+precision and one question shape, and different shapes hand back a different number of values, so the
+table is five readings of one lane rather than a ranking of the five calls against each other.
+
+**What that leaves unsaid about the batch.** The [section
+above](#i-want-every-order-over-many-arguments) says the batch entry groups the arguments once for the
+whole call rather than a ladder at a time. The committed run does not separate that grouping: it ranks
+the options inside one question shape, so its batch row here — the head of 288 measured combinations,
+with 5 the run could not place behind it — is the choice *within* the batch shape, and its ladder row
+is the choice inside the shape above. Read the grouping sentence as what the call does, and take the
+cost of grouping from a workload of your own rather than from this table.
+
+---
+
 ## Which entry do I call?
 
 By what you want, not by what the library calls things:
@@ -400,3 +447,5 @@ what instantiates the version you asked for, in your translation unit.
 - [Build facts](build-facts.md) — what a build of this library is, read out of the build: the
   instruction sets it targets, whether a bare `a * b + c` in it is one rounding, and which arithmetic
   backends it carries.
+- [The specification](specification.md) — what each evaluation path guarantees, the settings that
+  select one, and the measurements behind the figures, as a page of its own.
