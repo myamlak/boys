@@ -93,13 +93,15 @@
 /// and its `kFast`, which no row of any lane books.
 ///
 /// **Where the table books two rows of one cell that are two arithmetics, the arm
-/// answers on the row the member's own name carries.** The bfloat16 class is the case
-/// this layer states: `kAllOrdersBf16Mono` and `kAllOrdersBf16MonoFast` are rows of the
-/// coarsest cut beside `kAllOrdersBf16` and `kAllOrdersBf16Fast`, each booked at
+/// answers on the row the member's own name carries.** The monomial pair of the
+/// coarsest cut is the case on every all-orders class, and the float lane is the one
+/// this layer states: `kAllOrdersF32Mono` and `kAllOrdersF32MonoFast` are rows of
+/// that cut beside `kAllOrdersF32` and `kAllOrdersF32Fast`, each booked at
 /// `EvalScheme::kHorner`, each launched, and each an arithmetic of its own beside the
-/// split Clenshaw row of the same fit (`AllOrdersBf16Mono`, boys_cuda.hpp) - so a
+/// split Clenshaw row of the same fit (`AllOrdersF32Mono`, boys_cuda.hpp) - so a
 /// policy naming `kHorner` over that cut reaches the monomial row rather than the
-/// reading beside it, which is the substitution this layer exists to prevent.
+/// reading beside it, which is the substitution this layer exists to prevent. The
+/// double, half and bfloat16 lanes book the pair under their own names.
 ///
 /// ## The packing axis is the host's axis, in this surface's spelling
 ///
@@ -986,25 +988,25 @@ BoysStatus AllOrdersF32Cascade(
             }
             else if constexpr (Policy::kScheme == EvalScheme::kHorner)
             {
-                // The coarsest cut's two scheme names select one kernel ("The coarsest partition's
-                // row is one row for both scheme names, exactly as `kAllOrdersF32` is",
-                // boys_cuda_options.hpp above kAllOrdersF32Orders): no Mono name of the cut, and a
-                // Horner policy reaches the row's own entry - one stored form, two names.
+                // This lane books the cut's monomial rows itself (kAllOrdersF32Mono,
+                // kAllOrdersF32OrdersMono, boys_cuda_options.hpp), so the Horner member reaches
+                // them: the split Clenshaw row is a second arithmetic of the same fit and not a
+                // name of this one (AllOrdersF32Mono, boys_cuda.hpp).
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
-                        [&] { return BoysCuda::AllOrdersF32(n, x, out, count, stream, Policy::kDivision); },
+                        [&] { return BoysCuda::AllOrdersF32Mono(n, x, out, count, stream, Policy::kDivision); },
                         [&] {
-                            return BoysCuda::AllOrdersF32Fast(n, x, out, count, stream,
+                            return BoysCuda::AllOrdersF32MonoFast(n, x, out, count, stream,
                                                          Policy::kDivision);
                         });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
-                        [&] { return BoysCuda::AllOrdersF32Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] { return BoysCuda::AllOrdersF32OrdersMono(n, x, out, count, stream, Policy::kDivision); },
                         [&] {
-                            return BoysCuda::AllOrdersF32OrdersFast(n, x, out, count, stream,
+                            return BoysCuda::AllOrdersF32OrdersMonoFast(n, x, out, count, stream,
                                                          Policy::kDivision);
                         });
                 }
@@ -1461,25 +1463,25 @@ BoysStatus AllOrdersF16Cascade(
             }
             else if constexpr (Policy::kScheme == EvalScheme::kHorner)
             {
-                // The coarsest cut's two scheme names select one kernel in this lane's words too
-                // ("the coarsest partition's row is one row for both scheme names as
-                // `kAllOrdersF16` is", boys_cuda_options.hpp, the half lane's packing-axis block):
-                // no Mono name of the cut here, and a Horner policy reaches the row's own entry.
+                // This lane books the cut's monomial rows itself too (kAllOrdersF16Mono,
+                // kAllOrdersF16OrdersMono, boys_cuda_options.hpp), so the Horner member reaches
+                // them: the split Clenshaw row is a second arithmetic of the same fit and not a
+                // name of this one (AllOrdersF16Mono, boys_cuda.hpp).
                 if constexpr (Policy::kPack == PackAxis::kArguments)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
-                        [&] { return BoysCuda::AllOrdersF16(n, x, out, count, stream, Policy::kDivision); },
+                        [&] { return BoysCuda::AllOrdersF16Mono(n, x, out, count, stream, Policy::kDivision); },
                         [&] {
-                            return BoysCuda::AllOrdersF16Fast(n, x, out, count, stream,
+                            return BoysCuda::AllOrdersF16MonoFast(n, x, out, count, stream,
                                                          Policy::kDivision);
                         });
                 }
                 else if constexpr (Policy::kPack == PackAxis::kOrders)
                 {
                     return detail::DevicePickExp<Policy::kRegionBExp>(
-                        [&] { return BoysCuda::AllOrdersF16Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] { return BoysCuda::AllOrdersF16OrdersMono(n, x, out, count, stream, Policy::kDivision); },
                         [&] {
-                            return BoysCuda::AllOrdersF16OrdersFast(n, x, out, count, stream,
+                            return BoysCuda::AllOrdersF16OrdersMonoFast(n, x, out, count, stream,
                                                          Policy::kDivision);
                         });
                 }

@@ -103,9 +103,11 @@ enum class DeviceEntry : int {
     /// and the two agree row for row: each orders row sums the forms its own table
     /// carries, the narrow partition's and the rational route's included.
     ///
-    /// The coarsest partition's row is one row for both scheme names, exactly as
-    /// \c kAllOrdersF32 is. The uniform grid's are its per-argument rows' kernels: the
-    /// grid's cells carry their own degree and block start, so the route's packing axis
+    /// The coarsest partition's rows are one per scheme name, the split Clenshaw one
+    /// here and the cut's monomial pair appended below (\c kAllOrdersF32Mono,
+    /// \c kAllOrdersF32OrdersMono), as the ladder reading's rows of that cut are. The
+    /// uniform grid's are its per-argument rows' kernels: the grid's cells carry their
+    /// own degree and block start, so the route's packing axis
     /// has one member, and the grid's rational member is the same shape — stored per
     /// interval at the interval's own pair and stored count.
     kAllOrdersF32Orders, ///< BoysCuda::AllOrdersF32Orders, launched
@@ -148,7 +150,7 @@ enum class DeviceEntry : int {
     /// The half lane's other packing axis, the counterpart of each row above that carries it.
     ///
     /// The axis is the float lane's and these rows are that lane's rows in the fp16 store: the
-    /// coarsest partition's row is one row for both scheme names as \c kAllOrdersF16 is, and the
+    /// coarsest partition's rows are one per scheme name as the float block's are, and the
     /// grid's two rows are its per-argument rows' kernels for the reason the float block states.
     kAllOrdersF16Orders, ///< BoysCuda::AllOrdersF16Orders, launched
     kAllOrdersF16NarrowOrders, ///< BoysCuda::AllOrdersF16NarrowOrders, launched
