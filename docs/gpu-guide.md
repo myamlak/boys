@@ -36,7 +36,7 @@ spellings of one.
 | what runs | the library's own kernel, launched for you | the library's arithmetic, inlined into **your** kernel |
 | what goes in | device arrays: orders, arguments, output | one `(order, x)` pair the calling thread already holds |
 | what comes back | a `BoysStatus` for the launch | a `BoysDeviceStatus` per call, written into your own output |
-| the question it answers | "I have a batch of arguments in global memory" | "I formed `x` in this thread and need the ladder here and now" |
+| the question it answers | "your batch of arguments is in global memory" | "you formed `x` in this thread and need the ladder here and now" |
 | what it costs | a kernel launch and the memory traffic to get the batch there | instructions in your kernel, plus the tables' compile |
 
 The choice is not a preference. It is the shape of your program. If your arguments already exist as
@@ -403,7 +403,7 @@ binary in which a policy naming one reading was answered out of another's.
 
 **In practice it means a missing combination is loud.** The build stops, and the diagnostic names the
 combination you asked for and says no entry of the class answers it. That is a statement about what
-this revision carries, not about what is possible.
+this library carries, not about what is possible.
 
 ### At run time: a malformed request
 
@@ -441,9 +441,9 @@ per-lane bound tables, the four device rows among them, and
 [the API reference's contract table](mainpage.md) states the CUDA rows. Both are documents. The
 authority behind them is a program, and this is the part to take away:
 
-**The device half carries no certified per-class accuracy figure of its own at this revision.**
-There is no valid device run standing behind one, which is the same fact the seam file states about
-its twelve rows and the header states about the lane's coverage. So this page quotes you no device
+**The device half carries no certified per-class accuracy figure of its own.** There is no valid
+device run standing behind one, which is the same fact the seam file states about its twelve rows and
+the header states about the lane's coverage. So this page quotes you no device
 accuracy number: it would be a number no program printed, which is exactly the defect this library's
 documentation exists to avoid. What it tells you instead is where the number lives, and how to get
 the one that is true for your card.
@@ -468,7 +468,7 @@ bound, from a program, on your hardware.
 The option space the probe ranks is the library's own and is not a list written beside it:
 `boys::BoysDeviceOptions()` in `boys/boys_cuda_options.hpp` reports one row per option of the
 surface, and the probe takes its rows from there. **That is also the answer to "which entries exist
-in my build"** — read the report rather than a document, because a document cannot know.
+in your build"** — read the report rather than a document, because a document cannot know.
 
 Two cautions the library states in its own voice, and both are easy to get wrong:
 
@@ -537,16 +537,16 @@ above. Those names are a mechanical spelling of the axes and not a second design
 themselves — `FitRoute`, `EvalScheme`, `FitGranularity`, `PackAxis` — are defined on
 [the API reference's landing page](mainpage.md).
 
-The policy header states plainly why a page should not be the list, and it is the direction this
-surface is moving in: the combinations used to be reachable "only by knowing its name, and a class
-has no default at all", which is what the policy layer was added to change. **So the stable way to
-reach a combination is the policy layer**, and the authoritative list of what your build carries is
-`BoysDeviceOptions()` at run time — a document cannot be that list, because a document goes stale
-the moment an entry is added. This page names only the entries it has read out of the headers.
+The policy header states plainly why a page should not be the list: a surface whose combinations are
+entry names is one a caller reaches "only by knowing its name, and a class has no default at all".
+**So the stable way to reach a combination is the policy layer**, and the authoritative list of what
+your build carries is `BoysDeviceOptions()` at run time — a document cannot be that list, because a
+document goes stale the moment an entry is added. This page names only the entries it has read out of
+the headers.
 
 **It quotes no device accuracy figure.** See *What you got: the bound* above: no valid device run
-stands behind one at this revision, so a figure printed here would be one no program printed. Where
-the figures live is stated, and the commands that produce them on your card are given.
+stands behind one, so a figure printed here would be one no program printed. Where the figures live is
+stated, and the commands that produce them on your card are given.
 
 ## Where to go next
 

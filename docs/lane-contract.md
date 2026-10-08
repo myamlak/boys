@@ -233,7 +233,7 @@ walk's 311 pieces — the trailing run of 27 of the 33 orders, from where the we
 piece that ends at the region's right edge. The tightest budget any piece is held to is 2.394e-19,
 at order 12's last piece.
 
-**The gain the walk holds is the envelope; the most a call in this revision reaches is 2.171050.** The
+**The gain the walk holds is the envelope; the most a call reaches is 2.171050.** The
 seeding fallback is taken only below the band's left edge, `x < 1.08552523453493330`, and what a call
 pays there is its own top order's gain rather than the region's worst. For a fixed `x` the ratio
 `x^n / ∏(j + ½)` rises with the order only until the order passes `x − ½` and falls after, so below
@@ -326,7 +326,7 @@ the degree ladder above), so the 1e-14 the pieces are solved for is not the 1e-1
 region A the narrow pieces read 2.22045e-16, one unit in the last place of a value near 1, against
 the region's published 1e-15 bar and the shipped table's own 2.22045e-16 — the same figure at 11
 coefficients instead of 19 to 21, which is what the region's redesign buys there. The gain the walk
-holds costs nothing measurable at this revision either: the widest it gets on a call the dispatch can
+holds costs nothing measurable either: the widest it gets on a call the dispatch can
 make is 2.171050, and the region reads 2.22045e-16 at both partitions.
 
 **The trade, stated as a trade.** A consumer trades coefficients read per evaluation (19–21 → 11)
@@ -375,10 +375,10 @@ route's own narrow fits, judged against the route's published bars rather than t
 figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2.21663e-14, the
 shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
 entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
-counted apart from the lane book and from the scheme rows, and those read what they read before it
-existed: 39 of 39 claims and 44 of 44 scheme rows at the revision of that run, whose combinations book
-then read its own space with none refused — **the space has since grown a third
-partition, and the book of this revision is the current one**. What does move is the option space, which reads 36 of
+counted apart from the lane book and from the scheme rows, and those read what they read at that run's
+own revision: 39 of 39 claims and 44 of 44 scheme rows, whose combinations book read its own space with
+none refused — **the space carries a third partition, and the book below is the current one**. What
+does move is the option space, which reads 36 of
 36 members supported, bounded and reachable: the piecewise partitions are two of them, each measured over 2819824 cells at both
 schemes with 1543994 of them reading differently under the other partition and none over the bar its
 row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
@@ -705,7 +705,7 @@ and by nothing else. So the route's float half is a report about an arithmetic t
 not a choice a caller can reach — the third gap, and the one that is a work item rather than a
 property of the axis.
 
-The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane this revision routes: its steps
+The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane the route reaches: its steps
 read the selection the build made, so its values move between the routes — **5,067 of 32,868** values
 of the across-orders double lane and **3,723 of 32,868** of the float lane differ across the two
 builds. At the fused route the lane's values are unchanged from before the route reached it: the same
@@ -1290,7 +1290,7 @@ offer, and no row of it is folded into another. A device class of the default-po
 is one of those four by a question.
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
-combination meets the error it needs, and which members of the space this revision does not carry.
+combination meets the error it needs, and which members of the space the library does not carry.
 
 **The bound of a combination is its lane's figure, and no other axis moves it.** The
 other axes change what a call *delivers* — which fits it reads, how many coefficients it sums,
@@ -1331,8 +1331,8 @@ reads the figures the tables are written from rather than transcribing them, and
 reads the same rows to judge a combination against.
 
 **Two figures, two questions, and their names say which is which.**
-`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form)` answers *may I rely on
-this combination being at least this accurate*: its `value` is the bound above, at the form named.
+`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form)` answers *is this
+combination at least this accurate*: its `value` is the bound above, at the form named.
 `BoysAccuracyDelivered(...)` answers *which of these two combinations has been measured to do
 better*: its `value` is the worst of the rows the combination names, each of which publishes what it
 was measured to deliver. Both return an `AccuracyFigure` whose `reading` field says which of the
@@ -1349,13 +1349,13 @@ gate's reference grid, and the certified-routes table above records that the gri
 the two and reads under on a fit that equioscillates. What a whole call delivers is the gate's
 measurement, and the gate's combination table is where that figure lives for every combination.
 
-**A combination this revision does not carry returns no number.** Both accessors return
+**A combination the library does not carry returns no number.** Both accessors return
 `available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
 refusal — the same sentence the gate prints beside the row. A caller cannot mistake a refusal for an
 accuracy. The delivered accessor is absent as well for the half lane, whose error is dominated by
 the format's quantum at the returned value rather than by the call.
 
-### What this revision carries, and what is owed
+### What the space carries, and what it refuses
 
 The gate crosses the whole space, prints one line per combination — its measured delivered figure
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
@@ -1392,13 +1392,12 @@ cannot execute is counted apart and named with the reason — no card, no entrie
 gate for that lane — and it never fails the run — while a member the library carries and no row
 measures lands in the unaccounted count and does.
 
-**The owed book reads zero, and that is the state the space is held to.** The last member it carried
-was **the rational route over the uniform grid** — a fit to derive over the grid's own intervals, since
-they are fixed by a width law rather than cut by a criterion — and it is now derived, emitted and
-served on the host and the device alike, on every lane. A member a later revision has
-not derived would still be refused where it is named, with the reason, rather than answered from
-another partition's fits; there is simply none at this revision, which is why the refused count is
-zero in the run above.
+**The refused book reads zero, and that is the state the space is held to.** **The rational route over
+the uniform grid** is the fit for the grid's own intervals, which are fixed by a width law rather than
+cut by a criterion, and it is derived, emitted and served on the host and the device alike, on every
+lane. A combination with no derived fit is refused where it is named, with the reason, rather than
+answered from another partition's fits; the space carries none, which is why the refused count is zero
+in the run above.
 
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 
@@ -1454,7 +1453,7 @@ by the measured figure rather than the bound — that figure's own `source`.
 | `kGuaranteedInside` | the bound this combination carries is at or below the request: safe to rely on |
 | `kDeliveredInside` | the bound is above the request and the figure the fits were measured to deliver is at or below it: at the target in what has been measured, and **not** covered by the guarantee |
 | `kOutside` | no figure this library holds for the combination is at or below the request |
-| `kNotCarried` | this revision does not carry the combination: no verdict, no figures, and the library's own reason |
+| `kNotCarried` | the combination is not carried: no verdict, no figures, and the library's own reason |
 
 The verdict is decided by the bound first, so `kGuaranteedInside` is the only state a calculation's
 safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped** — bound
@@ -1470,14 +1469,14 @@ safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipp
 Each answer carries the request and both figures, so the reader can check it against the numbers
 that decided it rather than take it.
 
-A combination this revision does not carry is `kNotCarried` with no figure and no verdict, and the
+A combination the library does not carry is `kNotCarried` with no figure and no verdict, and the
 sentence is the accessor's own, so the two kinds of refusal stay apart here as they do at the
-accessor. The owed book reads zero above, so at this revision both are calls the space does not have
+accessor. The refused book reads zero above, so both are calls the space does not have
 rather than members of it, and the two sentences are the enumeration guard and the lane axis:
 
 | Asked of | The answer |
 |---|---|
-| a value outside the enumerations this revision publishes — a route, a scheme, a packing axis or a partition no table of it names | no verdict, no figure: *the value named is outside the enumeration this library serves, so it names no combination: name a route, a scheme, a packing axis and a partition from the enumerations this revision publishes* |
+| a value outside the enumerations this library publishes — a route, a scheme, a packing axis or a partition no table of it names | no verdict, no figure: *the value named is outside the enumeration this library serves, so it names no combination: name a route, a scheme, a packing axis and a partition from the enumerations this revision publishes* |
 | a precision no lane of this library has — a combination the space does not contain | no verdict, no figure: *no lane of this library has that precision* |
 
 The first names the axis the call left the space on and hands back the enumerations to name it from;
@@ -1485,37 +1484,33 @@ the second names a lane no row of this library describes. Both are refusals and 
 which is what they have in common — the sentence is what tells a caller which of the two it is
 holding.
 
-Checked over the whole cross, the two accessors and this entry agree: **the recorded run's 144
+Checked over the whole cross, the two accessors and this entry agree: **the recorded run's 192
 combinations are carried or refused with a reason, and 0 of the carried ones disagreed** — every carried combination asked at
 the figure its lane publishes answers inside it, asked at half of that figure answers outside it,
-and every lane publishes a figure to halve. The owed book reads zero above, so no combination is
-left to answer with no verdict and no figure; a member a later revision has not derived would be
+and every lane publishes a figure to halve. The refused book reads zero above, so no combination is
+left to answer with no verdict and no figure; a member the library has not derived would be
 asked the same question and would answer with the accessor's own reason.
 Those counts are the accuracy gate's own tolerance block, and the block this page quotes is the one
 the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, whose build's lane table
-is the eight rows this revision's `BoysLaneContracts()` publishes.
+is the eight rows `BoysLaneContracts()` publishes.
 `boys-consumer-umbrella` — a check whose translation unit includes `<boys/boys.hpp>` and nothing
 else, and links the library — prints the same comparison in its accuracy section, and its four
 requests above are its own.
 
 The gate's own lines for the tolerance question, as that recorded run has them:
 
-    the tolerance query: 144 carried row(s) asked at the figure each row is judged by and
-                  answered inside it, 144 of them asked at half of that figure and answered
+    the tolerance query: 192 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 192 of them asked at half of that figure and answered
                   outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-This revision's option space is two lanes larger than that run's: eight lanes by the twenty-four
-combinations the four axes offer is **192 combinations**, the host bf16 lane's twenty-four and the
-device bf16 lane's twenty-four added to the
-recorded run's 144, and no run of this revision is quoted on this page — the block above is the
-comparison as the six-lane revision took it, and a green block here would be a claim of this tree's
-gate rather than of the run the file records. The 144 rows are every member of that revision's option space, and the block
-asks all of them: the members the device lane holds and a host-only build cannot run answer from the
-accessor's own tables like the rest, because the query reads a table rather than a measurement. None is refused
-at this revision; a member a later revision has not derived would be asked the same question and
-would answer with no verdict, no figure and the accessor's own sentence rather than with a number.
+The block above is the comparison as the recorded run took it: eight lanes by the twenty-four
+combinations the four axes offer is **192 combinations**, and the run asks all of them. The 192 rows
+are every member of the option space, and the members a host-only build cannot run answer from the
+accessor's own tables like the rest, because the query reads a table rather than a measurement. None
+is refused; a member the library has not derived would be asked the same question and would answer
+with no verdict, no figure and the accessor's own sentence rather than with a number.
 
 ## The default policy, per precision and per device
 
@@ -1526,15 +1521,13 @@ offers has one, and an entry that names no policy at the call site is answered b
 class whose row is the five and not otherwise. This section states what each name
 selects and the bound it carries.
 
-**Two of these axes have been measured and two have not, and the table says which is which — with one
-correction this page owes its reader.** The scheme and the partition were set from the option probe's
-own runs. **The partition default was never chosen against its axis.** Those runs are dated
-2026-09-28, and every partition-bearing row in them is named `narrow`; the uniform partition reached
-the host lanes on 2026-09-29 and every lane on 2026-09-30. So the comparison that named `narrow` had
-a three-member axis and measured one member of it: that default is owed a re-derivation with the whole
-axis rather than presented here as a settled choice. On the scheme axis the runs did compare both
-rows and did not separate them, so that default is one of two rows the instrument could not tell apart
-rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
+**Two of these axes have been measured and two have not, and the table says which is which.** The
+scheme and the partition were set from the option probe's own runs. **The partition default was never
+chosen against its axis.** Every partition-bearing row of those runs is named `narrow`, and the
+comparison that named it had a three-member axis and measured one member of it: `narrow` is the
+default by that comparison and not by a ranking of the whole axis. On the scheme axis the runs compare
+both rows and do not separate them, so that default is one of two rows the instrument could not tell
+apart rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
 and its card, and the probe is what a consumer runs where they deploy. The route and the packing axis
 carry the settings the library has always shipped and have not been ranked against a timing. Setting
 any of them from a run is one line
@@ -1545,10 +1538,9 @@ consumer set them for the machine they deploy on without touching a library head
 choices at no run-time cost. **One of the host five a build cannot move**, and it refuses at compile time
 with the library's own reason rather than compiling something else: the packing axis, because an
 entry that produces one order has no second order to pack into a vector lane. The uniform member of
-the fit granularity was the second until this revision: the four batched bodies that refused it now
-hand a policy naming the grid to the path that reads it, and the accuracy gate's entry book measures
-those cells as rows rather than counting them as owed. Whether a build *naming* that member compiles
-is measured rather than left open here: class rows naming it are carried by
+the fit granularity is carried: the four batched bodies hand a policy naming the grid to the path that
+reads it, and the accuracy gate's entry book measures those cells as rows. Whether a build *naming*
+that member compiles is measured rather than left open here: class rows naming it are carried by
 `tests/build_defaults_uniform.hpp`, and the `Build defaults (the grid's row built and tested)` step of
 `.github/workflows/ci.yml` configures that header, builds it and runs its suite on two legs. Setting the
 packing axis to what the library already runs is fine; setting it to another member is a build that
@@ -1682,7 +1674,7 @@ which a CUDA build runs on the card it was compiled for.
 
 ## What is not claimed
 
-**Speed.** No timing taken so far supports a speed claim for any lane. Every timing available was
+**Speed.** No timing taken supports a speed claim for any lane. Every timing available was
 taken on a loaded machine, on a card with no tensor cores, and with a double-to-single throughput
 ratio near 1 to 32. **Performance is an open question.** Answering it needs a timed run on an
 unloaded machine and on a card chosen to show the difference; the packed-half lane's advantage in

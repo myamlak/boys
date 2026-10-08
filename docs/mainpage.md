@@ -212,7 +212,7 @@ build decides which that is, because a build that contracts a bare product-plus-
 separate selection onto the fused step: the `RouteInForce` the backend report is built from asks that
 question and returns the fused route there whatever the selection says. Against the committed
 reference grid, built both ways — the default fused route and the `BOYS_MULADD_SEPARATE=ON` separate
-route — on MSVC x64 Release at this revision:
+route — measured on MSVC x64 Release:
 
 | lane | region | fused route | separate route | bound |
 |---|---|---|---|---|
