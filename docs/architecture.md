@@ -3,7 +3,7 @@
 This page is for a reader who knows C++ and numerical analysis and nothing about this tree: it
 says which file implements what, and which test holds each thing to its contract. It is a map, not
 a specification — what a lane guarantees, and why the figures are what they are, is in
-[the per-lane contract](lane-contract.md) and [the accuracy contract](../README.md#accuracy-contract).
+[the per-lane contract](lane-contract.md) and [the accuracy contract](specification.md#accuracy-contract).
 
 Every claim below is read off the files it names. Where this page could not tell what a file is
 for, it says so instead of guessing.
@@ -146,7 +146,7 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 |---|---|---|---|
 | `include/boys/boys_coefficients.hpp`, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites both | its own `--check`, re-deriving both and comparing byte for byte |
 | `tests/data/boys_accuracy_gate_reference.csv` | `tools/gen_boys_accuracy_gate_reference.py` | run it with no flag | its own `--check` |
-| The platform table inside `README.md` | `tools/gen_platform_table.py`, from the workflow and `required-checks.txt` | run it with no flag | its own `--check` |
+| The platform table inside `docs/specification.md` | `tools/gen_platform_table.py`, from the workflow and `.github/required-checks.txt` | run it with no flag | its own `--check` |
 | The row region inside `docs/build-facts.md` | `tools/gen_build_facts.py` | `--record <file>` with a captured probe row; it merges the row in and re-renders the document | its own `--check`, which also refuses a table holding no CI leg's row |
 | `.github/option-matrix.json` | `tools/gen_option_matrix.py`, from the library's own declarations | run it with no flag | its own `--check`, in both directions |
 | The `DeviceEntryArithmeticOf` block in `include/boys/boys_cuda_options.hpp` | `tools/gen_entry_aliases.py`, from the entries' own bodies | run it with no flag | its own `--check` |
@@ -168,7 +168,7 @@ a claim about what its generator produces.
 | `benchmarks/boys_option_probe.cpp` (`boys-option-probe`) | the host option probe's report: the options this build carries on this machine, their cost per argument, the spread of the paired rounds, and the verdict | a person; the committed report under `tests/data/`; `tools/combination_matrix.py` |
 | `benchmarks/boys_device_probe.cpp` (`boys-device-probe`) | the device option probe's report: the same question for the card, with the card's own name | a person; the committed device report; `tools/status.py` |
 | `tests/boys_build_facts.cpp` (`boys-build-facts`) | one line per build fact — the target ISA, the lane widths, whether a bare `a*b+c` rounds once in this build, whether the compiled library reaches the runtime's `fma` | `tools/gen_build_facts.py --record`; the CI step that compares a row against `docs/build-facts.md` |
-| `tests/boys_accuracy_gate.cpp` (`boys-accuracy-gate`) | the gate's report: every documented lane and region against the committed grid, worst delivered beside the bound | a person; the committed recorded run; the README's printed-run table through `tools/check_bound_transcripts.py` |
+| `tests/boys_accuracy_gate.cpp` (`boys-accuracy-gate`) | the gate's report: every documented lane and region against the committed grid, worst delivered beside the bound | a person; the committed recorded run; the specification page's printed-run table through `tools/check_bound_transcripts.py` |
 | `tests/boys_avx2_probe.cpp` (`boys-avx2-probe`) | one line: what `BoysAvx2Available()` reports on this leg, beside what the leg expects | ctest, per leg; the expectation comes from `BOYS_EXPECT_AVX2` |
 | `tests/boys_cuda_axis_sensitivity.cpp` (`boys-cuda-axis-sensitivity`) | a per-cell report: whether each row of the device option table really reads the axes its coordinates state | a person. It is built by CMake and registered as no test, because the cells it reports are pairs the library documents as one arithmetic under two names |
 | `tests/boys_boundary_standalone.cpp` (`boys-boundary-standalone`) | the smallest argument at which the erf-seeded upward recursion matches the reference series to 5e-14, per order limit | ctest, and the CI steps that compile and run it over `tests/data/boys_reference.csv` |
