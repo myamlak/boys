@@ -1161,7 +1161,7 @@ std::string RowSpelling(const boys::DeviceOptionInfo& row, boys::DivisionForm fo
 /// The rows are the library's own and the text is rendered by the same function the
 /// driver prints, from a report whose measurement grid is the one the probe builds - a
 /// place per row this build serves, none measured - so the figures stated about the
-/// space are those of a real run of this revision, without a card or a clock.
+/// space are those of a real run, without a card or a clock.
 ///
 /// A row this build does not serve is refused with the library's own reason and owed:
 /// the space states what it has and why, rather than counting a row it cannot run among

@@ -2096,8 +2096,8 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 /// region-B exponential are template arguments of the policy and have no
 /// run-time entry, so a consumer
 /// reaches them the way this does, by naming them. Every entry is built at the
-/// library's full-accuracy multiplier, which is the one accuracy this revision
-/// carries, and the dispatch is the same cross the library's own accuracy
+/// library's full-accuracy multiplier, which is the one accuracy it carries, and
+/// the dispatch is the same cross the library's own accuracy
 /// gate measures, so a cell this probe reports as served is a cell some entry of
 /// this build really runs.
 ///
@@ -3827,7 +3827,7 @@ const char* HowText(OptionProbeDefaultHow how) {
         return "nothing named";
     }
 
-    // A value no arm above names: a member a newer header carries and this revision has not been
+    // A value no arm above names: a member a newer header carries and this build has not been
     // taught, or a value cast in from outside the enumeration. "nothing named" is one member's
     // own phrase, so it is not the answer here: a reader of it cannot tell that value from the
     // member that means this run named no default.
@@ -4699,7 +4699,7 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         break;
     default:
         // A way of reaching a default that no arm above names - a value cast in from outside the
-        // enumeration, or an enumerator this revision has not been taught - is not a way this run
+        // enumeration, or an enumerator this build has not been taught - is not a way this run
         // walked, so naming the class's fastest entry here would state a choice this run never made.
         report.reason = Text(
             "No default is named for this class and no reason for one is stated: the way this "
@@ -6463,8 +6463,7 @@ struct EmittedSeamRow {
 /// written: every axis a policy carries has a cell in the row format, so the combination that
 /// won a class is a combination the file can state, and the row written is the winner. A
 /// class whose winner the format could not name would be one whose row stated another
-/// arithmetic under this class's key, which is the reading this struct no longer carries a
-/// field for.
+/// arithmetic under this class's key, which is the reading this struct has no field for.
 ///
 /// The sorted-arguments axis is not one of a policy's, so a winner that is a sorted cell is
 /// no exception to that: the row states the combination that cell ran, which is the
@@ -7173,7 +7172,7 @@ std::string OptionProbeDefaultHowName(OptionProbeDefaultHow how) {
         return "none";
     }
 
-    // A value no arm above names: a member a newer header carries and this revision has not been
+    // A value no arm above names: a member a newer header carries and this build has not been
     // taught, or a value cast in from outside the enumeration. "none" is one member's own name,
     // so it is not the answer here: a reader of it cannot tell that value from the member that
     // means no default was named.
@@ -8175,7 +8174,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         } else
         {
             // The sentence above states a tie and a re-run of it. A report whose own field is
-            // none of the ways this revision names has neither, and printing it here would state
+            // none of the ways the enumeration names has neither, and printing it here would state
             // a run that did not happen.
             text += "    reached by: (not a way this revision names) — this report's own field is "
                     "not one of\n";

@@ -219,7 +219,7 @@ enum class DeviceEntry : int {
     /// Their enumerators are appended and never inserted, so every value above keeps
     /// the number it had: a row is reached by its name, and an ordinal that moved
     /// would move under a caller holding one. The consequence is that the row order
-    /// this enumeration states is no longer the group order the header's preamble
+    /// this enumeration states is not the group order the header's preamble
     /// describes for these rows alone — a launched row appended after the
     /// device-callable block — which is the price of keeping the block above stable
     /// and is the reason each row below prints its group in its own right.
@@ -2170,7 +2170,7 @@ struct DeviceOptionInfo {
     DeviceEntry arithmeticOf = DeviceEntryArithmeticOf(entry);
 };
 
-/// The device option space this revision defines, one row per option, read from
+/// The device option space this library defines, one row per option, read from
 /// the entries and the bounds in this header rather than listed beside them.
 ///
 /// A report that enumerates *this* is a projection of the library and cannot fall

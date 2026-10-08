@@ -928,8 +928,8 @@ constexpr bool ExpIsAnEnumerator() noexcept {
 
 // The boundary, at compile time and per axis: the last member of the enumeration is taken and a
 // one past it is refused. The refusal half carries the weight, and it is proven end to end, on the
-// entry itself rather than on this predicate, by the scratch translation units under
-// .claude/tmp/ (guarstatee-refusal-*.cpp), compiled as a control and required to fail.
+// entry itself rather than on this predicate, by scratch translation units compiled as a control
+// and required to fail.
 
 // What these two asserts do not say is which enumeration the boundary is the last member of: that
 // `ExpectAxisIsTheEnumeration` below, at run time, against the rows the library itself carries.

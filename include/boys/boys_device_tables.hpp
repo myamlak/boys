@@ -110,7 +110,7 @@ enum class BoysDeviceLane : int {
 /// The fields named for a relaxed reading — \c relaxedRung, \c relaxedDegA,
 /// \c relaxedDegB, the partitions' \c *Relaxed* tables and the two seed cuts
 /// (\c ratSeedDeg, \c narrowRatSeedDeg) — are placeholders: null in every handle,
-/// and read by no entry of this revision. They are placeholders and not deletions
+/// and read by no entry. They are placeholders and not deletions
 /// because each holds one slot of the address order the device image exports, and
 /// that order is positional — the reserved slots sit between live ones, so a slot
 /// dropped renumbers every slot after it and a caller's build reads another
@@ -144,7 +144,7 @@ struct BoysDeviceTables {
 
     /// Reserved: the removed accuracy rung's residency scalar. Always null — the
     /// device image exports null into this slot and this handle leaves the field at
-    /// the default its type gives it — and read by no entry of this revision.
+    /// the default its type gives it — and read by no entry.
     const double* relaxedRung = nullptr;
     /// [lane] Reserved: the removed rung's region-A effective degrees, in the
     /// indexing the piece tables above use — piece \c p of order \c n is the entry
@@ -153,7 +153,7 @@ struct BoysDeviceTables {
     const int* relaxedDegA[6] = {};
     /// [lane] Reserved: the removed rung's region-B effective degrees, of the shape
     /// a per-lane table takes here — kMaxBoysOrder + 1 entries per lane, indexed by
-    /// BoysDeviceLane. Always null and read by no entry of this revision.
+    /// BoysDeviceLane. Always null and read by no entry.
     const int* relaxedDegB[6] = {};
 
     /// The uniform route's table: one grid of equal intervals over [0, kFlatHi),

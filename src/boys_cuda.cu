@@ -2181,8 +2181,8 @@ extern "C" int BoysCudaUploadTables() {
 namespace {
 
 // The address order, one entry per symbol, in the slot order the handle's fields
-// are declared and the status layer fills them. A slot this revision has no table
-// for holds nullptr, and the export writes the null the status layer then stores.
+// are declared and the status layer fills them. A slot with no table holds nullptr,
+// and the export writes the null the status layer then stores.
 const void* const kTableAddressSymbols[] = {&dPieceStart,      &dOffset,
                               &dA,               &dB,
                               &dDeg,             &dCoeffs,

@@ -2809,7 +2809,7 @@ DeviceProbeReport RunDeviceOptionProbe(const DeviceProbeOptions& options) {
     for (int pass = 0; pass < timedPasses; ++pass)
     {
         // Progress on stderr, not stdout: the report on stdout is what a recorded closure is made
-        // from, and a run that printed progress there would be a run whose report no longer matches
+        // from, and a run that printed progress there would be a run whose report does not match
         // its own format. Without this a reader cannot tell "measuring" from "hung".
         std::fprintf(stderr, "boys-device-probe: pass %d of %d, %.1fs in\n", pass + 1, timedPasses,
                      std::chrono::duration<double>(std::chrono::steady_clock::now() - probeStarted)
@@ -5227,7 +5227,7 @@ DeviceDefaultsPublication PublishDeviceBuildDefaults(const std::string& reportTe
             std::size_t last = 0;
 
             // The heading the report writes for a class is the library's own key for it, so a
-            // report of this revision's classes is read without a name being invented here.
+            // report of those classes is read without a name being invented here.
             if (!ClassBlock(lines, Text("class %s", key.c_str()), first, last))
             {
                 faults.push_back(Text("the report states no '%s' class", key.c_str()));
@@ -5398,7 +5398,7 @@ DeviceDefaultsPublication PublishDeviceBuildDefaults(const std::string& reportTe
     publication.emission = FormatDeviceBuildDefaults(report, takenAt);
 
     // The emitter's own refusals, which a report that placed every class reaches only where an
-    // axis the seam names carries a member this revision's tables answer nothing for. Nothing is
+    // axis the seam names carries a member the tables answer nothing for. Nothing is
     // written for as long as one of those stands either.
     if (!publication.emission.refused.empty())
     {
@@ -6022,7 +6022,7 @@ std::string FormatDeviceOptionProbe(const DeviceProbeReport& report) {
             case DeviceProbeDefaultHow::kRefined:
             case DeviceProbeDefaultHow::kVote:
             case DeviceProbeDefaultHow::kChosenAmongEquals:
-                // The three ways the refinement stage reaches, and ways this revision names: the block below the
+                // The three ways the refinement stage reaches, named by the enumeration: the block below the
                 // switch is their statement. Falling through to it is the whole of this arm - every class the stage
                 // decided took the arm below instead and had its way withheld from a reader.
                 break;

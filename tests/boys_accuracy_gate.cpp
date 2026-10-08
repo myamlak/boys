@@ -1153,7 +1153,7 @@ constexpr auto GateDeviceEntryF64(boys::FitRoute route,
     {
         // The grid, whose rows state one packing axis for both of its names -
         // a grid stored one fit per order and interval has no seeded ladder to
-        // step - and whose rational pair is two names at this revision.
+        // step - and whose rational pair is two names.
         if (rational)
         {
             if (orders)
@@ -1412,12 +1412,12 @@ constexpr auto GateDeviceEntryBf16(boys::FitRoute route,
 ///
 /// The region-B exponential is not a policy argument on a device lane: the launched
 /// entries are distinct functions and the option table states the member each one
-/// runs (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp). This revision's
-/// table carries the float lane's all-orders family at \c RegionBExp::kAccurate - so
+/// runs (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp). The option table
+/// carries the float lane's all-orders family at \c RegionBExp::kAccurate - so
 /// the cross's arms above read that member and no other - and carries the lane's
 /// \c RegionBExp::kFast at one entry of its own, the single-order launch
 /// (`kSingleF32Fast`, whose C++ name is `BoysCuda::SingleF32` at that member). The
-/// double lane's table carries no row at \c kFast in either group at this revision,
+/// double lane's table carries no row at \c kFast in either group,
 /// and the arm below names that member rather than judging it at the other member's
 /// figure.
 ///
@@ -1949,7 +1949,7 @@ int main(int argc, char** argv) {
     }
 
     // --strict is the default verdict, accepted so a caller can name what they get either way.
-    // It scopes over the claims this build carries: a carried row this revision cannot verify
+    // It scopes over the claims this build carries: a carried row this build cannot verify
     // fails the gate, while a row whose subject the build does not carry is named with its reason
     // and fails nothing here.
     std::printf("verdict      : %s\n",
@@ -4218,7 +4218,7 @@ int main(int argc, char** argv) {
     }
 #endif // BOYS_GATE_FP16
 
-    // ---- the native packed half lane, if this revision carries it -----------
+    // ---- the native packed half lane, where the build carries it ----------
     // Region C only, one precondition (x >= the lane's own fp16 rounding of x1), no fallback,
     // returning 2^15 * F_k(x) so the ladder stays normal down to F_k(x) = 2^-29. Measured apart:
     // the bound where the return is a normal half, the points past that ceiling, and the packing.
@@ -6090,7 +6090,7 @@ int main(int argc, char** argv) {
 
     const int firstClaim = kSingleA;
     // Through the last slot: the native half lane's two entries are created after
-    // the static lanes, and a slot with no points (a lane this revision does not
+    // the static lanes, and a slot with no points (a lane the build does not
     // carry) prints as a row of zeros rather than silently missing from the table.
     const int lastClaim = static_cast<int>(Claims().size());
 
@@ -6199,7 +6199,7 @@ int main(int argc, char** argv) {
             {
             case BatchEntry::kPlane:
             case BatchEntry::kPlaneSorted:
-                // Every combination of this entry is served at this revision, the uniform
+                // Every combination of this entry is served, the uniform
                 // partition among them. The partitioned path is the shipped route's arguments axis
                 // and carries no uniform branch - its region bodies reach ChebyshevFit<scheme,
                 // kUniform>, whose else branch is NARROW - so the per-argument path takes it.
@@ -6296,7 +6296,7 @@ int main(int argc, char** argv) {
                 }
                 else
                 {
-                    // Every remaining combination of this entry is served at this revision, the
+                    // Every remaining combination of this entry is served, the
                     // uniform partition among them. The Chebyshev branch resolves the partition to
                     // ChebyshevFit, whose else branch is NARROW, so the entry hands a uniform policy
                     // to BoysSingleImpl, which reads the grid below the join.
@@ -7429,7 +7429,7 @@ int main(int argc, char** argv) {
     // The 8-wide half kernels exist only where the AVX2 tier is compiled, which
     // is x86_64 by construction. On any other target the claim has no subject,
     // so it is scoped to the targets that carry it rather than reported as
-    // evidence this revision failed to produce.
+    // evidence this build failed to produce.
 #if defined(__x86_64__) || defined(_M_X64)
     constexpr bool kSimdTierTarget = true;
 #else
@@ -8814,9 +8814,9 @@ int main(int argc, char** argv) {
         }
     }
 
-    // Strict over the claims this build carries: a carried claim that is not met at this revision
-    // - measured exceeded, measured vacuous only, or resting on evidence this revision cannot
-    // re-run - leaves the gate red and names itself below. A claim whose subject the build does not
+    // Strict over the claims this build carries: a carried claim that is not met - measured
+    // exceeded, measured vacuous only, or resting on evidence this build cannot re-run -
+    // leaves the gate red and names itself below. A claim whose subject the build does not
     // carry is named above with its reason and still counted in the RESULT line.
     if (verified + metOverDomain + notCarried < static_cast<int>(book.size()))
     {
@@ -9414,7 +9414,7 @@ int main(int argc, char** argv) {
     };
 
     // The other direction, and the one this block must not be quiet about: a refusal whose probe
-    // COMPILED the call is a limit this revision does not have. That is not a defect in itself -
+    // COMPILED the call is a limit the library does not have. That is not a defect in itself -
     // a capability landing is the point - but one that lands while nothing measures it is a silent
     // hole, so a lifted refusal fails here and names the book that has to carry the row.
     std::size_t liftedRefusals = 0;
@@ -9559,7 +9559,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    // A refusal whose probe COMPILED the call is a limit this revision does not have; a capability
+    // A refusal whose probe COMPILED the call is a limit the library does not have; a capability
     // that lands while nothing measures it is a silent hole, so a lifted refusal fails here and
     // names the book that has to carry the row before the gate can go green again.
 #ifndef BOYS_GATE_BATCH_REFUSES_ROUTE
@@ -9585,18 +9585,18 @@ int main(int argc, char** argv) {
                 "A revision\n  that reaches this line has changed what the entry is\n");
 #endif
 #ifndef BOYS_GATE_F32_REFUSES_ORDERS
-    // The orders axis was a limit on the single-precision engines until this revision, and it is
-    // not one any more: the call compiles and runs, and the row that landing owes is measured rather
-    // than promised. The float book's "all, orders axis" claim above is that row.
+    // The orders axis is served on the single-precision engines: the call compiles and runs, and
+    // the row for it is measured rather than promised. The float book's "all, orders axis" claim
+    // above is that row.
     std::printf("  CARRIED: the single-precision engines accept an orders-axis policy, and the "
                 "float\n  book above carries the row it owes at the lane's own bar, measured "
                 "against the\n  committed reference grid beside the per-order entry's row over "
                 "the same cells. The\n  probe is the reading that says so; a revision that "
                 "dropped the axis would print the\n  refusal instead\n");
 #endif
-    // The orders axis carried two limits until this revision, and both are gone: it answers a route
-    // other than the shipped one, and the narrow partition of region A. Neither landing is silent -
-    // the packing-axis rows above measure both routes and both partitions, through both entries.
+    // The orders axis is served on a route other than the shipped one, and on the narrow partition
+    // of region A. Neither is silent - the packing-axis rows above measure both routes and both
+    // partitions, through both entries.
     std::printf("  CARRIED: the orders axis reads a route other than the shipped one: the\n"
                 "  rational route's region-A fits cover the same per-order intervals as the\n"
                 "  shipped piece table, and the packing-axis rows above measure them on both\n"
@@ -9777,7 +9777,7 @@ int main(int argc, char** argv) {
                        combPartitions * combAxes;
     }
 
-    // The measurement side: one row per cell this revision's library carries, measured over the
+    // The measurement side: one row per cell the library carries, measured over the
     // whole committed grid through the entry that carries all of the cell's axes at once. A list of
     // explicit instantiations rather than a loop, because the refusals are compile-time ones.
     struct CombCell {

@@ -1,4 +1,4 @@
-// The refusal's reason, held to: a combination this revision does not carry, and a device option this
+// The refusal's reason, held to: a combination the library does not carry, and a device option this
 // build does not serve, must say why, or fail here. CombinationCoverage::reason is "" beside kNotCarried
 // (include/boys/boys.hpp), and a null refusedBecause took the device probe's "not served by this build"
 // (src/boys_cuda_probe.cpp, EnumerateEntries) - a substitute reads as the library's own sentence.
@@ -77,7 +77,7 @@ std::string CombinationName(boys::Precision precision,
     return std::string(text);
 }
 
-/// The values one axis of the walk takes: every member of it this revision reports, and
+/// The values one axis of the walk takes: every member of it the tables report, and
 /// then the count of those members.
 ///
 /// The count is read from the reporting API rather than written here, and it is the first
@@ -85,7 +85,7 @@ std::string CombinationName(boys::Precision precision,
 /// carries, so a value equal to the count is past the last of them, and the carriers
 /// refuse it (`>=` the count, in the guards of src/boys.cpp). A walk that then visits
 /// that value per axis reaches the refusal path without being handed a hand-written list
-/// of combinations and without depending on which cells this revision's tables refuse.
+/// of combinations and without depending on which cells the tables refuse.
 template <typename Row, typename Read>
 auto AxisValues(std::span<const Row> rows, Read read) {
     using Member = std::invoke_result_t<Read, const Row&>;
@@ -231,7 +231,7 @@ TEST(RefusalReasonTest, EveryRefusalStatesItsReason) {
                 combinations.violations.size());
 
     // Non-vacuity: the axes are reported and the walk reached the refusal path. The
-    // second is not an accident of this revision's tables - every axis carries the value
+    // second is not an accident of the tables - every axis carries the value
     // one past its count, so a configuration that refused nothing else would still be
     // walked past a refusal here.
     EXPECT_GT(combinations.combinations, 1u);

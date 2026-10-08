@@ -27,7 +27,7 @@ using namespace boys;
 
 // The names the library does not publish: the fit route, the scheme, the packing axis, the
 // partition and the division form have names from the library (RouteName below), while the device,
-// the shape and the compute budget have none at this revision and are named here. Each switch names
+// the shape and the compute budget have none and are named here. Each switch names
 // every enumerator of its axis with no default arm, so a member added later fails a -Werror build.
 
 /// The name this report prints a device under.

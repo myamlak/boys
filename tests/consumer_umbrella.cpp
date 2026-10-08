@@ -1083,7 +1083,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     // The name each entry read below resolves to when no policy is named: its own class's row,
     // the five above where this build's seam carries no row for the class, the row where it
     // does. Held to this name for the reason CheckEvalSchemes states: a name that happens to
-    // agree with the entry's default at this revision is not the entry's default.
+    // agree with the entry's default is not the entry's default.
     using SingleDefault = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
@@ -2376,8 +2376,8 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
 ///
 /// The first two are different numbers and the library says which is which in the
 /// `reading` field of each answer, so this check reads them apart rather than
-/// comparing them. The third is the question a caller with a target has - *is this
-/// at what I need* - and this check reads it the way such a caller does, at a
+/// comparing them. The third is the question a caller with a target has - "is this
+/// at what I need" - and this check reads it the way such a caller does, at a
 /// request the run itself derives.
 ///
 /// The whole cross is walked rather than a chosen pair, so the counts below are of

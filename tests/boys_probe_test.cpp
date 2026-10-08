@@ -1711,7 +1711,7 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
 
     // The multiplier is the library's full-accuracy setting and not an axis of
     // the space: a class is the product of the axes the library reports and no
-    // factor stands for a choice the library no longer offers.
+    // factor stands for a choice the library does not offer.
 
     // The space this book accounts for, class by class. A class is a precision and a question shape and not a
     // lane: the shapes do not admit the same axes and the two half formats are two classes. Every class is held

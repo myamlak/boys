@@ -29,8 +29,8 @@
 
 // Moved: kCoarsest, the partition the certified lanes are defined by, in place of the committed
 // header's kNarrow; not the member a build cannot move, which is the packing axis (CONTRIBUTING.md).
-// FitGranularity::kUniform, refused by the batched bodies until this revision, is named by the row
-// table in tests/build_defaults_uniform.hpp; kCoarsest is what tests/boys_accuracy_gate.cpp reads.
+// FitGranularity::kUniform is named by the row table in tests/build_defaults_uniform.hpp;
+// kCoarsest is what tests/boys_accuracy_gate.cpp reads.
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kCoarsest
 
 // Committed: the device lane's own two names, which this fixture does not move. A device class

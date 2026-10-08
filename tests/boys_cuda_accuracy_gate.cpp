@@ -5084,7 +5084,7 @@ struct LaunchedArm {
 ///
 /// Read off the library rather than written by hand: the enumerator is the
 /// report's, and the row an entry names is resolved through DeviceRow at run
-/// time, which stops the gate if the report no longer carries it. A launched row
+/// time, which stops the gate if the report does not carry it. A launched row
 /// the report carries and this table does not name is named by the survey below
 /// rather than passed over.
 ///

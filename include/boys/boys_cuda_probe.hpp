@@ -1466,7 +1466,7 @@ struct DeviceDefaultsPublication {
 /// **Every class of the device half or no file.** The twelve classes are the library's own
 /// (\c BoysDeviceOptions, boys_cuda_options.hpp, crossed with the questions the report ranks), so
 /// a report that states no class of them, states a class without a `recommended entry:` line, or
-/// states a way of being reached this revision does not define, is refused with the class named
+/// states a way of being reached the library does not define, is refused with the class named
 /// and no file is written. The seam is read INSTEAD of the committed file, so a partial
 /// replacement would leave the build resolving a class this tool had silently dropped.
 ///
