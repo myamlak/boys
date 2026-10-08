@@ -116,8 +116,11 @@ CONDITIONS = [
         "n": 4,
         "title": "Verified regeneration",
         "cmd": None,
-        "why": "the check re-derives every coefficient and takes about four hours; it is run "
-               "deliberately before the merge and its transcript is committed, not run here",
+        "why": "the check re-derives every coefficient and costs hours rather than seconds: 8082 s "
+               "measured on a twelve-core host, 3602 s to 7223 s on the runners, so no run of it "
+               "belongs in this table. It is armed elsewhere: CI runs it on every round, as the "
+               "'Generator consistency' step of the gcc Release leg, which is what makes this row "
+               "a check carried rather than a check owed",
         "how_to_run": "python3 tools/gen_boys_coefficients.py --check",
     },
     {
