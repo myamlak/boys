@@ -161,7 +161,14 @@ add_library(boys
     src/boys_simd.cpp
     src/boys_transform.cpp)
 add_library(boys::boys ALIAS boys)
-target_include_directories(boys PUBLIC include PRIVATE src)
+# Two spellings of one directory: the source tree's absolute path for a consumer
+# that adds this tree, and `include` relative to the install prefix for the
+# exported package, which has no source directory of its own.
+target_include_directories(boys
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
 target_compile_definitions(boys PUBLIC BoysFp16=1)
 boys_strict_warnings(boys)
@@ -1568,6 +1575,59 @@ if (boysUngatedTargets)
     message(FATAL_ERROR "boys: first-party targets without the strict warning "
         "set: ${boysUngatedTargets}. Call boys_strict_warnings(<target>) right "
         "after each one is created (see BOYS_WERROR).")
+endif()
+
+# --- Install: the archive, its headers, and the package a consumer finds -----
+# Top-level only: a consumer that adds this tree already has the targets.
+#
+#     find_package(boys REQUIRED)
+#     target_link_libraries(app PRIVATE boys::boys)
+#
+# The headers, the compile definitions and the C++20 requirement all arrive
+# through that link, and boysConfig.cmake resolves its own location, so any
+# prefix works. The version file carries project(boys VERSION ...) with the
+# compatibility include/boys/version.hpp states.
+#
+# BOYS_BUILD_DEFAULTS is not installed: its replacement header is a build-tree
+# seam, and the definition it publishes makes a package built with one refuse
+# to compile rather than resolve other defaults silently.
+if (BOYS_TOP_LEVEL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    set(boysInstallCMakeDir "${CMAKE_INSTALL_LIBDIR}/cmake/boys")
+
+    install(TARGETS boys
+        EXPORT boysTargets
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+    # The whole directory, not a pattern list: every header under include/boys is
+    # public, and a list would silently drop the next one it was not told about.
+    # `include` is spelled, not taken from CMAKE_INSTALL_INCLUDEDIR, so the
+    # destination cannot disagree with the interface the target advertises.
+    install(DIRECTORY include/boys
+        DESTINATION include)
+
+    install(EXPORT boysTargets
+        FILE boysTargets.cmake
+        NAMESPACE boys::
+        DESTINATION "${boysInstallCMakeDir}")
+
+    configure_package_config_file(cmake/boysConfig.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfig.cmake"
+        INSTALL_DESTINATION "${boysInstallCMakeDir}")
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}"
+        COMPATIBILITY SameMajorVersion)
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfigVersion.cmake"
+        DESTINATION "${boysInstallCMakeDir}")
 endif()
 
 # --- Docs (zero-warning Doxygen gate, top-level only) ------------------------
