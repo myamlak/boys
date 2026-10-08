@@ -150,7 +150,7 @@ with no intermediate copy. Leave it out and it defaults to 1.
 
 ---
 
-## I want every order over many arguments
+## I want every order over many arguments {#i-want-every-order-over-many-arguments}
 
 `examples/08_shell_quartet_batch.cpp` — the batch shape an integral engine calls: a whole shell
 quartet's arguments at once, every order at each of them.
@@ -187,7 +187,7 @@ values you asked for, and it is the column the padded call is checked against.
 
 ---
 
-## I want to name a specific evaluation
+## I want to name a specific evaluation {#i-want-to-name-a-specific-evaluation}
 
 **First, a warning, because this one is a trap.** One of the settings below is called `kNarrow`. That
 name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kCoarsest` cut the fitted
@@ -237,7 +237,7 @@ run time](#what-you-can-and-cannot-choose-at-run-time).
 
 ---
 
-## I need to know what the library guarantees before I rely on it
+## I need to know what the library guarantees before I rely on it {#i-need-to-know-what-the-library-guarantees-before-i-rely-on-it}
 
 `examples/06_what_it_guarantees.cpp` — ask with your tolerance and get a verdict, rather than
 comparing a table by eye.
@@ -272,7 +272,7 @@ the good-enough options is fastest where you are.
 
 ---
 
-## I want to know which option is fastest on this machine
+## I want to know which option is fastest on this machine {#i-want-to-know-which-option-is-fastest-on-this-machine}
 
 `examples/07_option_probe.cpp` — this is a property of the machine and the build flags, so no
 document can answer it for you. It has to be measured where it will run.
@@ -324,7 +324,7 @@ your probe measured. `CONTRIBUTING.md` describes the second route.
 
 ---
 
-## What the double lane costs
+## What the double lane costs {#what-the-double-lane-costs}
 
 The probe above answers for your machine. This tree also carries one recorded run of its full
 protocol — `tests/data/boys_option_probe_report.txt`, the report `boys-option-probe` writes — and
@@ -370,7 +370,7 @@ cost of grouping from a workload of your own rather than from this table.
 
 ---
 
-## Which entry do I call?
+## Which entry do I call? {#which-entry-do-i-call}
 
 By what you want, not by what the library calls things:
 
@@ -390,7 +390,7 @@ By what you want, not by what the library calls things:
 The complete list, with every overload and the arithmetic behind it, is the entry-point table in the
 [API reference](mainpage.md).
 
-## What you can and cannot choose at run time
+## What you can and cannot choose at run time {#what-you-can-and-cannot-choose-at-run-time}
 
 The settings that select an evaluation fall into two kinds. Two can be named by a value the program
 computes. The rest can only be named where the call is compiled:
@@ -409,7 +409,7 @@ The ones that cannot be named late are fixed when the translation unit is compil
 run-time entry for them.** A choice that has to be made per input record needs an `if` over
 two instantiations at the call site, not a value passed into one.
 
-## On a GPU, the first call is the slow one
+## On a GPU, the first call is the slow one {#on-a-gpu-the-first-call-is-the-slow-one}
 
 **This section is about the warm-up only.** If you are calling the library on a card, the page
 written for you is [Calling this library on a GPU](gpu-guide.md): which of the two device routes
