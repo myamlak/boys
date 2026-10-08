@@ -102,15 +102,119 @@ CONTROL = (
 )
 
 
-def hits(text: str) -> list[tuple[int, str, str, str]]:
+# A committed run's own output. A document that quotes a sentence the program prints is quoting,
+# not speaking: "PASS: every documented claim met at this revision" is the gate's verdict, and
+# rewording it in a document would make the document disagree with the run it quotes. A match whose
+# surroundings appear in one of these is a quotation and is not the author's voice.
+RUN_RECORDS = (
+    REPO / "tests" / "data" / "boys_accuracy_gate_run.txt",
+    REPO / "tests" / "data" / "boys_device_probe_report.txt",
+    REPO / "tests" / "data" / "boys_option_probe_report.txt",
+)
+
+# The library's own sentences as well: a document that quotes a string this library states - the
+# accessor's refusal sentence, say - is quoting, and `tools/check_doc_transcripts.py` holds that
+# quotation to the string. What is read here is the long literals of the sources the documents
+# quote from, which is where a sentence a reader meets in a cell comes from.
+QUOTED_SOURCES = (REPO / "src" / "boys.cpp",)
+LITERAL = re.compile(r'"((?:[^"\\]|\\.){24,})"')
+
+# A document that addresses its reader speaks in the reader's person: "## I want one value" is a
+# heading put to whoever is reading, and "| I want | Entry |" is a row of the same question. The
+# author talking about the work reads differently, and the first-person group is aimed at that - so
+# a markdown heading and a table row are not read as the author speaking.
+READERS_VOICE = re.compile(r"^\s*(#|\|)")
+
+# And a link's label is the heading it points at: `[Which entry do I call?]` carries the reader's
+# question into a sentence of the author's, which is the reference working and not the author
+# speaking. The label is skipped; the sentence around it is still read.
+LINK_LABEL = re.compile(r"\[[^\]]*")
+FIRST_PERSON = "first person"
+QUOTATION_WINDOW = 60
+# How long a span through a match must be carried by a committed run before it reads as a
+# quotation rather than as a coincidence. `this revision` alone is 13 characters and the gate
+# prints it, so a match is only a quotation when its SENTENCE is there.
+QUOTATION_SPAN = 24
+
+
+def quoted_span(line: str, start: int, stop: int, runs: list[str]) -> int:
+    """The longest span through [start, stop) that a committed run also carries, in characters."""
+    left, right = start, stop
+    text = lambda a, b: " ".join(re.sub(r"[`*_]", "", line[a:b]).split())
+    found = 0
+
+    while True:
+        span = text(left, right)
+
+        if span and any(span in run for run in runs):
+            found = right - left
+
+            if left > 0:
+                left -= 1
+            elif right < len(line):
+                right += 1
+            else:
+                break
+        else:
+            break
+
+    return found
+
+
+def quotations() -> list[str]:
+    """The sentences the committed runs print, whitespace-normalised, for the quotation test."""
+    out: list[str] = []
+
+    for path in RUN_RECORDS + QUOTED_SOURCES:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        out.append(" ".join(text.split()))
+
+        for literal in LITERAL.findall(text):
+            out.append(" ".join(literal.replace('\\"', '"').split()))
+
+    return out
+
+
+def hits(text: str, quoted: list[str]) -> list[tuple[int, str, str, str]]:
     """Every (line number, group, phrase, line) of `text` the table matches, in line order."""
-    return [
-        (number, label, source, line.rstrip())
-        for number, line in enumerate(text.splitlines(), 1)
-        for label, patterns in COMPILED
-        for source, pattern in patterns
-        if pattern.search(line)
-    ]
+    found: list[tuple[int, str, str, str]] = []
+
+    for number, line in enumerate(text.splitlines(), 1):
+        for label, patterns in COMPILED:
+            if label == FIRST_PERSON and READERS_VOICE.match(line):
+                continue
+
+            for source, pattern in patterns:
+                match = pattern.search(line)
+
+                if match is None:
+                    continue
+
+                # A link's label is the heading it points at: `[Which entry do I call?]` carries
+                # the reader's question into a sentence of the author's, which is the reference
+                # working. Only a match INSIDE the brackets is skipped - the sentence around it is
+                # still read.
+                if label == FIRST_PERSON and any(
+                    label_match.start() <= match.start() < label_match.end()
+                    for label_match in LINK_LABEL.finditer(line)
+                ):
+                    continue
+
+                # A sentence the program prints, quoted: how much of the match's own sentence the
+                # runs commit. A document quoting one sentence carries words of its own around it,
+                # so neither side contains the other - what is measured is the longest span through
+                # the match that a committed run also carries, and a span long enough to be a
+                # sentence rather than a coincidence is a quotation.
+                if quoted_span(line, match.start(), match.end(), quoted) >= QUOTATION_SPAN:
+                    continue
+
+                found.append((number, label, source, line.rstrip()))
+
+    return found
 
 
 # What the rule is about: an author's voice talking about the project's own process, which a reader
@@ -242,7 +346,7 @@ def control() -> int:
     """Read the planted fixture and require every planted line named and the clean line spared."""
     lines = CONTROL.splitlines()
     planted = set(range(1, len(lines)))
-    found = hits(CONTROL)
+    found = hits(CONTROL, quotations())
     named = {number for number, _, _, _ in found}
 
     for number, _label, phrase, line in found:
@@ -293,13 +397,14 @@ def main(argv: list[str]) -> int:
         paths, scope = tree_paths()
 
     findings = []
+    quoted = quotations()
     read = 0
     for path in paths:
         text = text_of(path)
         if text is None:
             continue
         read += 1
-        findings.extend((path, *finding) for finding in hits(prose_only(text, path.suffix)))
+        findings.extend((path, *finding) for finding in hits(prose_only(text, path.suffix), quoted))
 
     if not read:
         print("check_source_narrative: no file was read - a run over nothing is not a clean tree",

@@ -405,8 +405,8 @@ computes. The rest can only be named where the call is compiled:
 | how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
 | which exponential seeds a region-B ladder | no | template argument only — `EvalPolicy`'s seventh parameter |
 
-The ones that cannot be named late are fixed when the translation unit is compiled. **This revision
-offers no run-time entry for them.** A choice that has to be made per input record needs an `if` over
+The ones that cannot be named late are fixed when the translation unit is compiled. **There is no
+run-time entry for them.** A choice that has to be made per input record needs an `if` over
 two instantiations at the call site, not a value passed into one.
 
 ## On a GPU, the first call is the slow one

@@ -76,7 +76,7 @@ default as numbers. Two of the choices — the evaluation scheme and the interva
 set from the option probe's own runs, and **neither was settled by them**. The partition was not
 chosen against its axis at all: those runs are dated 2026-09-28, every partition-bearing row in them
 is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
-2026-09-30, so re-deriving that default with the whole axis is owed. On the scheme axis the runs did
+2026-09-30, so that default has not been derived against the whole axis. On the scheme axis the runs did
 compare both rows and did not separate them.
 The route and the packing axis carry the settings the library has always shipped and have not been
 ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
@@ -189,7 +189,7 @@ probe ranks.
 combination carries — its lane's figure, plus the lane's own additive term where it
 documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
 which is the one to rank two combinations by. They are different questions, and the `reading` field
-of the returned `AccuracyFigure` says which answer a figure is. A combination this revision does not
+of the returned `AccuracyFigure` says which answer a figure is. A combination the library does not
 carry has no figure: both accessors say so and give the library's own reason rather than returning a
 number.
 
@@ -209,7 +209,7 @@ there is a template argument rather than a call argument.
 takes the same axes and the absolute error the caller needs, and answers with a verdict beside
 the numbers it was made on: `kGuaranteedInside` where the bound is at or below the tolerance,
 `kDeliveredInside` where the bound is above it and the figure the combination's fits were measured
-to deliver is at or below it, `kOutside` where neither is, and `kNotCarried` where this revision does not have
+to deliver is at or below it, `kOutside` where neither is, and `kNotCarried` where the library does not have
 the combination — no verdict, no figure, and the library's own reason. The bound decides first, so
 `kGuaranteedInside` is the state a calculation's safety can rest on and `kDeliveredInside` is
 explicitly not that state. The request and both figures come back with the verdict, so an answer can
@@ -487,7 +487,7 @@ single-order lane publishes for region A, and the batch lane's own `2.5e-14 / w(
 exceeds 25 on a trailing run of each order's pieces and tightens 127 of the partition's 311, the
 tightest budget being 2.394e-19 at order 12's last piece, which ends at the region's right edge.
 
-**The gain the walk holds is the envelope; the most a call in this revision reaches is 2.1711.** The
+**The gain the walk holds is the envelope; the most a call reaches is 2.1711.** The
 seeding fallback is taken only below the band's left edge, x < 1.0855, and what a call pays there is
 its own top order's gain rather than the region's worst. For a fixed x the ratio x^n / ∏(j + ½) rises
 with the order only until the order passes x − ½ and falls after, so below the band edge the largest
