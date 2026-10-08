@@ -970,8 +970,8 @@ constexpr boys::DivisionForm kGateDivisionForm = boys::kDefaultDivisionForm;
 ///
 /// \param route     the member's fit route: the shipped float ladder or the
 ///                  rational pair over the same pieces
-/// \param scheme    the member's summation; the names reach one entry on the
-///                  rows the library states are one row for both
+/// \param scheme    the member's summation; where the library stores one
+///                  arithmetic under both names, both reach that one entry
 /// \param partition the member's partition: the shipped ladder, the narrow
 ///                  pieces or the uniform grid
 /// \param axis      the member's packing axis: per argument or across orders
@@ -991,9 +991,9 @@ constexpr auto GateDeviceEntry(boys::FitRoute route,
 
     if (partition == boys::FitGranularity::kCoarsest)
     {
-        // Both scheme names reach one entry on each packing axis of this
-        // partition: AllOrdersF32 and its orders-axis sibling are the shipped
-        // float ladder, summed the one way the library stores it.
+        // This cut books one row per scheme name on each packing axis: the split
+        // Clenshaw ladder, and the monomial row the Horner name reaches
+        // (boys_cuda_options.hpp, kAllOrdersF32Mono and kAllOrdersF32OrdersMono).
         if (rational)
         {
             if (orders)
@@ -1006,8 +1006,13 @@ constexpr auto GateDeviceEntry(boys::FitRoute route,
                           : &boys::BoysCuda::AllOrdersF32Rat;
         }
 
-        return orders ? &boys::BoysCuda::AllOrdersF32Orders
-                      : &boys::BoysCuda::AllOrdersF32;
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF32OrdersMono
+                          : &boys::BoysCuda::AllOrdersF32Orders;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF32Mono : &boys::BoysCuda::AllOrdersF32;
     }
 
     if (partition == boys::FitGranularity::kNarrow)
@@ -1193,19 +1198,14 @@ constexpr auto GateDeviceEntryF64(boys::FitRoute route,
 /// - which the arm below asks about first (src/boys.cpp, CarriesDeviceF16) and
 /// which this map is never asked for.
 ///
-/// The one collapse in the map is the option table's and not this gate's: the
-/// half lane's coarsest partition is one row for both scheme names, its
-/// per-argument row and its orders-axis counterpart alike (boys_cuda_options.hpp,
-/// "the coarsest partition's row is one row for both scheme names as
-/// kAllOrdersF16 is"), where the double table's same route carries a second row
-/// per axis on kScheme (src/boys_cuda.cpp, all-orders-fp64-mono and
-/// all-orders-fp64-orders-mono). So both scheme names of this cross reach that
-/// one row's entry, and the map returns it for both. Everywhere else the two
-/// scheme names are two rows, and the map returns the name its own scheme
-/// names; on the rational route those two names are one kernel, the Horner name
-/// a forwarder to the other (boys_cuda.hpp, AllOrdersF16Rat: "both scheme names
+/// The one collapse in the map is the option table's and not this gate's: on the
+/// rational route the two scheme names are one kernel, the Horner name a
+/// forwarder to the other (boys_cuda.hpp, AllOrdersF16Rat: "both scheme names
 /// reach this one entry", and AllOrdersF16RatHorner: "A forwarder and not a
-/// second arithmetic").
+/// second arithmetic"). Everywhere else the two scheme names are two rows, the
+/// coarsest cut's rows one per scheme name as the float block's are
+/// (boys_cuda_options.hpp, kAllOrdersF16Mono and kAllOrdersF16OrdersMono), and the
+/// map returns the name its own scheme names.
 ///
 /// \param route     the member's fit route: the Chebyshev pieces or the
 ///                  rational pair over the same pieces and intervals
@@ -1241,7 +1241,13 @@ constexpr auto GateDeviceEntryF16(boys::FitRoute route,
                           : &boys::BoysCuda::AllOrdersF16Rat;
         }
 
-        return orders ? &boys::BoysCuda::AllOrdersF16Orders : &boys::BoysCuda::AllOrdersF16;
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersF16OrdersMono
+                          : &boys::BoysCuda::AllOrdersF16Orders;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersF16Mono : &boys::BoysCuda::AllOrdersF16;
     }
 
     if (partition == boys::FitGranularity::kNarrow)
@@ -1305,19 +1311,14 @@ constexpr auto GateDeviceEntryF16(boys::FitRoute route,
 /// store's, so a cell of this class judged through the map above would be judged on
 /// an entry that returns the other format.
 ///
-/// The one collapse in the map is the option table's and not this gate's: the
-/// half lane's coarsest partition is one row for both scheme names, its
-/// per-argument row and its orders-axis counterpart alike (boys_cuda_options.hpp,
-/// "the coarsest partition's row is one row for both scheme names as
-/// kAllOrdersBf16 is"), where the double table's same route carries a second row
-/// per axis on kScheme (src/boys_cuda.cpp, all-orders-fp64-mono and
-/// all-orders-fp64-orders-mono). So both scheme names of this cross reach that
-/// one row's entry, and the map returns it for both. Everywhere else the two
-/// scheme names are two rows, and the map returns the name its own scheme
-/// names; on the rational route those two names are one kernel, the Horner name
-/// a forwarder to the other (boys_cuda.hpp, AllOrdersBf16Rat: "both scheme names
+/// The one collapse in the map is the option table's and not this gate's: on the
+/// rational route the two scheme names are one kernel, the Horner name a
+/// forwarder to the other (boys_cuda.hpp, AllOrdersBf16Rat: "both scheme names
 /// reach this one entry", and AllOrdersBf16RatHorner: "A forwarder and not a
-/// second arithmetic").
+/// second arithmetic"). Everywhere else the two scheme names are two rows, the
+/// coarsest cut's rows one per scheme name as the float block's are
+/// (boys_cuda_options.hpp, kAllOrdersBf16Mono and kAllOrdersBf16OrdersMono), and
+/// the map returns the name its own scheme names.
 ///
 /// \param route     the member's fit route: the Chebyshev pieces or the
 ///                  rational pair over the same pieces and intervals
@@ -1353,7 +1354,13 @@ constexpr auto GateDeviceEntryBf16(boys::FitRoute route,
                           : &boys::BoysCuda::AllOrdersBf16Rat;
         }
 
-        return orders ? &boys::BoysCuda::AllOrdersBf16Orders : &boys::BoysCuda::AllOrdersBf16;
+        if (orders)
+        {
+            return horner ? &boys::BoysCuda::AllOrdersBf16OrdersMono
+                          : &boys::BoysCuda::AllOrdersBf16Orders;
+        }
+
+        return horner ? &boys::BoysCuda::AllOrdersBf16Mono : &boys::BoysCuda::AllOrdersBf16;
     }
 
     if (partition == boys::FitGranularity::kNarrow)
