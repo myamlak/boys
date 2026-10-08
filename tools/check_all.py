@@ -138,10 +138,10 @@ class Check(NamedTuple):
 def platform_tool():
     """`gen_platform_table.py`, loaded from its path rather than copied.
 
-    It is the tree's renderer for a leg's check name - README's supported-platform table and
-    check_required_checks_are_armed.py both read the name through it - and this script's default
-    leg is selected by that name, so a second rendering of it is how a contributor's run and CI
-    would come to disagree about which leg carries what.
+    It is the tree's renderer for a leg's check name - the specification page's supported-platform
+    table and check_required_checks_are_armed.py both read the name through it - and this script's
+    default leg is selected by that name, so a second rendering of it is how a contributor's run
+    and CI would come to disagree about which leg carries what.
     """
     spec = importlib.util.spec_from_file_location("_platform_table", PLATFORM_TOOL)
     module = importlib.util.module_from_spec(spec)

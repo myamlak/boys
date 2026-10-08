@@ -371,9 +371,9 @@ def vcvars() -> str | None:
     """The `vcvars64.bat` of the newest MSVC this host has, or None where it has none.
 
     vswhere is the installer's own record of what it put on the disk, so a host that installed
-    Visual Studio somewhere else is read rather than assumed away - the path used to be written
-    out here, and a written path is a claim about the machine this check was written on. The
-    constant is the fallback for a host that carries no index.
+    Visual Studio somewhere else is read rather than assumed away: a path written out here would be
+    a claim about the machine this check was written on. The constant is the fallback for a host
+    that carries no index.
     """
     if VSWHERE.exists():
         try:

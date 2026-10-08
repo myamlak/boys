@@ -39,8 +39,14 @@ SKIPPED_BY_NAME = ("third_party", "__pycache__")
 # matters says so itself. A group is extended by adding a line to it.
 PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Process and history. A public reader did not watch the project get here: "no longer", "this
-    # revision", "is owed" and "stops moving" each describe the state of the work rather than a fact
-    # about the library, and each dates the sentence to a revision the reader cannot open.
+    # revision" and "stops moving" each describe the state of the work rather than a fact about the
+    # library, and each dates the sentence to a revision the reader cannot open.
+    #
+    # Two phrases of this kind were read over the tree and left out, because in this library they
+    # are ordinary English and not the author speaking. "is owed" names the accuracy budget a caller
+    # is owed, and that is what all 19 of its uses in the tree say; "so far" describes a walk or a
+    # masked tail. A phrase that fires on the library's own vocabulary is a phrase a reader learns
+    # to skip past, and a check whose findings are skipped is not a check.
     (
         "process/history",
         (
@@ -50,10 +56,8 @@ PHRASES: tuple[tuple[str, tuple[str, ...]], ...] = (
             r"previously",
             r"used to be",
             r"was the second",
-            r"is owed",
             r"will be replaced",
             r"stops moving",
-            r"so far",
         ),
     ),
     # First person and development narrative. "I", "my" and "we" address the reader as the author;
@@ -100,6 +104,23 @@ CONTROL = (
     '/// read from .claude/tmp/lane-status/probes/host-defaults-emitted.hpp, so far\n'
     "/// The region is kDefaultRegionBExp, and the member it names is the one returned.\n"
 )
+
+# The same defect inside each kind of file this tool reads, read through `prose_only` as the tree
+# is. A control that hands the fixture to the table raw tests the table and never the blanking, so
+# a blanking that erased every comment in the tree passes it while reporting clean over a tree full
+# of narrative - which is what happened. Each row is (suffix, the defect in the file's own prose,
+# the defect inside a string literal). The literal is the one place the rule does not reach: a
+# string is what the program prints, and this checker does not argue with a run.
+PROSE_CONTROL: tuple[tuple[str, str, str], ...] = (
+    (".hpp", "// {defect}\ninline int Lane() { return 1; }\n", 'const char* kNote = "{defect}";\n'),
+    (".py", '"""A module docstring."""\n# {defect}\nLANE = 1\n', 'NOTE = "{defect}"\n'),
+    (".md", "{defect}\n", ""),
+)
+
+# The sentence the fixture plants, in the voice of each group: a state of the work, an author, and a
+# path into a machine.
+PROSE_DEFECT = ("the fit granularity was the second until this revision, and the figure is owed; "
+                "the reading is my own; read from .claude/tmp/lane-status/")
 
 
 # A committed run's own output. A document that quotes a sentence the program prints is quoting,
@@ -183,7 +204,24 @@ def hits(text: str, quoted: list[str]) -> list[tuple[int, str, str, str]]:
     """Every (line number, group, phrase, line) of `text` the table matches, in line order."""
     found: list[tuple[int, str, str, str]] = []
 
-    for number, line in enumerate(text.splitlines(), 1):
+    # A span the text itself puts between a pair of double quotes is a quotation as well: the author
+    # is reporting what another speaker said - a compiler's message, a caller's question, a name
+    # read back - and reporting it accurately is the reference working. The pair is looked for in
+    # the text this tool reads, which for a source file is its comments with the literals already
+    # blanked, so a span found here is one the author wrote the quotes around. Bounded, so a stray
+    # unmatched quote cannot spare a page.
+    marked = [(match.start(), match.end())
+              for match in re.finditer(r'"[^"]{0,240}"', text, re.DOTALL)]
+
+    lines = text.splitlines()
+    starts = []
+    at = 0
+    for line in lines:
+        starts.append(at)
+        end = text.find("\n", at)
+        at = len(text) if end < 0 else end + 1
+
+    for number, line in enumerate(lines, 1):
         for label, patterns in COMPILED:
             if label == FIRST_PERSON and READERS_VOICE.match(line):
                 continue
@@ -192,6 +230,11 @@ def hits(text: str, quoted: list[str]) -> list[tuple[int, str, str, str]]:
                 match = pattern.search(line)
 
                 if match is None:
+                    continue
+
+                # A match the author put between quotes is the author quoting, not speaking.
+                if any(start <= starts[number - 1] + match.start() < stop
+                       for start, stop in marked):
                     continue
 
                 # A link's label is the heading it points at: `[Which entry do I call?]` carries
@@ -246,16 +289,21 @@ def prose_only(text: str, suffix: str) -> str:
 
     at = 0
     while at < size:
-        if text.startswith("//", at):
+        # A comment is the prose. It is STEPPED OVER and not blanked: blanking it would leave the
+        # rule with no source-file text to read at all, so the run would report the same clean
+        # sentence over a narrated file as over a clean one. Stepping over it is also what keeps a
+        # `"` inside a comment from opening a literal, and an apostrophe in `the lane's own` from
+        # opening a character literal.
+        #
+        # `//` and `/*` are comments in C and not in Python, where `//` is floor division: read as
+        # a comment there, the first `a // b` consumes the rest of its line and the scanner is out
+        # of step for every line after it. This file's own spelling is the Python branch below.
+        if suffix != DOCSTRING_SUFFIX and text.startswith("//", at):
             end = text.find("\n", at)
-            end = size if end < 0 else end
-            blank(at, end)
-            at = end
-        elif text.startswith("/*", at):
+            at = size if end < 0 else end
+        elif suffix != DOCSTRING_SUFFIX and text.startswith("/*", at):
             end = text.find("*/", at + 2)
-            end = size if end < 0 else end + 2
-            blank(at, end)
-            at = end
+            at = size if end < 0 else end + 2
         elif suffix == DOCSTRING_SUFFIX and text.startswith(('"""', "'''"), at):
             # Kept, not blanked: a Python triple-quoted string is overwhelmingly a docstring, and a
             # docstring is prose this rule is about. The exception is a literal that is not one, and
@@ -265,10 +313,8 @@ def prose_only(text: str, suffix: str) -> str:
             at = size if end < 0 else end + 3
         elif suffix == DOCSTRING_SUFFIX and text[at] == "#":
             end = text.find("\n", at)
-            end = size if end < 0 else end
-            blank(at, end)
-            at = end
-        elif text[at] == '"' or (text[at] == "'" and suffix != DOCSTRING_SUFFIX):
+            at = size if end < 0 else end
+        elif text[at] == '"' or text[at] == "'":
             quote = text[at]
             cursor = at + 1
             while cursor < size and text[cursor] != quote:
@@ -357,12 +403,31 @@ def control() -> int:
         problems.append(f"line(s) {sorted(planted - named)} carry a phrase and were not named")
     if len(lines) in named:
         problems.append(f"the clean line {len(lines)} was named")
+
+    quoted = quotations()
+    for suffix, body, literal in PROSE_CONTROL:
+        text = body.replace("{defect}", PROSE_DEFECT)
+        caught = hits(prose_only(text, suffix), quoted)
+        print(f"control: a {suffix} text carrying the phrases named {len(caught)} line(s)")
+        if not caught:
+            problems.append(f"a {suffix} text carrying the phrases in its prose was not named - "
+                            f"the blanking reads no prose in a {suffix} file")
+
+        if literal:
+            text = literal.replace("{defect}", PROSE_DEFECT)
+            spared = hits(prose_only(text, suffix), quoted)
+            print(f"control: the same phrases inside a {suffix} string literal named "
+                  f"{len(spared)} line(s)")
+            if spared:
+                problems.append(f"a {suffix} string literal was read as prose at line "
+                                f"{spared[0][0]}")
+
     if problems:
         print("check_source_narrative: the control failed: " + "; ".join(problems), file=sys.stderr)
         return 1
 
-    print(f"check_source_narrative: control caught all {len(planted)} planted line(s) and left "
-          f"the clean line alone")
+    print(f"check_source_narrative: control caught all {len(planted)} planted line(s), left the "
+          f"clean line alone, and read the prose of all {len(PROSE_CONTROL)} file kind(s)")
     return 0
 
 

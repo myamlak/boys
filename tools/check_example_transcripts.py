@@ -47,7 +47,7 @@ THE CONVENTION, EXACTLY - what the documents are relied on for
     failure and the two texts are printed side by side. Nothing is compared numerically:
     `0.055476132923077535` and `0.055476132923077536` are different strings and the check fails on
     them, which is the point - the documents quote 17 significant digits, so a last-bit change is a
-    document that no longer reproduces.
+    document that fails to reproduce.
 
   * ONE RUN IS NAMED RATHER THAN COMPARED, and named on every run. `examples/07_option_probe.cpp`
     times its own run against the host's clock. The document says of that block "Every figure in

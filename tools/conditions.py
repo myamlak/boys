@@ -6,7 +6,8 @@ was, at some point, called met on the strength of a local check promoted to a gl
 promotion was invisible because the claim read the same however shallow the check behind it was.
 
 This tool exists to make that promotion impossible to perform silently. It does not estimate. It runs
-the command that evaluates each condition and prints that command, this revision, and its exit code:
+the command that evaluates each condition and prints that command, the revision it ran at, and its
+exit code:
 
     python3 tools/conditions.py --report
 

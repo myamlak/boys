@@ -56,7 +56,7 @@ is empty in a default configure, so the committed ``boys/boys_build_defaults.hpp
 default policy resolves to, and the default axes are the macros of that file. A configure that names
 a ``BOYS_BUILD_DEFAULTS_DIR`` shadows that header with one of its own, which moves what
 ``DefaultPolicy`` resolves to and with it the figures this check reports. The configure also
-publishes a ``BOYS_SCALAR_CONTRACTS`` definition; at this revision the consumer test reads it and no
+publishes a ``BOYS_SCALAR_CONTRACTS`` definition; the consumer test reads it and no
 figure path does, so it is named here as a seam this check does not carry rather than one that moved
 a number. A build carrying another default list reads its own figures through ``DefaultGuarantee``;
 this check reports the committed choices' and says so, which is what it can do without a build
@@ -710,7 +710,7 @@ def recorded_accessor(run: str) -> list[dict]:
     """The figure the recorded run states the accessor answers, one combination per lane.
 
     This is the run's own account of the accessor rather than of the code, so a live call to the
-    accessor can be held to it: a figure the run recorded and the accessor no longer answers is a
+    accessor can be held to it: a figure the run recorded that the accessor does not answer is a
     claim the two do not agree on.
     """
     start = run.find(ACCESSOR_OPEN)

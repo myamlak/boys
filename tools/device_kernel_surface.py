@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 r"""Enumerate the device half's option space per class and say which combinations it serves.
 
-The condition applied here is the owner's, on the device half: for every class - a device precision
-lane, an output shape and a route - take the axis combinations the library's own surfaces can
-express, and say of each whether an entry implements it. An unimplemented combination is a
-**defect** unless the library's own words prove it fundamentally impossible; an implemented
+The condition applied here is the one the library is held to, on the device half: for every class -
+a device precision lane, an output shape and a route - take the axis combinations the library's own
+surfaces can express, and say of each whether an entry implements it. An unimplemented combination
+is a **defect** unless the library's own words prove it fundamentally impossible; an implemented
 combination nothing probed is a bug, and that half is the probe's book rather than this tool's.
 
 Where the enumeration comes from. Every fact is read from the library at one revision, never listed
@@ -826,7 +826,7 @@ def main() -> int:
 
         The format this build does serve is named in them, read from the table, so a sentence
         that has drifted fails the caller's quotation check rather than being printed beside a
-        verdict it no longer supports.
+        verdict it does not support.
         """
         served = next((fmt.label for fmt in half_formats
                        if fmt.rows_of(rows) and fmt.label != label), "")
@@ -871,8 +871,8 @@ def main() -> int:
         where = quote_line(sources[path].text, quote)
 
         if where == 0:
-            print(f"device_kernel_surface: an axis statement cites a sentence {path} no longer "
-                  f"carries: {quote!r}", file=sys.stderr)
+            print(f"device_kernel_surface: an axis statement cites a sentence {path} does not "
+                  f"carry: {quote!r}", file=sys.stderr)
             return 1
 
         print(f"  {sentence}:\n      {path}:{where}  \"{quote}\"")
@@ -894,14 +894,14 @@ def main() -> int:
 
         if not carrying:
             print(f"  {'':<10} No row names this format, so none of its combinations is served "
-                  f"and every one of them is owed work. The header states that state itself:")
+                  f"and every one of them is unbuilt work. The header states that state itself:")
 
             for sentence in owed_sentences(fmt.label):
                 where = quote_line(sources[OPTIONS].text, sentence)
 
                 if where == 0:
                     print(f"device_kernel_surface: a format statement cites a sentence "
-                          f"{OPTIONS} no longer carries: {sentence!r}", file=sys.stderr)
+                          f"{OPTIONS} does not carry: {sentence!r}", file=sys.stderr)
                     return 1
 
                 print(f"  {'':<10}   {OPTIONS}:{where}  \"{sentence}\"")
@@ -938,8 +938,8 @@ def main() -> int:
         where = quote_line(sources[path].text, quote)
 
         if where == 0:
-            print(f"device_kernel_surface: the rule `{rule}` cites a sentence {path} no longer "
-                  f"carries: {quote!r}", file=sys.stderr)
+            print(f"device_kernel_surface: the rule `{rule}` cites a sentence {path} does not "
+                  f"carry: {quote!r}", file=sys.stderr)
             return 1
 
         print(f"  rule: {rule}")

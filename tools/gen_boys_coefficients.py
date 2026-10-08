@@ -613,7 +613,7 @@ def boys_entire(order, z):
     if z == 0:
         return mpf(1) / (2 * order + 1)
     # The terms peak near k = |z|; this cap reaches well past the peak and the
-    # early break stops the tail once it can no longer move the working
+    # early break stops the tail once further terms cannot move the working
     # precision.
     az = float(abs(z))
     cap = int(4 * az) + 40
@@ -4763,8 +4763,7 @@ def flat_f32_block_lines(f, flat_f32):
     tables are spelled beside the shipped ones in the one namespace they share.
 
     The grid constants are written because they are what the table was fitted on.
-    They are not a locator: the single-precision uniform route has no kernel in
-    this revision, so the mapping an entry will read the table with is that
+    They are not a locator: the mapping an entry reads the table with is that
     entry's own decision and not something these lines settle.
     """
     grid = flat_f32["grid"]

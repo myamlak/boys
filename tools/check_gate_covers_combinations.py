@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Which combinations the accuracy gate's recorded run measures, against the ones that exist.
 
-The owner's condition has a "measured (bounds)" leg: a combination the library offers is
+The condition has a "measured (bounds)" leg: a combination the library offers is
 supposed to have its bound measured and published. Nothing today says whether the gate
 covers a particular combination, so a combination can be read as measured when the gate
 has never looked at it. This check is that statement.
@@ -41,7 +41,7 @@ WHAT IS COMPARED, AND WHERE EACH SIDE COMES FROM
 
 THE THREE GRANULARITIES, AND WHERE THEY DO NOT MATCH
 
-The owner's question is per class and per combination. The three granularities this
+The question is per class and per combination. The three granularities this
 check has to cross are not the same, and saying so is half of what it prints:
 
   * the accessor answers per LANE. It takes no Shape: its doc says the bound "is the
@@ -88,7 +88,7 @@ gets credited at a member nothing read:
     Three reads can come back empty and each is a finding rather than a credit: an arm
     naming an entry the table does not carry; an arm naming one the table carries at two
     members while the arm's own spelling names neither - the bare name is the entry's
-    default, which this revision states as a build seam and not as a value, so the cell is
+    default, which the build states as a seam and not as a value, so the cell is
     not credited at either member; and a machine the class list names that the block arms
     with no entry at all. The member the table carries for a name is read once per name, and
     a lane is credited only for the arms the block names for it.
@@ -360,8 +360,8 @@ DEVICE_ENTRY = re.compile(r"boys::BoysCuda::(AllOrders[A-Za-z0-9_]*|Single[A-Za-
 # A device entry whose own region-B member is a template argument, as an arm spells it:
 # `boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>` is the fast row of a name the option
 # table also carries at the accurate one. The argument is what the arm read; the bare name
-# is the entry's default, which this revision states as a build seam rather than as a value,
-# so the spelled member is read here and the bare name is not guessed at.
+# is the entry's default, which the build states as a seam rather than as a value, so the
+# spelled member is read here and the bare name is not guessed at.
 DEVICE_ENTRY_SPELLED = re.compile(
     r"boys::BoysCuda::(?P<name>[A-Za-z0-9_]+)\s*<\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*"
     r"(?P<member>k[A-Za-z0-9_]+)\s*>")
@@ -655,7 +655,7 @@ class Library:
         The device surface spells a host entry's name without the library's prefix and with
         the lane's precision in it (`AllOrdersF32NarrowRatHorner` beside `BoysAllOrdersF32`),
         so the family's own precision names the lane - the member of it a device lane is.
-        The lane is required to be one this revision documents as a device lane, so a name
+        The lane is required to be one the library documents as a device lane, so a name
         whose family resolves to a precision that has no device lane is not placed on one.
         """
         family = self.family_of_entry(name)
@@ -1586,8 +1586,8 @@ def main() -> int:
         # A name the table carries at more than one member is an entry that IS its member -
         # the f32 single entry is one name at two rows - and an arm that names it reaches one
         # of them, which the arm's own spelling states and its bare name does not: the bare
-        # name is the entry's default, and this revision states that default as a build seam
-        # rather than as a value. Crediting both would be a credit for a member a particular
+        # name is the entry's default, and the build states that default as a seam rather
+        # than as a value. Crediting both would be a credit for a member a particular
         # arm may never have run, which is the credit this whole read exists to close.
         if len(members) > 1:
             ambiguous_devices.append(f"{name} ({', '.join(sorted(names))})")

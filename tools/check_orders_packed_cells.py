@@ -74,8 +74,8 @@ SOURCE = REPO / "src" / "boys_orders_simd.cpp"
 ENTRIES = ("BoysAllOrdersPacked", "BoysAllOrdersF32Packed")
 
 # The branch markers src/boys_orders_simd.cpp is written with. Both branches
-# instantiate the same cells on this revision, and the script compares them so
-# that a revision where they stop agreeing says so here.
+# instantiate the same cells, and the script compares them so that a tree where
+# they stop agreeing says so here.
 GUARD_OPEN = "#if BOYS_SIMD_X86"
 GUARD_ELSE = "#else // BOYS_SIMD_X86"
 GUARD_CLOSE = "#endif // BOYS_SIMD_X86"
@@ -157,8 +157,8 @@ def expand(text: str, where: str) -> str:
             )
         bound = macro_body
         # Longest name first, so `kMultiplier` is not substituted inside
-        # `kMultiplierX` - none is written that way at this revision, and the
-        # order costs nothing.
+        # `kMultiplierX` - no name here is written that way, and the order
+        # costs nothing.
         for param in sorted(params, key=len, reverse=True):
             bound = re.sub(rf"\b{re.escape(param)}\b", args[params.index(param)], bound)
         return bound

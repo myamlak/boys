@@ -1,12 +1,10 @@
 #!/usr/bin/env python
 """The completion status: one closed arithmetic per option space, or the reason it does not close.
 
-WHY THIS EXISTS. The owner has been given "nearly done" for days and each time a question found a
-dimension that was never in the answer. The mechanism was not carelessness: a status composed from
-memory is a summary of the spaces I happen to be thinking about, and a space nobody has touched is
-absent from that summary rather than visible in it as a hole. On 2026-10-02 the host space closed
-exactly - 504 + 0 + 168 + 0 + 0 = 672 - while the device's classes were in no arithmetic at all,
-and every GPU question asked that day was a gap in the enumeration, not in my prose.
+WHY THIS EXISTS. A status composed from memory is a summary of the spaces that came to mind, and a
+space nobody thought about is absent from that summary rather than visible in it as a hole. The
+host space can close exactly - 504 + 0 + 168 + 0 + 0 = 672 - with the device's classes in no
+arithmetic at all, and a question about them then finds the gap in the enumeration, not in the prose.
 
 So the status is not written. It is printed, by this, over EVERY space, and a message that claims
 anything about completion quotes it.
@@ -255,9 +253,9 @@ def device_space() -> tuple[str, list[str], bool]:
     refuses the closure the same way a stale host run does.
     """
     carrying = []
-    # The tree's own reports, and not a scratch directory. A closure read out of .claude/ is a
-    # closure of whatever run last wrote there: this tool read a superseded device run from a
-    # lane's scratch path while the committed report said something else, and printed the scratch
+    # The tree's own reports, and not a scratch directory. A closure read out of a scratch path
+    # is a closure of whatever run last wrote there: this tool read a superseded device run from
+    # a scratch path while the committed report said something else, and printed the scratch
     # one. The device probe's report is committed beside the host probe's, and the newest file on
     # disk is not a fact about this tree.
     for directory in (os.path.join(REPO, "tests", "data"),):
@@ -368,19 +366,18 @@ def probe_space() -> tuple[str, list[str], bool]:
     The probe prints a closure of its own (measured + offered-no-figure + not-asked + unoffered +
     not-carried + device-not-run + refused). It is a different space from the gate's: the gate's
     arithmetic is the option space's served/refused count, while the probe's is the cell cross it
-    walks. On 2026-10-03 those read `96 of 96 served` and `288 + 0 + 0 + 0 + 0 + 72 + 0 = 360` - two
-    arithmetics over the same library, neither derivable from the other.
+    walks - two arithmetics over the same library, neither derivable from the other.
 
-    It is reported ABSENT rather than read, and the reason is measured rather than assumed: the
-    closures on disk under the directory this tool searches were listed on 2026-10-03 and they carry
-    the gate's and the device probe's arithmetic only (`72 + 0 + 24 + 0 + 0 = 96`,
-    `87 + 0 + 0 + 0 + 0 = 87`, and rung-era ones at 672 and 1044). The probe that prints the 360 ran
-    in a pinned worktree and its closure reached no log here, so there is nothing to read.
+    The space is read from the probe's own committed report, whose first line is the probe's own
+    stamp (`boys option probe | started ... | verdict ...`). That stamp is what identifies it: a
+    closure on disk that carries no stamp does not say which space its arithmetic is over. Where no
+    report carries the stamp, the space is printed ABSENT and the report it waits for is named
+    there, rather than left out of the status entirely.
 
-    Reading it is owed work, and it is not done here because **a closure read the wrong way is worse
-    than one not read** - the point of this tool is that a wrong arithmetic is never printed as a
-    right one. The tool's own contract is that a space with no arithmetic is printed ABSENT and never
-    omitted, because a space missing from a status is indistinguishable from a space that is complete.
+    Nothing is read off another closure in its place, because **a closure read the wrong way is
+    worse than one not read**: the point of this tool is that a wrong arithmetic is never printed
+    as a right one, and a space missing from a status is indistinguishable from a space that is
+    complete.
     """
     # IDENTIFIED, and only because the probe stamps its own output. The first line of a run is
     # `boys option probe | started <ts> | finished <ts> | seed <n> | verdict <v>`, which is the stamp

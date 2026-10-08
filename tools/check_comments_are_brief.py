@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """A comment says what the code cannot, and then stops.
 
-The owner's rule: comments are brief and exist only where they are needed; code that
+The rule this tool applies: comments are brief and exist only where they are needed; code that
 explains itself is not commented, and documentation comments are the exception because
 they are API rather than annotation. A comment that restates the line under it, or
 that argues a case at length beside code that already makes it, is the defect.
@@ -101,6 +101,15 @@ def main(argv: list[str]) -> int:
     for argument in options.paths:
         path = Path(argument)
         named.extend(sorted(p for p in path.rglob("*") if wanted(p)) if path.is_dir() else [path])
+
+    # A named path that selects nothing is said out loud, and is not a reason to read the whole
+    # tree: `--check tools` names a directory of Python, none of it a source this reads, and the
+    # fallback below answered it with the C++ tree's count - a number about files the caller did
+    # not name, reported as if it were about the ones they did.
+    if options.paths and not named:
+        print(f"check_comments_are_brief: {', '.join(options.paths)} holds no source of the kinds "
+              f"this reads ({' '.join(SOURCE_SUFFIXES)}), so no file was read", file=sys.stderr)
+        return 1
 
     paths = named or sorted(p for p in root.rglob("*") if wanted(p))
 

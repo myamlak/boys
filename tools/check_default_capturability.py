@@ -16,7 +16,7 @@ three are checked elsewhere:
 The fourth is this file's: **can the combination BE the consumer's default at all** - is there a
 row of the seam's key for the class, and does the row format have a cell for each axis of the
 combination? A combination the library serves, measures and probes, but which cannot be written
-as a default, is a defect by the owner's rule; a class with no row at all is one too.
+as a default, is a defect; a class with no row at all is one too.
 
 WHAT IS READ, AND FROM WHERE. Nothing below is a list written into this file. The classes the
 seam's key reaches are read from the library's own two row lists (`BOYS_DEFAULT_POLICY_BUILD_ROWS`

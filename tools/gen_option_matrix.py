@@ -381,7 +381,7 @@ def main():
     if args.emit:
         # From the committed file, not a fresh derivation: the workflow expands
         # what is committed, and --check on the build legs proves that file is
-        # what this revision generates.
+        # what this generator writes.
         if not MATRIX_JSON.exists():
             raise SystemExit(f"gen_option_matrix: {MATRIX_JSON} is missing")
         committed = json.loads(MATRIX_JSON.read_text(encoding="utf-8"))

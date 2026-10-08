@@ -8,20 +8,19 @@ the field as `(from %s)`, `examples/06_what_it_guarantees.cpp` prints it as
 `[%s]` in a table column, and docs/lane-contract.md restates it in the
 `bound: ...` cell of a row that names the lane.
 
-A field that grows while a document keeps the text it used to carry leaves the
-document describing output the programs no longer produce. That is not
-hypothetical: the fp64 and fp32 rows were edited into 583- and 1123-character
-rationale paragraphs while `docs/getting-started.md` went on quoting the
-24-character sentence those rows had said, so the examples printed walls into a
-table column and the documents were wrong about what they print. Nothing in the
-tree compared a quoted run against the string it quotes.
+A field that grows while a document keeps the text it quoted leaves the
+document describing output the programs do not produce. A row run up to 583 or
+1123 characters beside a `docs/getting-started.md` column still quoting the
+24-character sentence the row had said prints a wall into the table column, and
+the document is wrong about what its program prints. Nothing in the tree
+compared a quoted run against the string it quotes.
 
 This script does. It reads the rows' `source` strings out of src/boys.cpp and
-every run of those shapes out of README.md, docs/getting-started.md and
-docs/lane-contract.md, and compares them after collapsing each side's
-whitespace - a document may wrap a run across lines and the field has none, and
-a line break is a document's, not a quotation's. It then reports four kinds of
-run:
+every run of those shapes out of README.md, docs/getting-started.md,
+docs/lane-contract.md and docs/specification.md, and compares them after
+collapsing each side's whitespace - a document may wrap a run across lines and
+the field has none, and a line break is a document's, not a quotation's. It
+then reports four kinds of run:
 
   * a run that is a proper prefix of a source string and at least twelve
     characters long is a MISMATCH, and it fails the run. That is the shape the
@@ -144,12 +143,16 @@ from dataclasses import dataclass
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # The file the source strings are read from and the documents the runs are read
-# from: the published set a reader outside this repository can open.
+# from: the published set a reader outside this repository can open. The
+# specification page is one of them because it is where the README's own
+# specification went - a page this check does not read is a page whose quoted
+# runs nothing holds.
 SOURCE = REPO / "src" / "boys.cpp"
 DOCUMENTS = (
     REPO / "README.md",
     REPO / "docs" / "getting-started.md",
     REPO / "docs" / "lane-contract.md",
+    REPO / "docs" / "specification.md",
 )
 
 # The published library whose strings a marked run has to be one of. The lane
@@ -653,7 +656,7 @@ def classify(
     A run is held to the library's strings only where the document marks it as
     the library's words, and the two markings are held differently. A refusal
     cell prints the accessor's sentence as the accessor's own, so it is a
-    transcript: a string holds it or the cell is quoting a refusal this revision
+    transcript: a string holds it or the cell is quoting a refusal the library
     does not make. A `bound: ...` cell is a restatement - the document adds its
     own connectives and its own gloss around the row's words - so it is held to
     the weakest rule that still sees a deletion, an agreement of at least
@@ -736,7 +739,7 @@ def report_runs(runs: list[Run], out) -> None:
     """The runs read, per document and by shape.
 
     Printed per document rather than as one total: a document whose reader stops
-    marking runs is a document this check no longer reads, and the count beside
+    marking runs is a document this check reads nothing in, and the count beside
     its name is where that shows.
     """
     print(f"\nruns read, by document ({len(runs)} in all)", file=out)
@@ -750,7 +753,7 @@ def report_runs(runs: list[Run], out) -> None:
         if not any(run.shape == shape for run in runs):
             print(
                 f"  the shape {shape} read nothing at all: the documents have stopped marking a "
-                f"run that way, or this reader no longer reads the marker",
+                f"run that way, or this reader does not read the marker",
                 file=out,
             )
 
@@ -878,13 +881,13 @@ def report_absent(absent, runs, strings, sentences, out) -> None:
             print(
                 f"  the cell prints the sentence a call gets, as the accessor's own, and none of "
                 f"the {len(sentences)} string literals the published library carries contains it: "
-                f"a transcript of a refusal this revision does not make",
+                f"a transcript of a refusal the library does not make",
                 file=out,
             )
             print(
                 f"  a transcript is held to the characters rather than to a reading of them, "
                 f"because the cell claims the accessor's own sentence: the library says these "
-                f"words or the cell is describing output it no longer produces",
+                f"words or the cell is describing output it does not produce",
                 file=out,
             )
         else:
@@ -949,7 +952,7 @@ def main() -> int:
                 f"no run in these documents could be confirmed against a source string: this "
                 f"check has no subject. {len(runs)} runs were read ({by_shape}) and none of them "
                 f"equals a `source` member of {display(path)}'s lane rows. Either the documents "
-                f"stopped quoting the field or this reader no longer reads them"
+                f"stopped quoting the field or this reader does not read them"
             )
     except CheckError as error:
         print(f"check_doc_transcripts: {error}", file=sys.stderr)
