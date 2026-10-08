@@ -1152,6 +1152,18 @@ int main() {
     # needs the table's path, and its verdict is about the table rather than
     # about this program.
     add_test(NAME boys-build-facts COMMAND boys-build-facts)
+
+    # The checked entries' own check (tests/boys_checked_test.cpp): the five
+    # double-precision shapes' Boys*Checked overloads against the entries they
+    # guard. Each checked call is held to the unchecked entry's own bits, to
+    # refusing what the unchecked entry runs with, to writing nothing when it
+    # refuses, and to naming the first element a refused batch refused.
+    add_executable(boys-checked-tests tests/boys_checked_test.cpp)
+    target_link_libraries(boys-checked-tests PRIVATE boys)
+    target_compile_features(boys-checked-tests PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-checked-tests)
+
+    add_test(NAME boys-checked-tests COMMAND boys-checked-tests)
 endif()
 
 # --- CUDA lane (optional; needs the toolkit) --------------------------------

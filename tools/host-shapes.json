@@ -143,6 +143,30 @@
     "host": "host"
    },
    "evidence": "BoysDoubleBatchAtOrders(n, count, x, out): per-element tops, behind a status."
+  },
+  {
+   "id": "ladder-scalar-status-out",
+   "tuple": {
+    "orders": "ladder",
+    "args": "scalar",
+    "extent": "call",
+    "cardinality": "nmax+1",
+    "protocol": "status_out",
+    "host": "host"
+   },
+   "evidence": "BoysAllOrdersChecked(nmax, x, out): F_0..F_nmax behind a status."
+  },
+  {
+   "id": "one-array-status-out",
+   "tuple": {
+    "orders": "one",
+    "args": "array",
+    "extent": "single",
+    "cardinality": "count",
+    "protocol": "status_out",
+    "host": "host"
+   },
+   "evidence": "BoysFixedNChecked(n, x, out, count, stride): one order, an array of arguments, behind a status, and the element it refused."
   }
  ],
  "entries": {
@@ -261,6 +285,26 @@
   "BoysDoubleBatchAtOrders": {
    "shape": "ladder-array-ragged-planes-status-out",
    "spelling": "C binding; the tops arrive as an array of orders"
+  },
+  "BoysSingleChecked": {
+   "shape": "one-scalar-status-out",
+   "spelling": "template policy; the checked twin of BoysSingle"
+  },
+  "BoysAllOrdersChecked": {
+   "shape": "ladder-scalar-status-out",
+   "spelling": "template policy; the checked twin of BoysAllOrders"
+  },
+  "BoysFixedNChecked": {
+   "shape": "one-array-status-out",
+   "spelling": "template policy; the checked twin of BoysFixedN, naming the element it refused"
+  },
+  "BoysAllNChecked": {
+   "shape": "ladder-array-planes-status-out",
+   "spelling": "template policy; the checked twin of BoysAllN, with a workspace and the element it refused"
+  },
+  "BoysAllNAtOrdersChecked": {
+   "shape": "ladder-array-ragged-planes-status-out",
+   "spelling": "template policy; the checked twin of BoysAllNAtOrders"
   }
  },
  "not_an_evaluation": {
