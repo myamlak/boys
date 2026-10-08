@@ -1356,28 +1356,69 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 /// The checked overloads of the four batch shapes. Each validates the whole call before it
 /// evaluates anything, so **a refused call writes nothing** - a caller that tests the status is
 /// never looking at a half-written array. A batch that is refused names the element that was
-/// refused in \p badIndex, because "some argument in these four million was a NaN" is not a
-/// report a caller can act on.
+/// refused in \p badIndex, because "some argument in these four million was a NaN" is not a report
+/// a caller can act on. The scan is one comparison per element against an evaluation orders of
+/// magnitude more work, so it is not what the call costs, and the unchecked entries beside them
+/// are unchanged.
 ///
-/// The scan is one comparison per element against an evaluation that is orders of magnitude more
-/// work, so it is not what the call costs. The unchecked entries beside them are unchanged.
+/// \tparam Policy  as the unchecked entry of the same shape.
+/// \param nmax     the highest order, 0..kMaxBoysOrder
+/// \param x        the argument, >= 0 and not NaN
+/// \param out      written on success and left untouched otherwise
+/// \returns        \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument when the contract
+///                 is broken.
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept;
 
-/// \copydoc BoysAllOrdersChecked
+/// The checked \c BoysFixedN. See \c BoysAllOrdersChecked for what "checked" means here.
+///
+/// \tparam Policy  as \c BoysFixedN.
+/// \param n        the order, 0..kMaxBoysOrder
+/// \param x        the arguments, each >= 0 and not NaN
+/// \param out      written on success and left untouched otherwise
+/// \param count    the number of arguments
+/// \param stride   the distance between the elements the values are written to
+/// \param badIndex written with the index of the first argument that was refused, or left alone
+///                 when every one of them is in contract. May be null.
+/// \returns        \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
+///
+/// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t count,
                              std::size_t stride, std::size_t* badIndex = nullptr) noexcept;
 
-/// \copydoc BoysAllOrdersChecked
+/// The checked \c BoysAllN. See \c BoysAllOrdersChecked for what "checked" means here.
+///
+/// \tparam Policy   as \c BoysAllN.
+/// \param nmax      the highest order, 0..kMaxBoysOrder
+/// \param x         the arguments, each >= 0 and not NaN
+/// \param out       written on success and left untouched otherwise
+/// \param count     the number of arguments
+/// \param workspace scratch the grouped path uses, or null
+/// \param badIndex  written with the index of the first argument that was refused, or left alone
+///                  when every one of them is in contract. May be null.
+/// \returns         \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
+///
+/// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t count,
                            std::size_t* workspace = nullptr,
                            std::size_t* badIndex = nullptr) noexcept;
 
-/// \copydoc BoysAllOrdersChecked
+/// The checked \c BoysAllNAtOrders. See \c BoysAllOrdersChecked for what "checked" means here.
+///
+/// \tparam Policy   as \c BoysAllNAtOrders.
+/// \param n         the top order of each argument, each 0..kMaxBoysOrder
+/// \param x         the arguments, each >= 0 and not NaN
+/// \param out       written on success and left untouched otherwise
+/// \param count     the number of arguments
+/// \param badIndex  written with the index of the first argument that was refused, or left alone
+///                  when every one of them is in contract. May be null.
+/// \returns         \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
+///
+/// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, std::size_t count,
                                    std::size_t* badIndex = nullptr) noexcept;
