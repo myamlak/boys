@@ -1379,7 +1379,7 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32, float, kEachOrder, xf);
                 break;
 #if BoysFp16
-            // The removed-call half of the same four arms; see above.
+            // The half without the Boys call of the same four arms; see above.
             case ProbeEntry::kDeviceSingleF16:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kSingle, xh);
                 break;
@@ -1393,8 +1393,8 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16, __half, kEachOrder, xh);
                 break;
 #endif // BoysFp16
-            // The removed-call half of the sixteen arms above: the same kernel
-            // with the entry left out, which is the other side of the
+            // The half without the Boys call of the sixteen arms above: the same
+            // kernel with the entry left out, which is the other side of the
             // subtraction.
             case ProbeEntry::kDeviceAllOrdersF64Narrow:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64Narrow, double, kAllOrders, xd);
@@ -1426,7 +1426,7 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF64UniformRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64UniformRatHorner, double, kAllOrders, xd);
                 break;
-            // The removed-call half of the double lane's fast rows above, in the
+            // The half without the Boys call of the double lane's fast rows above, in the
             // same order and over the same policies: the subtraction's other
             // side.
             case ProbeEntry::kDeviceSingleF64Fast:
@@ -1510,8 +1510,8 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersF32UniformRatHorner:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32UniformRatHorner, float, kAllOrders, xf);
                 break;
-            // The removed-call half of the thirty-two arms above, in the same
-            // order and over the same policies: the subtraction's other side.
+            // The half without the Boys call of the thirty-two arms above, in the
+            // same order and over the same policies: the subtraction's other side.
             case ProbeEntry::kDeviceAllOrdersF64Orders:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev64Orders, double, kAllOrders, xd);
                 break;
@@ -1583,7 +1583,7 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32OrdersMonoFast, float, kAllOrders, xf);
                 break;
 #if BoysFp16
-            // The removed-call half of the same eighteen arms; see above.
+            // The half without the Boys call of the same eighteen arms; see above.
             case ProbeEntry::kDeviceAllOrdersF16Narrow:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Narrow, __half, kAllOrders, xh);
                 break;
@@ -1639,8 +1639,8 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kSingle, xh);
                 break;
 #endif // BoysFp16
-            // The removed-call half of the fast rows armed above, in the same
-            // order and over the same policies: the subtraction's other side.
+            // The half without the Boys call of the fast rows armed above, in the
+            // same order and over the same policies: the subtraction's other side.
             case ProbeEntry::kDeviceAllOrdersF32Fast:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kAllOrders, xf);
                 break;
@@ -1690,7 +1690,7 @@ int LaunchInKernel(ProbeEntry entry,
                 BOYS_PROBE_LAUNCH_PLAIN(Dev32Fast, float, kEachOrder, xf);
                 break;
 #if BoysFp16
-            // The removed-call half of the lane's fast rows; see above.
+            // The half without the Boys call of the lane's fast rows; see above.
             case ProbeEntry::kDeviceAllOrdersF16Fast:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kAllOrders, xh);
                 break;
@@ -1739,8 +1739,8 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceEachOrderF16Fast:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Fast, __half, kEachOrder, xh);
                 break;
-            // The removed-call half of the coarsest partition's monomial rows above, in
-            // the same order and over the same policies: the subtraction's other side.
+            // The half without the Boys call of the coarsest partition's monomial rows above,
+            // in the same order and over the same policies: the subtraction's other side.
             case ProbeEntry::kDeviceAllOrdersF16Mono:
                 BOYS_PROBE_LAUNCH_PLAIN(Dev16Mono, __half, kAllOrders, xh);
                 break;
@@ -1765,8 +1765,8 @@ int LaunchInKernel(ProbeEntry entry,
             case ProbeEntry::kDeviceAllOrdersBf16OrdersMonoFast:
                 BOYS_PROBE_LAUNCH_PLAIN(DevBf16OrdersMonoFast, __nv_bfloat16, kAllOrders, xb);
                 break;
-            // The removed-call half of the bfloat16 rows above, in the same order
-            // and over the same policies: the subtraction's other side.
+            // The half without the Boys call of the bfloat16 rows above, in the same
+            // order and over the same policies: the subtraction's other side.
             case ProbeEntry::kDeviceSingleBf16:
                 BOYS_PROBE_LAUNCH_PLAIN(DevBf16, __nv_bfloat16, kSingle, xb);
                 break;

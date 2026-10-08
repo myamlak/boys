@@ -12,8 +12,8 @@ can show:
     the failure reaches the Docs step's log and not the run's name.
 
 The class is one thing: **a paired construct whose two halves can be separated by a preprocessor
-directive is balanced only under the configuration the author compiled, and the author's
-configuration is the one configuration that cannot show it.**
+directive is balanced only under the configuration that compiles them both, and that configuration
+is the one whose build cannot show it.**
 
 WHAT IT CHECKS, per file, and it is deliberately narrow so that a finding is real:
 
