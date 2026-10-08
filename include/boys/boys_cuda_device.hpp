@@ -762,35 +762,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64(const BoysDeviceTables& table
 /// Horner rather than by the split Clenshaw. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF64's, the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
-/// \param capacity   the number of doubles \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF64
 ///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Mono(const BoysDeviceTables& tables,
                                                        int order,
@@ -1131,18 +1106,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRat(const BoysDeviceTab
 /// gives: the rational member is stored in one form, so both scheme names reach
 /// one arithmetic.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF64UniformRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
-/// \param capacity   the number of doubles \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF64UniformRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF64UniformRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64UniformRatHorner(
     const BoysDeviceTables& tables,
@@ -1294,35 +1258,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32(const BoysDeviceTables& table
 /// are the monomial reading of that entry's two. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF32's, the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
-/// \param capacity   the number of floats \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF32
 ///
-/// \pre \c x >= 0, as BoysDeviceSingleF32 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Mono(const BoysDeviceTables& tables,
                                                        int order,
@@ -1654,18 +1593,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRat(const BoysDeviceTab
 /// the lane's coarsest and narrow rational pairs stand in. Contract, bound and
 /// refusals are BoysDeviceAllOrdersF32UniformRat's.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF32UniformRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
-/// \param capacity   the number of floats \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF32UniformRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF32UniformRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32UniformRatHorner(
     const BoysDeviceTables& tables,
@@ -1852,33 +1780,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16(const BoysDeviceTables& table
 /// split Clenshaw, and the value crosses the boundary as it does there. Contract,
 /// bound and refusals are that entry's, the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF16
 ///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Mono(const BoysDeviceTables& tables,
                                                        int order,
@@ -1922,33 +1827,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Mono(const BoysDeviceTables& t
 /// split Clenshaw, and the value crosses the boundary as it does there. Contract,
 /// bound and refusals are that entry's, the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 ///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Mono(const BoysDeviceTables& tables,
                                                        int order,
@@ -2274,34 +2156,7 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderBf16(const BoysDeviceTables& tabl
 /// order. Region B's seed is piecewise on this partition, over the edges the handle
 /// carries.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables& tables,
                                                          int order,
@@ -2334,34 +2189,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Narrow(const BoysDeviceTables&
 /// The bound is the one BoysDeviceAllOrdersF64Narrow states: the two forms are
 /// two summations of one fit, and the lane's bound is over the route.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
     const BoysDeviceTables& tables,
@@ -2394,34 +2222,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowMono(
 /// The route's region-A fit is read at the degrees its table stores, and region
 /// B's seed at the degrees its own table stores.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& tables,
                                                       int order,
@@ -2448,26 +2249,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Rat(const BoysDeviceTables& ta
 /// route are: the route's pair is stored once, in one basis, and both scheme names
 /// select it. This entry is BoysDeviceAllOrdersF64Rat and answers exactly as it does.
 ///
-/// \tparam kForm the division form, forwarded to BoysDeviceAllOrdersF64Rat
-///         unchanged: this name selects no arithmetic of its own, so the axis
-///         and its default are that entry's \tparam kForm.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64Rat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
     const BoysDeviceTables& tables,
@@ -2486,34 +2268,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64RatHorner(
 /// halves of the route are read at the degrees their tables store, as
 /// BoysDeviceAllOrdersF64Rat does. The bound is the double batch lane's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
     const BoysDeviceTables& tables,
@@ -2540,27 +2295,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRat(
 /// One arithmetic under two names, as BoysDeviceAllOrdersF64RatHorner is: this
 /// entry is BoysDeviceAllOrdersF64NarrowRat and answers exactly as it does.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF64NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64NarrowRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
     const BoysDeviceTables& tables,
@@ -2580,33 +2315,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowRatHorner(
 /// computed in double and rounded once on entry to the recursion, exactly as the
 /// launched row of this partition does.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables& tables,
                                                          int order,
@@ -2646,33 +2355,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Narrow(const BoysDeviceTables&
 /// both region A and the float lane's region-B seed read from the monomial form
 /// of their pools and summed by Horner.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
     const BoysDeviceTables& tables,
@@ -2714,33 +2397,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowMono(
 /// double lane's pairs and region B from the float lane's own pair — the split
 /// the launched row makes, and the reason a float seed is never amplified.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& tables,
                                                       int order,
@@ -2779,24 +2436,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Rat(const BoysDeviceTables& ta
 /// One arithmetic under two names, as the double lane's pair of rows is: this
 /// entry is BoysDeviceAllOrdersF32Rat and answers exactly as it does.
 ///
-/// \tparam kForm the division form, forwarded to BoysDeviceAllOrdersF32Rat
-///         unchanged: this name selects no arithmetic of its own, so the axis
-///         and its default are that entry's \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF32Rat unchanged: this name selects no arithmetic
-///         of its own, so the axis and its default are that entry's \tparam
-///         kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32Rat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
     const BoysDeviceTables& tables,
@@ -2815,34 +2455,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32RatHorner(
 /// lane's narrow pairs in region A and the float lane's piecewise pair in
 /// region B.
 ///
-///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
     const BoysDeviceTables& tables,
@@ -2883,25 +2496,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRat(
 /// One arithmetic under two names, as the double lane's pair of rows is: this
 /// entry is BoysDeviceAllOrdersF32NarrowRat and answers exactly as it does.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF32NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF32NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32NarrowRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
     const BoysDeviceTables& tables,
@@ -2930,34 +2525,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowRatHorner(
 /// BoysAllOrdersF64OrdersKernel): the two differ in where the coefficients come from
 /// and not in what is done with them.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Orders(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -2994,35 +2562,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64Orders(
 /// split Clenshaw. Contract, bound and refusals are BoysDeviceAllOrdersF64's, the
 /// reading of region A and the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF64
 ///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersMono(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3058,34 +2601,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersMono(
 /// rather than seeded from the top order's and brought back down the recurrence.
 /// Contract, bound and refusals are BoysDeviceAllOrdersF64Narrow's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrders(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3110,34 +2626,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrders(
 /// and the coefficients the monomial form of them, summed by Horner. Contract,
 /// bound and refusals are BoysDeviceAllOrdersF64Narrow's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersMono(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3161,34 +2650,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersMono(
 /// BoysDeviceAllOrdersF64Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF64Rat's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRat(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3211,34 +2673,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRat(
 /// axis BoysDeviceAllOrdersF64Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF64NarrowRat's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive doubles
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF64
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRat(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3262,24 +2697,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRat(
 /// arithmetic. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF64OrdersRat's.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF64OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
-/// \param capacity   the number of doubles \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF64OrdersRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF64OrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRatHorner(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3290,24 +2708,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64OrdersRatHorner(
 ///
 /// A forwarder and not a second body, as BoysDeviceAllOrdersF64OrdersRatHorner is.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF64NarrowOrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive doubles
-/// \param capacity   the number of doubles \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF64NarrowOrdersRat returns, and its refusals
-/// with it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF64NarrowOrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRatHorner(
     const BoysDeviceTables& tables, int order, double x, double* out, int capacity) {
@@ -3322,33 +2723,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF64NarrowOrdersRatHorner(
 /// table and region B's is this lane's own order-0 entry. Contract, bound and
 /// refusals are BoysDeviceAllOrdersF32's, the reading of region A aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Orders(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3389,35 +2764,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32Orders(
 /// bound and refusals are BoysDeviceAllOrdersF32's, the reading of region A and the
 /// form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so which member
-///         a call names is part of what places it: the figure is the lane's, and
-///         \c BoysLaneContracts states the term this axis adds to it, if it adds
-///         one.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF32
 ///
-/// \pre \c x >= 0, as BoysDeviceSingleF32 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersMono(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3455,33 +2805,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersMono(
 /// axis BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF32Narrow's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrders(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3516,33 +2840,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrders(
 /// BoysDeviceAllOrdersF32NarrowOrders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF32Narrow's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersMono(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3577,33 +2875,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersMono(
 /// BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF32Rat's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRat(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3636,33 +2908,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRat(
 /// axis BoysDeviceAllOrdersF32Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF32NarrowRat's.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive floats
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x >= 0, as BoysDeviceSingleF64 states.
-/// \pre \c order + 1 <= \c capacity; when it is not, the call is refused with
-///      kCapacityTooSmall and writes nothing.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF32
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRat(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3694,22 +2940,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRat(
 ///
 /// A forwarder and not a second body, as its double counterpart is.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF32OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF32OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
-/// \param capacity   the number of floats \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF32OrdersRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF32OrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRatHorner(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3720,22 +2951,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF32OrdersRatHorner(
 ///
 /// A forwarder and not a second body, as its double counterpart is.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF32NarrowOrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF32NarrowOrdersRat unchanged: this name selects
-///         no arithmetic of its own, so the axis and its default are that
-///         entry's \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive floats
-/// \param capacity   the number of floats \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF32NarrowOrdersRat returns, and its refusals
-/// with it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF32NarrowOrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF32NarrowOrdersRatHorner(
     const BoysDeviceTables& tables, int order, double x, float* out, int capacity) {
@@ -3860,32 +3076,7 @@ BoysDeviceSingleBf16Fast(const BoysDeviceTables& tables,
 /// the top order's. Contract, bound and refusals are BoysDeviceAllOrdersF16's, the
 /// reading of region A aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Orders(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -3925,33 +3116,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Orders(
 /// Clenshaw, and the value crosses the boundary as it does there. Contract, bound and
 /// refusals are BoysDeviceAllOrdersF16's, the reading of region A and the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersF16
 ///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersMono(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -3991,33 +3159,10 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersMono(
 /// Clenshaw, and the value crosses the boundary as it does there. Contract, bound and
 /// refusals are BoysDeviceAllOrdersBf16's, the reading of region A and the form aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 ///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing. A handle carrying the Chebyshev tables and not the monomial ones is
-/// \c kTablesNotReady: this entry's read rests on the pools it names.
+/// A handle carrying the Chebyshev tables and not the monomial ones is \c kTablesNotReady:
+/// this entry's read rests on the pools it names.
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersMono(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4056,32 +3201,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersMono(
 /// the top order's. Contract, bound and refusals are BoysDeviceAllOrdersBf16's, the
 /// reading of region A aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Orders(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4118,32 +3238,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Orders(
 /// BoysDeviceAllOrdersF32Narrow reads, with the value rounded at the boundary.
 /// Contract, bound and refusals are BoysDeviceAllOrdersF16's, the partition aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Narrow(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -4177,32 +3272,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Narrow(
 /// BoysDeviceAllOrdersF32Narrow reads, with the value rounded at the boundary.
 /// Contract, bound and refusals are BoysDeviceAllOrdersBf16's, the partition aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Narrow(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4237,32 +3307,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Narrow(
 /// axis BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the partition aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrders(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -4297,32 +3342,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrders(
 /// axis BoysDeviceAllOrdersBf16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the partition aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowOrders(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4474,32 +3494,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Uniform(
 /// bound and refusals are BoysDeviceAllOrdersF16's, the partition and the basis
 /// aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowMono(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -4534,32 +3529,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowMono(
 /// bound and refusals are BoysDeviceAllOrdersBf16's, the partition and the basis
 /// aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowMono(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4594,32 +3564,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowMono(
 /// BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the partition and the basis aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersMono(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -4654,32 +3599,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersMono(
 /// BoysDeviceAllOrdersBf16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the partition and the basis aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowOrdersMono(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4831,32 +3751,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16UniformHorner(
 /// lanes BoysDeviceAllOrdersF32Rat reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Rat(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -4888,32 +3783,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16Rat(
 /// lanes BoysDeviceAllOrdersF32Rat reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Rat(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -4946,32 +3816,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16Rat(
 /// BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRat(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5004,32 +3849,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRat(
 /// BoysDeviceAllOrdersBf16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersRat(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5062,32 +3882,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersRat(
 /// BoysDeviceAllOrdersF32NarrowRat reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRat(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5122,32 +3917,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRat(
 /// BoysDeviceAllOrdersF32NarrowRat reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowRat(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5182,32 +3952,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowRat(
 /// axis BoysDeviceAllOrdersF16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersF16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __half
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a binary16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersF16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRat(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5242,32 +3987,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRat(
 /// axis BoysDeviceAllOrdersBf16Orders reads. Contract, bound and refusals are
 /// BoysDeviceAllOrdersBf16's, the route aside.
 ///
-/// \tparam kForm the division form the entry's ladder steps divide in. The
-///         three forms are certified and differ in the arithmetic of the
-///         division, never in what is approximated, so a call is placed by the
-///         lane's figure plus whatever the form adds to it — the axis states
-///         that term where a form has one (boys::DivisionForm). The default is
-///         the build's own, \c kDefaultDeviceDivisionForm, which is what a call site
-///         that names no form is compiled as; the choice is a template argument
-///         because it selects an arithmetic inside the caller's own kernel, so
-///         the form not named is absent from it rather than merely untaken.
-/// \tparam kExp which region-B exponential the ladder's seed evaluates; the
-///         default is \c kDefaultRegionBExp, the lane's documented default. The
-///         member named is part of the combination the call runs, so the figure it
-///         is owed is the lane's bound plus whatever that member adds to it
-///         (BoysAccuracyGuaranteed, boys/boys.hpp).
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the order n, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_n(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of values \c out holds
-///
-/// \pre \c x is a bfloat16 value; \c order + 1 <= \c capacity, or the call is
-///      refused.
-///
-/// \returns kSuccess after writing order + 1 values; kTablesNotReady,
-/// kOrderOutOfRange or kCapacityTooSmall otherwise, in every case without
-/// writing.
+/// \copydoc boys::BoysDeviceAllOrdersBf16
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowOrdersRat(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5419,21 +4139,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16UniformRat(
 ///
 /// A forwarder and not a second body, for the reason its float counterpart gives.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF16Rat unchanged: this name selects no arithmetic
-///         of its own, so the axis and its default are that entry's \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF16Rat unchanged: this name selects no arithmetic
-///         of its own, so the axis and its default are that entry's \tparam
-///         kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF16Rat returns, and its refusals with it:
-/// this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF16Rat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16RatHorner(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5444,21 +4150,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16RatHorner(
 ///
 /// A forwarder and not a second body, for the reason its float counterpart gives.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersBf16Rat unchanged: this name selects no arithmetic
-///         of its own, so the axis and its default are that entry's \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersBf16Rat unchanged: this name selects no arithmetic
-///         of its own, so the axis and its default are that entry's \tparam
-///         kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersBf16Rat returns, and its refusals with it:
-/// this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersBf16Rat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16RatHorner(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5469,22 +4161,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16RatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF16OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF16OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF16OrdersRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF16OrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRatHorner(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5495,22 +4172,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16OrdersRatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersBf16OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersBf16OrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersBf16OrdersRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersBf16OrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersRatHorner(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5521,22 +4183,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16OrdersRatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF16NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF16NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF16NarrowRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF16NarrowRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRatHorner(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5547,22 +4194,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowRatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersBf16NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersBf16NarrowRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersBf16NarrowRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersBf16NarrowRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowRatHorner(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5573,22 +4205,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowRatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF16NarrowOrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersF16NarrowOrdersRat unchanged: this name selects
-///         no arithmetic of its own, so the axis and its default are that
-///         entry's \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF16NarrowOrdersRat returns, and its refusals
-/// with it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF16NarrowOrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRatHorner(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5599,22 +4216,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16NarrowOrdersRatHorner(
 ///
 /// A forwarder and not a second body, as its siblings are.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersBf16NarrowOrdersRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \tparam kExp the region-B exponential, forwarded to
-///         BoysDeviceAllOrdersBf16NarrowOrdersRat unchanged: this name selects
-///         no arithmetic of its own, so the axis and its default are that
-///         entry's \tparam kExp.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersBf16NarrowOrdersRat returns, and its refusals
-/// with it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersBf16NarrowOrdersRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm, RegionBExp kExp = kDefaultRegionBExp>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowOrdersRatHorner(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
@@ -5627,18 +4229,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16NarrowOrdersRatHorner(
 /// the grid's rational member is stored in one form, so both scheme names reach one
 /// arithmetic.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersF16UniformRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __half
-/// \param capacity   the number of __half values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersF16UniformRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersF16UniformRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersF16UniformRatHorner(
     const BoysDeviceTables& tables, int order, __half x, __half* out, int capacity) {
@@ -5651,18 +4242,7 @@ __device__ BoysDeviceStatus BoysDeviceAllOrdersF16UniformRatHorner(
 /// the grid's rational member is stored in one form, so both scheme names reach one
 /// arithmetic.
 ///
-/// \tparam kForm the division form, forwarded to
-///         BoysDeviceAllOrdersBf16UniformRat unchanged: this name selects no
-///         arithmetic of its own, so the axis and its default are that entry's
-///         \tparam kForm.
-/// \param tables     the handle BoysCuda::DeviceTables filled
-/// \param order      the top order, 0..kMaxBoysOrder
-/// \param x          the argument, >= 0, formed by the calling thread
-/// \param out        receives F_0(x)..F_order(x), order + 1 consecutive __nv_bfloat16
-/// \param capacity   the number of __nv_bfloat16 values \c out holds
-///
-/// \returns what BoysDeviceAllOrdersBf16UniformRat returns, and its refusals with
-/// it: this name is that entry's and adds none of its own.
+/// \copydoc boys::BoysDeviceAllOrdersBf16UniformRat
 template <DivisionForm kForm = kDefaultDeviceDivisionForm>
 __device__ BoysDeviceStatus BoysDeviceAllOrdersBf16UniformRatHorner(
     const BoysDeviceTables& tables, int order, __nv_bfloat16 x, __nv_bfloat16* out, int capacity) {
