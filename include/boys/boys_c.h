@@ -25,10 +25,18 @@ extern "C" {
 
 #include <stddef.h>
 
+/** The return codes are \c boys::BoysStatus's values, so a caller that reaches both surfaces from
+ * C++ compares one vocabulary and not two: 0, 1 and 2 are \c kSuccess, \c kInvalidArgument and
+ * \c kDeviceError, in that order. They are literals because this header is C and that enum is C++.
+ */
+
 /** Success return code of every C entry. */
 #define BOYS_SUCCESS 0
 /** Invalid-argument return code (out-of-range order, negative/NaN x, NULL pointer). */
 #define BOYS_ERROR_INVALID_ARGUMENT 1
+/** Device error. No entry in this header returns it: it is stated so that the three codes are the
+ * three members of the enum, and a caller switching on the status has a name for every case. */
+#define BOYS_ERROR_DEVICE 2
 /** Highest Boys order supported by the kernel (F_0..F_BOYS_MAX_ORDER). */
 #define BOYS_MAX_ORDER 32
 
