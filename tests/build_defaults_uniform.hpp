@@ -14,9 +14,9 @@
 // tests/build_defaults_fit_granularity.hpp alone - both named kCoarsest, so a host class resolving
 // kUniform was one no configure in this tree or in CI had ever compiled.
 
-// The class-table seam the option probe emitted on 2026-10-05 was the first build to name the
-// member on a host row, and it failed boys-consumer-umbrella. The first fixture written for this
-// reached the member through the seam macro instead.
+// A class-table seam the option probe emits, naming the member on a host row, fails
+// boys-consumer-umbrella; reaching the member through the seam macro instead does not compile,
+// so this fixture names it in a row.
 
 // Through the seam macro, BOYS_BUILD_DEFAULT_FIT_GRANULARITY = FitGranularity::kUniform, that build
 // does not compile: tests/boys_accuracy_gate.cpp instantiates the stored region-A fits at
@@ -48,10 +48,10 @@
 // BoysHostClassesTest.TheNewFixedNEntriesAreTheirPerArgumentLoop, whose comparison is that lane's
 // single-order and fixed-order rows.
 
-// The float lane's five move because the two failures the emitted seam of 2026-10-05 was reported
-// with are one class's each - the double lane's single-order class carries the granularity lane's
-// boundary reading (tests/consumer_umbrella.cpp, CheckGranularityLane), the float class the
-// route-selector identity (CheckFloatPolicies) - so moving one alone leaves the other unreachable.
+// The float lane's five move because the two failures the emitted seam was reported with are one
+// class's each - the double lane's single-order class carries the granularity lane's boundary
+// reading (tests/consumer_umbrella.cpp, CheckGranularityLane), the float class the route-selector
+// identity (CheckFloatPolicies) - so moving one alone leaves the other unreachable.
 
 // Every other cell of every row below is the committed file's own, transcribed rather than
 // re-derived, so the only axis this build moves off the committed configuration is the granularity
@@ -68,8 +68,8 @@
 // had measured; a fixture that claims to move one cell is worth exactly the diff between its table
 // and the committed one, which is why this file's table is the committed one.
 
-// The class is also the one the emitted seam of 2026-10-05 moved: that run's report and its header
-// are the reading this fixture was written to reproduce without the rest of the run's rows.
+// The class is also the one the emitted seam moved: that run's report and its header are the
+// reading this fixture was written to reproduce without the rest of the run's rows.
 
 // The replaced-build branch of tests/boys_backend_test.cpp asks two questions of a replacement:
 // whether its five host names are the committed five, and whether every class its row table carries

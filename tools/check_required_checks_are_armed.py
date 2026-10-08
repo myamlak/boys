@@ -152,8 +152,8 @@ def platform_tool():
     """The leg-name renderer `gen_platform_table.py` already owns, loaded from its path.
 
     Imported rather than copied: the names this check reasons about are the names that tool prints
-    into README.md and that the branch-protection rule requires, and two renderings of one name is
-    how the three drift apart.
+    into docs/specification.md and that the branch-protection rule requires, and two renderings of
+    one name is how the three drift apart.
     """
     spec = importlib.util.spec_from_file_location("_platform_table", PLATFORM_TOOL)
     module = importlib.util.module_from_spec(spec)
