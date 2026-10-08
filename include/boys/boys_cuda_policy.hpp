@@ -29,8 +29,9 @@
 ///     BoysCuda::AllOrdersF64WithPolicy<Policy>(...) - the kernel the policy names
 ///     BoysCuda::AllOrdersF64(...)                   - the shipped entry, unchanged
 ///
-/// and the same for SingleF64/F32/F16, AllNF64/F32/F16 and the other two all-orders
-/// lanes. **The suffix is load-bearing and not a style.** A second function of an
+/// and the same for every other class of the surface: the single and all-N classes of
+/// the f64, f32, fp16 and bf16 lanes, and the all-orders class of each of the four.
+/// **The suffix is load-bearing and not a style.** A second function of an
 /// entry's own name would make that name an overload set, and the address of an
 /// overload set cannot be taken where the pointer type is deduced - a use the shipped
 /// tests make, handing `&BoysCuda::AllOrdersF64` to a helper that deduces its launch
@@ -58,11 +59,13 @@
 /// A class reads the axes **its own entries vary over**, and the arm of each is the
 /// member the entry's own statement of its arithmetic names
 /// (`DeviceEntryAxesOf`/`DevicePartitionOf`, `boys/boys_cuda_options.hpp`). The
-/// three all-orders classes read the route, the scheme, the partition and the
+/// four all-orders classes read the route, the scheme, the partition and the
 /// packing axis, because their entries are one entry per member of each bar the
 /// two members a single entry answers (the paragraph below); every
-/// class reads the region-B exponential, which is a coordinate of the f32 single
-/// class alone and therefore **refused** on every class but that one. The cells of
+/// class reads the region-B exponential, and an arm answers a member with the entry
+/// the class's own row at it carries. The one member no class carries an entry at is
+/// the uniform grid's `kFast`, which the table books for no row of any lane, and the
+/// refusal there states that reason. The cells of
 /// the axes a class does not carry are not coordinates of it and are not read: the
 /// single-order and all-N shapes hold one reading of region A per element and no
 /// ladder to cut (`DevicePacking::kNotApplicable`, stated of their rows), the route
@@ -74,19 +77,29 @@
 /// row is: the layer reads the row's cells for the axes the class carries, which is
 /// what makes `BoysCuda::AllNF64WithPolicy<>` reach a real kernel.
 ///
-/// **Where the library says two members of an axis reach one entry, the layer
-/// answers both with that entry and does not refuse the second.** Two such cells
-/// are stated, and neither is a substitution: one entry runs, and it is the entry
-/// the library names for both members. On the float and half lanes the coarsest
-/// partition is the case - "The coarsest partition's row is one row for both scheme
-/// names, exactly as `kAllOrdersF32` is" (`boys_cuda_options.hpp`), stated of the
-/// half lane too, which is why neither lane carries a `Mono` name of that cut and
-/// why a policy naming `EvalScheme::kHorner` over it reaches the row's own entry.
-/// On the double lane the rational route is the case, and its rows say it twice
-/// over: `kAllOrdersF64Rat` and `kAllOrdersF64RatHorner` are two rows naming one
-/// entry, because "the pair is stored once, so both scheme names select this
-/// arithmetic and the scheme axis is inert here" (`AllOrdersF64Rat`). Refusal is
-/// kept for the members no entry of the class answers.
+/// **Where the table books one arithmetic under two rows, the arm answers with that
+/// arithmetic and does not refuse the second row.** Two such cells are stated, and
+/// neither is a substitution: one kernel runs, and it is the kernel both rows name -
+/// `DeviceEntryArithmeticOf` is the library's own statement of which rows those are.
+/// The rational route's pairs are one of them: `kAllOrdersF64Rat` and
+/// `kAllOrdersF64RatHorner` are two rows naming one entry, because "the pair is stored
+/// once, so both scheme names select this arithmetic and the scheme axis is inert
+/// here" (`AllOrdersF64Rat`), and the float, fp16 and bf16 lanes book the same pair
+/// with the route's other scheme name as a forwarder. The uniform grid's cells are the
+/// other: the grid holds one member of the packing axis, so its per-order row and its
+/// per-argument row are one kernel under two names, and the arm names the per-order
+/// one. Refusal is kept for the members no row of the class answers, and there are
+/// two of them on every all-orders class: the grid's ladder cell, which no row books,
+/// and its `kFast`, which no row of any lane books.
+///
+/// **Where the table books two rows of one cell that are two arithmetics, the arm
+/// answers on the row the member's own name carries.** The bfloat16 class is the case
+/// this layer states: `kAllOrdersBf16Mono` and `kAllOrdersBf16MonoFast` are rows of the
+/// coarsest cut beside `kAllOrdersBf16` and `kAllOrdersBf16Fast`, each booked at
+/// `EvalScheme::kHorner`, each launched, and each an arithmetic of its own beside the
+/// split Clenshaw row of the same fit (`AllOrdersBf16Mono`, boys_cuda.hpp) - so a
+/// policy naming `kHorner` over that cut reaches the monomial row rather than the
+/// reading beside it, which is the substitution this layer exists to prevent.
 ///
 /// ## The packing axis is the host's axis, in this surface's spelling
 ///
@@ -223,8 +236,8 @@ template <EvalPolicyLike Policy>
 BoysStatus AllOrdersF64Cascade(
     const int* n, const double* x, double* out, std::size_t count, void* stream);
 
-/// The float and half all-orders classes' cascades, declared here with the double one and
-/// defined with each class's own layer below, for the same reason.
+/// The float, half and bfloat16 all-orders classes' cascades, declared here with the double
+/// one and defined with each class's own layer below, for the same reason.
 template <EvalPolicyLike Policy>
 BoysStatus AllOrdersF32Cascade(
     const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -233,20 +246,26 @@ BoysStatus AllOrdersF32Cascade(
 template <EvalPolicyLike Policy>
 BoysStatus AllOrdersF16Cascade(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersBf16Cascade(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream);
 #endif
 
 } // namespace detail
 /// \endcond
 
 // The single-order classes: F_n(x[i]) for one order per element. With no ladder to cut, their
-// entries differ only in the region-B exponential a lane carries: f32 has both members, f64 and
-// fp16 one each at the tables' own seed, and a policy naming a member the lane has no kernel at is
-// refused below.
+// entries differ only in the region-B exponential a lane carries, and every lane here carries a
+// kernel at both members of it - the tables' own seed and the lane's fast exponential - each with
+// its own bound.
 
 /// The f64 single class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::SingleF64` as boys_cuda.hpp documents it, and
 /// this overload is that entry reached from the policy's region-B exponential and
-/// division form.
+/// division form. The class carries a kernel at both members of the axis
+/// (`kSingleF64` and `kSingleF64Fast`, boys_cuda_options.hpp), so a policy naming
+/// either reaches that member's entry and names an arithmetic of its own.
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::SingleF64WithPolicy(
     const int* n, const double* x, double* out, std::size_t count, void* stream) {
@@ -256,15 +275,17 @@ BoysStatus BoysCuda::SingleF64WithPolicy(
         // declared above (six arguments) and not this template (five).
         return BoysCuda::SingleF64(n, x, out, count, stream, Policy::kDivision);
     }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::SingleF64Fast(n, x, out, count, stream, Policy::kDivision);
+    }
     else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: the double lane's single-order entry seeds its region-B ladder "
-                      "from the tables' own seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), so this class carries no kernel at "
-                      "RegionBExp::kFast. The fast exponential is a coordinate of the f32 single "
-                      "class alone (BoysCuda::SingleF32<RegionBExp::kFast>, "
-                      "boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
 }
@@ -302,7 +323,9 @@ BoysStatus BoysCuda::SingleF32WithPolicy(
 /// The fp16 single class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::SingleF16` as boys_cuda.hpp documents it, and
 /// this overload is that entry reached from the policy's region-B exponential and
-/// division form.
+/// division form. The class carries a kernel at both members of the axis
+/// (`kSingleF16` and `kSingleF16Fast`, boys_cuda_options.hpp), as the float lane's
+/// single class does.
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::SingleF16WithPolicy(
     const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
@@ -310,28 +333,32 @@ BoysStatus BoysCuda::SingleF16WithPolicy(
     {
         return BoysCuda::SingleF16(n, x, out, count, stream, Policy::kDivision);
     }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::SingleF16Fast(n, x, out, count, stream, Policy::kDivision);
+    }
     else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: the fp16 single-order entry runs the float lane's body with the "
-                      "fp16 store around it and seeds region B from the tables' own seed, which "
-                      "is the library routine's exponential (RegionBExp::kAccurate), so this "
-                      "class carries no kernel at RegionBExp::kFast. The fast exponential is a "
-                      "coordinate of the f32 single class alone "
-                      "(BoysCuda::SingleF32<RegionBExp::kFast>, boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
 }
 #endif // BoysFp16
 
-// The all-N classes: F_0(x[i])..F_nmax(x[i]) at one common top order. One entry per precision, as
-// the single-order classes have: the class reads the region-B exponential and refuses the member
-// its kernel does not carry, and the other cells are not coordinates of the shape.
+// The all-N classes: F_0(x[i])..F_nmax(x[i]) at one common top order. One entry per precision and
+// per member of the region-B exponential, as the single-order classes have: the class reads that
+// axis and reaches each member's own entry, and the other cells are not coordinates of the shape.
 
 /// The f64 all-N class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::AllNF64` as boys_cuda.hpp documents it, and this
 /// overload is that entry reached from the policy's region-B exponential and division
-/// form.
+/// form. The class carries a kernel at both members of the axis (`kAllNF64` and
+/// `kAllNF64Fast`, boys_cuda_options.hpp), so a policy naming either reaches that
+/// member's entry.
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllNF64WithPolicy(
     int nmax, const double* x, double* out, std::size_t count, void* stream) {
@@ -339,15 +366,17 @@ BoysStatus BoysCuda::AllNF64WithPolicy(
     {
         return BoysCuda::AllNF64(nmax, x, out, count, stream, Policy::kDivision);
     }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::AllNF64Fast(nmax, x, out, count, stream, Policy::kDivision);
+    }
     else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: the all-N entry seeds its region-B ladder from the tables' own "
-                      "seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), so this class carries no kernel at "
-                      "RegionBExp::kFast. The fast exponential is a coordinate of the f32 single "
-                      "class alone (BoysCuda::SingleF32<RegionBExp::kFast>, "
-                      "boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
 }
@@ -355,7 +384,9 @@ BoysStatus BoysCuda::AllNF64WithPolicy(
 /// The f32 all-N class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::AllNF32` as boys_cuda.hpp documents it, and this
 /// overload is that entry reached from the policy's region-B exponential and division
-/// form.
+/// form. The class carries a kernel at both members of the axis (`kAllNF32` and
+/// `kAllNF32Fast`, boys_cuda_options.hpp), so a policy naming either reaches that
+/// member's entry.
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllNF32WithPolicy(
     int nmax, const double* x, float* out, std::size_t count, void* stream) {
@@ -363,15 +394,17 @@ BoysStatus BoysCuda::AllNF32WithPolicy(
     {
         return BoysCuda::AllNF32(nmax, x, out, count, stream, Policy::kDivision);
     }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::AllNF32Fast(nmax, x, out, count, stream, Policy::kDivision);
+    }
     else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: the all-N entry seeds its region-B ladder from the tables' own "
-                      "seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), so this class carries no kernel at "
-                      "RegionBExp::kFast. The fast exponential is a coordinate of the f32 single "
-                      "class alone (BoysCuda::SingleF32<RegionBExp::kFast>, "
-                      "boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
 }
@@ -380,22 +413,25 @@ BoysStatus BoysCuda::AllNF32WithPolicy(
 /// The fp16 all-N class reached by naming a policy: the entry, its bound and its
 /// parameter contract are `BoysCuda::AllNF16` as boys_cuda.hpp documents it, and this
 /// overload is that entry reached from the policy's region-B exponential and division
-/// form.
+/// form. The class carries a kernel at both members of the axis (`kAllNF16` and
+/// `kAllNF16Fast`, boys_cuda_options.hpp), as the float lane's all-N class does.
 template <EvalPolicyLike Policy>
 BoysStatus BoysCuda::AllNF16WithPolicy(int nmax, const F16* x, F16* out, std::size_t count, void* stream) {
     if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate)
     {
         return BoysCuda::AllNF16(nmax, x, out, count, stream, Policy::kDivision);
     }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::AllNF16Fast(nmax, x, out, count, stream, Policy::kDivision);
+    }
     else
     {
         static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
-                      "no kernel: the all-N entry seeds its region-B ladder from the tables' own "
-                      "seed, which is the library routine's exponential "
-                      "(RegionBExp::kAccurate), so this class carries no kernel at "
-                      "RegionBExp::kFast. The fast exponential is a coordinate of the f32 single "
-                      "class alone (BoysCuda::SingleF32<RegionBExp::kFast>, "
-                      "boys/boys_cuda_options.hpp)");
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
         return BoysStatus::kDeviceError;
     }
 }
@@ -1387,7 +1423,7 @@ namespace detail {
 
 template <EvalPolicyLike Policy>
 BoysStatus AllOrdersF16Cascade(
-    const int* n, const double* x, F16* out, std::size_t count, void* stream) {
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream) {
     if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
         if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
@@ -1836,5 +1872,514 @@ BoysStatus AllOrdersF16Cascade(
 /// \endcond
 
 #endif // BoysFp16
+
+#if BoysFp16
+/// The bfloat16 all-orders class reached by naming a policy: the entry the option table's own
+/// row books for the combination the policy names (`boys_cuda_options.hpp`, the `AllOrdersBf16`
+/// rows), run at the policy's division form. **The arms are the table's rows one for one**, and
+/// that includes the coarsest cut's monomial pair, which this lane books as rows of its own
+/// beside the split Clenshaw ones: a policy naming `EvalScheme::kHorner` over that cut reaches
+/// `AllOrdersBf16Mono`, and the split Clenshaw row is not run in its place. The two cells no row
+/// of the class books - the grid's ladder reading and its `kFast` - are refused with that reason.
+template <EvalPolicyLike Policy>
+BoysStatus BoysCuda::AllOrdersBf16WithPolicy(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate
+                  || Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return detail::AllOrdersBf16Cascade<Policy>(n, x, out, count, stream);
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
+        return BoysStatus::kDeviceError;
+    }
+}
+#endif // BoysFp16
+
+/// \cond
+namespace detail {
+
+#if BoysFp16
+/// The bfloat16 all-orders class's cascade over the route, the partition, the packing axis and
+/// the scheme, at whichever member of the region-B exponential the policy names. Declared with
+/// the other three at the head of this file and defined here, because its arms name this class's
+/// members.
+///
+/// \param n the class's own first argument, as its entries document it
+/// \param x the class's own second argument, as its entries document it
+/// \param out the class's own third argument, as its entries document it
+/// \param count the class's own fourth argument, as its entries document it
+/// \param stream the class's own fifth argument, as its entries document it
+///
+/// \returns the status of the entry the policy's combination reaches
+template <EvalPolicyLike Policy>
+BoysStatus AllOrdersBf16Cascade(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev)
+    {
+        if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
+        {
+            if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+            {
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16Fast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16Orders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16OrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+            {
+                // This lane books the cut's monomial rows itself (kAllOrdersBf16Mono,
+                // kAllOrdersBf16OrdersMono, boys_cuda_options.hpp), so the Horner member reaches
+                // them: the split Clenshaw row is a second arithmetic of the same fit and not a
+                // name of this one (AllOrdersBf16Mono, boys_cuda.hpp).
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16Mono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16MonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16OrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16OrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                              "this switch enumerates the two schemes, EvalScheme::kSplitClenshaw "
+                              "and EvalScheme::kHorner: a third member must be given its own arm "
+                              "here rather than inheriting the split Clenshaw's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else if constexpr (Policy::kGranularity == FitGranularity::kNarrow)
+        {
+            if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+            {
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16Narrow(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowOrders(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowOrdersFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+            {
+                // The narrow partition's monomial rows, on the reading the coarsest cut's arm
+                // states.
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowOrdersMono(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowOrdersMonoFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                              "this switch enumerates the two schemes, EvalScheme::kSplitClenshaw "
+                              "and EvalScheme::kHorner: a third member must be given its own arm "
+                              "here rather than inheriting the split Clenshaw's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+        {
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
+            {
+                // The grid's two scheme rows are one kernel under two names
+                // (kAllOrdersBf16OrdersUniform and kAllOrdersBf16Uniform,
+                // DeviceEntryArithmeticOf), and the arm names the per-order row, which is the
+                // reading the grid holds.
+                if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+                {
+                    return BoysCuda::AllOrdersBf16OrdersUniform(
+                        n, x, out, count, stream, Policy::kDivision);
+                }
+                else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+                {
+                    return BoysCuda::AllOrdersBf16OrdersUniformHorner(
+                        n, x, out, count, stream, Policy::kDivision);
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                                  "this switch enumerates the two schemes, "
+                                  "EvalScheme::kSplitClenshaw and EvalScheme::kHorner: a third "
+                                  "member must be given its own arm here rather than inheriting "
+                                  "the split Clenshaw's entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kPack == PackAxis::kArguments)
+            {
+                static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                              "no kernel: the uniform grid holds one member of the packing axis - "
+                              "one fit per order and per interval, each read from its own block, "
+                              "with no seeded ladder to step (the library states it of the grid's "
+                              "rows, boys_cuda_options.hpp) - so a policy naming "
+                              "PackAxis::kArguments (the ladder reading) over "
+                              "FitGranularity::kUniform reaches no entry of this class. The grid "
+                              "is read at PackAxis::kOrders");
+                return BoysStatus::kDeviceError;
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                              "this switch enumerates the two packing axes, PackAxis::kArguments "
+                              "(the ladder reading) and PackAxis::kOrders (the per-order "
+                              "reading): a third member must be given its own arm here rather than "
+                              "inheriting the last one's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else
+        {
+            static_assert(detail::kAlwaysFalse<detail::PartitionTag<Policy::kGranularity>>,
+                          "this switch enumerates the three fit partitions, "
+                          "FitGranularity::kCoarsest, FitGranularity::kNarrow and "
+                          "FitGranularity::kUniform: a fourth member must be given its own arm "
+                          "here rather than inheriting the last one's entry");
+            return BoysStatus::kDeviceError;
+        }
+    }
+    else if constexpr (Policy::kRoute == FitRoute::kRationalMinimax)
+    {
+        if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
+        {
+            if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+            {
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16Rat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16RatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16OrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16OrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+            {
+                // The pair is stored once, so both scheme names select one kernel
+                // (AllOrdersBf16Rat, boys_cuda.hpp); this lane books the route's second name as
+                // its own row (kAllOrdersBf16RatHorner, boys_cuda_options.hpp), so the Horner
+                // member reaches that row.
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16RatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16RatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16OrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16OrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                              "this switch enumerates the two schemes, EvalScheme::kSplitClenshaw "
+                              "and EvalScheme::kHorner: a third member must be given its own arm "
+                              "here rather than inheriting the split Clenshaw's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else if constexpr (Policy::kGranularity == FitGranularity::kNarrow)
+        {
+            if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+            {
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowOrdersRat(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowOrdersRatFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+            {
+                // The narrow partition's pair, on the reading the coarsest cut's arm states.
+                if constexpr (Policy::kPack == PackAxis::kArguments)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else if constexpr (Policy::kPack == PackAxis::kOrders)
+                {
+                    return detail::DevicePickExp<Policy::kRegionBExp>(
+                        [&] { return BoysCuda::AllOrdersBf16NarrowOrdersRatHorner(n, x, out, count, stream, Policy::kDivision); },
+                        [&] {
+                            return BoysCuda::AllOrdersBf16NarrowOrdersRatHornerFast(n, x, out, count, stream,
+                                                         Policy::kDivision);
+                        });
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                                  "this switch enumerates the two packing axes, "
+                                  "PackAxis::kArguments (the ladder reading) and "
+                                  "PackAxis::kOrders (the per-order reading): a third member must "
+                                  "be given its own arm here rather than inheriting the ladder's "
+                                  "entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                              "this switch enumerates the two schemes, EvalScheme::kSplitClenshaw "
+                              "and EvalScheme::kHorner: a third member must be given its own arm "
+                              "here rather than inheriting the split Clenshaw's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+        {
+            if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+            {
+                static_assert(detail::kAlwaysFalse<detail::ExpTag<Policy::kRegionBExp>>,
+                              "no kernel: the grid reads no exponential at any argument: below the "
+                              "join every order is summed from its own stored block, and above it "
+                              "the call falls to the asymptote, whose seed is the reciprocal "
+                              "square root (boys/boys_cuda_options.hpp). RegionBExp has no member "
+                              "at FitGranularity::kUniform, so a policy naming "
+                              "RegionBExp::kFast over the grid names a combination this class "
+                              "does not carry");
+                return BoysStatus::kDeviceError;
+            }
+            else if constexpr (Policy::kPack == PackAxis::kOrders)
+            {
+                // The grid's rational rows: the pair is stored once and read by Horner, so the
+                // scheme names select the row the table books for each.
+                if constexpr (Policy::kScheme == EvalScheme::kSplitClenshaw)
+                {
+                    return BoysCuda::AllOrdersBf16OrdersUniformRat(
+                        n, x, out, count, stream, Policy::kDivision);
+                }
+                else if constexpr (Policy::kScheme == EvalScheme::kHorner)
+                {
+                    return BoysCuda::AllOrdersBf16OrdersUniformRatHorner(
+                        n, x, out, count, stream, Policy::kDivision);
+                }
+                else
+                {
+                    static_assert(detail::kAlwaysFalse<detail::SchemeTag<Policy::kScheme>>,
+                                  "this switch enumerates the two schemes, "
+                                  "EvalScheme::kSplitClenshaw and EvalScheme::kHorner: a third "
+                                  "member must be given its own arm here rather than inheriting "
+                                  "the split Clenshaw's entry");
+                    return BoysStatus::kDeviceError;
+                }
+            }
+            else if constexpr (Policy::kPack == PackAxis::kArguments)
+            {
+                static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                              "no kernel: the uniform grid holds one member of the packing axis - "
+                              "one numerator/denominator pair per interval, read per order, with "
+                              "no ladder for a second reading to be (boys_cuda_options.hpp, the "
+                              "grid's rows) - so a policy naming PackAxis::kArguments (the ladder "
+                              "reading) over FitGranularity::kUniform reaches no entry of this "
+                              "class. The grid is read at PackAxis::kOrders");
+                return BoysStatus::kDeviceError;
+            }
+            else
+            {
+                static_assert(detail::kAlwaysFalse<detail::PackingTag<DevicePacking::kLadder>>,
+                              "this switch enumerates the two packing axes, PackAxis::kArguments "
+                              "(the ladder reading) and PackAxis::kOrders (the per-order "
+                              "reading): a third member must be given its own arm here rather than "
+                              "inheriting the last one's entry");
+                return BoysStatus::kDeviceError;
+            }
+        }
+        else
+        {
+            static_assert(detail::kAlwaysFalse<detail::PartitionTag<Policy::kGranularity>>,
+                          "this switch enumerates the three fit partitions, "
+                          "FitGranularity::kCoarsest, FitGranularity::kNarrow and "
+                          "FitGranularity::kUniform: a fourth member must be given its own arm "
+                          "here rather than inheriting the last one's entry");
+            return BoysStatus::kDeviceError;
+        }
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::RouteTag<Policy::kRoute>>,
+                      "this switch enumerates the two fit routes, FitRoute::kChebyshev and "
+                      "FitRoute::kRationalMinimax: a third member must be given its own arm here "
+                      "rather than inheriting the last one's entries");
+        return BoysStatus::kDeviceError;
+    }
+}
+#endif // BoysFp16
+
+} // namespace detail
+/// \endcond
 
 } // namespace boys

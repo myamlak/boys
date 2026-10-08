@@ -84,14 +84,33 @@ namespace boys {
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
 /// orders at every argument, one common top order).
 ///
+/// **How a name composes.** A name is the shape and the lane — `AllOrdersF64`,
+/// `SingleF16`, `EachOrderBf16` — followed by the spellings of the option vector's
+/// cells, in the option table's own order: the partition (\c Narrow, \c Uniform,
+/// nothing for \c FitGranularity::kCoarsest), the packing axis (\c Orders for
+/// \c PackAxis::kOrders, nothing for the ladder), the route (\c Rat for
+/// \c FitRoute::kRationalMinimax, nothing for the Chebyshev fits), the summation
+/// (\c Horner for \c EvalScheme::kHorner, \c Mono for the fits' monomial form read
+/// in ascending order, nothing for the split Clenshaw) and the region-B
+/// exponential (\c Fast, nothing for \c RegionBExp::kAccurate), which is written
+/// last: `AllOrdersF64NarrowOrdersRatHornerFast`. The grid writes its packing member
+/// before its partition (`AllOrdersF64OrdersUniform`), and the half lane writes its
+/// format where the other lanes write their precision (`AllOrdersBf16`). The rows,
+/// the axis member each name spells and what it reaches are in
+/// boys/boys_cuda_options.hpp; the same choice reached by naming a policy instead is
+/// the class's `<Entry>WithPolicy` member, whose rule and axis spellings are in
+/// boys/boys_cuda_policy.hpp.
+///
 /// Every entry that launches a kernel takes a division form (boys/accuracy.hpp)
 /// — the entry's arithmetic with a different division of its ladder steps, all
 /// three certified, kDefaultDeviceDivisionForm unless the caller names another; the
-/// \c form parameter of each entry below names it. One entry carries a second
-/// axis on top of it: the f32 single entry's region-B exponential
-/// is a certified choice of arithmetic — two options, two measured bounds
-/// (boys::RegionBExp in boys_device_tables.hpp) — where every other difference
-/// between two entries of this surface is the shape (a different entry). The device-callable
+/// \c form parameter of each entry below names it. One axis is a certified choice of
+/// arithmetic carried by many entries rather than a shape: the region-B exponential
+/// — two options, two measured bounds (boys::RegionBExp in boys_device_tables.hpp),
+/// and nothing substitutes one for the other. Where a lane carries both members both
+/// are entries of this surface, each named in the paragraph above (\c SingleF64
+/// beside \c SingleF64Fast); the f32 single entry spells the same choice as a
+/// template argument instead. The device-callable
 /// single entry of the same precision takes the same option, as a template
 /// argument, so the two lanes' f32 single entries carry one choice between them.
 ///
@@ -327,8 +346,11 @@ public:
         DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
-    /// the region-B exponential is the axis this class reads, and a policy naming
-    /// the member the class has no kernel for is a compile error naming it.
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF32 at \c RegionBExp::kAccurate,
+    /// \c AllNF32Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
     ///
     /// \tparam Policy a policy naming a combination this class has a kernel for.
     ///   Defaults to this build's row for the class.
@@ -367,8 +389,10 @@ public:
     /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
     /// the kernel \c Policy names, chosen while the call site compiles, run at the
     /// policy's division form. The region-B exponential is the axis this class
-    /// reads; a policy naming the member the class has no kernel for is a compile
-    /// error naming it.
+    /// reads, and the class carries a kernel at both its members — \c SingleF64 at
+    /// \c RegionBExp::kAccurate, \c SingleF64Fast at \c RegionBExp::kFast — so a
+    /// policy naming either reaches that member's entry. A value outside
+    /// \c RegionBExp is a compile error naming it.
     ///
     /// \tparam Policy a policy naming a combination this class has a kernel for.
     ///   Defaults to this build's row for the class.
@@ -1649,8 +1673,11 @@ public:
         DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
-    /// the region-B exponential is the axis this class reads, and a policy naming
-    /// the member the class has no kernel for is a compile error naming it.
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF64 at \c RegionBExp::kAccurate,
+    /// \c AllNF64Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
     ///
     /// \tparam Policy a policy naming a combination this class has a kernel for.
     ///   Defaults to this build's row for the class.
@@ -1781,8 +1808,10 @@ public:
     /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
     /// the kernel \c Policy names, chosen while the call site compiles, run at the
     /// policy's division form. The region-B exponential is the axis this class
-    /// reads; a policy naming the member the class has no kernel for is a compile
-    /// error naming it.
+    /// reads, and the class carries a kernel at both its members — \c SingleF16 at
+    /// \c RegionBExp::kAccurate, \c SingleF16Fast at \c RegionBExp::kFast — so a
+    /// policy naming either reaches that member's entry. A value outside
+    /// \c RegionBExp is a compile error naming it.
     ///
     /// \tparam Policy a policy naming a combination this class has a kernel for.
     ///   Defaults to this build's row for the class.
@@ -1866,8 +1895,11 @@ public:
         DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
-    /// the region-B exponential is the axis this class reads, and a policy naming
-    /// the member the class has no kernel for is a compile error naming it.
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF16 at \c RegionBExp::kAccurate,
+    /// \c AllNF16Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
     ///
     /// \tparam Policy a policy naming a combination this class has a kernel for.
     ///   Defaults to this build's row for the class.
@@ -2993,6 +3025,25 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kAllOrders, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllOrdersBf16WithPolicy(
+        const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
     /// The bfloat16 counterparts of the float lane's other bodies: each entry
     /// below computes what the float entry of the same name computes
     /// (AllOrdersF32Narrow and the family beside it), at the same tables, the
@@ -3770,6 +3821,44 @@ public:
         void* stream,
         DivisionForm form = kDefaultDeviceDivisionForm);
 
+    /// The bfloat16 single class reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class reads,
+    /// and the class carries a kernel at both its members — \c SingleBf16 at
+    /// \c RegionBExp::kAccurate, \c SingleBf16Fast at \c RegionBExp::kFast — so a policy
+    /// naming either reaches that member's entry. A value outside \c RegionBExp is a
+    /// compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kSingle, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus SingleBf16WithPolicy(
+        const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
+    /// The bfloat16 all-N class reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// as \c SingleBf16WithPolicy, over the all-N shape's kernel \c AllNBf16 and its
+    /// \c RegionBExp::kFast counterpart \c AllNBf16Fast.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllNBf16WithPolicy(
+        int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
 #endif // BoysFp16
 };
 
@@ -3788,10 +3877,73 @@ public:
 /// \ingroup boys
 std::string FormatDeviceArithmeticStatement();
 
+#if BoysFp16
+/// \cond
+namespace detail {
+
+/// The region-B exponential a bf16 policy member's refusal arm is instantiated on, so that a value
+/// outside the enumeration fails the build at that arm rather than being answered by the last one.
+/// The reading boys_cuda_policy.hpp's \c ExpTag carries, declared here for the members below.
+template <RegionBExp kExp>
+struct Bf16ExpTag {};
+
+} // namespace detail
+/// \endcond
+
+/// The bfloat16 single class reached by naming a policy: the entry, its bound and its parameter
+/// contract are `BoysCuda::SingleBf16` and `BoysCuda::SingleBf16Fast` as this header declares
+/// them, and this overload is the member the policy's region-B exponential names, run at the
+/// policy's division form.
+template <EvalPolicyLike Policy>
+BoysStatus BoysCuda::SingleBf16WithPolicy(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate)
+    {
+        return BoysCuda::SingleBf16(n, x, out, count, stream, Policy::kDivision);
+    }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::SingleBf16Fast(n, x, out, count, stream, Policy::kDivision);
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::Bf16ExpTag<Policy::kRegionBExp>>,
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
+        return BoysStatus::kDeviceError;
+    }
+}
+
+/// The bfloat16 all-N class reached by naming a policy, on the reading above.
+template <EvalPolicyLike Policy>
+BoysStatus BoysCuda::AllNBf16WithPolicy(
+    int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate)
+    {
+        return BoysCuda::AllNBf16(nmax, x, out, count, stream, Policy::kDivision);
+    }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::AllNBf16Fast(nmax, x, out, count, stream, Policy::kDivision);
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::Bf16ExpTag<Policy::kRegionBExp>>,
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
+        return BoysStatus::kDeviceError;
+    }
+}
+#endif // BoysFp16
+
 } // namespace boys
 
 // The policy-templated members declared above - each class's entry named <Entry>WithPolicy - their
 // definitions and the dispatch rule live in boys_cuda_policy.hpp, included last so a member's
-// definition sees its class complete. A unit including this header gets the layer with its surface,
-// and a caller who names the policy header first gets the same.
+// definition sees its class complete; the bf16 classes' members are defined above. A unit that
+// includes this header gets the layer with its surface, in either include order.
 #include "boys/boys_cuda_policy.hpp"
