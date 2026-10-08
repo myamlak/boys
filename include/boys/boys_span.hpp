@@ -44,8 +44,7 @@ namespace boys {
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
-inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
-{
+inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept {
     BoysAllOrders<Policy>(nmax, x, out.data());
 }
 
@@ -58,9 +57,10 @@ inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
-inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
-                       std::size_t stride = 1) noexcept
-{
+inline void BoysFixedN(int n,
+                       std::span<const double> x,
+                       std::span<double> out,
+                       std::size_t stride = 1) noexcept {
     BoysFixedN<Policy>(n, x.data(), out.data(), x.size(), stride);
 }
 
@@ -73,11 +73,12 @@ inline void BoysFixedN(int n, std::span<const double> x, std::span<double> out,
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
-inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
-                     std::span<std::size_t> workspace = {}) noexcept
-{
-    BoysAllN<Policy>(nmax, x.data(), out.data(), x.size(),
-                                          workspace.empty() ? nullptr : workspace.data());
+inline void BoysAllN(int nmax,
+                     std::span<const double> x,
+                     std::span<double> out,
+                     std::span<std::size_t> workspace = {}) noexcept {
+    BoysAllN<Policy>(
+        nmax, x.data(), out.data(), x.size(), workspace.empty() ? nullptr : workspace.data());
 }
 
 /// F_0(x_i) through F_{n[i]}(x_i), each argument at its own top order; see
@@ -89,9 +90,9 @@ inline void BoysAllN(int nmax, std::span<const double> x, std::span<double> out,
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
-inline void BoysAllNAtOrders(std::span<const int> n, std::span<const double> x,
-                             std::span<double> out) noexcept
-{
+inline void BoysAllNAtOrders(std::span<const int> n,
+                             std::span<const double> x,
+                             std::span<double> out) noexcept {
     BoysAllNAtOrders<Policy>(n.data(), x.data(), out.data(), x.size());
 }
 
