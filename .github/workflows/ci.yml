@@ -565,12 +565,16 @@ jobs:
           .venv/bin/python tools/gen_entry_aliases.py --check
       # The build-defaults round trip: a seam is derived from the committed option-probe report, a
       # build is configured against it, and that build's suite has to stay green. The two
-      # build-defaults legs of the windows job configure against a committed fixture, which is a
+      # build-defaults steps of the windows job configure against a committed fixture, which is a
       # seam a person wrote; this is the one step that puts the emitter's own output through a
-      # compiler, and a seam no build accepts is a default no consumer can be handed.
+      # compiler, and a seam no build accepts is a default no consumer can be handed. It runs on
+      # this leg and not the gcc one because it configures and builds a whole tree of its own, and
+      # the gcc Release leg already carries the generator - the longest step in the matrix - by
+      # about forty minutes of a three-hour limit. Its tool needs nothing but the standard library,
+      # so this leg needs no virtual environment to run it.
       - name: Build defaults (a seam emitted from the report, built and tested)
-        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
-        run: .venv/bin/python tools/check_defaults_round_trip.py --check --work build-defaults-round-trip
+        if: ${{ always() && matrix.compiler == 'clang' && matrix.build_type == 'Release' }}
+        run: python3 tools/check_defaults_round_trip.py --check --work build-defaults-round-trip
       # tests/data/boys_accuracy_gate_reference.csv is the grid every accuracy
       # claim in this tree is measured against: the CPU gate, the CUDA device
       # gate and the bounds printed beside them all read it, and no step here
