@@ -155,4 +155,6 @@ guarantees, the settings that select one, and the measurements behind the figure
 **[docs/specification.md](docs/specification.md)**, and none of it is needed to make your first call.
 The words that page uses — *lane*, *region*, *route*, *scheme*, *axis*, *gate* — are defined on the
 documentation's landing page, together with the full API reference:
-<https://myamlak.github.io/boys/>.
+<https://myamlak.github.io/boys/>. **[docs/architecture.md](docs/architecture.md)** is the map for a
+reader working in the tree rather than calling it: which file implements what, and which test holds
+each thing to its contract.
