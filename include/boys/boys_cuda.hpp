@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/status.hpp"
 #include "boys/boys_cuda_muladd.hpp"
 #include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
@@ -23,18 +24,10 @@
 
 namespace boys {
 
-/// Result status of the CUDA lane entry points.
-///
-/// The CUDA lane is the one fallible surface of this library: table
-/// uploads, parameter validation, and launches report through this status
-/// (never exceptions). \c kSuccess is 0. The enum carries no payload —
-/// when \c kDeviceError is returned the caller can use the CUDA runtime's
-/// own error reporting (cudaGetLastError, stream capture) for the detail.
-enum class BoysStatus {
-    kSuccess = 0, ///< the call succeeded
-    kInvalidArgument, ///< a parameter was invalid (see the entry's contract)
-    kDeviceError, ///< a CUDA operation failed
-};
+// The status the CUDA lane's entry points report, from boys/status.hpp above: one enum for the
+// whole library rather than one per lane, so a host `*Checked` call and a CUDA call are compared
+// against the same values. It carries no payload - on `kDeviceError` the caller has the CUDA
+// runtime's own reporting (cudaGetLastError, stream capture).
 
 // The device option space's rows, one per option of the surface below, are in boys_cuda_options.hpp
 // and not here: the table has two readers, this header's entries and the nvcc-compiled units of

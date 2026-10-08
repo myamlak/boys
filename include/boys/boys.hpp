@@ -11,6 +11,7 @@
 
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
+#include "boys/status.hpp"
 #include "boys/boys_transform.hpp"
 #include "boys/version.hpp"
 
@@ -1100,6 +1101,21 @@ void BoysAllOrdersWithRoute(
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
 double BoysSingle(int n, double x) noexcept;
 
+/// F_n(x) in double precision, refusing an argument outside the contract instead of running with
+/// it - \c BoysSingle with a check in front. The unchecked entry is faster and is what a caller
+/// with a proof of its own arguments should use; this one is for the caller who has none.
+///
+/// \tparam Policy as \c BoysSingle.
+/// \param n     order, 0..kMaxBoysOrder
+/// \param x     argument, >= 0 and not NaN
+/// \param out   written with F_n(x) on success and left untouched otherwise
+/// \returns     \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument when the contract is
+///              broken. Every value is written or none is.
+///
+/// \ingroup boys
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
+BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
+
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract - the
 /// \c "double batch" row of the table in the file preamble:
 /// |F - F| <= 5.5e-14 per value in every region.
@@ -1336,6 +1352,35 @@ void BoysAllN(
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
+
+/// The checked overloads of the four batch shapes. Each validates the whole call before it
+/// evaluates anything, so **a refused call writes nothing** - a caller that tests the status is
+/// never looking at a half-written array. A batch that is refused names the element that was
+/// refused in \p badIndex, because "some argument in these four million was a NaN" is not a
+/// report a caller can act on.
+///
+/// The scan is one comparison per element against an evaluation that is orders of magnitude more
+/// work, so it is not what the call costs. The unchecked entries beside them are unchanged.
+///
+/// \ingroup boys
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
+BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept;
+
+/// \copydoc BoysAllOrdersChecked
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
+BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t count,
+                             std::size_t stride, std::size_t* badIndex = nullptr) noexcept;
+
+/// \copydoc BoysAllOrdersChecked
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
+BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t count,
+                           std::size_t* workspace = nullptr,
+                           std::size_t* badIndex = nullptr) noexcept;
+
+/// \copydoc BoysAllOrdersChecked
+template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
+BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, std::size_t count,
+                                   std::size_t* badIndex = nullptr) noexcept;
 
 /// Whether the packed region-A lane serves a call whose policy names this
 /// scheme.

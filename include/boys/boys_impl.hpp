@@ -4283,6 +4283,18 @@ double BoysSingle(int n, double x) noexcept {
 }
 
 template <EvalPolicyLike Policy>
+BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept {
+    // `!(x >= 0.0)` and not `x < 0.0`: a NaN fails every comparison, and a NaN is exactly the
+    // argument an upstream 0/0 hands a caller who has no way to know it is coming.
+    if (out == nullptr || n < 0 || n > kMaxBoysOrder || !(x >= 0.0)) {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    *out = detail::BoysSingleImpl<Policy>(n, x);
+    return BoysStatus::kSuccess;
+}
+
+template <EvalPolicyLike Policy>
 void BoysAllOrders(int nmax, double x, double* out) noexcept {
     detail::BoysAllOrdersImpl<Policy>(nmax, x, out);
 }
@@ -4310,6 +4322,96 @@ void BoysAllN(int nmax, const double* x, double* out, std::size_t count, BoysSor
 template <EvalPolicyLike Policy>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept {
     detail::BoysAllNAtOrdersImpl<Policy>(n, x, out, count);
+}
+
+// The checked overloads of the five shapes. Each validates the whole call before evaluating
+// anything, so a refused call writes nothing: a caller that tests the status cannot be looking at
+// a half-written array. The scan is O(count) against an evaluation that is O(count * nmax), so it
+// is not what the call costs.
+
+/// Whether an argument the entries require to be non-negative and not NaN is one.
+inline bool AcceptableArgument(double x) noexcept {
+    // `!(x >= 0.0)` and not `x < 0.0`: a NaN fails every comparison, and a NaN from an upstream
+    // 0/0 is exactly the argument a caller has no way to see coming.
+    return x >= 0.0;
+}
+
+/// The order a batch entry was given, and the one it accepts.
+inline bool AcceptableOrder(int n) noexcept {
+    return n >= 0 && n <= kMaxBoysOrder;
+}
+
+template <EvalPolicyLike Policy>
+BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept {
+    if (out == nullptr || !AcceptableOrder(nmax) || !AcceptableArgument(x)) {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    detail::BoysAllOrdersImpl<Policy>(nmax, x, out);
+    return BoysStatus::kSuccess;
+}
+
+template <EvalPolicyLike Policy>
+BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t count,
+                             std::size_t stride, std::size_t* badIndex) noexcept {
+    if (x == nullptr || out == nullptr || !AcceptableOrder(n)) {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!AcceptableArgument(x[i])) {
+            if (badIndex != nullptr) {
+                *badIndex = i;
+            }
+
+            return BoysStatus::kInvalidArgument;
+        }
+    }
+
+    detail::BoysFixedNImpl<Policy>(n, x, out, count, stride);
+    return BoysStatus::kSuccess;
+}
+
+template <EvalPolicyLike Policy>
+BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t count,
+                           std::size_t* workspace, std::size_t* badIndex) noexcept {
+    if (x == nullptr || out == nullptr || !AcceptableOrder(nmax)) {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!AcceptableArgument(x[i])) {
+            if (badIndex != nullptr) {
+                *badIndex = i;
+            }
+
+            return BoysStatus::kInvalidArgument;
+        }
+    }
+
+    detail::BoysAllNImpl<Policy>(nmax, x, out, count, workspace);
+    return BoysStatus::kSuccess;
+}
+
+template <EvalPolicyLike Policy>
+BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, std::size_t count,
+                                   std::size_t* badIndex) noexcept {
+    if (n == nullptr || x == nullptr || out == nullptr) {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    for (std::size_t i = 0; i < count; ++i) {
+        if (!AcceptableOrder(n[i]) || !AcceptableArgument(x[i])) {
+            if (badIndex != nullptr) {
+                *badIndex = i;
+            }
+
+            return BoysStatus::kInvalidArgument;
+        }
+    }
+
+    detail::BoysAllNAtOrdersImpl<Policy>(n, x, out, count);
+    return BoysStatus::kSuccess;
 }
 
 // The combination named in the type and the rung named in the call: the rung
