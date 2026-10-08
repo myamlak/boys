@@ -710,7 +710,7 @@ enum class AccuracyReading : std::uint8_t {
 /// \ingroup boys
 struct AccuracyFigure {
     double value = 0.0; ///< the figure, or 0.0 where none is available
-    bool available = false; ///< whether this revision carries the combination
+    bool available = false; ///< whether the library carries the combination
     AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which of the two figures this is
     const char* source = ""; ///< the table the figure was read from
     const char* reason = ""; ///< why no figure is available, empty where one is
@@ -745,7 +745,7 @@ struct AccuracyFigure {
 /// \param granularity the interval partition
 /// \param form        how the recursion divides
 /// \param exp         which exponential seeds a region-B ladder
-/// \returns the figure, and whether this revision carries the combination
+/// \returns the figure, and whether the library carries the combination
 ///
 /// \ingroup boys
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
@@ -800,7 +800,7 @@ constexpr bool GuaranteeAxesAreEnumerators() noexcept
 /// read from rows rather than from enumerations, and a stated tuple the rows
 /// leave clear is answered by the run-time accessor's own refusal, with its own
 /// sentence and \c available false, rather than by a diagnostic here. No row of
-/// this revision leaves a lane or a partition clear at an enumerator's value, so
+/// the table leaves a lane or a partition clear at an enumerator's value, so
 /// the two answers coincide at every tuple a caller can write out of
 /// enumerators.
 ///
@@ -811,7 +811,7 @@ constexpr bool GuaranteeAxesAreEnumerators() noexcept
 /// \tparam kGranularity the interval partition
 /// \tparam kForm        how the recursion divides
 /// \tparam kExp         which exponential seeds a region-B ladder
-/// \returns the figure, and whether this revision carries the combination
+/// \returns the figure, and whether the library carries the combination
 ///
 /// \ingroup boys
 template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kAxis,
@@ -885,7 +885,7 @@ inline AccuracyFigure DefaultGuarantee() noexcept
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
-/// \returns the figure, and whether this revision carries the combination and
+/// \returns the figure, and whether the library carries the combination and
 ///          measured it
 ///
 /// \ingroup boys
@@ -907,7 +907,7 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
 ///
 /// \ingroup boys
 enum class ToleranceVerdict : std::uint8_t {
-    kNotCarried = 0, ///< this revision does not carry the combination: no verdict and no figures
+    kNotCarried = 0, ///< the library does not carry the combination: no verdict and no figures
     kGuaranteedInside, ///< the bound the combination carries is at or below the request
     kDeliveredInside, ///< the bound is above the request and the measured figure is at or below it
     kOutside, ///< no figure this library holds for the combination is at or below the request
@@ -925,7 +925,7 @@ enum class ToleranceVerdict : std::uint8_t {
 /// where no measured figure is held for the combination - the half lanes - so a
 /// zero \c delivered is never taken for a measurement of nought.
 ///
-/// A combination this revision does not carry returns no figure at all:
+/// A combination the library does not carry returns no figure at all:
 /// \c verdict is \c kNotCarried, both figures are 0.0, \c deliveredKnown is
 /// false, and \c reason carries the library's own sentence for the refusal.
 ///
@@ -964,7 +964,7 @@ struct CombinationCoverage {
 /// \param granularity the interval partition
 /// \param tolerance   the absolute error the caller needs, > 0
 /// \returns           the verdict and the figures it was made on; \c
-///                    kNotCarried, no figures and a reason where this revision
+///                    kNotCarried, no figures and a reason where the library
 ///                    does not carry the combination
 /// \pre               \p tolerance is positive and finite. A request that is
 ///                    zero, negative or not a number is answered \c kOutside
@@ -1362,6 +1362,10 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 /// magnitude more work, so it is not what the call costs, and the unchecked entries beside them
 /// are unchanged.
 ///
+/// A checked entry accepts exactly what its unchecked twin's contract accepts: a batch of no
+/// elements writes nothing, so a null buffer is in contract at \p count zero, and a \p stride the
+/// layout requires to be at least 1 is refused rather than written through.
+///
 /// \tparam Policy  as the unchecked entry of the same shape.
 /// \param nmax     the highest order, 0..kMaxBoysOrder
 /// \param x        the argument, >= 0 and not NaN
@@ -1379,8 +1383,9 @@ BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept;
 /// \param n        the order, 0..kMaxBoysOrder
 /// \param x        the arguments, each >= 0 and not NaN
 /// \param out      written on success and left untouched otherwise
-/// \param count    the number of arguments
-/// \param stride   the distance between the elements the values are written to
+/// \param count    the number of arguments; may be 0 (no writes, and then \p x and \p out may be
+///                 null)
+/// \param stride   the distance between the elements the values are written to, >= 1
 /// \param badIndex written with the index of the first argument that was refused, or left alone
 ///                 when every one of them is in contract. May be null.
 /// \returns        \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
@@ -1430,7 +1435,7 @@ BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, s
 /// The many-argument entries hand their low-order region-A runs to the packed
 /// AVX2 lane where the build has one. That lane holds the Chebyshev coefficients
 /// and the split Clenshaw recurrence, so it serves the split Clenshaw scheme and
-/// no other - which is not the default scheme at this revision, so the lane is
+/// no other - which is not the default scheme, so the lane is
 /// what a call naming \c kSplitClenshaw reaches and not what a call naming no
 /// scheme reaches: a call naming another scheme is answered on the scalar body,
 /// at the same bound and with the same values the per-argument entry returns.

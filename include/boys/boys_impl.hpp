@@ -2798,7 +2798,7 @@ constexpr void RefuseUniformPartition() noexcept
                   "not leave it to the policy's contract members");
 }
 // The rational member over the uniform grid is a fit of this lane's own and it is stored (see
-// RationalFitUniformF32 above), so FloatRouteFit's fall-through no longer reaches a policy naming
+// RationalFitUniformF32 above), so FloatRouteFit's fall-through does not reach a policy naming
 // it: UniformOrderAtF32 dispatches on the route and reads the pairs this lane's grid carries.
 // RationalFit32 would otherwise resolve the grid to the shipped member's cover, another partition's.
 
@@ -2904,8 +2904,8 @@ void BoysFixedNImpl(
                   "fill a lane with - the wide dimension it does have is count, and that is the "
                   "arguments axis");
     assert(n >= 0 && n <= kMaxBoysOrder);
-    assert(x != nullptr);
-    assert(out != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
     assert(stride >= 1);
 
     // The partition clause is the shared question rather than a statement that this entry refuses
@@ -3216,8 +3216,8 @@ void BoysFixedNF32Impl(
     // refuses the orders axis itself - one order at one argument has no second order to fill a lane
     // with - and a guard here would state the same refusal twice.
     assert(n >= 0 && n <= kMaxBoysOrder);
-    assert(x != nullptr);
-    assert(out != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
     assert(stride >= 1);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -4341,6 +4341,22 @@ inline bool AcceptableOrder(int n) noexcept {
     return n >= 0 && n <= kMaxBoysOrder;
 }
 
+/// Whether a batch's two buffers are usable by a call of `count` elements.
+///
+/// A batch of no elements reads and writes nothing, so a null buffer is in contract there - which
+/// is the layout the unchecked entries state. What a checked entry refuses is a broken contract,
+/// not a null pointer, and the two must agree: a caller that swaps one for the other may not get a
+/// different answer to the same in-contract call.
+inline bool AcceptableBuffers(const void* x, const void* out, std::size_t count) noexcept {
+    return count == 0 || (x != nullptr && out != nullptr);
+}
+
+/// The same, for the shape that also carries an array of orders.
+inline bool AcceptableBuffers(const void* n, const void* x, const void* out,
+                              std::size_t count) noexcept {
+    return count == 0 || (n != nullptr && x != nullptr && out != nullptr);
+}
+
 template <EvalPolicyLike Policy>
 BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept {
     if (out == nullptr || !AcceptableOrder(nmax) || !AcceptableArgument(x)) {
@@ -4354,7 +4370,9 @@ BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept {
 template <EvalPolicyLike Policy>
 BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t count,
                              std::size_t stride, std::size_t* badIndex) noexcept {
-    if (x == nullptr || out == nullptr || !AcceptableOrder(n)) {
+    // `stride == 0` is refused because the layout beside this entry requires stride >= 1: every
+    // element would be written to out[0] and the call would report success.
+    if (!AcceptableOrder(n) || stride == 0 || !AcceptableBuffers(x, out, count)) {
         return BoysStatus::kInvalidArgument;
     }
 
@@ -4375,7 +4393,7 @@ BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t co
 template <EvalPolicyLike Policy>
 BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t count,
                            std::size_t* workspace, std::size_t* badIndex) noexcept {
-    if (x == nullptr || out == nullptr || !AcceptableOrder(nmax)) {
+    if (!AcceptableOrder(nmax) || !AcceptableBuffers(x, out, count)) {
         return BoysStatus::kInvalidArgument;
     }
 
@@ -4396,7 +4414,7 @@ BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t c
 template <EvalPolicyLike Policy>
 BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, std::size_t count,
                                    std::size_t* badIndex) noexcept {
-    if (n == nullptr || x == nullptr || out == nullptr) {
+    if (!AcceptableBuffers(n, x, out, count)) {
         return BoysStatus::kInvalidArgument;
     }
 
@@ -4537,8 +4555,8 @@ void BoysFixedNF16(
                   "lane's arithmetic");
 
     assert(n >= 0 && n <= kMaxBoysOrder);
-    assert(x != nullptr);
-    assert(out != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
     assert(stride >= 1);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -4613,8 +4631,8 @@ void BoysFixedNBf16(
                   "lane's arithmetic");
 
     assert(n >= 0 && n <= kMaxBoysOrder);
-    assert(x != nullptr);
-    assert(out != nullptr);
+    assert(count == 0 || x != nullptr);
+    assert(count == 0 || out != nullptr);
     assert(stride >= 1);
 
     for (std::size_t i = 0; i < count; ++i)
