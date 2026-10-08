@@ -102,7 +102,7 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 353022a
+accuracy gate, revision b41f3fa
   reference: C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -699,7 +699,7 @@ device lanes : 4 of 4 measured on a card
   fp32-device, chebyshev, split-clenshaw, uniform, arguments    170082         0 1.19971e-07   1.5e-07       certified and published
   fp32-device, chebyshev, split-clenshaw, uniform, orders       170082         0 1.19971e-07   1.5e-07       certified and published
   fp32-device, chebyshev, horner, shipped, arguments            170082         0 1.48716e-07   1.5e-07       certified and published
-  fp32-device, chebyshev, horner, shipped, orders               170082         0 1.28793e-07   1.5e-07       certified and published
+  fp32-device, chebyshev, horner, shipped, orders               170082         0 7.175e-08     1.5e-07       certified and published
   fp32-device, chebyshev, horner, narrow, arguments             170082         0 1.48716e-07   1.5e-07       certified and published
   fp32-device, chebyshev, horner, narrow, orders                170082         0 6.89097e-08   1.5e-07       certified and published
   fp32-device, chebyshev, horner, uniform, arguments            170082         0 1.19971e-07   1.5e-07       certified and published
@@ -1364,15 +1364,15 @@ the one the launched all-orders rows of their lane name, and each cell is
     fp32                        orders        12245904         3     8163936      799308           0
     fp16                        orders        12245904         3     8163936         642           0
     bf16                        orders        12245904         3     8163936        9792           0
-    fp32-device                 arguments      2040984         3     1360656      194120           0
-    fp32-device                 orders         2040984         3     1360656      133158           0
+    fp32-device                 arguments      2040984         3     1360656      194116           0
+    fp32-device                 orders         2040984         3     1360656      133154           0
     fp64-device                 arguments      2040984         3     1360656      302586           0
     fp64-device                 orders         2040984         3     1360656      250542           0
-    fp16-device                 arguments      2040984         3     1360656          98           0
-    fp16-device                 orders         2040984         3     1360656          82           0
-    bf16-device                 arguments      2040984         3     1360656        1711           0
-    bf16-device                 orders         2040984         3     1360656        1711           0
-    total                                                           97967232     7653510           0
+    fp16-device                 arguments      2040984         3     1360656          99           0
+    fp16-device                 orders         2040984         3     1360656          83           0
+    bf16-device                 arguments      2040984         3     1360656        1710           0
+    bf16-device                 orders         2040984         3     1360656        1710           0
+    total                                                           97967232     7653502           0
   OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
