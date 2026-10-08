@@ -142,18 +142,19 @@ struct BoysDeviceTables {
     const float* bSeedCoeffs32 = nullptr; ///< the region-B seed's coefficients
     int bSeedDeg32 = 0;                   ///< the region-B seed's degree
 
-    /// Reserved: the removed accuracy rung's residency scalar. Always null — the
-    /// device image exports null into this slot and this handle leaves the field at
-    /// the default its type gives it — and read by no entry.
+    /// Reserved: the residency scalar of the accuracy rung the library does not
+    /// offer. Always null — the device image exports null into this slot and this
+    /// handle leaves the field at the default its type gives it — and read by no
+    /// entry.
     const double* relaxedRung = nullptr;
-    /// [lane] Reserved: the removed rung's region-A effective degrees, in the
-    /// indexing the piece tables above use — piece \c p of order \c n is the entry
-    /// \c pieceStart[n] + \c p. Always null, read by no entry, indexed by
-    /// BoysDeviceLane as every per-lane table here is.
+    /// [lane] Reserved: the region-A effective degrees of the accuracy rung the
+    /// library does not offer, in the indexing the piece tables above use — piece
+    /// \c p of order \c n is the entry \c pieceStart[n] + \c p. Always null, read by
+    /// no entry, indexed by BoysDeviceLane as every per-lane table here is.
     const int* relaxedDegA[6] = {};
-    /// [lane] Reserved: the removed rung's region-B effective degrees, of the shape
-    /// a per-lane table takes here — kMaxBoysOrder + 1 entries per lane, indexed by
-    /// BoysDeviceLane. Always null and read by no entry.
+    /// [lane] Reserved: the region-B effective degrees of the accuracy rung the library
+    /// does not offer, of the shape a per-lane table takes here — kMaxBoysOrder + 1
+    /// entries per lane, indexed by BoysDeviceLane. Always null and read by no entry.
     const int* relaxedDegB[6] = {};
 
     /// The uniform route's table: one grid of equal intervals over [0, kFlatHi),
@@ -196,11 +197,11 @@ struct BoysDeviceTables {
     const double* narrowBEdges = nullptr;
     const double* narrowBCoeffs = nullptr;     ///< region B's seed, Chebyshev form
     const double* narrowBMonoCoeffs = nullptr; ///< region B's seed, monomial form
-    /// [piece] Reserved: region A's degree at the removed rung. Always null, read
-    /// by no entry.
+    /// [piece] Reserved: region A's degree at the accuracy rung the library does not
+    /// offer. Always null, read by no entry.
     const int* narrowRelaxedDegA = nullptr;
     /// [piece * (kMaxBoysOrder + 1) + order] Reserved: region B's degrees at the
-    /// removed rung. Always null, read by no entry.
+    /// accuracy rung the library does not offer. Always null, read by no entry.
     const int* narrowRelaxedDegB = nullptr;
     /// [piece] The monomial form of the same reserved field. Always null, read by
     /// no entry.
@@ -247,13 +248,13 @@ struct BoysDeviceTables {
     const int* ratDenOffset = nullptr;
     const int* ratNumDeg = nullptr; ///< [piece] the stored numerator degree
     const int* ratDenDeg = nullptr; ///< [piece] the stored denominator degree
-    /// [2 * piece] Reserved: the seed's own reading at the removed rung. Always
-    /// null, read by no entry.
+    /// [2 * piece] Reserved: the seed's own reading at the accuracy rung the library
+    /// does not offer. Always null, read by no entry.
     const int* ratSeedDeg = nullptr;
     const double* ratBNum = nullptr; ///< region B's seed numerator
     const double* ratBDen = nullptr; ///< region B's seed denominator
-    /// [2] Reserved: region B's seed degrees at the removed rung, numerator then
-    /// denominator. Always null, read by no entry.
+    /// [2] Reserved: region B's seed degrees at the accuracy rung the library does
+    /// not offer, numerator then denominator. Always null, read by no entry.
     const int* ratRelaxedDegB = nullptr;
     const float* ratBNum32 = nullptr; ///< region B's seed numerator, float lane
     const float* ratBDen32 = nullptr; ///< region B's seed denominator, float lane
@@ -276,8 +277,8 @@ struct BoysDeviceTables {
     const int* narrowRatBOffset = nullptr;
     const int* narrowRatBStoredNumDeg = nullptr; ///< [piece] the stored numerator degree
     const int* narrowRatBDenDeg = nullptr;       ///< [piece] the stored denominator degree
-    /// [2 * piece] Reserved: region B's degrees at the removed rung. Always null,
-    /// read by no entry.
+    /// [2 * piece] Reserved: region B's degrees at the accuracy rung the library
+    /// does not offer. Always null, read by no entry.
     const int* narrowRatRelaxedDegB = nullptr;
 
     /// The rational route on the narrow partition one lane down: region B's
@@ -290,10 +291,10 @@ struct BoysDeviceTables {
     const int* narrowRatBDenDeg32 = nullptr;       ///< [piece] denominator degree
 
     /// [piece * (kMaxBoysOrder + 1) + order] Reserved: the float narrow
-    /// partition's cut of region B's seed at the removed rung, in the Chebyshev
-    /// form of that seed. Always null, read by no entry. Region A carries no table
-    /// beside it — the seed lane is the double lane's narrow pieces, whose reserved
-    /// cut is \c narrowRelaxedDegA above.
+    /// partition's cut of region B's seed at the accuracy rung the library does not
+    /// offer, in the Chebyshev form of that seed. Always null, read by no entry.
+    /// Region A carries no table beside it — the seed lane is the double lane's
+    /// narrow pieces, whose reserved cut is \c narrowRelaxedDegA above.
     const int* narrowRelaxedDegB32 = nullptr;
     /// The same table for the monomial form of the same seed. Always null, read by
     /// no entry.
