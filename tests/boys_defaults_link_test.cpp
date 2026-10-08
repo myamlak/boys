@@ -1,23 +1,24 @@
 /// \file
 /// The defaults a caller reaches by naming nothing — instantiated, and linked.
 ///
-/// WHY THIS FILE EXISTS. On 2026-10-02 two pushes broke the build in the same way,
-/// and no test in this tree would have caught either before it reached CI:
+/// WHY THIS FILE EXISTS. A default that names a combination the library cannot serve
+/// for every caller fails to link at the call site that names nothing, while the
+/// table and the header both read complete. Two shapes of it:
 ///
-///   * a row named `PackAxis::kOrders`, whose body the library holds OUT OF LINE at a
-///     fixed list of instantiations. A caller naming no policy therefore linked only
-///     where that list held the policy the default resolves to, and failed at every
-///     other — and the failure is a link error at the *call site*, not at the table,
-///     so the row that caused it reads as correct;
-///   * three single-precision entries were declared `extern template` at a policy the
-///     default now resolves to. An extern declaration PROMISES a definition held
-///     elsewhere; the library holds a fixed list, and the instantiation a default
-///     call site selects is not knowably in it. Four consumer targets became
-///     unresolved externals.
+///   * a row whose body the library holds OUT OF LINE at a fixed list of
+///     instantiations: a caller naming no policy links only where that list holds the
+///     policy the default resolves to, and fails at every other — and the failure is a
+///     link error at the *call site*, not at the table, so the row that causes it reads
+///     as correct;
+///   * an entry declared `extern template` at a policy the default resolves to. An
+///     extern declaration PROMISES a definition held elsewhere; the library holds a
+///     fixed list, and the instantiation a default call site selects is not knowably
+///     in it, so the consumer target is left with unresolved externals.
 ///
 /// Both are one defect: **a default that names a combination the library cannot serve
 /// for every caller.** It is invisible in the table, invisible in the header, and it
-/// breaks every call site that names nothing. Nothing in the tree checked it.
+/// breaks every call site that names nothing. This file is the consumer that links
+/// those call sites.
 ///
 /// WHAT THIS FILE DOES. It is a consumer: it includes the public header and nothing
 /// else, and for every entry that takes a class default it calls that entry NAMING NO

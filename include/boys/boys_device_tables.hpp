@@ -183,8 +183,9 @@ struct BoysDeviceTables {
     /// own edge table rather than the two edges of one fit.
     ///
     /// \c narrowStoredDeg holds the fit's degree per piece, which is the degree
-    /// region A's pieces are read at. The rung's own cuts that stood beside it are
-    /// the reserved fields below: null in every handle, read by no entry.
+    /// region A's pieces are read at. The reserved fields below are this partition's
+    /// degrees at the accuracy rung the library does not offer: null in every handle,
+    /// read by no entry.
     const int* narrowPieceStart = nullptr;
     /// [piece] the index of the piece's first coefficient in \c narrowCoeffs
     const int* narrowPieceOffset = nullptr;
@@ -235,9 +236,10 @@ struct BoysDeviceTables {
     /// The route's degree tables come in pairs — the numerator's degree then the
     /// denominator's — and \c ratNumDeg and \c ratDenDeg hold the degrees the table
     /// was stored at, which is the reading the consuming entry makes. Both are read
-    /// at the flat piece index \c pieceStart[order] + \c piece. The rung's cuts that
-    /// stood beside them (\c ratSeedDeg, \c ratRelaxedDegB and their siblings below)
-    /// are reserved fields: null in every handle, read by no entry.
+    /// at the flat piece index \c pieceStart[order] + \c piece. The reserved fields
+    /// \c ratSeedDeg, \c ratRelaxedDegB and their siblings below are the seed's
+    /// degrees at the accuracy rung the library does not offer: null in every handle,
+    /// read by no entry.
     ///
     /// \c ratBNum and \c ratBDen are region B's single seed pair, read whole at
     /// every order.
@@ -299,10 +301,11 @@ struct BoysDeviceTables {
     /// The same table for the monomial form of the same seed. Always null, read by
     /// no entry.
     const int* narrowMonoRelaxedDegB32 = nullptr;
-    /// [2] Reserved: the float lane's fit route on the coarsest partition had its
-    /// own region-B cut here, the numerator's degree first. Always null, read by no
-    /// entry. The route's float pair is that lane's own fit, so the double lane's
-    /// pair above is a cut of other coefficients and is not read here.
+    /// [2] Reserved: the float lane's fit route on the coarsest partition's own
+    /// region-B degrees at the accuracy rung the library does not offer, the
+    /// numerator's degree first. Always null, read by no entry. The route's float pair
+    /// is that lane's own fit, so the double lane's pair above is a cut of other
+    /// coefficients and is not read here.
     const int* ratRelaxedDegB32 = nullptr;
     /// [2 * piece] Reserved: the same pair's degrees on the narrow partition.
     /// Always null, read by no entry.

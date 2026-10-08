@@ -202,7 +202,7 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///
 /// The bare approximation is not offered at any multiplier: its failing band is
 /// interior to region B, which a caller cannot name a sub-range of. On the device
-/// that is what the removed residual buys, and on the host what the library
+/// that is what removing the residual buys, and on the host what the library
 /// routine below the cut buys.
 ///
 /// **Which member a call runs when it names none is each target's own**, because

@@ -90,8 +90,8 @@ __global__ void FloorKernel(int* touched) {
 // every kernel and measure the wrong one. The division form is a template argument of every call
 // below for the same reason: the forms a kernel is not run at must be absent from it.
 
-/// The double lane's four entries, and the cheap stand-in the removed-call half
-/// writes in their place.
+/// The double lane's four entries, and the cheap stand-in the half without the Boys
+/// call writes in their place.
 ///
 /// The region-B exponential is the entry's one axis on this lane too, and it is a
 /// template argument here for the same reason it is one on the float lane below:
@@ -665,7 +665,7 @@ BOYS_PROBE_BF16_POLICY_FAST(DevBf16OrdersMonoFast, BoysDeviceAllOrdersBf16Orders
 #undef BOYS_PROBE_LADDER_POLICY_FAST
 
 /// The four shapes, as a template parameter. Every shape writes its whole
-/// output, and the removed-call half writes the same slots with the same
+/// output, and the half without the Boys call writes the same slots with the same
 /// traffic, so the subtraction cancels the stores and leaves the arithmetic -
 /// and, with it, the register cost the entry imposes on the caller's kernel,
 /// which is a real part of what a fused entry costs.

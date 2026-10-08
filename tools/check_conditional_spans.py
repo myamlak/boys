@@ -1,18 +1,15 @@
 #!/usr/bin/env python
 """A construct opened inside a conditional must close inside it, in every branch.
 
-WHY THIS EXISTS. Twice on 2026-10-03 the same defect broke something, in two languages, and the
-author's own build could not see either:
+WHY THIS EXISTS. Two instances of the class stated below, neither of which the build that carries it
+can show:
 
-  * `tests/boys_muladd_route_simd_test.cpp` opened `namespace {` inside `#if BOYS_SIMD_X86` and closed
-    it after the `#endif`. On x86 that balances. On arm64 the branch is skipped, the namespace is never
-    opened, and the closing brace is `error: expected declaration before '}' token`. FIVE CI legs
-    failed - macos arm64, linux-arm64 gcc, windows-arm64 msvc, and both arm64 option-matrix cells -
-    and no x86 leg failed.
-  * A `/// \\cond` ... `/// \\endcond` span in `include/boys/boys.hpp` contained an `#if` whose `#endif`
-    sat outside the span, which doxygen reports as `more #if's than #endif's in \\cond..\\endcond
-    section` and treats as fatal. That failed the Docs step of `linux-x86 gcc Release` for hours while
-    the run was read by its NAME instead of its log.
+  * `namespace {` opened inside `#if BOYS_SIMD_X86` and closed after the `#endif`. On x86 that
+    balances; on arm64 the branch is skipped, the namespace is never opened, and the closing brace is
+    `error: expected declaration before '}' token`. Every arm64 leg fails and no x86 leg does.
+  * A `/// \\cond` ... `/// \\endcond` span containing an `#if` whose `#endif` sits outside the span.
+    Doxygen reports `more #if's than #endif's in \\cond..\\endcond section` and treats it as fatal, so
+    the failure reaches the Docs step's log and not the run's name.
 
 The class is one thing: **a paired construct whose two halves can be separated by a preprocessor
 directive is balanced only under the configuration the author compiled, and the author's

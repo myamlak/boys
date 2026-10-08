@@ -60,8 +60,8 @@
 /// member the entry's own statement of its arithmetic names
 /// (`DeviceEntryAxesOf`/`DevicePartitionOf`, `boys/boys_cuda_options.hpp`). The
 /// four all-orders classes read the route, the scheme, the partition and the
-/// packing axis, because their entries are one entry per member of each bar the
-/// two members a single entry answers (the paragraph below); every
+/// packing axis, because their entries are one entry per member of each axis, bar
+/// the two members a single entry answers (the paragraph below); every
 /// class reads the region-B exponential, and an arm answers a member with the entry
 /// the class's own row at it carries. The one member no class carries an entry at is
 /// the uniform grid's `kFast`, which the table books for no row of any lane, and the

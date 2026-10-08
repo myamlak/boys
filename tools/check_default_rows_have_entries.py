@@ -1,18 +1,17 @@
 #!/usr/bin/env python
 """Hold the defaults table's classes to the entries that carry them.
 
-WHY. This library keeps three hand-maintained lists that must agree, and until now nothing
-checked that they do:
+WHY. This library keeps three hand-maintained lists that must agree:
 
   1. the classes `BOYS_BUILD_DEFAULT_ROWS` carries, in include/boys/boys_build_defaults.hpp;
   2. the entries that accept a class default — the functions whose policy parameter defaults
      to `DefaultPolicy<Precision, Shape>`;
   3. the instantiations the library defines, in the extern lists and the out-of-line bodies.
 
-Every build break of 2026-10-02 came from two of them disagreeing while each looked correct
-from inside the list you were reading. A row for a class no entry reaches is a default nobody
-can ask for, and it is invisible: the table reads complete, the header reads complete, and the
-only symptom is that the class cannot be called. This script checks (1) against (2).
+Two of them can disagree while each reads correct from inside the list you are reading. A row for
+a class no entry reaches is a default nobody can ask for, and it is invisible: the table reads
+complete, the header reads complete, and the only symptom is that the class cannot be called. This
+script checks (1) against (2).
 
 It checks one direction hard and the other one softly:
   * a row whose class nothing reaches - no entry's default, and no unit asking for the class by
