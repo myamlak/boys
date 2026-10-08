@@ -3,11 +3,12 @@
 
 `tests/data/boys_accuracy_gate_run.txt` is a run of the accuracy gate kept as a
 file: the gate's own output, which names the revision it was taken at and prints
-the delivered figure of every lane and region it swept. The README's printed-run
-table is a transcription of such a run, and `tools/check_bound_transcripts.py`
-holds the table's delivered column to this file. That tie is between two records
-- the document and the run - and it cannot see the code, which the file it reads
-says plainly: "a run that has gone stale relative to the code satisfies it".
+the delivered figure of every lane and region it swept.
+`docs/specification.md`'s printed-run table is a transcription of such a run,
+and `tools/check_bound_transcripts.py` holds the table's delivered column to
+this file. That tie is between two records - the document and the run - and it
+cannot see the code, which the file it reads says plainly: "a run that has gone
+stale relative to the code satisfies it".
 
 This check is that half. It reads the revision out of the recorded run and asks
 the repository what has changed since, over the files that decide what the gate
@@ -42,10 +43,10 @@ What this does not do, and why:
     two runs of one revision is a fact about the runner, not about this tree,
     and no recorded run can be held to it. Re-making the run is the reading for
     that, and the reading is a build;
-  * it does not read the documents. Whether the README's table agrees with the
-    run is `tools/check_bound_transcripts.py`'s claim, and the two checks fail
-    apart so that a stale record and a mismatched transcription are not
-    reported as one thing.
+  * it does not read the documents. Whether `docs/specification.md`'s table
+    agrees with the run is `tools/check_bound_transcripts.py`'s claim, and the
+    two checks fail apart so that a stale record and a mismatched transcription
+    are not reported as one thing.
 
 Usage:
     python tools/check_recorded_run.py

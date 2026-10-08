@@ -18,17 +18,17 @@ carries - are all silent ones:
 
 Nothing here is a hand-written list of legs or of checks. The names are read from the first file,
 the legs from the matrix the workflow carries, and the leg names are rendered by
-`tools/gen_platform_table.py` - the same renderer that writes README's supported-platform table,
-because three renderings of one name is how this list's consumers drift apart. The checkers are
-read off the tree rather than named here: a `tools/` script is a check when its name is
-`check_*.py` or when its own argument parser declares a flag whose own words say a run of it exits
-non-zero, and a step carries it when its command invokes it with one of those flags. The spelling
-of that flag is the tree's business and not this file's: most of the tools say it of `--check` and
-one of `--strict`, which is why a declaration spelling its checking mode either of those two is
-read as the check it is without saying anything itself, and a tool that spells it otherwise is
-read on the same terms - the report prints the spellings it read and how many declarations state
-each. The suite run by `ctest` is in scope by the same argument: it is a check
-this tree relies on, and it is the one every leg that builds a binary is built around.
+`tools/gen_platform_table.py` - the same renderer that writes the supported-platform table in
+`docs/specification.md`, because three renderings of one name is how this list's consumers drift
+apart. The checkers are read off the tree rather than named here: a `tools/` script is a check
+when its name is `check_*.py` or when its own argument parser declares a flag whose own words say
+a run of it exits non-zero, and a step carries it when its command invokes it with one of those
+flags. The spelling of that flag is the tree's business and not this file's: most of the tools say
+it of `--check` and one of `--strict`, which is why a declaration spelling its checking mode
+either of those two is read as the check it is without saying anything itself, and a tool that
+spells it otherwise is read on the same terms - the report prints the spellings it read and how
+many declarations state each. The suite run by `ctest` is in scope by the same argument: it is a
+check this tree relies on, and it is the one every leg that builds a binary is built around.
 
 The scope is deliberately wider than the set of checks anyone has in mind: a checker added to
 `tools/` is in scope the moment it lands, and the run that would go quiet is the run this exists

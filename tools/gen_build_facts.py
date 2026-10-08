@@ -31,9 +31,10 @@ import pathlib
 import re
 import sys
 
-# The CI matrix is read in one place, by the tool that generates the README's
-# supported-platform table. Importing it rather than parsing ci.yml a second
-# time keeps one answer to "which legs are there and what runner does each use".
+# The CI matrix is read in one place, by the tool that generates the
+# supported-platform table in docs/specification.md. Importing it rather than
+# parsing ci.yml a second time keeps one answer to "which legs are there and
+# what runner does each use".
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gen_platform_table as platform
 
