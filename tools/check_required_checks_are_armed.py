@@ -9,8 +9,8 @@ carries - are all silent ones:
   * a name in `required-checks.txt` that no leg renders. Branch protection then holds a merge open
     waiting for a status check no job ever posts, and the file reads as though that leg were gated.
     The file's own header states the trap: "a name that matches nothing is silently unenforced".
-  * a checker under `tools/` that no required leg runs, because its step was deleted, or edited so
-    that it no longer invokes the tool, or scoped by an `if:` to a leg outside the list. The leg
+  * a checker under `tools/` that no required leg runs, because its step is missing, or is edited so
+    that it does not invoke the tool, or scoped by an `if:` to a leg outside the list. The leg
     still runs, still prints and still passes, and a red one stops no merge.
   * a `--leg` argument that names a rendering of no leg of its own job. The comparison it feeds
     does not fail on an unknown leg, so a renamed job beside a stale argument is a green run
@@ -116,6 +116,13 @@ LEG_ARG = re.compile(r'--leg\s+"([^"]*)"')
 # invoke" - which is the behaviour that makes the list worth keeping empty rather than
 # stale. A check that cannot be armed yet belongs here with its reason; none now does.
 UNARMED = {
+    "check_all.py": (
+        "it is the suite, not a check: its input is every other checker, and every one of them has "
+        "a step of its own above. A step here would run each of them a second time in the same leg "
+        "to reach the same verdict, and a red run would name this tool rather than the check that "
+        "failed. It exists for the contributor who wants one command before a pull request, which "
+        "is a machine with a working tree and not a leg"
+    ),
     "check_compiles_here.py": (
         "in the mode it is armed in its input is the working tree's own change against HEAD, and "
         "a CI checkout has no change. The legs that build compile every source the tree carries "

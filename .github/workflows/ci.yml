@@ -790,6 +790,15 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_comments_are_brief.py --check
+      # A document describes what is true, and never what used to be true, what is still owed, or
+      # what an earlier reader got wrong. The phrases that carry those - "until this revision", "is
+      # owed", "no longer", the author's own "I" - are read here. String literals are not read: a
+      # sentence the program prints is output, and the gate's own verdict line says "at this
+      # revision" because that is what it means.
+      - name: Docs (the prose describes the present)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_source_narrative.py --check
       # The two consumer documents quote what the examples print, and nothing read those runs back:
       # the ctest legs run every example (`boys-example-*`) and compare nothing, and no tool read an
       # example's stdout at all - so a change that moved a printed digit left README.md and
