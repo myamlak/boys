@@ -563,6 +563,14 @@ jobs:
           # device option space reach one kernel. It is derived from the entries' own bodies, so
           # this is what notices a row that starts or stops being a second name for one.
           .venv/bin/python tools/gen_entry_aliases.py --check
+      # The build-defaults round trip: a seam is derived from the committed option-probe report, a
+      # build is configured against it, and that build's suite has to stay green. The two
+      # build-defaults legs of the windows job configure against a committed fixture, which is a
+      # seam a person wrote; this is the one step that puts the emitter's own output through a
+      # compiler, and a seam no build accepts is a default no consumer can be handed.
+      - name: Build defaults (a seam emitted from the report, built and tested)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: .venv/bin/python tools/check_defaults_round_trip.py --check --work build-defaults-round-trip
       # tests/data/boys_accuracy_gate_reference.csv is the grid every accuracy
       # claim in this tree is measured against: the CPU gate, the CUDA device
       # gate and the bounds printed beside them all read it, and no step here

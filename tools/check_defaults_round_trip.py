@@ -14,9 +14,11 @@ WHAT IT DOES, in four steps, each printed with its own exit code:
                   committed option-probe report: one row per class the committed seam keys,
                   carrying the combination that report's run ranked first in that class;
     2. configure  `cmake -DBOYS_BUILD_DEFAULTS=<the emitted seam>` into a scratch build directory,
-                  with `CMAKE_SKIP_INSTALL_RULES=ON`: the emitted seam is a file in the build tree,
-                  and a tree that exports its targets refuses a build-tree path in the exported
-                  include interface, which is a rule about packaging and not about defaults;
+                  with the install rules in force: the seam this build reads is a copy the build
+                  makes of its own, and a tree that exports its targets is entitled to refuse a
+                  build-tree path in the exported include interface. Skipping the install rules
+                  would step around exactly that, and the round trip would then pass over a
+                  configure no consumer of this package can perform;
     3. build      build that tree;
     4. suite      `ctest` in that tree.
 
@@ -340,7 +342,6 @@ def configure_command(options: argparse.Namespace, build: Path, seam: Path) -> l
 
     command += [
         f"-DCMAKE_BUILD_TYPE={options.build_type}",
-        "-DCMAKE_SKIP_INSTALL_RULES=ON",
         f"-DBOYS_BUILD_DEFAULTS={seam}",
     ]
 
@@ -406,6 +407,10 @@ def main(argv: list[str]) -> int:
                         help="the CMake generator, defaulting to the one CMake picks")
     parser.add_argument("--reuse", action="store_true",
                         help="build into a scratch tree that already holds a configured build")
+    parser.add_argument("--check", action="store_true",
+                        help="accepted for the invocation the workflow uses uniformly; this tool "
+                             "has no other mode, so a round trip that fails exits non-zero with "
+                             "or without it")
     parser.add_argument("--control", action="store_true",
                         help="plant a defect in the emitted seam and require the build to fail")
     options = parser.parse_args(argv)

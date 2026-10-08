@@ -265,11 +265,16 @@ if (BOYS_BUILD_DEFAULTS)
     set(BOYS_BUILD_DEFAULTS_DIR "${CMAKE_CURRENT_BINARY_DIR}/boys-build-defaults")
     configure_file("${BOYS_BUILD_DEFAULTS}"
         "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp" COPYONLY)
-    target_include_directories(boys BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
+    target_include_directories(boys BEFORE PUBLIC "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
     # PUBLIC, so every target that links this one inherits it: a translation unit
     # that reaches the committed header instead of the replacement says which
     # build it is in and refuses to compile, rather than resolving one default
-    # while the library's own instantiations resolve another.
+    # while the library's own instantiations resolve another. BUILD_INTERFACE
+    # because the directory is this configure's: exported as it stands it makes
+    # every consumer of the installed package read a path under a build tree
+    # that no longer exists, which CMake refuses at generate time. What an
+    # installed consumer reads instead is the seam the install rules below put
+    # beside the headers - the one this build was compiled against.
     #
     # The seam's identity travels with the replacement: the sha256 of the file the
     # option named. A build input that changes delivered bits has to be able to say
@@ -1621,6 +1626,16 @@ if (BOYS_TOP_LEVEL)
     # destination cannot disagree with the interface the target advertises.
     install(DIRECTORY include/boys
         DESTINATION include)
+
+    # After the directory, so it replaces the committed seam with the one this
+    # build was compiled against: a consumer of this package reads the choices
+    # the library in it was built from, which is what the build facts beside the
+    # headers already state. Installing the committed seam instead would hand a
+    # consumer a header naming seven choices no object file in the package obeys.
+    if (BOYS_BUILD_DEFAULTS)
+        install(FILES "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp"
+            DESTINATION include/boys)
+    endif()
 
     install(EXPORT boysTargets
         FILE boysTargets.cmake
