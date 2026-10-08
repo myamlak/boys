@@ -11,6 +11,7 @@
 
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
+#include "boys/policy.hpp"
 #include "boys/status.hpp"
 #include "boys/boys_transform.hpp"
 #include "boys/version.hpp"
