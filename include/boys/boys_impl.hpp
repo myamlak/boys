@@ -31,9 +31,8 @@ namespace boys {
 
 namespace detail {
 
-// CPUID and OSXSAVE on x86_64, false on every other target. Out of line so the
-// definition below reads one cached answer; not an entry point, and deliberately
-// not declared in the public header.
+// CPUID and OSXSAVE on x86_64, false on every other target. Declared here and
+// defined in the shipped unit; not an entry point, not in the public header.
 bool DetectAvx2() noexcept;
 
 } // namespace detail

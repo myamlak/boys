@@ -50,11 +50,10 @@
 
 namespace boys::detail {
 
-// CPUID + OSXSAVE detection of the AVX2 + FMA scope (the F64/F32 lanes'
-// engine). FMA belongs to the scope, it is not an optional extra: a processor
-// with AVX2 but no FMA would be dispatched into an unimplemented instruction.
-// Defined here rather than in the header: this unit holds the one copy, and the
-// inline test's function-local static calls it once per process.
+// CPUID + OSXSAVE detection of the AVX2 + FMA scope (the F64/F32 lanes' engine).
+// FMA belongs to the scope, not an optional extra: a processor with AVX2 but no
+// FMA would be dispatched into an unimplemented instruction. Defined here, not in
+// the header, so the one copy serves the inline test in every caller's TU.
 bool DetectAvx2() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
