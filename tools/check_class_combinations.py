@@ -509,12 +509,23 @@ def main() -> int:
                         help="the CI spelling; a class whose measured count falls short of the "
                              "combinations it can be instantiated at exits non-zero either way")
     arguments = parser.parse_args()
+
+    # The report is the account of the library this check compares against, so a path that holds
+    # none is a reading it cannot take: `read_text` used to raise FileNotFoundError from here and
+    # the traceback named a line of pathlib rather than the missing report.
+    report_path = pathlib.Path(arguments.report)
+    if not report_path.is_file():
+        print(f"check_class_combinations: missing {report_path} - the option probe's report is "
+              f"read from it, and a class whose combinations are not in it is not a class this "
+              f"check can compare", file=sys.stderr)
+        return 1
+
     root = pathlib.Path(arguments.root).resolve()
     reader = Reader(root, arguments.rev)
 
     print(f"library read at {arguments.rev} ({reader.rev_id()}), never from the working tree")
 
-    report = pathlib.Path(arguments.report).read_text(encoding="utf-8", errors="replace")
+    report = report_path.read_text(encoding="utf-8", errors="replace")
     cardinalities = axes_of(report)
 
     if not cardinalities or len(cardinalities) != 6:

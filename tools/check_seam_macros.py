@@ -11,7 +11,9 @@ silently ignored, and nothing anywhere reported it.
 The check reads the macro names off the seam file and requires each to be expanded somewhere in the
 library's own sources - `include/` and `src/`, not counting the seam file itself, the test fixtures
 that supply replacements for it, or the tooling. A macro with no reader is named and the run exits
-non-zero.
+non-zero. A name that sits in a comment or a string literal is not a reader and is not counted as
+one: what a build reads is the expansion, and the doc comments and the probe's emitted text both
+name these macros without expanding them.
 
 What it does not check, and why: whether the reader is *correct*, and whether a reader that exists
 is reached. Both are compile-time facts that a text check cannot see - a build that moves an axis
@@ -45,6 +47,17 @@ NOT_READERS = (
 DEFINE = re.compile(r"^\s*#\s*define\s+(BOYS_BUILD_DEFAULT_[A-Z_]+)\b", re.MULTILINE)
 PREFIX = "BOYS_BUILD_DEFAULT_"
 
+# A comment or a string literal, matched left to right so that a `//` inside a literal stays part
+# of it. What a reader is here is an expansion the compiler performs, and these two are the places
+# the name can sit without being one: the doc comments in `include/boys/accuracy.hpp` name the
+# macros they document with `\c`, and the device probe emits the seam's own `#define` lines as text.
+NOISE = re.compile(r'"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'|//[^\n]*|/\*.*?\*/', re.S)
+
+
+def without_comments_or_strings(text: str) -> str:
+    """Comments and string literals blanked out, their newlines kept so line numbers survive."""
+    return NOISE.sub(lambda match: "\n" * match.group(0).count("\n") or " ", text)
+
 
 def readers(root: pathlib.Path) -> dict[str, list[str]]:
     """Every expansion of every seam macro, by macro name, in the library's own sources."""
@@ -63,7 +76,7 @@ def readers(root: pathlib.Path) -> dict[str, list[str]]:
             if relative in NOT_READERS:
                 continue
 
-            text = path.read_text(encoding="utf-8", errors="replace")
+            text = without_comments_or_strings(path.read_text(encoding="utf-8", errors="replace"))
 
             for match in re.finditer(rf"\b{PREFIX}[A-Z_]+\b", text):
                 # The definition line is not a use.

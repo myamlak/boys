@@ -54,7 +54,8 @@ Exit status: 0 when every lane member is read by a body or held as an interface
 member; 1 when a member is neither, each named with its lane and the line it is
 declared on; 2 when the input cannot be read - a struct or a body this script
 does not understand is reported rather than skipped, because a parse that
-quietly matches less is a check that quietly passes.
+quietly matches less is a check that quietly passes. A run that is not asked for
+a mode does no work at all and so exits 2 as well, for the same reason.
 """
 
 from __future__ import annotations
@@ -560,7 +561,7 @@ def main(argv: list[str]) -> int:
             "check_lane_members_read: no mode asked for; pass --check to make this a gate",
             file=sys.stderr,
         )
-        return 0
+        return 2
 
     source_path = Path(options.source)
     arithmetic_path = Path(options.arithmetic)

@@ -17,7 +17,7 @@ non-documentation comment carrying more lines than an annotation needs.
     python tools/check_comments_are_brief.py path ...    # named files only
 
 Exit status: 0 with no finding (or without `--check`); 1 when a run exceeds the limit
-and `--check` was asked for.
+and `--check` was asked for, and 1 when a run read no file at all.
 """
 
 from __future__ import annotations
@@ -115,10 +115,12 @@ def main(argv: list[str]) -> int:
 
     findings = []
     spliced = []
+    read = 0
 
     for path in paths:
         if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
             continue
+        read += 1
         for first, length, doc in runs(path):
             if not doc and length > options.limit:
                 findings.append((path, first, length))
@@ -139,6 +141,19 @@ def main(argv: list[str]) -> int:
         except ValueError:
             return str(path)
 
+    # The guard above covers the arguments; this one covers the default walk and a named path that
+    # is not one of the kinds read. Both used to reach the summary as no file at all - the walk
+    # over a tree whose sources are elsewhere printed "0 comment run(s) ... over 0 file(s)" and
+    # exited 0, which is what a clean tree prints. What the summary counts is the files opened.
+    if not read:
+        what = (f"{', '.join(options.paths)} names no source of the kinds this reads"
+                if options.paths else
+                f"the tree at {root} holds no source of the kinds this reads")
+        print(f"check_comments_are_brief: no file was read - {what} "
+              f"({' '.join(SOURCE_SUFFIXES)}), so a clean run would be about nothing. A check that "
+              f"can pass by reading nothing is not a check", file=sys.stderr)
+        return 1
+
     for path, first, length in findings:
         print(f"{shown(path)}:{first}: {length} ordinary comment line(s)")
 
@@ -149,7 +164,7 @@ def main(argv: list[str]) -> int:
     total = len(findings) + len(spliced)
     print(f"check_comments_are_brief: {len(findings)} comment run(s) longer than "
           f"{options.limit} line(s) and {len(spliced)} spliced line comment(s) over "
-          f"{len(paths)} file(s)")
+          f"{read} file(s)")
 
     if options.check and total:
         return 1

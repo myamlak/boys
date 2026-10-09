@@ -408,6 +408,16 @@ def main() -> int:
     )
     parser.parse_args()
 
+    # The two files are where the two lists are, so a tree without them is a reading this script
+    # cannot take rather than one it should traceback on: the paths are resolved from this file's
+    # own location, and a copy of it moved out of the checkout used to die in `read_text`.
+    missing = [path for path in (HEADER, SOURCE) if not path.is_file()]
+    if missing:
+        print(f"check_orders_packed_cells: missing {', '.join(str(path) for path in missing)} - "
+              f"the declared and the instantiated cell lists are read from those two files, so "
+              f"there is nothing here to compare", file=sys.stderr)
+        return 1
+
     try:
         header = cells(
             strip_comments(expand(HEADER.read_text(encoding="utf-8"), HEADER.name)), HEADER.name

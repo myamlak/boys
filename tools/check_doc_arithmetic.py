@@ -43,6 +43,10 @@ allows; "not derivable" never fails, because it is the tool saying the sentence
 does not print the two sides it would need; under --strict a
 "multiplier-unswept" finding also fails. Run with --strict in CI: the tree is
 expected to be clean under it, and that is what makes the gate worth having.
+A run that read no document, or read documents and found no claim in them,
+also exits 1: prose with no claim in it and prose that is entirely correct
+produce the same report, and only the second is a clean set. A name in the
+published set that the tree does not hold is refused for the same reason.
 """
 
 import argparse
@@ -1432,7 +1436,18 @@ def published_set():
     Deduplicated by resolved path: the listed files under docs/ also arrive from
     the glob, and a sentence reported twice reads as two defects and makes the
     counts in the summary line wrong.
+
+    A name in PUBLISHED the tree does not hold is refused rather than left out
+    of the scan. The set is what a reader outside this repository can open, so a
+    run that dropped a deleted document would report the rest as the set it
+    read, and the summary would be smaller and still read as clean.
     """
+    gone = [name for name in PUBLISHED if not (REPO / name).is_file()]
+    if gone:
+        raise SystemExit("check_doc_arithmetic: the published set names "
+                         + ", ".join(gone) + ", and the tree holds no such file. The set is the "
+                         "documents a reader outside this repository can open, so this run is "
+                         "refused rather than made over the ones that are left")
     seen, docs = set(), []
     for path in [REPO / name for name in PUBLISHED] + sorted(
             (REPO / "docs").glob("*.md")):
@@ -1601,6 +1616,18 @@ def main(argv=None):
         raise SystemExit("check_doc_arithmetic: no such file: "
                          + ", ".join(str(p) for p in missing))
     docs = [build_doc(p) for p in paths]
+
+    # Every check below reports a claim it found, so a run that found none prints an empty report
+    # and exits 0 - which is what a run over prose that is entirely correct prints too. The
+    # documents were opened either way, so the count of files is not the reading that separates
+    # them; the claims are, and zero of them is said out loud rather than passed as a clean set.
+    claims = sum(len(find_claims(doc)) for doc in docs)
+    if not claims:
+        print(f"check_doc_arithmetic: read {len(docs)} document(s) and found no claim over the "
+              f"numbers in them. Prose with no claim in it and prose that is entirely correct "
+              f"report the same thing, and only the second is a clean set. A check that can pass "
+              f"by reading nothing is not a check", file=sys.stderr)
+        return 1
 
     findings = []
     for doc in docs:

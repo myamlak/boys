@@ -28,7 +28,8 @@ does. Braces inside string literals and comments are stripped before counting, b
 prints `"{"` is not an unbalanced brace.
 
 Usage:  python tools/check_conditional_spans.py [--check] [files...]
-Exit 0 when every span closes, 1 when one does not. No files given: the tracked C++ and headers.
+Exit 0 when every span closes, 1 when one does not, and 1 when a run read no file at all. No
+files given: the tracked C++ and headers.
 """
 
 from __future__ import annotations
@@ -200,14 +201,27 @@ def main() -> int:
     paths = [os.path.join(REPO, a) if not os.path.isabs(a) else a for a in args] or tracked_files()
 
     findings = []
+    read = []
     for path in paths:
         try:
             with open(path, encoding="utf-8", errors="replace") as handle:
                 raw = handle.read()
         except OSError:
             continue
+        read.append(path)
         findings += cond_span_findings(path, raw)
         findings += branch_findings(path, raw)
+
+    # What the summary counts, and what the guard below reads, is the files this opened - not the
+    # arguments it was given. A named path that is not there is skipped by the `except OSError`
+    # above and an empty tracked set arrives the same way, so both used to print "0 file(s)" and
+    # exit 0: a clean run over nothing, which is the one result this tool must never report.
+    if not read:
+        where = ", ".join(args) if args else f"git ls-files under {' '.join(DEFAULT_GLOBS)}"
+        print(f"check_conditional_spans: no file was read - {where} named no file this could open, "
+              f"so a clean run would be about nothing. A check that can pass by reading nothing is "
+              f"not a check", file=sys.stderr)
+        return 1
 
     if findings:
         print("check_conditional_spans: a construct whose halves a conditional can separate")
@@ -219,7 +233,7 @@ def main() -> int:
         print("  that cannot show the imbalance.")
         return 1
 
-    print(f"check_conditional_spans: {len(paths)} file(s), every conditional branch balances its own "
+    print(f"check_conditional_spans: {len(read)} file(s), every conditional branch balances its own "
           f"braces and every \\cond span closes its own conditionals")
     return 0
 
