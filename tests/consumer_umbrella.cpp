@@ -1069,16 +1069,27 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 /// the entries themselves rather than through the run-time selector. Three readings
 /// make that path an option rather than a name: a policy naming the pair the entry's
 /// own class row carries (the route and the scheme that row names, read off the row
-/// rather than written here) is the entry naming no policy, bit for bit; naming the
-/// OTHER scheme or the OTHER route - whichever member of the axis the class's row does
-/// not carry - changes values the class's own row answers with; and each route's
-/// policy answers exactly what that route's run-time selector answers, which is one
-/// body reached two ways rather than two wirings that happen to agree.
+/// rather than written here) is the entry naming no policy, bit for bit; naming a row
+/// other than the class's own - the OTHER scheme or the OTHER route, whichever member
+/// of the axis the class's row does not carry - changes values the class's own row
+/// answers with, where that axis reaches the class at all; and each route's policy
+/// answers exactly what that route's run-time selector answers, which is one body
+/// reached two ways rather than two wirings that happen to agree.
 ///
 /// Which member is the other one is read off the class's row rather than written here
-/// as Horner or as the rational route: a build whose row moves the scheme moves which
-/// word the other one is, and both readings above are the same two readings at either
-/// setting of the axis.
+/// as Horner or as the rational route, so a build whose row moves the scheme moves
+/// which word the other one is.
+///
+/// The two axes are counted apart, because they do not reach every class alike. Naming
+/// the other ROUTE answers the other stored fit's values, the two routes being two fits
+/// of one function. Naming the other SCHEME changes values only where the class's route
+/// stores the fit in a form its scheme selects: the rational route's numerator and
+/// denominator are monomial and read by Horner, so on that route the scheme reaches this
+/// lane through the region-A seed alone, a double-precision read rounded into a float,
+/// and two summations that agree to a few double ulps answer the same float. The batch
+/// reading below therefore stands on the pair - one axis or the other - and prints both
+/// counts, so a zero on the scheme is visible as the agreement it is and not as a
+/// missing option.
 void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     // The name each entry read below resolves to when no policy is named: its own class's row,
     // the five above where this build's seam carries no row for the class, the row where it
@@ -1105,6 +1116,13 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     constexpr boys::FitRoute kOtherRoute = SingleDefault::kRoute == boys::FitRoute::kChebyshev
                                                ? boys::FitRoute::kRationalMinimax
                                                : boys::FitRoute::kChebyshev;
+    // Per class, as the scheme above is: two classes of one precision carry a route each,
+    // and need not carry the same one. Taken from the single-order row alone, this would
+    // name the batch class's own route whenever the seam gives the two classes different
+    // ones, and the reading below would then compare that class against itself.
+    constexpr boys::FitRoute kOtherBatchRoute =
+        AllOrdersDefault::kRoute == boys::FitRoute::kChebyshev ? boys::FitRoute::kRationalMinimax
+                                                               : boys::FitRoute::kChebyshev;
 
     // Each policy below is one class's row with a single axis replaced, so the reading it
     // carries is about that axis and nothing else about the class.
@@ -1133,7 +1151,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
                          AllOrdersDefault::kDivision,
                          AllOrdersDefault::kRegionBExp>;
     using BatchOtherRoute =
-        boys::EvalPolicy<kOtherRoute,
+        boys::EvalPolicy<kOtherBatchRoute,
                          AllOrdersDefault::kScheme,
                          AllOrdersDefault::kBudget,
                          AllOrdersDefault::kPack,
@@ -1256,9 +1274,18 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "naming the default pair on the batch entry is the call naming no policy, bit for "
             "bit, at every argument of the reference grid");
     Require(report,
-            batchChangedByScheme > 0 && batchChangedByRoute > 0,
-            "the batch entry reads the pair a caller names: another route or scheme changes the "
-            "values it answers with");
+            batchChangedByRoute + batchChangedByScheme > 0,
+            "the batch entry reads a policy a caller names: naming a row other than the one it "
+            "carries changes the values the unnamed call answers with");
+    // The entry's own row is what the unnamed call already is, so the row above that separates
+    // an entry reading its policy from one reading none is the other one, on either axis. Both
+    // counts are printed because the axes do not reach this class alike: the route does, and the
+    // scheme reaches it only through the region-A seed, a double read rounded into a float.
+    std::printf("  the batch entry's other pair: %zu of %zu argument(s) answered differently on "
+                "the route, %zu on the scheme\n",
+                batchChangedByRoute,
+                batchArgs,
+                batchChangedByScheme);
 
     Covered("boys::BoysSingleF32");
     Covered("boys::BoysAllOrdersF32");
