@@ -138,13 +138,6 @@ UNARMED = {
         "so the two are armed together on the machine where a commit is made, and neither is a "
         "leg of the workflow"
     ),
-    "splice_default_rows.py": (
-        "its input is a pair of files no leg produces: the emitted defaults an option-probe run "
-        "writes and the seam they are spliced into. There is no such emitted file in the tree, "
-        "and the run that makes one is the probe - which is the round trip held under condition "
-        "10, whose evaluator is a probe run for keeps and a build configured against the seam it "
-        "emits. Arming this check means arming that round trip, not adding a step here"
-    ),
 }
 
 

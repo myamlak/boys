@@ -563,6 +563,13 @@ jobs:
           # device option space reach one kernel. It is derived from the entries' own bodies, so
           # this is what notices a row that starts or stops being a second name for one.
           .venv/bin/python tools/gen_entry_aliases.py --check
+      # The seam splicer's own control. The tool writes the committed seam, and what it does
+      # with a row it cannot place is what decides whether a seam names the run it came from:
+      # an emission it did not place must be left as the seam carries it, marker and cells
+      # together, and the fixture is a pair that exercises both kinds of row.
+      - name: Seam splicer (the control)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: .venv/bin/python tools/splice_default_rows.py --control
       # The build-defaults round trip: a seam is derived from the committed option-probe report, a
       # build is configured against it, and that build's suite has to stay green. The two
       # build-defaults steps of the windows job configure against a committed fixture, which is a

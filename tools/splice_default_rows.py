@@ -12,36 +12,54 @@ noticed until the emitted file was read beside it. A tool that rewrites the whol
 would have made the same mistake faster, so this one refuses to touch a line that is
 not a row.
 
+**A row the emission states a marker for is a row the emission places, and it is
+written. A row it states none for is a class the emission did not place, and the seam
+keeps its own row for that class.** The marker is the emission's own statement of how
+a row was reached, and a run states one only for a class it measured: the rows an
+emission reaches no marker for are the table in force's own rows, which it writes back
+because a replacement is read instead of that file, and the fallback combinations a
+file states for the classes it ranked no cell of. Either way a row the emission did not
+place is a row it has no measurement of, so the seam's own row is the one that stands,
+cells and marker together.
+
+Rows are matched by class and never by position. A class is the three cells
+`X(device, precision, shape, ...)`, and an emission lists the table in force's rows
+before its own, so the two files run in different orders and a splice by position
+writes one class's row under another class's key.
+
 What it checks, and refuses on:
 
-* every row the emitted file carries it also carries a marker for, or neither;
-* the rows it is about to write are byte-identical to the emitted file's, read back
-  after the write rather than assumed from the write;
-* the number of rows replaced is the number the emitted file states.
+* every row the emission places is written, and the row that arrives is byte-identical
+  to the emission's, read back after the write rather than assumed from the write;
+* a row the emission states no marker for is a class the seam carries, so that nothing
+  the emission states is dropped in silence;
+* no class is carried twice by either file, because one class is one row.
 
 Usage:
 
     python tools/splice_default_rows.py --emitted <file> --seam <file> [--device-only]
     python tools/splice_default_rows.py --emitted <file> --seam <file> --check
+    python tools/splice_default_rows.py --control
 
 Exit status: 0 when the seam carries the emitted rows; 1 when it does not and was not
-asked to change; 2 when the two files cannot be reconciled - a row without a marker,
-a count that disagrees with the emission's own statement.
+asked to change; 2 when the two files cannot be reconciled - a placed row the seam has
+no class for, a row the emission states no marker for and the seam has no class to keep
+for it, or a class one of them carries twice.
 """
 
 from __future__ import annotations
 
 import argparse
+import io
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 # A row and the marker comment over it. A row is `X(...)` and nothing else; the marker
-# is the `/* ... */` run immediately above it, which is where a run states how the row
-# was reached. They are read as a pair because a row without its marker is a row whose
-# provenance a reader cannot check.
-# A row's text once its continuation backslashes are taken off. A row is `X(...)` and
-# nothing else, so a line of prose that happens to start with `X(` is not one.
+# is the `/* ... */` run immediately above it, one complete comment per line, which is
+# where a run states how the row was reached. They are read as a pair because a row the
+# emission states no marker for is a row it did not place.
 ROW = re.compile(r"^\s*X\((?:[^()]|\([^()]*\))*\)\s*$")
 MARKER = re.compile(r"^\s*/\*.*\*/\s*$")
 
@@ -54,6 +72,14 @@ DEVICE = "X(kDevice"
 CONTINUED = "\\"
 ROW_OPENS = re.compile(r"^\s*X\(")
 ROW_CLOSES = re.compile(r"\)\s*$")
+
+# The cells a row is keyed on: the device, the precision lane and the shape. Two rows
+# with the same three are two answers for one class, which is not a table.
+KEY_CELLS = 3
+
+
+class Refusal(Exception):
+    """The two files cannot be reconciled; the message names what is wrong with them."""
 
 
 def content(line: str) -> str:
@@ -116,10 +142,24 @@ def is_device(row: tuple[list[str], list[str]]) -> bool:
     return any(DEVICE in line for line in row[1])
 
 
-def splice(seam_text: str, replacement: list[tuple[list[str], list[str]]], device_only: bool) -> str:
-    """The seam with its rows replaced, marker and row together."""
+def class_of(row: tuple[list[str], list[str]]) -> str:
+    """The class a row is keyed on, spelled as the seam spells its three cells."""
+    text = " ".join(content(line) for line in row[1])
+    inside = text[text.index("(") + 1 : text.rindex(")")]
+
+    return " ".join(cell.strip() for cell in inside.split(",")[:KEY_CELLS])
+
+
+def splice(
+    seam_text: str, placed: dict[str, tuple[list[str], list[str]]], device_only: bool
+) -> tuple[str, set[str], set[str]]:
+    """The seam with the rows the emission places written over its own, class for class.
+
+    Returns the text, the classes written, and the classes the seam carried in scope.
+    """
     out: list[str] = []
-    taken = 0
+    written: set[str] = set()
+    carried: set[str] = set()
 
     for kind, marker, body in elements(seam_text):
         if kind != "row":
@@ -127,47 +167,241 @@ def splice(seam_text: str, replacement: list[tuple[list[str], list[str]]], devic
             out.extend(body)
             continue
 
-        if device_only and not is_device(("", body)):
+        row = ("", body)
+
+        if device_only and not is_device(row):
             out.extend(marker)
             out.extend(body)
             continue
 
-        if taken >= len(replacement):
-            raise SystemExit(
-                "splice_default_rows: the seam carries more rows than the emission "
-                "does; the two cannot be reconciled by position"
-            )
+        klass = class_of(row)
 
-        new_marker, new_body = replacement[taken]
-        out.extend(new_marker)
-        out.extend(new_body)
-        taken += 1
+        if klass in carried:
+            raise Refusal(f"the seam carries the class {klass} twice, and one class is one row")
 
-    if taken != len(replacement):
-        raise SystemExit(
-            f"splice_default_rows: the seam carries {taken} row(s) to replace and the "
-            f"emission states {len(replacement)} - a row the seam does not carry is a "
-            f"class the build resolves another way"
-        )
+        carried.add(klass)
+        replacement = placed.get(klass)
 
-    return "\n".join(out) + "\n"
+        if replacement is None:
+            out.extend(marker)
+            out.extend(body)
+            continue
+
+        out.extend(replacement[0])
+        out.extend(replacement[1])
+        written.add(klass)
+
+    return "\n".join(out) + "\n", written, carried
+
+
+def silent(argv: list[str]) -> tuple[int, str, str]:
+    """`main` over one argument list, with the streams it writes to captured."""
+    out, err = io.StringIO(), io.StringIO()
+    kept = sys.stdout, sys.stderr
+    sys.stdout, sys.stderr = out, err
+
+    try:
+        code = main(argv)
+    finally:
+        sys.stdout, sys.stderr = kept
+
+    return code, out.getvalue(), err.getvalue()
+
+
+# The control's fixtures. The pair is small on purpose: a seam of two classes, each row with the
+# marker the table in force carries, and an emission whose first row places the second class and
+# whose second row states the first class with no marker. The emission lists its two rows in the
+# seam's other order, and states different cells for both classes, so a splice that matched rows by
+# position, or that wrote the emission's row where the emission placed none, produces a text that
+# is not the one below.
+CONTROL_SEAM = (
+    "#pragma once\n"
+    "\n"
+    "/// A two-row seam for the control: the table in force, both rows with the marker it carries.\n"
+    "\n"
+    "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"
+    "    /* the table in force took this row at 1.00 ns per argument */\\\n"
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kAccurate)\\\n"
+    "    /* the table in force took this row at 2.00 ns per argument */\\\n"
+    "    X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kFast)\\\n"
+)
+
+CONTROL_EMISSION = (
+    "#pragma once\n"
+    "\n"
+    "/// A two-row emission for the control: the class it placed, then one it states no marker\n"
+    "/// for.\n"
+    "\n"
+    "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"
+    "    /* measured: 0.50 ns per argument on this host, reached by ordered */\\\n"
+    "    X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\\\n"
+    "      RegionBExp::kAccurate)\\\n"
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\\\n"
+    "      RegionBExp::kFast)\\\n"
+)
+
+# What the pair implies: the seam's own order, the seam's own row and marker for the class the
+# emission placed none for, and the emission's row and marker for the class it placed.
+CONTROL_SPLICED = (
+    "#pragma once\n"
+    "\n"
+    "/// A two-row seam for the control: the table in force, both rows with the marker it carries.\n"
+    "\n"
+    "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"
+    "    /* the table in force took this row at 1.00 ns per argument */\\\n"
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kAccurate)\\\n"
+    "    /* measured: 0.50 ns per argument on this host, reached by ordered */\\\n"
+    "    X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\\\n"
+    "      RegionBExp::kAccurate)\\\n"
+)
+
+# The fixture's two rows, renamed to a class the seam carries no row of: the planted defect of each
+# half - a placed row the seam has no class for, and a markerless one it has no row to keep.
+CONTROL_PLACED_ROW = "X(kHost, kFp32, kSingle,"
+CONTROL_MARKERLESS_ROW = "X(kHost, kFp64, kSingle,"
+CONTROL_ABSENT_CLASS = "X(kHost, kFp64, kFixedN,"
+
+# One class carried twice: the first class's row written a second time under the same three cells,
+# which is two rows for a class the emission states one row for.
+CONTROL_TWICE = CONTROL_SPLICED + (
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kAccurate)\\\n"
+)
+
+
+def control() -> int:
+    """Splice the fixture pair, and require each planted defect refused."""
+    problems: list[str] = []
+    checked = 0
+
+    def recorded(name: str, code: int, required: int) -> None:
+        nonlocal checked
+        checked += 1
+        verdict = "caught" if code == required else "NOT caught"
+        print(f"control: {name}: exit {code}, {required} required - {verdict}")
+
+        if code != required:
+            problems.append(f"{name}: exit {code} where {required} was required")
+
+    with tempfile.TemporaryDirectory(prefix="splice-control-") as home:
+        work = Path(home)
+        seam = work / "seam.hpp"
+        emission = work / "emission.hpp"
+        seam.write_text(CONTROL_SEAM, encoding="utf-8", newline="\n")
+        emission.write_text(CONTROL_EMISSION, encoding="utf-8", newline="\n")
+
+        pair = ["--emitted", str(emission), "--seam", str(seam)]
+
+        code, _out, _err = silent([*pair, "--check"])
+        recorded("the seam before the splice, --check", code, 1)
+
+        code, out, err = silent(pair)
+        recorded("the splice of the fixture pair", code, 0)
+        print(f"control: it printed {out.strip() or err.strip() or '(nothing)'}")
+
+        arrived = seam.read_bytes()
+
+        if arrived == CONTROL_SPLICED.encode("utf-8"):
+            print("control: the seam the splice left is the seam the pair implies, byte for byte")
+        else:
+            problems.append("the seam the splice left is not the seam the pair implies")
+            print("control: the seam the splice left is NOT the seam the pair implies")
+
+        code, _out, _err = silent([*pair, "--check"])
+        recorded("the spliced seam, --check", code, 0)
+
+        # A seam whose lines end the other way is spliced the same and keeps its own ending: the
+        # rows are what this writes, and a file whose every line changed ending would be an edit of
+        # the whole file that no row of the emission asks for.
+        crooked = work / "crooked.hpp"
+        crooked.write_bytes(CONTROL_SEAM.replace("\n", "\r\n").encode("utf-8"))
+        code, _out, _err = silent(["--emitted", str(emission), "--seam", str(crooked)])
+        recorded("a seam whose lines end the other way", code, 0)
+
+        if crooked.read_bytes() != CONTROL_SPLICED.replace("\n", "\r\n").encode("utf-8"):
+            problems.append("the splice changed the line ending of the seam it wrote")
+
+        # A row the emission places whose class the seam carries none of: writing it would name a
+        # class the seam has no place for, and keeping the seam's is not possible.
+        planted = work / "planted-emission.hpp"
+        planted.write_text(CONTROL_EMISSION.replace(CONTROL_PLACED_ROW, CONTROL_ABSENT_CLASS),
+                           encoding="utf-8", newline="\n")
+        code, _out, err = silent(["--emitted", str(planted), *pair[2:]])
+        recorded("a placed row the seam has no class for", code, 2)
+        print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
+
+        if seam.read_bytes() != arrived:
+            problems.append("the refused splice wrote to the seam")
+
+        # A row the emission states no marker for whose class the seam carries none of either: the
+        # emission did not place it and the seam has no row of its own to keep, so nothing of it
+        # can be written and nothing may be dropped in silence.
+        planted.write_text(CONTROL_EMISSION.replace(CONTROL_MARKERLESS_ROW, CONTROL_ABSENT_CLASS),
+                           encoding="utf-8", newline="\n")
+        code, _out, err = silent(["--emitted", str(planted), *pair[2:]])
+        recorded("a row with no marker whose class the seam has none of", code, 2)
+        print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
+
+        if seam.read_bytes() != arrived:
+            problems.append("the refused splice wrote to the seam")
+
+        # One class carried twice, which is two rows for one class and not a table.
+        twice = work / "twice.hpp"
+        twice.write_text(CONTROL_TWICE, encoding="utf-8", newline="\n")
+        code, _out, err = silent(["--emitted", str(emission), "--seam", str(twice)])
+        recorded("a class the seam carries twice", code, 2)
+        print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
+
+    if problems:
+        print("splice_default_rows: the control failed: " + "; ".join(problems), file=sys.stderr)
+        return 1
+
+    print(f"splice_default_rows: control passed every one of its {checked} check(s) over the "
+          f"fixture pair")
+    return 0
 
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--emitted", required=True, help="the file a run emitted")
-    parser.add_argument("--seam", required=True, help="the committed seam to write")
+    parser.add_argument("--emitted", help="the file a run emitted")
+    parser.add_argument("--seam", help="the committed seam to write")
     parser.add_argument("--device-only", action="store_true",
                         help="replace the kDevice rows only, leaving the host rows alone")
     parser.add_argument("--check", action="store_true",
                         help="report whether they agree; change nothing")
+    parser.add_argument("--control", action="store_true",
+                        help="splice the control's own fixture pair, and exit non-zero unless "
+                             "every defect planted in it is caught")
     options = parser.parse_args(argv)
+
+    if options.control:
+        return control()
+
+    if not options.emitted or not options.seam:
+        print("splice_default_rows: --emitted names the file a run wrote and --seam names the "
+              "seam to write; a splice needs both", file=sys.stderr)
+        return 2
 
     emitted_path = Path(options.emitted)
     seam_path = Path(options.seam)
     emitted_text = emitted_path.read_text(encoding="utf-8")
-    seam_text = seam_path.read_text(encoding="utf-8")
+    raw = seam_path.read_bytes()
+
+    # The ending the seam already writes its lines with is the one it keeps: a row is what this
+    # writes, and a file whose every line changed ending would be a whole-file edit.
+    ending = "\r\n" if b"\r\n" in raw else "\n"
+    seam_text = raw.decode("utf-8").replace("\r\n", "\n")
 
     emitted = read_rows(emitted_text)
     replacement = [row for row in emitted if is_device(row)] if options.device_only else emitted
@@ -176,42 +410,71 @@ def main(argv: list[str]) -> int:
         print(f"splice_default_rows: {emitted_path} states no row to splice", file=sys.stderr)
         return 2
 
-    for marker, _body in replacement:
-        if not marker:
-            print(
-                "splice_default_rows: a row of the emission carries no marker, so how it "
-                "was reached cannot be read beside it",
-                file=sys.stderr,
-            )
+    # What the emission places is what carries a marker; what it does not is what the seam keeps.
+    placed: dict[str, tuple[list[str], list[str]]] = {}
+    stated: list[str] = []
+
+    for marker, body in replacement:
+        klass = class_of((marker, body))
+
+        if klass in placed or klass in stated:
+            print(f"splice_default_rows: the emission states the class {klass} twice, and one "
+                  "class is one row", file=sys.stderr)
             return 2
 
-    spliced = splice(seam_text, replacement, options.device_only)
+        if marker:
+            placed[klass] = (marker, body)
+        else:
+            stated.append(klass)
+
+    try:
+        spliced, written, carried = splice(seam_text, placed, options.device_only)
+    except Refusal as refusal:
+        print(f"splice_default_rows: {refusal}", file=sys.stderr)
+        return 2
+
+    for klass in placed:
+        if klass not in written:
+            print(f"splice_default_rows: the seam carries no row for the class {klass} the "
+                  "emission places one for; a class the seam does not carry is a class it "
+                  "resolves another way", file=sys.stderr)
+            return 2
+
+    for klass in stated:
+        if klass not in carried:
+            print(f"splice_default_rows: the emission states a row for the class {klass} with no "
+                  "marker, and the seam carries no row of that class to keep; nothing of the "
+                  "row can be written and nothing of it may be dropped in silence",
+                  file=sys.stderr)
+            return 2
 
     # Read back what would be written and compare it against the emission, rather than
     # trusting the construction above.
     arrived = read_rows(spliced)
     arrived_rows = [row for row in arrived if is_device(row)] if options.device_only else arrived
+    landed = {class_of(row): row for row in arrived_rows if class_of(row) in placed}
 
-    if arrived_rows != replacement:
+    if landed != placed:
         print("splice_default_rows: the rows that arrive are not the rows the emission "
               "states - refusing to write", file=sys.stderr)
         return 2
 
     if options.check:
         if spliced == seam_text:
-            print(f"splice_default_rows: {seam_path} carries the emission's "
-                  f"{len(replacement)} row(s) already")
+            print(f"splice_default_rows: {seam_path} carries the emission's {len(placed)} placed "
+                  f"row(s) already")
             return 0
-        print(
-            f"splice_default_rows: {seam_path} does NOT carry the emission's "
-            f"{len(replacement)} row(s); {len(replacement)} differ",
-            file=sys.stderr,
-        )
+
+        print(f"splice_default_rows: {seam_path} does NOT carry the emission's {len(placed)} "
+              "placed row(s)", file=sys.stderr)
         return 1
 
-    seam_path.write_text(spliced, encoding="utf-8")
-    print(f"splice_default_rows: {len(replacement)} row(s) of {emitted_path.name} written "
-          f"into {seam_path}")
+    # newline="": the ending the seam's own lines carry is already in the text, and the platform's
+    # separator would be added to it rather than written in its place.
+    seam_path.write_text(spliced.replace("\n", ending), encoding="utf-8", newline="")
+    print(f"splice_default_rows: {len(placed)} row(s) of {emitted_path.name} written into "
+          f"{seam_path}, and the emission's {len(stated)} row(s) with no marker left as the seam "
+          f"carries them")
     return 0
 
 
