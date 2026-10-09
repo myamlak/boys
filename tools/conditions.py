@@ -11,9 +11,11 @@ exit code:
 
     python3 tools/conditions.py --report
 
-A condition with no command is printed as NO EVALUATOR, and the count of those is the honest answer to
-"how far away is the merge": the distance cannot be measured for a condition that nothing evaluates,
-and a sentence claiming otherwise would be a forecast wearing the clothes of a measurement.
+A condition this table holds no command for is printed as NOT IN THIS TABLE, and its own `why` names
+where it is decided instead. The distinction is not pedantry: two rows here cost a configure, a build
+and a suite, or hours of re-derivation, so they are armed where that cost is already paid - on a CI
+leg - and a reader told they have no evaluator is told something false about two conditions CI checks
+every round. What is not claimed is that they passed here: nothing in this table ran them.
 
 **What this tool cannot do, stated here because the limit is the point.** It evaluates conditions that
 reduce to a query over what the tree declares. A defect in the DECLARATION - a class that should exist
@@ -191,10 +193,13 @@ CONDITIONS = [
         "n": 10,
         "title": "Defaults according to design",
         "cmd": None,
-        "why": "the evaluator is the round trip: emit a seam from a probe run, configure a build "
-               "against it, and require the suite green. It needs a quiet machine and a probe run "
-               "for keeps, and no command here can stand in for those",
-        "how_to_run": "the probe emits a seam; configure -DBOYS_BUILD_DEFAULTS=<seam>; run ctest",
+        "why": "the evaluator is the round trip and it is a tool: tools/check_defaults_round_trip.py "
+               "emits a seam from the committed probe report, configures a build against it and "
+               "requires that build's suite green, and its own control plants a seam no compiler "
+               "accepts and requires the build to fail on it. A run of it is a configure, a build "
+               "and a suite - about sixteen minutes - so it is armed where that cost is already "
+               "paid, on the clang Release leg of CI, and not in this table",
+        "how_to_run": "python tools/check_defaults_round_trip.py --check --work build-defaults-round-trip",
     },
     {
         "n": 11,
@@ -335,7 +340,7 @@ def freeze() -> int:
 
 
 def mark(state: str) -> str:
-    return {"pass": "PASS", "fail": "FAIL", "no-evaluator": "NO EVALUATOR",
+    return {"pass": "PASS", "fail": "FAIL", "no-evaluator": "NOT IN THIS TABLE",
             "timeout": "TIMEOUT"}[state]
 
 
@@ -378,7 +383,7 @@ def main() -> int:
 
     if args.list:
         for condition in selected:
-            command = " ".join(condition["cmd"]) if condition["cmd"] else "NO EVALUATOR"
+            command = " ".join(condition["cmd"]) if condition["cmd"] else "(none in this table)"
             print(f"{condition['n']:>2}  {condition['title']}\n    {command}")
         return 0
 
@@ -402,10 +407,15 @@ def main() -> int:
         print()
 
     evaluators = states.get("pass", 0) + states.get("fail", 0) + states.get("timeout", 0)
-    print(f"{evaluators} of {len(selected)} row(s) have an evaluator; "
-          f"{states.get('no-evaluator', 0)} do not")
+    unevaluated = states.get("no-evaluator", 0)
+    # "No evaluator HERE" and "no evaluator" are different sentences, and the shorter one is the
+    # false one: a row whose cost is a configure, a build and a suite - or hours of re-derivation -
+    # is armed where that cost is already paid, and says so in its own `why`. Reporting those as
+    # unevaluated conditions reported two conditions as unchecked that CI checks every round.
+    print(f"{evaluators} of {len(selected)} row(s) are decided by a command in this table; "
+          f"{unevaluated} are decided elsewhere, each with the place it is named")
     print(f"  PASS {states.get('pass', 0)}   FAIL {states.get('fail', 0)}   "
-          f"TIMEOUT {states.get('timeout', 0)}   NO EVALUATOR {states.get('no-evaluator', 0)}")
+          f"TIMEOUT {states.get('timeout', 0)}   NOT IN TABLE {states.get('no-evaluator', 0)}")
     print("\nThe distance to a merge is not this table. This table is what can be measured; a "
           "sentence about the distance is a forecast, and every forecast given before this table "
           "existed was wrong in the same direction.")
