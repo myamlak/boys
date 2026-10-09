@@ -3,7 +3,7 @@
 // shell-quartet consumer needs. Its documented bound (5.5e-14) is pinned over the committed reference
 // grid and against the per-argument BoysAllOrders path, both as observed maxima.
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"

@@ -15,7 +15,7 @@
 //       <build>/boys-consumer-header-only, or ctest --test-dir <build> -R boys-consumer-header-only
 
 #include <algorithm>
-#include <boys/boys.hpp>
+#include <boys/boys_all.hpp>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>

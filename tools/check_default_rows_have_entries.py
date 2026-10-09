@@ -41,6 +41,7 @@ ROWS_FILE = os.path.join(REPO, "include", "boys", "boys_build_defaults.hpp")
 # and is swept too, so a device row added without an entry is caught the same way.
 ENTRY_FILES = [
     os.path.join(REPO, "include", "boys", "boys.hpp"),
+    os.path.join(REPO, "include", "boys", "kernels.hpp"),
     os.path.join(REPO, "include", "boys", "boys_span.hpp"),
     os.path.join(REPO, "include", "boys", "boys_cuda.hpp"),
 ]

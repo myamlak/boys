@@ -513,7 +513,8 @@ def entry_classes() -> dict[tuple[str, str, str], list[str]]:
     """
     found: dict[tuple[str, str, str], list[str]] = {}
 
-    for path in (BOYS_FILE, os.path.join(INCLUDE, "boys_span.hpp")):
+    for path in (BOYS_FILE, os.path.join(INCLUDE, "boys_span.hpp"),
+                 os.path.join(INCLUDE, "kernels.hpp")):
         text = blank(read(path))
         for match in re.finditer(r"DefaultPolicy<\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*Precision::(k[A-Za-z0-9]+)"
                                  r"\s*,\s*(?:[A-Za-z_][A-Za-z0-9_]*::)*Shape::(k[A-Za-z0-9]+)"
@@ -529,7 +530,7 @@ def entry_classes() -> dict[tuple[str, str, str], list[str]]:
 
 def policy_axes() -> list[tuple[str, str]]:
     """The axes of a policy, in the order `StatedEvalPolicy` takes them: (type, parameter)."""
-    text = blank(read(os.path.join(INCLUDE, "backend.hpp")))
+    text = blank(read(os.path.join(INCLUDE, "policy.hpp")))
     head = re.search(r"template\s*<([^>]*)>\s*struct\s+StatedEvalPolicy", text)
     if head is None:
         return []
@@ -796,7 +797,7 @@ def main() -> int:
 
     axes = policy_axes()
     if not axes:
-        print("check_default_capturability: no axes read from StatedEvalPolicy in backend.hpp - "
+        print("check_default_capturability: no axes read from StatedEvalPolicy in policy.hpp - "
               "the row format cannot be held to the policy it writes, so nothing here is checked",
               file=sys.stderr)
         return 1

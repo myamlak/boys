@@ -5,7 +5,7 @@
 
 #include "boys/backend.hpp"
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 
 // The device lane's region-B exponential is declared beside the device tables it
 // belongs to, and boys.hpp does not carry that header: the device seam name is read

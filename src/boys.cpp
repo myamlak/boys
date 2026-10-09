@@ -1,7 +1,7 @@
 #include "boys/boys.hpp"
 
 #include "boys/boys_cuda_options.hpp"
-#include "boys/boys_impl.hpp"
+#include "boys/kernels.hpp"
 
 #include "boys_backend_registry.hpp"
 

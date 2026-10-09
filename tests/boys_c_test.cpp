@@ -1,6 +1,6 @@
 // The C linkage surface contract (boys_c.h): scalar/batch entries match the
 // C++ lanes, and the validation rules return the documented status codes.
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_c.h"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"

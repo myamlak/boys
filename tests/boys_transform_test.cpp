@@ -2,7 +2,7 @@
 // band, by one matrix product in the named mode's arithmetic. Every mode's delivered error is held
 // to the bound the public header's table asserts for it, and reported beside that bound.
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_transform.hpp"
 
 #include <gtest/gtest.h>

@@ -39,9 +39,20 @@ fits and emits the boundaries and degrees.
 
 A *lane* is an entry plus the arithmetic behind it, and a bound always describes one lane. Five
 precision families carry host entries - double, float, fp16 I/O, bf16 I/O and the native packed
-half - and the device lane adds four `Precision` members of its own. The entries are declared in
-`include/boys/boys.hpp`, defined in `include/boys/boys_impl.hpp`, and instantiated out of line in
-`src/boys.cpp`, `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`.
+half - and the device lane adds four `Precision` members of its own. Every entry is declared twice:
+as a plain function in `include/boys/boys.hpp`, which is the spelling a call site that names no
+policy reaches, and as a template over an evaluation policy in `include/boys/kernels.hpp`, which is
+the spelling a caller that names one reaches. The bodies are in `include/boys/boys_impl.hpp`; the
+entries a call site names no policy for are defined once, in `src/boys_defaults.cpp`, and the rest
+are instantiated out of line in `src/boys.cpp`, `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`.
+
+**Two headers rather than one, and the compiler is what keeps them apart.** The front door does not
+declare the policy-taking spelling at all, so a call that names a policy from a translation unit
+that read only the front door is refused where it is written rather than promised to the linker.
+The reason is a measurement: a value an entry returns depends on the arithmetic the translation
+unit compiles it with, so an unnamed call has to be resolved by the library and not by its caller -
+`include/boys/boys.hpp` states it, and `CMakeLists.txt` measures both directions of it at configure
+time.
 
 | Lane | `Precision` member | Entry points | What it is | The test that holds it |
 |---|---|---|---|---|
@@ -93,7 +104,9 @@ it is filled from are in the seam file.
 
 | Piece | File | Compiled by | The test that holds it |
 |---|---|---|---|
-| The host surface, its entries and its policy table | `include/boys/boys.hpp` | the host compiler | `tests/consumer_umbrella.cpp` (a translation unit whose only library include is this header, exercising the documented surface), `tests/boys_test.cpp` |
+| The front door: the entries a call site names no policy for, the policy table, and the tables a report reads | `include/boys/boys.hpp` | the library, for the entries; the host compiler, for the queries | `tests/consumer_defaults.cpp`, `tools/check_flag_independence.py` (four builds of one translation unit with one digest), `tools/check_seam_identity.py` (the linker's half) |
+| The policy-taking entries, one template per entry per class | `include/boys/kernels.hpp` | the host compiler | `tests/consumer_header_only.cpp` (a translation unit that links no library at all), `tests/boys_test.cpp` |
+| Everything the library carries, in one include | `include/boys/boys_all.hpp` | the host compiler | `tests/consumer_umbrella.cpp` (a translation unit whose only library include is this header, exercising the documented surface) |
 | The host implementation: regions, recurrences, entry bodies | `include/boys/boys_impl.hpp` | the host compiler | `tests/boys_accuracy_test.cpp`, `tests/boys_across_orders_test.cpp` |
 | The scalar instantiations and the library's own reports (`BoysFitRoutes`, `BoysEvalSchemes`, `BoysPackAxes`, `BoysFitGranularities`, `BoysDivisionForms`, `BoysRegionBExps`, `BoysLaneContracts`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`, `QueryCombination`) | `src/boys.cpp` | the host compiler | `tests/boys_accuracy_gate.cpp` (the bound it publishes for each lane), `tests/consumer_defaults_match_docs.cpp` (the default policy table a document states) |
 | The CUDA host-side class, CUDA-header-free | `include/boys/boys_cuda.hpp` | the host compiler | `tests/boys_cuda_test.cpp`, `tests/consumer_cuda_defaults_host.cpp` |

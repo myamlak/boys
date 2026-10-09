@@ -6,7 +6,7 @@
 #include <gtest/gtest.h>
 
 #include "boys/backend.hpp"
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"

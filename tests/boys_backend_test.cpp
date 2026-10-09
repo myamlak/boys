@@ -5,7 +5,7 @@
 
 #include "boys/backend.hpp"
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 
 #include <algorithm>
 #include <array>

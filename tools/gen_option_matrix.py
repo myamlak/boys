@@ -113,7 +113,7 @@ AXES = (
     {"key": "device", "kind": "build",
      "source": "the legs of .github/workflows/ci.yml"},
     {"key": "route", "kind": "build",
-     "source": "backend.hpp: MulAddRoute"},
+     "source": "accuracy.hpp: MulAddRoute"},
     {"key": "precision", "kind": "carried",
      "source": "the arithmetic backends' names"},
     {"key": "family", "kind": "carried",
@@ -273,7 +273,7 @@ def axis_members():
 
     return {
         "device": host_members(),
-        "route": [kebab(m) for m in enum_members(BACKEND_HPP, "MulAddRoute")],
+        "route": [kebab(m) for m in enum_members(ACCURACY_HPP, "MulAddRoute")],
         "precision": widths,
         "family": [kebab(m) for m in enum_members(ACCURACY_HPP, "FitRoute")],
         "evaluation": [kebab(m) for m in enum_members(ACCURACY_HPP, "EvalScheme")],

@@ -184,6 +184,7 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 # reads them for the same reason and finds no arm of the block's naming one.
 LIBRARY = (
     "include/boys/boys.hpp",
+    "include/boys/kernels.hpp",
     "include/boys/accuracy.hpp",
     "include/boys/backend.hpp",
     "include/boys/boys_build_defaults.hpp",
@@ -191,6 +192,12 @@ LIBRARY = (
     "src/boys.cpp",
     "src/boys_cuda.cpp",
 )
+
+# A revision read by a recorded run predates whatever the tree has grown since, so a path it
+# does not carry is read as empty rather than refused. Only the kernel header is optional, and
+# it is the one file the entries have moved between: a revision that predates it declares them
+# in the front door, which is on the list anyway.
+OPTIONAL = ("include/boys/kernels.hpp",)
 
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
 
@@ -455,11 +462,14 @@ class Library:
             status, out, error = git("show", f"{revision}:{path}")
 
             if status != 0:
+                if path in OPTIONAL:
+                    self.text[path] = ""
+                    continue
                 raise LookupError(f"{revision}:{path} could not be read: {error or 'no reason given'}")
 
             self.text[path] = out
 
-        self.header = self.text["include/boys/boys.hpp"]
+        self.header = self.text["include/boys/boys.hpp"] + self.text["include/boys/kernels.hpp"]
         self.accuracy = self.text["include/boys/accuracy.hpp"]
         self.backend = self.text["include/boys/backend.hpp"]
         self.defaults = self.text["include/boys/boys_build_defaults.hpp"]

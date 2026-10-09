@@ -7,7 +7,7 @@
 //   perf stat -e instructions:u,uops_retired.retire_slots:u: boys-across-orders-benchmark
 //   --variant=orders-across-direct --reps=20000 (the f32 variants --reps=2000)
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"
