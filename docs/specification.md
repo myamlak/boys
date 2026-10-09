@@ -576,8 +576,20 @@ when a release is cut, and can be older than the tree you are reading.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
 are not. Internal region thresholds, seed selection, recursion order and dispatch logic may change
-between minor releases, as long as the bounds above hold. Byte-for-byte reproducibility requires
-pinning the release tag, the compiler and the build flags.
+between minor releases, as long as the bounds above hold.
+
+Byte-for-byte reproducibility requires pinning the release tag, the compiler and the build flags —
+and *whose* compiler and flags is not one answer for the whole library, because it depends on the
+call you write. An entry that names no policy at the fp64 lanes, and any policy whose packing axis
+is the orders one, is instantiated in the library and takes the library's flags. A policy naming the
+arguments packing axis, and the default fp32 ladder and batch, are instantiated in your translation
+unit and take yours: the `With*` helpers all derive from `EvalPolicy<>`, whose packing axis is the
+arguments one, so a call written through them is compiled where it is called. What moves a value is
+FMA being available together with contraction being permitted; where it moves, it moves by less than
+the absolute bound the lane publishes, and largest in relative terms at the smallest values the lane
+returns. Bits do not travel across platforms either: fifteen of the twenty host rows read
+`RegionBExp::kAccurate`, which is the platform's `exp`. What a pinned tag does give is one library
+binary answering the same bits on any x86-64 tier, with or without AVX2.
 
 ## Building and consuming
 

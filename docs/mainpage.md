@@ -270,7 +270,10 @@ argument the return becomes a subnormal half and then a zero, by design. The lan
 there, and a caller that has to be right there wants the double or float lane.
 
 Public signatures and supported domains are stable within a major version. Bitwise outputs are not;
-pin the release tag, the compiler and the flags for exact reproducibility.
+pin the release tag, the compiler and the flags for exact reproducibility — and read the
+reproducibility paragraph in the specification, because whose compiler and flags decide a value
+depends on the call: one that names no policy at the fp64 lanes is instantiated in the library, and
+one written through a `With*` helper is instantiated in your own translation unit.
 
 The full contract statement and the region definitions are in the header comments (see
 \ref boys::BoysSingle). The certified boundaries are pinned by the committed reference grid

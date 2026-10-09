@@ -346,7 +346,8 @@ satisfies |F̂_n(x) − F_n(x)| ≤ m·B_region at the documented m. Public func
 supported domains are stable within a major version. Bitwise outputs are not: internal region
 thresholds, seed selection, recursion order and dispatch logic may change between minor releases, as
 long as the bound holds. Byte-for-byte reproducibility requires pinning the release tag, the compiler
-and the build flags.
+and the build flags, and the specification's reproducibility paragraph says which calls take the
+library's flags and which take the caller's.
 
 ## Getting help
 
