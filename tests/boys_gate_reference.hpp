@@ -1,23 +1,9 @@
 #pragma once
 
-// The accuracy gate's instrument, shared by every gate in this tree: the
-// committed high-precision reference grid and the one reading of it, the bound
-// vocabulary the narrow formats are measured in, and the accumulator and row
-// shape a report prints. The CPU gate (tests/boys_accuracy_gate.cpp) and the
-// CUDA device gate (tests/boys_cuda_accuracy_gate.cpp) both include this, so a
-// lane measured on either side is measured against one reference format and
-// printed in one vocabulary rather than two that can drift apart.
-//
-// One reading is one instrument and not one per book: MeasureAt fills whatever
-// accumulator it is handed, MeasureInto names one of a book by index, and the
-// three books the CPU gate keeps - the lanes', the evaluation schemes' and the
-// fit routes' - are filled by the same comparisons and the same counters, so a
-// row added to one of them cannot move another's totals.
-//
-// The reference itself is tests/data/boys_accuracy_gate_reference.csv,
-// re-derivable with tools/gen_boys_accuracy_gate_reference.py. Why it is
-// trusted, and what its routes agree to, is the CPU gate's argument and lives
-// in its preamble rather than here.
+// The accuracy gate's instrument, shared by the CPU gate (tests/boys_accuracy_gate.cpp) and the CUDA device
+// gate (tests/boys_cuda_accuracy_gate.cpp): the committed reference grid (tests/data/boys_accuracy_gate_reference.csv,
+// re-derivable with tools/gen_boys_accuracy_gate_reference.py), the bound vocabulary, the accumulators and
+// the report row. MeasureAt and MeasureInto fill the three books - the lanes', the evaluation schemes' and the fit routes'.
 
 #include "boys/boys.hpp"
 #include "boys/f16.hpp"
@@ -68,12 +54,9 @@ struct Accum {
     std::string lane;
     std::string region;
     double baseBound = 0.0;
-    // Whether any row of the report carries this slot's verdict. A slot
-    // measured for the record - a reading the tree has withdrawn and keeps
-    // re-runnable rather than deleting - is judged by no row, so it can be
-    // over its bound and still leave the gate green. The flag is what lets
-    // the two tables say so instead of leaving a reader to infer it from the
-    // RESULT line not counting the slot.
+    // Whether any row of the report carries this slot's verdict: a slot measured for the record
+    // has none, so it can be over its bound and still leave the gate green, and the two tables
+    // say so rather than leaving it to the RESULT line not to count it.
     bool judged = true;
     std::size_t points = 0;
     std::size_t vacuous = 0;     // the bound alone exceeds |F_n(x)|
@@ -88,11 +71,9 @@ struct Accum {
     double lostSignal = 0.0;
     int lostSignalN = -1;
     double lostSignalX = 0.0;
-    // The domain the bound binds over: the cells where |F_n(x)| exceeds the
-    // bound, so no floor and no value's own smallness can meet it. Inside it
-    // the lane has to return a value inside the bound; outside it the bound is
-    // met by the format's floor rather than by the arithmetic and no accuracy
-    // is claimed. Counted per claim, so the two sides are never confused.
+    // The domain the bound binds over: the cells where |F_n(x)| exceeds the bound. Inside it the
+    // lane must return a value inside the bound; outside it the bound is met by the format's floor
+    // and no accuracy is claimed.
     std::size_t domainPoints = 0;
     std::size_t domainSubnormal = 0; // ... and the return is subnormal
     std::size_t domainZero = 0;      // ... and the return is the format's zero

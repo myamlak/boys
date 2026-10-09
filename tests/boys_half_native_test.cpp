@@ -1,38 +1,7 @@
-// The native half lane: boys/half2.hpp and the two entries it backs,
-// boys::BoysAllOrdersHalf2 and boys::BoysAllNF16Native.
-//
-// The lane is a claim about what packed half arithmetic can carry, and this
-// file grades that claim the way the accuracy gate grades a published one:
-// three claims, each with its own domain, each getting exactly one verdict
-// (the book at the end of the file prints them, and names the evidence).
-//
-//   * native-half-packed. Every operation in half2.hpp is on a packed pair
-//     and correctly rounded to binary16, so the lane's error is the
-//     arithmetic's rather than an implementation tolerance. Correct rounding
-//     is decided exactly here, in binary64, with no epsilon: a half times a
-//     half, or a half times the midpoint to its neighbour (a 25-bit
-//     significand), is exact in binary64, so "which side of the rounding
-//     boundary" is an exact comparison. The square root is checked against
-//     the squares of the midpoints, exhaustive over every non-negative half;
-//     the four arithmetic operations are checked over every finite half
-//     against a curated operand set plus a random sample. The second half of
-//     the claim is what separates this lane from the fp16 I/O lane: the error
-//     exceeds half an ULP at 47.3% of values and one ULP at 20.0%, which a
-//     lane that widens, evaluates and rounds once at the end cannot produce.
-//   * native-half-bound. |out[k] - 2^15 F_k(x)| <= 8 ULP(out[k]), the quantum
-//     of the returned value, over region C at its precondition. Measured
-//     against the 45-digit committed grid where the argument is exactly a
-//     half, and against the certified double lane (5.5e-14 relative -- nine
-//     orders of magnitude inside the half quantum) over a sweep of region C.
-//     The domain is the arguments whose returned value is a normal half; the
-//     worst measured ratio there is 4.243 ULP, a swept maximum and not a
-//     proof bound.
-//   * native-half-ceiling. The argument past which no accuracy is claimed, per
-//     order: below F_k(x) = 2^-29 the entry returns a subnormal and then a
-//     zero by design, and that domain is counted rather than passed. The
-//     ceiling is where the value crosses the format's smallest normal, and
-//     the span wall (the ladder's own F_0/F_k against the format's range) is
-//     what stops a larger scale from moving it.
+// The native half lane: three claims - packed, bound, ceiling - each with its own domain and one
+// verdict, printed as the book at the end. Packed: correct rounding per packed-pair operation,
+// decided exactly in binary64 - 47.3% of values past half an ULP, 20.0% past one, a distribution
+// a widen-then-round-once lane cannot make. Bound (8 ULP) and ceiling: include/boys/boys.hpp.
 
 #include "boys/boys.hpp"
 #include "boys/half2.hpp"
@@ -63,9 +32,8 @@ using boys::detail::F16FromBits;
 using boys::detail::F16FromDouble;
 using boys::detail::kX1;
 
-// The reading of a half as a double, which is what both sections below measure
-// against: it rests on nothing the seam declares, so it sits outside the guard
-// and serves the packed type's tests and the lane's measurements alike.
+// The reading of a half as a double, which both sections below measure against: it rests on
+// nothing the seam declares, so it sits outside the guard.
 double Value(F16 value) noexcept {
     return static_cast<double>(value);
 }
@@ -74,30 +42,20 @@ double Value(std::uint16_t bits) noexcept {
     return Value(F16FromBits(bits));
 }
 
-// The native half lane's two entries are declared behind the BoysFp16 seam, and
-// so is the scale constant that goes with them (boys/boys.hpp). Everything this
-// file measures about the *lane* is compiled with the entries it names, and the
-// closed configuration is reported as the skipped test at the end of this file
-// rather than as a run of greens over a lane that is not there. The packed
-// type's own arithmetic is not seam-gated, and boys/half2.hpp is a header of
-// this tree that a consumer may include directly, so the packed section below
-// is declared outside the guard and its tests run in both configurations. The
-// split is therefore by what a declaration needs, not by where it happened to be
-// written: the guard holds the lane's claim constants, the lane's reference
-// machinery and the evidence helpers only the lane's book names, and the format
-// helpers both sections share stand between them.
+// The entries and the scale constant (boys/boys.hpp) are behind the BoysFp16 seam; a closed
+// configuration reports the lane's claims as evidence absent, not greens. boys/half2.hpp is not
+// seam-gated and a consumer may include it directly, so the packed section below runs in both
+// configurations. The split is by what a declaration needs, not by what a section measures.
 constexpr double kInfinity = std::numeric_limits<double>::infinity();
 
 // --- The claims, in the accuracy gate's shape ---------------------------------
 //
-// Each claim carries its own domain and gets exactly one verdict, so a reader
-// (or the gate, when it is extended to this lane as a fifth) can fail one
-// without touching the others. The vocabulary is the gate's, name for name.
+// Each claim carries its own domain and gets exactly one verdict, so one can fail without
+// touching the others. The vocabulary is the gate's, name for name.
 enum class Verdict { Verified, Exceeded, Vacuous, EvidenceAbsent };
 
-// The lane's verdict vocabulary and evidence formatter. Only the lane's claim
-// book names a verdict or formats an evidence line, so a build that carries no
-// lane has no caller for either and would read them as unused.
+// Only the lane's claim book names a verdict or formats an evidence line, so a build that
+// carries no lane has no caller for either.
 #if BoysFp16
 
 const char* VerdictName(Verdict verdict) {
@@ -116,8 +74,7 @@ const char* VerdictName(Verdict verdict) {
     return "?";
 }
 
-// An evidence line for the claim book, long enough for the longest of them: a
-// string cut mid-claim would read as a claim with a weaker answer than it has.
+// An evidence line long enough for the longest claim: a string cut mid-claim would read weaker.
 std::string Fmt(const char* format, ...) {
     char buffer[512];
     va_list args;
@@ -142,24 +99,20 @@ struct PackedClaim {
 
 PackedClaim gPacked;
 
-// The lane's claim vocabulary, which is the part of these declarations the seam
-// reaches: the scale below is the public constant boys/boys.hpp declares under
-// it, and the claim types name the domain that scale defines. The format helpers
-// under them and the packed tests below them use nothing the seam gates, so they
-// stand outside this guard and run in either build.
+// The part of these declarations the seam reaches: the scale below is the public constant
+// boys/boys.hpp declares under it, and the claim types name the domain that scale defines.
+// The format helpers under them and the packed tests below them use nothing the seam gates.
 #if BoysFp16
 
-// The lane's documented bound, in quanta of the returned value. The worst
-// measured ratio is 4.3 (order 6, in the region-C sweep below); the bound is
-// the next power of two above it, so the assertion is a bound rather than a
-// pin of the measurement.
+// The lane's documented bound, in quanta of the returned value. The worst measured ratio is
+// 4.3 (order 6, in the region-C sweep below), and the bound is the next power of two above
+// it: an assertion of a bound, not a pin of the measurement.
 constexpr double kBoundUlps = 8.0;
 
 // The lane's scale, as the public constant spells it (an exact power of two).
 constexpr int kScale = boys::kHalfNativeScaleExponent;
 
-// The smallest normal binary16 value, 2^-14: where the scale's output stops
-// being normal, which is where this lane's claim stops.
+// The smallest normal binary16 value, 2^-14: where the scale's output stops being normal.
 constexpr double kSmallestNormal = 6.103515625e-05;
 
 // native-half-bound: the ULP bound over the domain where the returned value is
@@ -170,15 +123,13 @@ struct BoundClaim {
     double worstUlps = 0.0;
     int worstOrder = 0;
     double worstX = 0.0;
-    // The largest true value among the no-claim points, as a multiple of the
-    // smallest normal value: where that domain starts, against where the
-    // ceiling says it starts.
+    // The largest true value among the no-claim points, as a multiple of the smallest normal
+    // value: where that domain starts, against where the ceiling says it starts.
     double largestNoClaimTruth = 0.0;
 };
 
-// native-half-ceiling: the argument past which no accuracy is claimed, per
-// order -- the largest one whose returned value is still normal -- and the
-// span that stops a larger scale from moving it.
+// native-half-ceiling: the argument past which no accuracy is claimed, per order (the largest
+// one whose returned value is still normal), and the span that stops a larger scale moving it.
 struct CeilingClaim {
     std::array<double, kMaxBoysOrder + 1> crossing{};
     double spanWall = 0.0;
@@ -190,14 +141,11 @@ CeilingClaim gCeiling;
 
 #endif // BoysFp16
 
-// The format's own helpers: they are declared here, outside the guard, because
-// the packed operations below them are the format's own arithmetic and are not
-// behind the seam, and because the lane's sweeps use the same vocabulary where
-// this build carries the lane.
+// The format's own helpers, outside the guard because the packed operations below are the
+// format's arithmetic and not behind the seam, and the lane's sweeps share them.
 
-// The ordered index of a half: sign-magnitude bits into a monotone integer,
-// -Inf at 0x0400 and +Inf at 0xFC00. -0 and +0 share an index; they compare
-// equal, and neither is the other's value-neighbour.
+// The ordered index of a half: sign-magnitude bits into a monotone integer, -Inf at 0x0400,
+// +Inf at 0xFC00. -0 and +0 share an index; neither is the other's value-neighbour.
 int HalfIndex(std::uint16_t bits) noexcept {
     const int magnitude = static_cast<int>(bits & 0x7FFFu);
     return (bits & 0x8000u) != 0u ? 0x8000 - magnitude : 0x8000 + magnitude;
@@ -212,9 +160,8 @@ std::uint16_t HalfBitsAt(int index) noexcept {
                                       static_cast<std::uint32_t>(magnitude));
 }
 
-// The binary16 quantum at a magnitude: 2^(e - 10) for a normal value, and
-// the format's floor 2^-24 for a subnormal or a zero. Its only caller is the
-// lane's error metric below, so like that metric it is declared with the lane.
+// The binary16 quantum at a magnitude: 2^(e - 10) for a normal value, the format's floor
+// 2^-24 for a subnormal or a zero. Only the lane's error metric calls it.
 #if BoysFp16
 
 double QuantumAt(double magnitude) noexcept {
@@ -232,10 +179,9 @@ double Quantum(F16 value) noexcept {
 
 #endif // BoysFp16
 
-// The exact value of a op b, compared with the exactly representable c, as
-// -1 / 0 / +1. '+' '-' '*' of half operands are exact in binary64; '/' is
-// decided as an exact product comparison (a half by a half or by a midpoint
-// is at most 37 significand bits), so no rounding enters any of the four.
+// The exact value of a op b compared with the exactly representable c, as -1 / 0 / +1.
+// '+' '-' '*' of half operands are exact in binary64; '/' is an exact product comparison (a
+// half by a half or by a midpoint is at most 37 significand bits), so no rounding enters.
 int CompareExact(F16 a, F16 b, double c, char op) {
     const double av = Value(a);
     const double bv = Value(b);
@@ -258,21 +204,17 @@ int CompareExact(F16 a, F16 b, double c, char op) {
 
 // Is `result` the correctly rounded binary16 of the exact value of a op b?
 //
-// Exact, and independent of the implementation: `result` is nearest exactly
-// when the exact value lies between the midpoints to its two neighbours, an
-// exact tie going to the even significand.
+// Exact and implementation-independent: nearest exactly when the exact value lies between the
+// midpoints to its two neighbours, an exact tie going to the even significand.
 bool IsCorrectlyRounded(F16 result, F16 a, F16 b, char op) {
     const std::uint16_t bits = F16Bits(result);
     const std::uint32_t magnitude = bits & 0x7FFFu;
 
     if (magnitude >= 0x7C00u)
     {
-        // An infinity is the correctly rounded result exactly when the exact
-        // value is at or past the round-to-infinity threshold: 65520 is the
-        // midpoint between 65504 and 65536, and 65504's significand is odd,
-        // so the tie goes to the infinity. NaN is never right here (every
-        // NaN comes from a non-finite operand, and the sweeps below run over
-        // finite ones).
+        // An infinity is the correctly rounded result exactly at or past the round-to-infinity
+        // threshold: 65520 is the midpoint of 65504 and 65536, and 65504's significand is odd, so
+        // the tie goes to the infinity. A NaN never occurs here: it takes a non-finite operand.
         if (magnitude != 0x7C00u)
         {
             return false;
@@ -295,9 +237,8 @@ bool IsCorrectlyRounded(F16 result, F16 a, F16 b, char op) {
         return false;
     }
 
-    // A tie is decided by the significand's low bit (0 is even, so a zero wins
-    // its tie against the smallest subnormal, and the even-infinity
-    // significand wins the overflow tie).
+    // A tie goes to the even significand: 0 is even, so a zero wins its tie against the
+    // smallest subnormal, and the even-infinity significand wins the overflow tie.
     return (lower != 0 && upper != 0) || (bits & 0x1u) == 0u;
 }
 
@@ -306,8 +247,7 @@ bool IsCorrectlyRounded(F16 result, F16 a, F16 b, char op) {
 bool IsCorrectlyRoundedSqrt(F16 result, F16 a) {
     const std::uint16_t bits = F16Bits(result);
 
-    // The square root of an infinity is that infinity; of a finite
-    // non-negative half, always finite.
+    // The square root of an infinity is that infinity; of a finite non-negative half, finite.
     if ((F16Bits(a) & 0x7FFFu) == 0x7C00u)
     {
         return (bits & 0x7FFFu) == 0x7C00u && (bits & 0x8000u) == (F16Bits(a) & 0x8000u);
@@ -379,20 +319,17 @@ std::vector<F16> FiniteHalves() {
 
 #if BoysFp16
 
-// The lane's reference machinery. Everything from here to this guard's end reads
-// the lane's scale or exists only for the lane's sweeps, so it is declared only
-// where this build carries the lane: declared in a closed build it would be a
-// set of functions nothing refers to.
+// The lane's reference machinery: declared only where this build carries the lane, since in a
+// closed build these would be functions nothing refers to.
 
 // The region-C boundary as the format holds it: the fp16 value of kX1.
 F16 BoundaryArgument() {
     return F16FromDouble(kX1);
 }
 
-// The sweep arguments, as halves: every representable value just above the
-// boundary (where the ladder's values are largest) and then one step of
-// about 2% up to the format's maximum, so each order's reach and its far
-// tail are both sampled where the value changes fastest.
+// The sweep arguments: every representable value just above the boundary (where the ladder's
+// values are largest), then about 2% steps up to the format's maximum, so each order's reach
+// and its far tail are sampled where the value changes fastest.
 std::vector<F16> SweepArguments() {
     std::vector<F16> xs;
     const int start = HalfIndex(F16Bits(BoundaryArgument()));
@@ -440,8 +377,7 @@ std::vector<double> Reference(int nmax, F16 x) {
     return out;
 }
 
-// The lane returns the scaled value 2^kScale F_k(x), so the reference is
-// lifted by the same exact power of two before the two are compared.
+// The lane returns 2^kScale F_k(x), so the reference is lifted by the same exact power of two.
 double Scaled(double value) noexcept {
     return std::ldexp(value, kScale);
 }
@@ -452,8 +388,7 @@ struct GridRow {
     double value;
 };
 
-// The committed 45-digit grid (the loader boys_test.cpp and
-// boys_accuracy_test.cpp use).
+// The committed 45-digit grid (the loader boys_test.cpp and boys_accuracy_test.cpp use).
 std::vector<GridRow> LoadReferenceGrid() {
     const std::string path = std::string(BoysDataDir) + "/boys_reference.csv";
     std::ifstream file(path);
@@ -488,9 +423,9 @@ std::vector<GridRow> LoadReferenceGrid() {
 #endif // BoysFp16
 
 // --- The packed operations --------------------------------------------------
-// The lane's arithmetic type: boys/half2.hpp is included directly at the top of
-// this file, defines every operation this section tests, and is not gated by
-// the seam, so these run whether the lane's entries are in the build or not.
+// boys/half2.hpp is included directly at the top of this file, defines every operation this
+// section tests, and is not gated by the seam: these run whether the lane's entries are in the
+// build or not.
 
 TEST(NativeHalfLaneTest, PackedContainerRoundTrip) {
     const Half2 pair(F16FromBits(0x3C00u), F16FromBits(0xBC00u));
@@ -643,14 +578,12 @@ TEST(NativeHalfLaneTest, PackedHalvesDoNotInterfere) {
 #if BoysFp16
 
 // --- The lane ---------------------------------------------------------------
-// Everything below this line calls BoysAllOrdersHalf2 or BoysAllNF16Native, or
-// reads the scale constant they document, and is compiled with the seam that
-// declares them.
+// Everything below calls BoysAllOrdersHalf2 or BoysAllNF16Native, or reads the scale constant
+// they document, and is compiled with the seam that declares them.
 
 TEST(NativeHalfLaneTest, LaneMatchesTheCommittedReferenceGrid) {
-    // The grid's region-C arguments that are exactly representable in half:
-    // at those the 45-digit value is the reference and no other lane is
-    // involved.
+    // The grid's region-C arguments exactly representable in half: there the 45-digit value is
+    // the reference and no other lane is involved.
     const std::vector<GridRow> grid = LoadReferenceGrid();
     ASSERT_FALSE(grid.empty());
 
@@ -711,15 +644,9 @@ TEST(NativeHalfLaneTest, LaneMatchesTheCommittedReferenceGrid) {
 }
 
 TEST(NativeHalfLaneTest, LaneStaysInsideItsBoundAcrossRegionC) {
-    // native-half-bound, over the whole of region C against the certified
-    // double lane, per order: the maximum error in quanta of the returned
-    // value.
-    //
-    // The domain is the arguments whose returned value is a normal half. The
-    // rest are the no-claim domain: counted, reported with the error observed
-    // in them, and carrying no claim -- past the ceiling the entry returns a
-    // subnormal and then a zero by design, so a claim there would be a claim
-    // met by the format's floor rather than by the lane.
+    // native-half-bound over region C against the certified double lane, per order: the maximum
+    // error in quanta of the returned value. The domain is the arguments whose returned value is a
+    // normal half; the rest are the no-claim domain, counted and reported, carrying no claim.
     const std::vector<F16> xs = SweepArguments();
     const int nmax = kMaxBoysOrder;
 
@@ -830,19 +757,16 @@ TEST(NativeHalfLaneTest, LaneStaysInsideItsBoundAcrossRegionC) {
     EXPECT_GT(gBound.claimed, 0);
     EXPECT_LE(gBound.worstUlps, kBoundUlps);
 
-    // The domain restriction, checked rather than assumed: the no-claim points
-    // are the ones at or below the ceiling -- the format's smallest normal,
-    // crossed -- within the lane's own error, so the claim stops where the
-    // arithmetic says it does and not at an argument chosen to flatter it.
+    // The domain restriction, checked rather than assumed: the no-claim points are the ones at
+    // or below the ceiling (the format's smallest normal, crossed, within the lane's own
+    // error), so the claim stops where the arithmetic says it does.
     EXPECT_LE(gBound.largestNoClaimTruth, 1.0 + kBoundUlps * std::ldexp(1.0, -10));
 }
 
 TEST(NativeHalfLaneTest, LaneRoundsPerOperationNotOncePerValue) {
-    // The bound alone does not say where the error comes from. This does: a
-    // lane that widens, evaluates and rounds once at the end is inside half
-    // an ULP of the correctly rounded value at every argument, and this one
-    // is not, at a large fraction of them -- its roundings happen inside the
-    // ladder, once per operation.
+    // The bound alone does not say where the error comes from; this does. A lane that widens,
+    // evaluates and rounds once at the end is inside half an ULP of the correctly rounded value
+    // at every argument, and this one is not, at a large fraction of them.
     const int nmax = 8;
     const std::vector<F16> xs = SweepArguments();
     std::vector<Half2> out(static_cast<std::size_t>(nmax) + 1);
@@ -872,9 +796,8 @@ TEST(NativeHalfLaneTest, LaneRoundsPerOperationNotOncePerValue) {
             ++total;
             maxError = std::max(maxError, error / Quantum(value));
 
-            // Half a quantum of the true value is what one rounding to
-            // nearest can leave: more than that cannot come from a single
-            // rounding, however it is arranged.
+            // Half a quantum of the true value is what one rounding to nearest can leave: more
+            // than that cannot come from a single rounding.
             if (error > 0.5 * QuantumAt(std::fabs(truth)))
             {
                 ++notCorrectlyRounded;
@@ -901,9 +824,8 @@ TEST(NativeHalfLaneTest, LaneRoundsPerOperationNotOncePerValue) {
                            : 100.0 * static_cast<double>(beyondOneUlp) / static_cast<double>(total),
                 maxError);
 
-    // A lane that rounds once per value cannot pass half an ULP anywhere, and
-    // this one passes it at nearly half the arguments and one ULP at hundreds
-    // of them: the roundings are inside the ladder.
+    // A lane that rounds once per value cannot pass half an ULP anywhere; this one passes it at
+    // nearly half the arguments and one ULP at hundreds: the roundings are inside the ladder.
     EXPECT_GT(maxError, 1.0);
     EXPECT_GT(fraction, 0.25);
     EXPECT_GT(beyondOneUlp, 0);
@@ -911,17 +833,10 @@ TEST(NativeHalfLaneTest, LaneRoundsPerOperationNotOncePerValue) {
 }
 
 TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
-    // The scale 2^15 is exact, so it buys no accuracy; what it buys is range,
-    // and this is the range: the largest argument whose output is still a
-    // normal half, that is where 2^15 F_k(x) crosses the smallest normal
-    // value 2^-14, that is where F_k(x) crosses 2^-29.
-    //
-    // The same test against the unscaled ladder (scale 2^0, the shipped
-    // region-C body) crosses at F_k = 2^-14, which at orders 3 and up is
-    // left of the region-C boundary: unscaled, those orders never carry a
-    // normal value in region C at all.
-    // The reach of the scale, as an argument: 2^15 F_k(x) = 2^-14, that is
-    // F_k(x) = 2^-29.
+    // The scale 2^15 is exact, so it buys range, not accuracy: the largest argument whose output is
+    // still normal is where 2^15 F_k(x) crosses the smallest normal 2^-14, i.e. F_k(x) = 2^-29.
+    // Unscaled (2^0, the shipped region-C body) the same test crosses at F_k = 2^-14, left of the
+    // region-C boundary at orders 3 and up, so those orders carry no normal value there.
     struct Reach {
         int order;
         double expected;
@@ -959,21 +874,18 @@ TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
         EXPECT_GT(crossing, reach.expected * 0.97);
         EXPECT_LT(crossing, reach.expected * 1.03);
 
-        // The ceiling is where the value crosses the format's smallest normal,
-        // so the reference has to agree that the crossing argument carries a
-        // value at the ceiling, within the lane's own error: the claim stops
-        // where the arithmetic says, not at an argument the sweep happened to
-        // reach. (The crossing return can be normal while the true value has
-        // just crossed -- the lane returns a rounded value, not the truth.)
+        // The reference has to agree that the crossing argument carries a value at the ceiling,
+        // within the lane's own error, so the claim stops where the arithmetic says rather than
+        // at an argument the sweep happened to reach. The crossing return can be normal while
+        // the true value has just crossed: the lane returns a rounded value.
         const std::vector<double> atCrossing =
             Reference(reach.order, F16FromBits(HalfBitsAt(largest)));
         EXPECT_GE(Scaled(atCrossing[static_cast<std::size_t>(reach.order)]),
                   kSmallestNormal * (1.0 - kBoundUlps * std::ldexp(1.0, -10)));
 
-        // The unscaled ladder (scale 2^0) at the same order: from order 3 up
-        // its crossing is left of the region-C boundary, so it has no normal
-        // output anywhere in region C and the scale is the whole of the range
-        // there. At order 2 it still has one, just not as far out.
+        // The unscaled ladder (scale 2^0) at the same order: from order 3 up its crossing is
+        // left of the region-C boundary, so it has no normal output anywhere in region C and the
+        // scale is the whole of the range there. At order 2 it still has one.
         if (reach.order >= 3)
         {
             const std::vector<double> atBoundary = Reference(reach.order, BoundaryArgument());
@@ -981,8 +893,7 @@ TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
         }
     }
 
-    // Orders 0 and 1 never reach: their crossing sits above the format's own
-    // maximum (65504), so there is nothing left to bound.
+    // Orders 0 and 1 never reach: their crossing sits above the format's maximum, 65504.
     for (int k = 0; k <= 1; ++k)
     {
         int largest = -1;
@@ -1000,21 +911,17 @@ TEST(NativeHalfLaneTest, TheScaleReachesWhereTheUnscaledLadderCannot) {
 }
 
 TEST(NativeHalfLaneTest, TheSpanSetsTheWallNoScalePasses) {
-    // The other end of the range statement. One scale carries the whole
-    // ladder, F_0 at the top down to F_k at the bottom, so the two ends have
-    // to fit the format's range together: F_0/F_k passes the format's normal
-    // span, 2^29, at about x = 38 at order 8, where the scale 2^15's own
-    // reach is x = 30.17. The two limits are within 25% of each other there,
-    // so there is nothing left for a larger scale to win even if the format
-    // had one -- which is where the range statement stops.
+    // The other end of the range statement: one scale carries the whole ladder, F_0 down to F_k, so
+    // both ends must fit the format's range together. F_0/F_k passes the normal span 2^29 at about
+    // x = 38 at order 8, where the scale 2^15's reach is x = 30.17 - within 25%, so a larger scale
+    // has nothing left to win.
     const int orders[] = {3, 4, 5, 6, 8, 12};
     const double spanLimit = std::ldexp(1.0, 29);
     std::vector<Half2> out(13);
 
     for (int order : orders)
     {
-        // The span along the sweep, and the largest argument where it is
-        // still inside the limit.
+        // The span along the sweep, and the largest argument still inside the limit.
         int largest = -1;
         double crossing = 0.0;
 
@@ -1058,11 +965,9 @@ TEST(NativeHalfLaneTest, TheSpanSetsTheWallNoScalePasses) {
     EXPECT_GT(crossing, 34.0);
     EXPECT_LT(crossing, 42.0);
 
-    // The case the entry's own documentation names: order 8 at x = 400 is past
-    // the ceiling at that order, so the return is a subnormal and then a zero
-    // by design, and no accuracy is claimed there. What is checked is that the
-    // argument is in that domain -- the value itself is below the format's
-    // smallest normal -- and the difference is reported, not claimed.
+    // The case the entry's documentation names: order 8 at x = 400 is past the ceiling at that
+    // order, so the return is a subnormal and then a zero by design, with no accuracy claimed.
+    // What is checked is that the argument is in that domain, and the difference is reported.
     {
         const F16 argument = F16FromDouble(400.0);
         std::vector<Half2> out8(9);
@@ -1128,11 +1033,9 @@ TEST(NativeHalfLaneTest, BatchEntryIsThePackedEntryPerArgument) {
 
 // --- The claims, graded -------------------------------------------------------
 
-// The book this lane publishes: three claims, each with its own domain and
-// exactly one verdict, in the shape the accuracy gate's own book uses (the
-// gate's vocabulary, name for name). A claim whose measurement did not run in
-// this invocation reports evidence absent rather than a pass -- the rule the
-// gate's --strict applies -- so no verdict here rests on a run that skipped it.
+// The book this lane publishes: three claims, each with its own domain and exactly one verdict,
+// in the accuracy gate's own shape. A claim whose measurement did not run reports evidence
+// absent rather than a pass - the gate's --strict rule - so no verdict rests on a skipped run.
 TEST(NativeHalfLaneTest, ClaimBookGivesEachClaimOneVerdict) {
     // native-half-bound.
     Verdict boundVerdict = Verdict::EvidenceAbsent;
@@ -1210,9 +1113,8 @@ TEST(NativeHalfLaneTest, ClaimBookGivesEachClaimOneVerdict) {
         EXPECT_NE(row.verdict, Verdict::Vacuous) << row.id;
     }
 
-    // In a full run every claim's evidence is the measurement above it in this
-    // file, so every verdict is a verified one -- and a claim that stopped
-    // being met would fail here as the one it is, not as a total.
+    // In a full run every claim's evidence is the measurement above it, so every verdict is
+    // verified - and a claim that stopped being met fails here as the one it is.
     if (gBound.claimed > 0)
     {
         EXPECT_EQ(boundVerdict, Verdict::Verified);
@@ -1228,10 +1130,9 @@ TEST(NativeHalfLaneTest, ClaimBookGivesEachClaimOneVerdict) {
 
 #else // BoysFp16
 
-// The other side of the seam: this build carries no native half lane, so there
-// is no measurement to make and no claim to judge. A skipped test is a test
-// runner's way of saying exactly that - it is neither the lane's verdict nor a
-// green - and it names the build fact that put it here.
+// The other side of the seam: this build carries no native half lane, so there is no
+// measurement to make and no claim to judge. A skipped test says exactly that - neither the
+// lane's verdict nor a green.
 TEST(NativeHalfLaneTest, LaneIsNotCarriedByThisBuild) {
     GTEST_SKIP() << "the native half lane is declared behind the BoysFp16 seam, which this build "
                     "has closed (BoysFp16 = 0): no entry to measure, no claim to judge";

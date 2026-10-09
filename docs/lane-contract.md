@@ -6,6 +6,22 @@ and arguments x ≥ 0.
 It offers several lanes, which differ in precision and in cost. This page states each lane's error
 bound, the arguments the bound covers, and where the lane stops being usable.
 
+This page is the per-lane contract: for each lane, the bound it guarantees and the arguments that
+bound covers; then what each axis inside a lane changes; then what the default selects when a call
+names nothing; and, at the end, what is not claimed. The words it uses are defined on
+[the API reference's landing page](mainpage.md) — *lane*, *region*, *route*, *scheme*, *partition*,
+*band*, *cell* and *gate* among them. Four shorter pages sit beside this one:
+`docs/getting-started.md` in this tree if you have not called the library yet,
+[Choosing a lane](consumer-perspective.md) if you are deciding how much accuracy the calculation
+needs, [Build facts](build-facts.md) for what a build of the library is, and
+[Calling this library on a GPU](gpu-guide.md) if the lane you want is a device one — that page is
+also where the device half's own bounds are read from, and says which of them a run stands behind.
+
+**Read every figure with its instrument.** A *bound* is a ceiling a lane guarantees, and a *bar* is
+the figure one row is judged against. A *measured* figure is what a program in this tree measured
+against the committed reference; where it belongs to one machine, the machine is named beside it. A
+figure counting instructions or retired slots is what the machine named beside it retired.
+
 Every bound here is stated as an **absolute** error — |computed − true| — except where an entry says
 otherwise. The packed-half lane's bound is relative, and the half lanes' bound is absolute plus a
 term that depends on the size of the result.
@@ -44,6 +60,12 @@ to 4, 2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.7835878
 to 32 — and past its own boundary an order is served by recursion from a single fit, the band
 seed, which is slightly less accurate than the fits themselves.
 
+That single fit is the **extended band**: the part of region A running from the argument at which an
+order stops being read from its own fit — the band's left edge is the lowest of them,
+1.0855252345349333 — up to x = 11.899848152108484, where region B begins. It is its own fit at degree
+24 in both routes, and it is why region A carries two figures rather than one: the per-order fits
+below an order's own end are held to 1e-15, and the band above that end to 3e-14.
+
 **Two lanes do not hold over the whole range**, and their entries say where they stop: the half
 lanes return nothing usable once the result falls below their bound, and the packed-half lane covers
 only the largest arguments.
@@ -54,12 +76,14 @@ only the largest arguments.
 x below about 1.0855. That last figure belongs to the single-argument entry; the batch entry is at
 most 5.5e-14 throughout, so a caller using the batch form should read 5.5e-14.
 
-A multiplier, set at compile time or per call, is any value at or above 1, with no upper end.
-Raising it loosens the bound and reduces the work **on the default route**, which pays for the
-looser bound with fewer stored coefficients to sum. The rational route is not relaxed by the six
-multipliers this library names, and its rung section below states why and with what figure: a
-caller who needs the rational route's fits to cost less has to ask for a different pair, which is
-a fit this revision does not carry.
+**The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
+that shows. `BoysLaneContracts` states 5.5e-14 for this lane over the whole of x >= 0, and it is
+region C that sets it. A batch call answers every order to nmax at once, so no per-order figure
+bounds it: orders at or past their own region-A end are read from the extended band in both lanes,
+and from x = 1.0855252345349333 up every batch call's F_0 is the band's own value — so the band's
+cell, 3e-14, is the tightest figure this tree carries for that part of the column, and the stored
+fits' 1e-15 bounds only the arguments below that edge, where the seed is a per-order fit read at
+1e-15 under a reachable gain of at most 2.171050.
 
 **This is the most accurate double the library produces.** The stored coefficients are rounded to
 double precision and hold only the sixteen or so significant digits a double can hold, so nothing
@@ -71,8 +95,12 @@ truncation and on some pieces smaller than it.
 ## The two fit routes
 
 The double lane's fits come in two routes, chosen per call with `BoysAllOrdersWithRoute` and
-reported by `BoysFitRoutes()`. Neither is a rung: a route is a way of serving a region, and the two
+reported by `BoysFitRoutes()`. A route is a way of serving a region, and the two
 hold the same bar over the same interval.
+
+The columns are: the route's name; the region the row serves; the left end of the interval its fit
+covers; the argument its selector takes over at; the coefficients it stores; the error it was measured
+to deliver against the committed reference; and the bar it is certified against.
 
 | Route | Region | Fit covers | Selector serves from | Stored | Measured | Bar |
 |---|---|---|---|---|---|---|
@@ -97,7 +125,7 @@ figure the lane documents there is untouched; above it the route holds the 3e-14
 there rather than a bar of its own.
 
 **The two region-A tables are not interchangeable, and their stored counts are not each other's
-substitute.** The default table's pieces do a second job: the batch entry's relaxed path seeds its
+substitute.** The default table's pieces do a second job: the batch entry seeds its
 downward recursion from the top order's piece over the whole of the region, and that recursion
 carries the seed's error down to F_0 with a gain of max(1, b^n / ∏(j+½)) at the piece's right end b —
 up to 1.04e5, at order 12 and the region's right end. The default pieces are fitted under a budget
@@ -139,88 +167,41 @@ route's, not the entry's, so the row is the stronger of the two statements: the 
 promises 3e-14 where the entry promises 5.5e-14, and the entry holds the tighter figure over the
 region, including the arguments below the route's own selector where the shipped lane answers.
 
-### The rung, per route
-
-The multiplier is a third selector, and it acts on the route the call names rather than on the
-library: a rung cuts the named route's own stored fit to the degrees a criterion certifies for that
-multiplier. `BoysAllOrdersAtTier(tier, route, scheme, ...)` is where a caller names all three at run
-time. The two routes' criteria read different tables, and the difference is not a detail of the
-implementation:
-
-- **The Chebyshev route's rung** cuts the stored coefficient series by one degree `d'`, and the
-  dropped tail is `Δ(d') = Σ_{k>d'} |c_k|`, which bounds the truncation because every basis function
-  is at most one in modulus on the mapped interval. The table is `RegionADegrees`/`RegionBDegrees` in
-  `boys_effective_degrees.hpp`, one per (multiplier, lane role, coefficient basis).
-- **The rational route's rung** cuts the stored numerator and denominator together, to
-  `[m', k'] = [min(d', m), min(d', k)]`. A quotient's perturbation is not a coefficient sum, so the
-  measure is the two terms it actually has. With `δP = P − P'` and `δQ = Q − Q'`,
-
-  ```
-  R − R' = P/Q − P'/Q' = δP/Q − R'·δQ/Q
-  ```
-
-  exactly, and with `ΔP(d') = Σ_{j>m'} |p_j|`, `ΔQ(d') = Σ_{j>k'} |q_j|`, `SP = Σ_j |p_j|` and `Qlo`
-  a lower bound on `|Q|` over the piece,
-
-  ```
-  Δ_pair(d') = ( ΔP(d') + (SP / (Qlo − ΔQ(d'))) · ΔQ(d') ) / Qlo   ≥   sup |R − R'|
-  ```
-
-  — the numerator's dropped tail against the denominator's floor, plus the denominator's dropped
-  tail carried by the pair's value scale. `Qlo` is taken from `Q`'s own values on a 64-interval grid
-  less what `Q` can move between grid points (`Σ_j j|q_j| · h/2`), because `Σ_j |q_j|` exceeds 1 on
-  these pieces and the triangle bound says nothing. A cut whose floor does not clear its own `ΔQ` is
-  refused rather than admitted: nothing bounds the pair's scale there. The table is
-  `RationalRegionADegrees`/`RationalRegionBDegrees`, beside the polynomial ones.
-
-Both scans share one criterion — `Δ · A ≤ (m − 1) · B_region`, the smallest admissible `d'` in the
-evaluator's domain `{0,1,2,4,6,…}` — and both fall back to the untruncated fit when nothing smaller
-is admissible. For the polynomial family the fallback is safe because `Δ(deg) = 0`. The rational
-family's equivalent is a pair cut to itself: `δP = δQ = 0`, so `R − R' = 0` exactly, and the rung
-returns the route's stored pair bit for bit. A rung that cannot reach its budget therefore costs
-nothing and claims nothing, and no rung is left without an admissible cut.
-
-**The rational rungs do not relax the rational route at this revision, and this is a measured
-result rather than a fallback.** The smallest pairwise tail any truncating cut of any of the 66
-region-A pieces reaches is **5.644946e-09** (F24's second piece, cut 6 of its stored `7/5`); the
-smallest for the region-B seed is **6.843273e-06** (one numerator order dropped). The criterion
-admits a cut when `Δ_pair · A ≤ (m − 1)·5.5e-14`, so the first multiplier that carries the cheapest
-region-A cut is `m ≈ 102636` and the first that carries the region-B one is `m ≈ 1.24e8`. The
-largest multiplier `AccuracyTier` names is 65536, whose budget is 3.604425e-09. Every one of the
-twelve (route, scheme, rung) combinations above m = 1 therefore evaluates the stored pair, and the
-gate measures it doing so: the delivered figures are the uncut route's own, and the bound published
-for each rung is `m · 5.5e-14`.
-
-The region-A amplification is 1 here rather than the batch role's `w(b)`. The route reads one piece
-per order — the pieces are fitted for the values alone and do not survive the batch downward
-recursion's gain — so a cut's error reaches the value it was read for with nothing in between.
-Region B reads its seed at order 0 and carries it up, so its cut pays the same `A_B(n)` the shipped
-seed's does.
 ## Interval granularity: how narrowly the fitted domain is cut
 
 A stored fit is a polynomial over one interval, and the interval's width is the lever on its degree:
 the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halving a piece buys about
 `2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
 parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
-more degree is not.** The library offers two partitions and no spectrum between them, and the narrow
-one is the default: a call site that names no partition reads the pieces cut to the proved bound, and
-`FitGranularity::kShipped` is how a caller asks for the committed table by name. The two cut one fit,
-so the move is a choice of table and not of accuracy.
+more degree is not.** The library offers three partitions and no spectrum between them. The narrow one
+is the default: a call site that names no partition reads the pieces cut to the proved bound, and
+`FitGranularity::kCoarsest` is how a caller asks for the committed table by name. Beside those two,
+`FitGranularity::kUniform` is a grid of one fixed width over the whole fitted domain, every order
+fitted independently at one degree and no order built from another, chosen so that a call locates its
+piece by a multiply rather than a search. All three cut one fit, so
+the move is a choice of table and not of accuracy.
 
 **What narrower pieces buy, and what they cost.** They cut the number of coefficients an evaluation
 reads, not the size of the table: a narrower piece needs a lower degree, and there are more of them.
 The choice is therefore between work per call and storage plus a piece lookup per call, and neither
-partition is a rung of the other.
+partition is a coarser form of the other.
 
-**The shipped partition.** Region A: two equal-width bands per order, at degree 20 and degree 18 —
-40 stored coefficients per order, 1320 across the whole table. Region B: one seed fit, degree 18,
-19 stored. The extended band is its own fit at degree 24 and is not a choice either member makes.
+**The shipped partition's shape is the double lane's; the single-precision lane cuts the same
+regions differently.** On the double lane, region A is two equal-width bands per order, at degree 20
+and degree 18 — 40 stored coefficients per order, 1320 across the whole table — and region B is one
+seed fit at degree 18, 19 stored. The single-precision lane's region A is per order again but two to
+four pieces an order, all at degree 10 — 1067 stored across its table — and its region B is one seed
+at degree 10, 11 stored. What the partition names is the structure the two lanes share: a per-order
+piecewise region A and a single-seed region B. What it does not name is the piece count or the
+degree, and those differ by lane.
+
+The extended band is its own fit at degree 24 and is not a choice either member makes.
 Read against the a-priori truncation bound below at the quantum-chemistry target of
-1e-14: region A's two bands hold 3.14e-18 and 2.58e-18, and the extended-band seed holds 5.98e-18 —
-all far inside the target. **The region-B seed is the one piece the bound does not cover: 1.36e-13,
-above the target**, and the piece's *measured* truncation is 9.92e-15, inside it. So the shipped
-seed meets the target by measurement and misses it by the bound, and that gap is the honest
-statement of where the shipped design stands against a 1e-14 target.
+1e-14, the double lane's region A holds 3.14e-18 and 2.58e-18 across its two bands, and the
+extended-band seed holds 5.98e-18 — all far inside the target. **The region-B seed is the one piece
+the bound does not cover: 1.36e-13, above the target**, and the piece's *measured* truncation is
+9.92e-15, inside it. So the shipped seed meets the target by measurement and misses it by the bound,
+and that gap is the honest statement of where the shipped design stands against a 1e-14 target.
 
 **Region A's pieces are held to a second reading, and it is not the bound above.** A region-A piece
 is read two ways. The single-order lane reads it at its own size, where region A is documented at
@@ -252,7 +233,7 @@ walk's 311 pieces — the trailing run of 27 of the 33 orders, from where the we
 piece that ends at the region's right edge. The tightest budget any piece is held to is 2.394e-19,
 at order 12's last piece.
 
-**The gain the walk holds is the envelope; the most a call in this revision reaches is 2.171050.** The
+**The gain the walk holds is the envelope; the most a call reaches is 2.171050.** The
 seeding fallback is taken only below the band's left edge, `x < 1.08552523453493330`, and what a call
 pays there is its own top order's gain rather than the region's worst. For a fixed `x` the ratio
 `x^n / ∏(j + ½)` rises with the order only until the order passes `x − ½` and falls after, so below
@@ -307,9 +288,11 @@ widest, since the gain is 1 at order 0, while a high order's last pieces come ba
 rational route is fitted over these same pieces, and a piece the family's own degree pair could not
 hold the target on is bisected: the result is 311 pieces again at 2611 stored coefficients, one
 evaluation reading 6 to 9 of them where the Chebyshev fits on the same pieces read 11. The two
-partitions as tables, the default route's counts beside them:
+partitions as tables, the default route's counts beside them — the rows are the coefficients stored,
+the stored rows (one piece is one row, and the seed is another), the degree a piece is fitted at, and
+the coefficients one evaluation reads:
 
-| | `FitGranularity::kShipped` | `FitGranularity::kNarrow` |
+| | `FitGranularity::kCoarsest` | `FitGranularity::kNarrow` |
 | --- | --- | --- |
 | stored coefficients | 1339 (1320 region A + 19 region B) | 3476 (3421 + 55) |
 | stored rows | 67 (66 pieces + 1 seed) | 316 (311 + 5) |
@@ -343,7 +326,7 @@ the degree ladder above), so the 1e-14 the pieces are solved for is not the 1e-1
 region A the narrow pieces read 2.22045e-16, one unit in the last place of a value near 1, against
 the region's published 1e-15 bar and the shipped table's own 2.22045e-16 — the same figure at 11
 coefficients instead of 19 to 21, which is what the region's redesign buys there. The gain the walk
-holds costs nothing measurable at this revision either: the widest it gets on a call the dispatch can
+holds costs nothing measurable either: the widest it gets on a call the dispatch can
 make is 2.171050, and the region reads 2.22045e-16 at both partitions.
 
 **The trade, stated as a trade.** A consumer trades coefficients read per evaluation (19–21 → 11)
@@ -364,14 +347,16 @@ measured truncation over the bound.**
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
 `FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
 the generated header's, reachable through the same entries as the shipped partition, and its
-certification is the accuracy gate's own block: 252 rows — one per partition, scheme, call shape and
-accuracy rung — each judged against the bar the published table holds for the cell it ran in, times
-the rung's multiplier, with the worst cell named on the row, and three more for the rational route
-over the narrow partition — 255 in all. The call shapes are the stored fits read directly, the batch
+certification is the accuracy gate's own block: its rows — one per partition, scheme and call
+shape — each judged against the bar the published table holds for the cell it ran in, with the worst
+cell named on the row, and three more for the rational route
+over the narrow partition. The call shapes are the stored fits read directly, the batch
 entry below the band (where the seeding fallback is taken), the batch and plane entries over the band
 and below, the batch entry over region B, the single-order entry at region A's cell, and the
 single-order, fixed-order and plane entries over the whole grid. Three rows move between the
-partitions, and every other row is the same figure under either name at the reference multiplier:
+partitions, and every other row is the same figure under either name. The first column is what the
+row measures, the two middle columns are the two partitions, and the last is the bar the row was
+certified against:
 
 | row, worst over both schemes | shipped | narrow | bar |
 | --- | --- | --- | --- |
@@ -380,37 +365,22 @@ partitions, and every other row is the same figure under either name at the refe
 | batch entry, region B | 9.9365e-15 | 7.51675e-16 (n=32, x=11.8998) | 5.5e-14 |
 | stored fits and single entry, region A | 2.22045e-16 | 2.22045e-16 | 1e-15 |
 | batch and plane entry, band and below | 3.21618e-15 (n=16, x=4.89985) | 3.21618e-15 | 5.5e-14 |
-| single, fixed-order and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (m × B_region) |
+| single, fixed-order and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (B_region) |
 | rational route, region-A pieces | 2.46e-14 (shipped cover) | 2.21663e-14 (n=2, x=9.88955) | 3e-14 |
 | rational route, region-B seed | 4.46e-14 (shipped seed) | 4.12448e-14 (n=0, x=12) | 5e-14 |
 | rational route, batch entry | — | 5e-14 (n=32, x=28.9893) | 5.5e-14 |
 
-**The rungs are served on both partitions, and the narrow rows are derived from the narrow table.**
-A relaxed rung is a cut of a fit's stored coefficients: the effective-degree criterion is
-`d'(m) = min { d' : Delta(d') * A <= (m - 1) * B_region }` over `Delta(d')` the sum of the dropped
-tail's magnitudes, `A` the amplification the region's reading carries and `B_region` the bar the
-region is held to. The same criterion, applied to the narrow table's own coefficients, is what a
-narrow rung is: a compile-time derivation over numbers the generated header already stores, so
-nothing had to be regenerated and the shipped table's bytes did not move. What it delivers is the
-gate's own reading, over all seven rungs at both schemes: the worst figure any row comes in at is
-0.909 of the bar it promised at `m = 1`, 0.959 at `m = 64`, 0.997 at `m = 256`, 0.978 at `m = 1024`,
-0.995 at `m = 4096`, 0.992 at `m = 16384` and 0.991 at `m = 65536`, every rung inside its budget on
-every row. A relaxed narrow rung trades accuracy for work exactly as a relaxed shipped rung does: at
-`m = 65536` the narrow partition's stored region-A fits deliver 6.49285e-11 against the 6.5536e-11
-they promised, where the same row of the shipped partition at that rung delivers 6.44079e-11 against
-the same bar, and the degree one evaluation reads at that rung is 1 to 8 over the narrow pieces
-against 10 to 14 over the shipped ones, where at `m = 1` they are 10 and 18 to 20.
-
-**All 255 rows are met and the books around them do not move.** The last three rows are the rational
+**The rows are met and the books around them do not move.** The last three rows are the rational
 route's own narrow fits, judged against the route's published bars rather than the Chebyshev rows'
 figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2.21663e-14, the
 shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
 entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
-counted apart from the lane book and from the scheme rows, and those read what they read before it
-existed: 39 of 39 claims, 44 of 44 scheme rows, and the combinations book 336 certified and published
-of 448 with none refused. What does move is the option space, which reads 36 of 36 members supported,
-bounded and reachable: the two partitions are two of them, each measured over 2819824 cells at both
-schemes with 1543999 of them reading differently under the other partition and none over the bar its
+counted apart from the lane book and from the scheme rows, and those read what they read at that run's
+own revision: 39 of 39 claims and 44 of 44 scheme rows, whose combinations book read its own space with
+none refused — **the space carries a third partition, and the book below is the current one**. What
+does move is the option space, which reads 36 of
+36 members supported, bounded and reachable: the piecewise partitions are two of them, each measured over 2819824 cells at both
+schemes with 1543994 of them reading differently under the other partition and none over the bar its
 row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
 the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
 itself, so no error can exceed them, and they are not counted in the rows above.
@@ -418,37 +388,24 @@ itself, so no error can exceed them, and they are not counted in the rows above.
 **What is carried, and what is still refused.** The narrow partition is a field of `EvalPolicy` and
 a name the report prints, and every double-precision entry this library has reads it: the stored fits
 directly, the batch entry's seeding fallback, the single-order entry, the plane entry, and the
-across-orders packed lane. The relaxed rungs `m > 1` are carried on it too — the criterion is the
-same one, measured against the partition's own pieces rather than against the shipped rows, and its
-table is derived over them — so a rung of the narrow partition on the Chebyshev route is a rung of
-*it* and not the shipped table truncated. Seven families of combination are still refused, four of
-them on this partition and three on other axes, each named where it is refused and each counted in
-the combinations book above: the rational route's across-orders packed lane over the narrow pairs,
-whose lane steps one order's coefficients to the next at a fixed stride and is instantiated over the
-shipped pairs, so a packed kernel over this partition's own pairs is a body to write — 14 cells, both
-schemes at the reference multiplier and at every relaxed rung; the rational route's rung table over
-the narrow pairs, which is derived from the shipped pairs, so deriving it over this partition is a
-table to derive — 12 cells, on the arguments axis at every relaxed rung; the narrow partition past
-the reference multiplier on the single-precision lanes, which hold one coefficient set and one degree
-table for the shipped pieces and so have no narrow rung table to cut — 96 cells, 48 on each of the
-two lanes, both axes at every relaxed rung; the device lane's narrow policy, whose kernels read one
-coefficient set per region and whose narrow pieces are the host lane's, so the table is one this lane
-has not generated — 56 cells, both axes at every rung; the single-precision lanes' across-orders
-axis, whose rung bodies are instantiated for the shipped route and scheme while the scalar path
-carries another family's rungs on the arguments axis — 36 cells, 18 on each lane, at every relaxed
-rung; and, on the device lane alone, its orders-axis kernel, which its entries do not have at any
-rung — 28 cells — and a route or a scheme of another family on its arguments axis, where its degree
-tables are certified for the shipped family alone — 21 cells. Those seven are 263 in all, the whole
-of the owed count. Each is a `static_assert` with the reason or a configure probe that compiles the
-call, and each names the table or the kernel it would need. None falls back: the two partitions are
-different fits of the same function over the same interval, so a substitution would return the
-shipped numbers under the narrow partition's name. Each is unbuilt work rather than an unavailable
-option, and each is named where it is refused so that it can be counted.
+across-orders packed lane. The rational route's own narrow pair tables, its across-orders packed
+lane over the narrow pairs and the single-precision lanes' narrow tables are derived over those same
+pieces the same way, so either route, under either scheme and on either packing axis, is a
+call this build compiles rather than a table still owed. Nothing of the axis cross is refused: the
+combinations book reads none refused, and the members it
+counts apart are the device lane's — the ones the gate target that produced that run was not linked
+against the device library for. That lane is
+where an earlier revision of this paragraph named a debt, and the lane's own tables answer for it
+now: its narrow partition is cut and uploaded beside the shipped one, its orders-axis entries are
+carried, and the routes and schemes of both families are served on its arguments axis.
+What no path here does is substitute: the two partitions are different fits of the same function over
+the same interval, so a call answered from one under the other's name would return the shipped
+numbers as narrow ones.
 ## float
 
 **At most 1.5e-7, absolute and everywhere.**
 
-The same multiplier applies. The batch entry computes a starting value in double precision and then
+The batch entry computes a starting value in double precision and then
 recurses in single.
 
 **The limit is the number format.** A 32-bit float carries about seven significant digits, which is
@@ -462,30 +419,19 @@ instead of fixed, and `BoysFitRoutesF32` reports them. The measured column is th
 the committed reference, every order and every sample of the row's interval.
 
 **The same two routes are open at compile time, on the policy, and there the scheme comes with
-them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32` and `BoysAllNF32` take the `EvalPolicy` the
-double lane's entries take, so the route is a template argument as well as a run-time selector, and
-the scheme — the choice between the Chebyshev table and the monomial form of the same fits — is
-offered beside it. At the reference multiplier every pair this lane stores is carried, and the gate
-measures the two entries with a policy as ten rows, one per policy for each region the policy's fits
-serve — the six the lane shipped, plus the narrow partition's four — 294690 comparison cells with no
+them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
+`BoysAllNAtOrdersF32` take the `EvalPolicy` the double lane's entries take, so the route is a
+template argument as well as a run-time selector, and the scheme — the choice between the Chebyshev
+table and the monomial form of the same fits — is offered beside it. Every pair this lane stores is
+carried, and the gate measures the single and all-orders entries with a policy, ten rows each, one
+per policy for each region the policy's fits serve — the six the lane shipped, plus the narrow
+partition's four. The lane's array entries carry the policy into those same two bodies, so those
+rows are their readings at the same policy too: 294690 comparison cells with no
 row measured over no argument, and no narrow row of them outside its bar in either multiply-add
 route's build. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
 region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
 rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
 
-**A relaxed rung keeps both of them.** The rung's degrees are derived from the table the policy
-actually reads: under the Chebyshev route each per-order fit is cut from whichever of the two stored
-forms the scheme sums, under the rational route from the tail of the pair that route stores — the
-numerator and the denominator cut together — and region B's seed from its own table at the budget the
-policy names. The gate measures every pair on both entries, at the tier's first rung and at its last
-and again at the fp16/bf16 budget, as thirty-six rows judged against `m · 1.5e-7`: 530442 comparison
-cells, none of them outside the row's bar and no row measured over no argument, at the fused
-multiply-add route and at the separate one alike. The tightest row is the single entry's Horner row at
-`m = 65536`, 9.82766e-03 against 9.8304e-03, which is 0.9997 of that rung's bar at order 7,
-x = 1e-12; the separate route delivers the same figure, so that is the criterion's own cut —
-`(m − 1) · 1.5e-7` aimed at the truncation and the remainder left to the fit's `m = 1` error — and not
-a rounding. Every other row is at or below 0.98 of its bar, and the worst of the relaxed pair is
-0.977, the single entry's split Clenshaw row over region B at `m = 64`.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
@@ -504,19 +450,19 @@ order from its own fit across the region, so it has no band boundary at which a 
 over, and the row does not name one.
 
 **Both routes are open at the narrow partition as well**, which is a second cut of the same two
-regions at degree 6: 218 pieces over region A and two over region B, with each route storing its own
-fit on that cut. The Chebyshev route stores 1526 coefficients either way over region A and 14 over
-region B, the rational route 1238 over region A and 11 over region B, and the gate's single-entry
-policy rows measure them at 1.02681e-07 and 1.29916e-07 for the Chebyshev pair and 1.00057e-07 and
-2.99288e-08 for the rational pair, over region A and region B respectively, against the lane's
-1.5e-07 bar. The narrow rows are the same figures under the two multiply-add routes with one
-exception, the rational route's region-B row, which reads 2.99288e-08 with the multiply-add fused and
-4.43557e-08 with it separate — the figure the generated header publishes for that seed is the worse of
-the two, 3.90533e-08 fused and 2.92450e-08 separate, and the gate reads the route the build actually
-runs. Region B's seed is where the narrowing costs rather than saves: 14 stored against the shipped
-seed's 11 on the Chebyshev route, and 11 against 6 on the rational one, and a call there reads 7
-coefficients where the shipped seed reads 11. All four narrow rows are inside their bar under either
-route.
+regions at degree 6: 218 pieces over region A and four over region B, with each route storing
+its own fit on that cut. The Chebyshev route stores 1526 coefficients either way over region A
+and 28 over region B, the rational route 1241 over region A and 18 over region B, and the gate's
+single-entry policy rows measure them at 1.02681e-07 and 4.51733e-08 for the Chebyshev pair and
+1.15993e-07 and 2.95023e-08 for the rational pair, over region A and region B respectively,
+against the lane's 1.5e-07 bar. Every narrow row is inside that bar on the build the gate ran,
+whose multiply-add route is the fused one. The figures the generated header publishes for
+those fits are read the same way at each route: 1.19209e-07 over region A and 5.96046e-08 over
+region B for the narrow Chebyshev pieces, both the same under either route, and 1.14376e-07
+fused against 1.10598e-07 separate over region A and 3.29858e-08 under both over region B for
+the rational ones. Region B's seed is where the narrowing costs rather than saves: 28 stored
+against the shipped seed's 11 on the Chebyshev route, and 18 against 6 on the rational one, and
+a call there reads 7 coefficients where the shipped seed reads 11.
 
 **The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
 holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
@@ -535,9 +481,9 @@ can run it.
 
 | Mode | Operand | Accumulated in | Bound over region A |
 |---|---|---|---|
-| fp64 | 64-bit | 64-bit | m·1e-15 |
-| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | m·1e-15 + 2.5e-7 |
-| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | m·1e-15 + 2.5e-7 |
+| fp64 | 64-bit | 64-bit | 1e-15 |
+| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | 1e-15 + 2.5e-7 |
+| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | 1e-15 + 2.5e-7 |
 
 The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the product adds nothing
 measurable to what the coefficients already cost. The other two deliver 1.92e-07 and 1.95e-07, which
@@ -548,17 +494,14 @@ operand to 11-bit parts and summing six of them changes nothing while the total 
 amount of operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. That is a
 property of the card's accumulator, not of the split.
 
-**The multiplier does not improve the two 32-bit modes.** A format's floor does not scale with the
-multiplier; the fit's term does, but it cannot reach 1.9e-07 until the multiplier is about 1.9e8,
-four orders past the largest value this library offers. So over the whole multiplier range their
-bound is that floor. The 64-bit mode's floor is below the 1e-15 budget, so its bound is the same
-m·1e-15 as the double lane's and the multiplier lifts it from 2 upward as everywhere else.
+**The two 32-bit modes' bound is their accumulator's floor, not the fit's.** The stored fits are
+accurate to far below that floor, so over the whole of region A their
+bound is the floor itself. The 64-bit mode's floor is below the 1e-15 budget, so its bound is the same
+1e-15 as the double lane's.
 
-**The two 32-bit modes miss the float lane's bound at multiplier 1 and hold it from 2.** Their floor
-is 1.92e-7 against the float lane's 1.5e-7, so 1.28 times as much. The float lane's bound is m·1.5e-7,
-so at multiplier 2 it is 3e-7 and both modes are comfortably inside it. That is the trade they offer:
-a float-lane-grade result from a card with no 64-bit arithmetic, at 1.28 times the float lane's bound
-at the same multiplier.
+**The two 32-bit modes exceed the float lane's bound.** Their floor
+is 1.92e-7 against the float lane's 1.5e-7, so 1.28 times as much: that is the trade they offer,
+a float-lane-grade result from a card with no 64-bit arithmetic, at 1.28 times the float lane's bound.
 
 **These two bounds are arithmetic on a model, not a measurement of a card.** They were measured
 against the committed reference grid and against a dense sweep of the band, but on a CPU that
@@ -579,8 +522,8 @@ seed at no order at all.
 
 ## half — storing 16-bit values and computing in 32-bit
 
-**At most `m·1e-7` plus half of the last representable digit of the result**, where `m` is the same
-multiplier as above. This is the one bound that mixes kinds: the first term is an absolute error and
+**At most `1.5e-7` plus half of the last representable digit of the result.** This is the one bound
+that mixes kinds: the first term is an absolute error and
 the second is proportional to the size of the result.
 
 Half precision takes no part in the arithmetic. **The argument is rounded to 16 bits and the
@@ -590,8 +533,8 @@ is large: near x = 29 the rounding of the argument is coarser than the represent
 bound, so a caller who needs accuracy relative to their own argument should use the float or double
 lane.
 
-**The margin is thin, and it is not the same for both formats.** Both figures below were measured at
-the default multiplier against a 45-digit reference, over every argument either format can represent
+**The margin is thin, and it is not the same for both formats.** Both figures below were measured
+against a 45-digit reference, over every argument either format can represent
 and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it
 is the instrument the two figures rest on. A sparser grid understates them — the committed reference
 grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are
@@ -602,20 +545,19 @@ nearly the whole bound, and the arithmetic term has almost nothing left to spend
 error anywhere in the lane therefore pushes a result over its bound. Treat this lane as inside its
 bound with nothing to spare.
 
-**The limit is the 16-bit format, and it does not improve with the multiplier.** Sixteen bits carry
+**The limit is the 16-bit format.** Sixteen bits carry
 about eleven significant bits, or five parts in ten thousand, and the bound already spends half of
-one such step on representing the result. Raising the multiplier loosens only the part that comes
-from the 32-bit arithmetic.
+one such step on representing the result.
 
 **Below a certain size the lane returns nothing usable.** The bound holds only where the result is
-larger than `m·1e-7` plus half a representable digit. Smaller than that, the returned value becomes a
+larger than `1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a
 subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments
 and over no others.**
 
 For 16-bit floats the point where the bound stops being useful is at arguments well inside the usable
-range, and it moves with the order. At the default multiplier, orders 3, 4 and 5 still return usable
+range, and it moves with the order. Orders 3, 4 and 5 still return usable
 values across the whole of the large-argument range; **the claim that every argument is past the
-threshold holds from order 6 upward**, and would hold at order 3 only at a multiplier around 126. The
+threshold holds from order 6 upward**. The
 16-bit brain-float format has the same exponent range as a 32-bit float, so it keeps returning usable
 values down to about 1e-38.
 
@@ -623,7 +565,7 @@ values down to about 1e-38.
 
 **Within 8 of the last representable digits of the returned value**, worst measured 4.243, for
 arguments at or above x = 28.984375. The bound is stated in representable digits rather than as a
-size, because that is the shape of this lane's error. There is no multiplier.
+size, because that is the shape of this lane's error.
 
 **It is not a drop-in for the half lane above.** It rounds once per calculation step, where that lane
 rounds once per value, so it spends more of the result's precision than that lane's bound allows: the
@@ -700,7 +642,7 @@ instruction pays nothing extra and is unaffected.
 That build writes the multiply-add as a bare product-plus-add, which costs no call where there is no
 fused instruction to call. **It is a different arithmetic and therefore a different error**, so the
 figures below were measured at that route rather than carried over from the fused one. They are the
-worst cell of each lane's sweep of the committed reference grid, at the default multiplier, against
+worst cell of each lane's sweep of the committed reference grid, against
 the same independent reference the fused figures use.
 
 **They were taken on MSVC x64 at its default architecture, Release, and they name that build.** A
@@ -712,30 +654,62 @@ library on another compiler is a second measurement rather than a confirmation o
 | lane | region | fused | separate | bound |
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
-| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 3.07e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.22e-15 | 4.63e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.52e-16 | 7.52e-16 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 1.06e-07 | 1.24e-07 | 1.5e-07 |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
 **No lane is held back on the fused route.** Every scalar lane holds its published bound at both
 routes, so the alternative is offered everywhere and no lane's figure is withdrawn. The float single
-entry is the one that moves furthest, from 0.705 of its bound to 0.824 at the default multiplier: a
-rise of 0.12 of a bound that is m·1.5e-7 and nothing else, which leaves 0.176 of it in hand. That is
-the tightest margin on this page and the one to watch if the float fits ever change.
+entry is the one that moves furthest, from 0.424 of its bound to 0.499: a rise of 0.075 of a bound
+that is 1.5e-7 and nothing else, which leaves 0.501 of it in hand. The band row is the other one that
+moves, from 0.107 of its bound to 0.154. The closest figure in this table is region C's 0.909 of its
+5.5e-14, which no route moves.
 
 **Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
-evaluates no multiply-add at all, so both routes land on the same bits. The float batch entry's worst
-cell is on the upward recursion, which is written as bare multiplies, subtractions and one division
-that no multiply-add route governs. And the double lane's worst cells at the smallest arguments and
-in the asymptotic region are not on a multiply-add either.
+reads no coefficient the route selects, and the one refinement its recurrence takes is written with
+the fused operation by name, so no contraction route reaches it and both routes land on the same
+bits. The float batch entry's worst cell is on the upward recursion, which is written as bare
+multiplies, subtractions and one division that no multiply-add route governs. And the double lane's
+worst cells at the smallest arguments and in the asymptotic region are not on a multiply-add either.
 
-**Three lanes are outside the choice entirely.** The half lanes
+**Two lanes are outside the choice entirely.** The half lanes
 evaluate in float and round to 16 bits once per value, so their multiply-adds are the float lane's —
 but the 16-bit representation term dominates every cell they measure, and the route's difference is
-orders below it, so the sweep finds the same worst cell on both routes. The AVX2 packed lanes name
-their instruction directly, so there is no route to select and no call to avoid. The packed-half
+orders below it, so the sweep finds the same worst cell on both routes. The packed-half
 lane's chain is one multiply and one divide per order, so it takes no fused step either.
+
+**The packed backends the report enumerates are inside the choice.** `avx2-fp64` and `avx2-fp32`
+carry the route as a template parameter and are instantiated at the one the build selected, which is
+what `BoysBackends()` reports for them: the fused route's step is one `vfmadd`, the separate route's
+is a multiply and an add, and that second one is two roundings on every build because no compiler
+flag reaches an instruction the source named. What they do not pay is the call a target without the
+fused instruction charges the scalar lane for the same two roundings.
+
+Which entries that reaches is narrower than the pair. The double backend is the one with a consumer
+path: its region-A kernel is what `BoysAllN` runs on the arguments axis, and measured over that
+region at `nmax = 4`, **879 of 2560** values of the lane move between the two routes, against **7 of
+2560** before the route reached the kernel, while the kernel called directly on the same arguments
+moves **11 of 40**. The seven are not the kernel — the direct call moves nothing at all before the
+change — they sit where the lane's scalar tail is (`BoysSingle` at the end of the same body), and each
+reads the scalar lane's bits exactly, so the lane was never purely one-rounding on a two-rounding
+build.
+
+The float backend is instantiated at the selected route and `BoysBackends()` reports it, but no entry
+a consumer can call evaluates through it: the single-precision batch entry packs no arguments at all
+(`BoysAllNF32` walks its arguments one at a time and hands each to the all-orders body, which runs the
+across-orders lane), the half lane's own batch entry runs an f16-native ladder rather than this
+backend, and the packed half kernels that do use it are called by this tree's tests and benchmarks
+and by nothing else. So the route's float half is a report about an arithmetic the library compiles,
+not a choice a caller can reach — the third gap, and the one that is a work item rather than a
+property of the axis.
+
+The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane the route reaches: its steps
+read the selection the build made, so its values move between the routes — **5,067 of 32,868** values
+of the across-orders double lane and **3,723 of 32,868** of the float lane differ across the two
+builds. At the fused route the lane's values are unchanged from before the route reached it: the same
+hash over all 38,068 rows of the dump.
 
 **The separate route does not remove every call, and the remainder is deliberate.** The transform
 lane's own product contains no fused step at all — its splits are exact by construction and its
@@ -765,27 +739,28 @@ compiles the claims against that answer, and `BoysBackends()` asks the same ques
 time so a caller can attribute a value to the arithmetic that produced it (the section below prints
 both lines). gcc and AppleClang contract one on arm64 and MSVC does not, on either architecture, so
 the MSVC arm64 build delivers the x86-64 figures. Only part of the contract moves, and this is the
-whole of it, at the default multiplier, against the same reference the table above uses:
+whole of it, against the same reference the table above uses:
 
 | lane | region | contracted | not contracted | bound |
 |---|---|---|---|---|
 | double, single | x < 1.0855252345349333 | 2.22e-16 | 2.22e-16 | 1e-15 |
-| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 3.29e-15 | 3.22e-15 | 3e-14 |
-| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 9.94e-15 | 9.94e-15 | 3e-14 |
+| double, single | 1.0855252345349333 ≤ x < 11.899848152108484 | 2.74e-15 | 3.22e-15 | 3e-14 |
+| double, single | 11.899848152108484 ≤ x < 28.98933773882074 | 7.5e-16 | 7.52e-16 | 3e-14 |
 | double, single | x ≥ 28.98933773882074 | 5e-14 | 5e-14 | 5.5e-14 |
-| float, single | all arguments | 1.29e-07 | 1.06e-07 | 1.5e-07 |
-| float, batch | all arguments | 1.29e-07 | 1.08e-07 | 1.5e-07 |
+| float, single | all arguments | 6.36e-08 | 6.36e-08 | 1.5e-07 |
+| float, batch | all arguments | 9.11e-08 | 1.08e-07 | 1.5e-07 |
 
-The double lane's first, third and fourth rows do not move at all: the same worst cell, to the digit,
-on both arithmetics. What moves is its band between 1.0855 and 11.8998, whose worst cell is n = 16 at
-x = 4.89985 without contraction and n = 32 at x = 10.7836 with it, and both float lanes, whose worst
-cell is n = 0 at x = 0.072854 without contraction and n = 32 at x = 11.9447 with it. The
-not-contracted column was measured on four
-configurations — MSVC on arm64, MSVC on x86-64, clang on x86-64 and AppleClang on x86-64 — which
-agree to the digit, two architectures and three compilers reaching one figure. The contracted column
-was measured on AppleClang on arm64, and reproduced on x86-64 by building with `-mfma`: the same six
-figures to the digit, and the same worst cell down to its order and argument, from two compilers on
-two architectures. That is the pair worth reading together, because it is what the licence turns on —
+The double lane's first and fourth rows do not move at all: the same worst cell, to the digit, on
+both arithmetics. Its third row keeps its worst cell, n = 32 at x = 11.8998, and reads 7.5e-16
+contracted against 7.52e-16 not. What moves is its band between 1.0855 and 11.8998, whose worst cell
+is n = 16 at x = 4.89985 without contraction and n = 8 at x = 2.05179 with it, and the float batch
+lane with it, whose worst cell is n = 0 at x = 11.151 without contraction and n = 0 at x = 11.2499
+with it. The float single lane is the one that does not move: n = 0 at x = 0.80868 either way, at
+6.36e-08. The not-contracted column was measured on four configurations — MSVC on arm64, MSVC on
+x86-64, clang on x86-64 and AppleClang on x86-64 — which agree to the digit, two architectures and
+three compilers reaching one figure. The contracted column was measured on x86-64 by building with
+`-mfma`, which is the flag that licenses the contraction there, and the figures under it are that
+build's. That is the pair worth reading together, because it is what the licence turns on —
 gcc and clang contract a bare product-plus-add when the target can form one, and only one of the two
 architectures can without being told to.
 
@@ -798,8 +773,9 @@ passes there. What is missing is the printed figure alone — ctest shows a pass
 under `-V`, and that leg does not carry the reading step the other five do — and the column it would
 fill is the contracted one, which the two measurements above already give.
 
-**Every bound on this page holds on both.** The contracted arithmetic's 3.29e-15 is 0.11 of its 3e-14
-and its 1.29e-07 is 0.859 of its 1.5e-07, and no cell of any lane exceeded its bound on any of the
+**Every bound on this page holds on both.** The contracted arithmetic's 2.74e-15 is 0.0915 of its 3e-14,
+its float single row's 6.36e-08 is 0.424 of its 1.5e-07 and its float batch row's 9.11e-08 is 0.607 of
+that same 1.5e-07, and no cell of any lane exceeded its bound on any of the
 six configurations. Five of them print `39 of 39` documented claims met; on the sixth, gcc on arm64,
 the gate is the `boys-accuracy-gate --strict` test in its ctest run, and that test passes. Its
 consumer check prints 55 rule rows and every one reports zero cells above its bound. What a caller
@@ -851,23 +827,6 @@ figures on this page are the fit's rather than either summation's.
 The two schemes sum one polynomial at the full degree, so the stored fits' figures below are the
 same reading twice and differ only by the arithmetic that carried the sum.
 
-**They are not interchangeable under a multiplier, and the two schemes' relaxed rungs are different
-degree tables.** A rung truncates the table its scheme sums, and what a truncation costs is the
-1-norm of the coefficients it drops *in that table*: the split Clenshaw recurrence reads the
-Chebyshev coefficients, whose decay is the fit's accuracy, while Horner reads the monomial
-coefficients, which are the same fit's Taylor coefficients on the piece and whose high-order end runs
-larger by about 2^k. A degree the Chebyshev tail admits therefore drops a monomial tail orders of
-magnitude over the rung's budget, so each scheme's rung is certified against the tail of the table it
-reads — one criterion, two tables — and a degree table belongs to a basis rather than to a fit. The
-monomial table admits the smaller relaxation by a wide margin: at m = 64 it is no truncation at all
-on 63 of region A's 66 pieces and on 16 of the region-B seed's 33 per-order entries, and it reaches a
-majority of the region-A pieces only at m = 16384. **A rung is less accuracy for less work, so a
-smaller relaxation is a smaller error, not a worse one**: read the direction it runs. At m = 65536
-the split Clenshaw rung delivers 3.36e-09 at its worst cell and the Horner rung 4.16e-10, both inside
-m·5.5e-14, and the Horner figure is the smaller because that rung truncated less. Every rung this
-library offers is served and bounded at either scheme; what a looser rung buys at Horner is bounded
-by the same derivation, and the delivered figure beside each rung is the one to read.
-
 | scheme | stored fit | degree | stored | bound, fused route | bound, separate route |
 | --- | --- | --- | --- | --- | --- |
 | split Clenshaw | region A (per-order fits) | 20 | 21 | 4.441e-16 | 4.441e-16 |
@@ -882,16 +841,16 @@ reference, rounded up to the next power of two so that it is a bound rather than
 The monomial conversion is benign for the reason the fits are: the argument never leaves [−1, 1], so
 the conversion's conditioning cannot grow.
 
-**What the scheme reaches.** The double single lane at every multiplier: the per-order region-A fits,
+**What the scheme reaches.** The double single lane: the per-order region-A fits,
 the region-B seed and the extended-band seed. It reaches the float lane's single and batch entries as
-well, at the reference multiplier: those entries read the same pair of tables through their own
+well: those entries read the same pair of tables through their own
 policy, and the float lane's Chebyshev fits are stored in both forms as the double lane's are.
 **What it does not reach, and why.** Region C is evaluated by its closed form and stores no fit to
 sum, so it is the same arithmetic under either scheme. The half lanes, the packed region-A lane and
 the CUDA device lane are the split Clenshaw's and are not offered under the other scheme: the device
 kernels carry the Chebyshev tables only, and the packed region-A lane's kernel is bypassed under
 Horner, which costs the accelerated path and not the value. On the float lane the scheme reaches
-every multiplier: the batch entry's region-A seed is the double lane's fit at the scheme the policy
+the lane's own fits: the batch entry's region-A seed is the double lane's fit at the scheme the policy
 names, and the single entry's fits and the batch entry's region-B seed are this lane's own, cut from
 the monomial form when Horner is named.
 
@@ -949,14 +908,13 @@ and then ignored, and the entry refuses it at the call site instead. `BoysSingle
 at one argument and has no lane to fill on either axis. The gate's refusal record separates the two
 kinds and counts the first as outstanding work rather than as a limit of the call.
 
-A relaxed multiplier on the axis, and a route other than the shipped one, were limits of the other
-kind — a table the lane did not carry — and both are built. The effective-degree table the lane reads
-at a rung is the same dropped-tail criterion this library's other rungs are truncated by, applied at
-the degree the lane reads; and the rational route's region-A fits cover the same per-order intervals
-as the shipped piece table, so the lane reads them where it read that one. The gate's packing book
-measures every rung the tier enumeration declares, on both routes, through both entries that carry the
-axis, each against the figure that combination documents — and every rung again on the narrow
-partition, on the shipped route.
+A route other than the shipped one was a limit of the other
+kind — a table the lane did not carry — and it is built: the rational route's region-A fits cover the
+same per-order intervals as the shipped piece table, so the lane reads them where it read that one.
+The gate's packing book
+measures both routes through both entries that carry the
+axis, each against the figure that combination documents — and on the narrow
+partition as well, on the shipped route.
 
 **The narrow partition, where the axis had no kernel.** The lane's third limit looked structural and
 was not. The shipped fetch steps from one order's coefficients to the next at a fixed stride, which
@@ -966,7 +924,7 @@ each with their own intervals, so no such stride exists. A stride is one way to 
 requirement of the axis: the lane fills it the other way, by fetching each of the four orders it holds
 its own piece's start and its own coefficients — one gather per stored coefficient rather than one
 stride per group — and summing the four as one vector. The value the row promises is unchanged, and so
-is the figure: at m = 1 the per-order bar is **|F̂ − F| ≤ 1e-15** on the per-order fits and **3e-14**
+is the figure: the per-order bar is **|F̂ − F| ≤ 1e-15** on the per-order fits and **3e-14**
 on the extended band that closes region A, the two cells the header's table keeps apart.
 
 **Two lanes, two mappings, and the reference as the third party.** The narrow partition cannot carry
@@ -994,11 +952,16 @@ x = 4.8998472055064735, has the axis **5.82e-17** from the reference and the per
 other region-A row at.
 
 **The domain is region A, and its bounds are the fits' own.** The orders lane covers `0 <= x < kX0`
-and is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ m·1e-15** on the per-order
-fits and **m·3e-14** on the extended band. At the certified split
+— `kX0` is the library's constant for 11.899848152108484, the argument at which region A ends — and
+is certified against the per-order region-A bar by cell, **|F̂ − F| ≤ 1e-15** on the per-order
+fits and **3e-14** on the extended band. At the certified split
 Clenshaw scheme its values are the across-arguments lane's values **bit for bit** — one exact
 comparison over 3,009 arguments and every order, 99,297 of 99,297 values, with no tolerance, because
-a reordered step or a coefficient read one index out would still return a plausible number. That row
+a reordered step or a coefficient read one index out would still return a plausible number. That
+comparison is the fused route's: on a separate-route build the two are two arithmetics, and both lanes
+carry the route the build selected while still spelling their steps apart.
+There **93,934 of 99,297** values are bit-identical and the two part by at most **2.220e-16**,
+inside the region's 1e-15, and the lane's own test carries both legs. That row
 is the shipped partition's, for the reason in the paragraph above; on the narrow partition the same
 question is answered by the reference table instead. Past
 `kX0` the entry runs the certified scalar single lane one order at a time, so it is defined for
@@ -1054,7 +1017,7 @@ so no pair is subtracted across runs:
 | the four scalar orders it replaces, same scheme | 14,361,758,765 | 15,037,495,121 | 7,342.5 | 222.50 |
 
 The packed lane retires **2.36×** fewer slots and **3.24×** fewer instructions than the loop at split
-Clenshaw, and **1.89×** and **2.79×** at Horner: on this machine the gathered fetch is cheaper than
+Clenshaw, and **1.89×** and **2.79×** at Horner: in the run above the gathered fetch is cheaper than
 the four scalar calls it replaces, so the price the gather pays against the composed fetch above is
 still a price paid against a loop that pays more. It is a vector path by source and not by count
 alone — four orders in one `__m256d`, the group's four piece offsets in one `__m128i`, and one
@@ -1077,8 +1040,8 @@ instructions and 0.02% of slots, where the table above says 5,072,522,334 and 4,
 gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and the shipped entry's
 row reproduces (6,326,030,697 instructions, the published figure to seven digits, and 6,729,655,927
 slots, within a percent). A reader re-measuring the composed variant should expect the higher pair:
-the table's row was taken against an earlier generation of the tables and the effective-degree
-cuts, and the **1.42** and **2.02** ratios drawn from it are the ones that move with it. The table
+the table's row was taken against an earlier generation of the tables,
+and the **1.42** and **2.02** ratios drawn from it are the ones that move with it. The table
 is left as measured rather than quietly restated, because restating it would hide the distance a
 reader measuring the same variant would find.
 
@@ -1092,9 +1055,8 @@ worst deviation from the shipped entry beside each run, so a count can never be 
 and its header carries the exact command that reproduces the two columns.
 
 **What the lane reads.** The lane evaluates the stored fit the policy names: the shipped Chebyshev
-piece table on the shipped route, the rational route's region-A pairs where that route is named —
-their pieces cover the same per-order intervals — and each fit at the degree the multiplier's
-effective-degree table cuts it to. `BoysFixedN` has one order to fill a vector lane with, so the
+piece table on the shipped route, and the rational route's region-A pairs where that route is named —
+their pieces cover the same per-order intervals. `BoysFixedN` has one order to fill a vector lane with, so the
 orders axis cannot be formed on it at all — that is the entry's signature and not a body nobody
 built. Each limit names the combination and what is not certified about it; none falls back silently
 to another axis.
@@ -1123,42 +1085,51 @@ state its own-degree summation would have started from. The claim is therefore t
 packed value is the per-order value — and it is asserted as bit-identity rather than as a tolerance,
 on the same reasoning the double lane's is.
 
-**The direction of the difference between the two lanes is the multiply-add route.** The packed lane
-names its own instruction (`vfmadd`) and is contraction-free whatever the build says, so it performs
-one rounding where a scalar build with `BOYS_MULADD_SEPARATE=ON` performs two. On the default fused
-build the two are the same arithmetic and the values are the same bits — **0 of 999,240** swept values
-differ (five policies at the reference multiplier, three rungs, every `nmax` from 0 to 32 and five
-arguments past the lane's own interval) — so on that build the agreement is asserted without a
-tolerance. On the two-rounding build they part, and a difference between two lanes is then
-not a statement about either one's accuracy, so both are measured against the double lane, whose own
-error is a double lane's and is a reference at this scale:
+**The route is not what separates the two lanes: both run the one the build selected.** The two
+packed backends are templates over the route, defaulted to that selection (`src/boys_backend_simd.hpp`,
+`Avx2Fp64` and `Avx2Fp32`), and the across-orders lane's own steps read the same selection, so a build
+with `BOYS_MULADD_SEPARATE=ON` hands the packed lane the two-rounding form on the same terms as the
+scalar lane. The packed backends spell that multiply-add themselves from the selection rather than
+leaving the step to the compiler, so the arithmetic is the one the build named. The two lanes are
+therefore one arithmetic on both builds, and on either build the packed lane's values are the same
+bits as the per-order lane's: **0 of 879,351** swept values differ and the worst parting is
+0.000e+00, on the two-rounding build as on the fused one.
 
-| policy at m = 1, two-rounding build | packed, from the double lane | per-order, from the double lane | packed versus per-order | bar |
+Those 879,351 values are this tree's own sweeps, every one of them run by
+`tests/boys_orders_f32_test.cpp` on whichever build it is compiled into: 199,815 values from five
+policies — chebyshev and rational minimax, each under split Clenshaw and Horner, and the fp16
+budget's chebyshev split — over the 1,211 arguments of the lane's region-A grid and every order 0 to
+32; 679,371 values from every `nmax` in that range over the same arguments; and 165 values from five
+arguments past the lane's own interval. The counts and the zeros are the same on both builds. The
+assertion that reads the count is made where the build is fused; where it is two-rounding the test
+prints the same count and is compiled not to assert it (`tests/boys_orders_f32_test.cpp`, the
+`kScalarIsFused()` guard).
+
+What does move between the builds is the distance from the double lane, and it stays inside the bar:
+
+| policy | packed, from the double lane, fused build | packed, from the double lane, two-rounding build | packed versus per-order | bar |
 | --- | --- | --- | --- | --- |
-| chebyshev, split Clenshaw | 1.297e-07 | 1.297e-07 | 1.192e-07 | 1.5e-07 |
-| chebyshev, Horner | 9.029e-08 | 9.029e-08 | 1.192e-07 | 1.5e-07 |
-| rational minimax, split Clenshaw | **1.309e-07** | **1.727e-07** | 1.788e-07 | 1.5e-07 |
-| rational minimax, Horner | 1.309e-07 | 1.727e-07 | 1.788e-07 | 1.5e-07 |
+| chebyshev, split Clenshaw | 1.069e-07 | 1.069e-07 | 0 of 39,963 | 1.5e-07 |
+| chebyshev, Horner | 6.988e-08 | 7.886e-08 | 0 of 39,963 | 1.5e-07 |
+| rational minimax, split Clenshaw | **1.433e-07** | **1.210e-07** | 0 of 39,963 | 1.5e-07 |
+| rational minimax, Horner | 1.433e-07 | 1.210e-07 | 0 of 39,963 | 1.5e-07 |
+| chebyshev, split Clenshaw, fp16 budget | 1.069e-07 | 1.069e-07 | 0 of 39,963 | 1.5e-07 |
 
-Read the middle three columns together. **On the Chebyshev route the two lanes are one number and it
-is inside the bar. On the rational route they are not one number, and the lane that is outside the bar
-is the per-order one**: 1.727e-07 against the 1.5e-07 that route is certified against, where the
-packed lane reads 1.309e-07 and is inside it. The pair difference of 1.788e-07 is the two-rounding
-scalar lane's excess and not the packed lane's, which is why the lane's test measures against the
-double lane on that build rather than against its sibling: a sibling that is itself over the bar
-cannot be the reference a bar is read against. This is the same defect class as the gate's
-pre-existing red row on the same build — `float.route.delivered float.policy.single`, 1.56625e-07
-against 1.5e-07 at `n = 16, x = 0.0781091`, a row the axis does not touch — which
-is a property of the region-A rational fit under two-rounding arithmetic and not of this lane.
+Read the middle three columns together. **The packed lane is inside the 1.5e-07 the region-A float
+fits are certified against on both builds**, and the per-order lane reads the same number as the
+packed one in every row because the two lanes are one arithmetic there: the last column is a count of
+zero, not a tolerance. Neither build has a lane over the bar and its sibling inside it, so the double
+lane remains the reference both are read against, and there is no build on which a sibling has to
+stand in for it.
 
-On the fused build, which is the default, the packed lane's own error is 1.297e-07 on the Chebyshev
-route and 1.309e-07 on the rational one, both inside the bar, and the per-order lane's is the same
-number because the two lanes are one arithmetic there. The gate's float book carries a row for this
-axis at m = 1, measured against the committed mpmath reference grid at the lane's own bar: **56,694
-cells**, delivered **1.06e-07** against **1.5e-07**, a ratio of **0.705**, with the worst cell at
-`n = 0, x = 0.072854` — the same figure on both multiply-add routes. The per-order entry's row over
-the same cells delivers 1.08e-07, so the axis moves which lane evaluates and not the figure the entry
-meets.
+The gate's float book carries a row for this axis, measured against the committed mpmath reference
+grid at the lane's own bar, and it prints the same figures on the two-rounding build as on the fused
+one: **56,694 cells**, delivered **1.03e-07** against **1.5e-07**, a ratio of **0.685**, with the
+worst cell at `n = 0, x = 0.684828`. The batch entry's own row over the same cells, packing the
+arguments axis and not this one, delivers 1.08e-07 on both builds, so naming this axis moves which
+lane evaluates and not the figure the entry meets. The float route book is not red on either build:
+the gate reports 0 of its 4 rows short by more than a tenth of the bar, the worst by 0.0915 of it, and
+exits 0 with every documented claim met on both.
 
 **Outside region A the axis is not what is running.** Past `x = 11.8998` the entry answers from the
 certified scalar single lane at the policy the caller named, one order at a time, which is the same
@@ -1215,9 +1186,7 @@ instruction and nothing else, and the entry takes the one this lane's own counte
 
 **Where the entries are.** The float lane's two fetches are `BoysAllOrdersF32Simd` and
 `BoysAllOrdersF32SimdComposed`, and the policy a consumer names reaches the first through
-`BoysAllOrdersF32`. A relaxed multiplier reaches the lane through the same effective-degree table the
-double lane uses at the degree the float fits are stored; it is answered on the shipped route and
-scheme alone, because a degree table is certified against one stored table of one fit family. The
+`BoysAllOrdersF32`. The
 float lane carries the computation budget as a fourth parameter of that entry — `BoysBudget::kFloat`
 and `BoysBudget::kFp16` are certified against different bars, 1.5e-7 and 1e-7, so a lane that
 answered an fp16 policy with the kFloat degrees would deliver the looser figure under the tighter
@@ -1229,10 +1198,70 @@ one machine's microarchitecture, and the counters are re-read with
 command. The entry's own row is `--variant=orders-f32-orders-axis`, which calls the public
 `BoysAllOrdersF32` on the orders policy and so measures the fetch the entry actually selects.
 
+## The division form: how each recursive step divides
+
+Every lane that reaches one order from another ends each step in a division. The division form says
+how that division is spelled, and it is a policy axis beside the route, the scheme, the partition and
+the packing axis:
+
+| form | what one step does |
+| --- | --- |
+| `kExactDivision` | divides: one division per step |
+| `kPlainReciprocal` | forms the divisor's reciprocal once and multiplies it through the ladder — one reciprocal per divisor, one product per step |
+| `kRefinedReciprocal` | the plain form with the correctly rounded quotient recovered from the product, by the product's error and one fused multiply-add per step |
+
+The axis governs **the divisions inside the recursions**: the upward ladder of region B, the
+asymptotic ladder of region C, and the downward ladder the batch entries run over region A. It
+reaches nothing else. A stored region-A fit is summed and never divided, so an order answered by
+reading its own fit is the same number under all three forms — which is why this axis needs no
+per-cell coverage rows where the packing axis and the partition have them.
+
+**What the default is, and why.** A caller who names no form gets `kRefinedReciprocal`. The
+refinement recovers the correctly rounded quotient from the product, so this form is bit-identical
+to exact division while costing what the plain form costs where the real workload lives; that is the
+measurement behind it, and the plain form is the one to reach for when the ladders are long. Read
+at the per-call entry over eight interleaved rounds, both reciprocal forms came out about a quarter
+cheaper than exact division on a molecular stream. The three forms are all carried, and which is
+cheapest is a property of the host rather than of this library.
+
+**Which paths carry it.** Every entry that takes a policy carries it. That includes the
+across-orders packed lane, whose packed interval divides nowhere: what the form selects there is the
+arithmetic of the certified scalar single lane the entry falls back to outside the packed interval,
+on a host without the vector tier, and past the uniform grid's end. A caller naming
+`kPlainReciprocal` together with `PackAxis::kOrders` is served plain steps on every order the packed
+lane hands over.
+
+**The path that does not carry it.** None. The **device lane** carries it too: `DivisionForm` is a
+trailing parameter of every launched entry, `DeviceOptionAxis::kDivision` crosses each entry of the
+device option space with all three forms (`boys_cuda_options.hpp`), and the device probe reports, in
+every row it prints, the form that row was measured at. What a device lane publishes is one figure
+per form where the forms deliver different figures — the float and double device lanes' rows state
+one figure each, which all three forms deliver inside, and the half lane's row states the plain
+reciprocal's own term beside its base (1e-7 + 1e-7 = 2e-7), because at a subnormal result that form's
+rounding leaves the base. A caller who names a form on the card is served that form's arithmetic
+there as here.
+
+**The float lane's plain reciprocal carries its own figure.** The all-orders entries' region-A
+downward ladder divides by the step's constant rather than by the argument, and that step reads the
+form the policy names. The plain reciprocal rounds once more there, which takes the ladder past the
+lane's 1.5e-7 base: the gate's own reference grid reads 1.7514e-07 at n = 0, x = 9.74055, where the
+lane's exact and refined forms deliver 1.08354e-07 at worst. So the lane publishes a term beside its
+base for that form — 1.5e-7 + 1e-7, which is 2.5e-7 — and `BoysAccuracyGuaranteed` answers it when
+the caller names the form.
+
+**Reproduction.** The option probe measures the axis and names the form in every row it prints:
+
+    cmake --build build --target boys-option-probe
+    ./build/Release/boys-option-probe      # the config directory is your generator's
+
+Each cell's row carries the form it was evaluated at, so the figures for the three forms of one
+(cell, precision) come from one run and one workload. The forms a build carries, with the name a
+report prints each under, are the rows of `BoysDivisionForms()`.
+
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 
-For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result. **No
-multiplier relaxes it**, and its bound holds with room to spare at every setting.
+For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result.
+**Nothing relaxes it**, and its bound holds with room to spare.
 
 Its accuracy is set by where the asymptotic form starts being used. Moving that start point trades
 accuracy against nothing: the evaluation costs the same wherever the boundary sits, so moving it
@@ -1248,34 +1277,62 @@ fits. A caller evaluating there should expect that, and should not read the 5.5e
 
 ## Every combination: its bound, its delivered figure, and its tolerance
 
-The lanes above are one axis of six. A call is a lane, a fit route, an evaluation scheme, an
-interval partition, a packing axis and an accuracy multiplier, and the library offers the product of
-all six: **2 routes × 2 schemes × 2 partitions × 2 axes × 7 rungs, in 4 lanes — 448 combinations.**
+The lanes above are one axis of five. A call is a lane, a fit route, an evaluation scheme, an
+interval partition and a packing axis, and the library offers the product of
+all five: **2 routes × 2 schemes × 3 partitions × 2 axes, in 8 lanes — 192 combinations.** Each of
+them is a cell the accuracy gate counts: certified and published, refused with the library's own
+reason and owed, or a device cell this host cannot run. The eight lanes are the host's double, single,
+half and bfloat16 lanes and the device's own `kFp64Device`, `kFp32Device`, `kFp16Device` and
+`kBf16Device`, which are the four precisions the CUDA surface's entries are built at;
+`BoysLaneContracts()` publishes one row per lane and the count above is that list's eight rows by the
+twenty-four combinations the four axes
+offer, and no row of it is folded into another. A device class of the default-policy table
+is one of those four by a question.
 Each axis's own section above states what that axis changes. This one states the two figures a
 combination has, how a program asks the library for each of them, how a program asks whether a
-combination meets the error it needs, and which members of the space this revision does not carry.
+combination meets the error it needs, and which members of the space the library does not carry.
 
-**The bound of a combination is its lane's figure at its rung, and no other axis moves it.** The
-other four axes change what a call *delivers* — which fits it reads, how many coefficients it sums,
+**The bound of a combination is its lane's figure, and no other axis moves it.** The
+other axes change what a call *delivers* — which fits it reads, how many coefficients it sums,
 whether it packs arguments or orders — and the guarantee each of them publishes is the lane's own
-bound times the multiplier. The measured columns of the sections above are what those axes deliver;
+bound. The measured columns of the sections above are what those axes deliver;
 the bound is here.
 
-| Lane | The bound one value carries at m = 1 | The term that sits beside that bound | Named |
+| Lane | The bound one value carries | The term that sits beside that bound | Named |
 |---|---|---|---|
 | double | 5.5e-14 | — | `Precision::kFp64` |
 | float | 1.5e-7 | — | `Precision::kFp32` |
-| half, fp16 and bfloat16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum | `Precision::kFp16` |
+| half, fp16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; the format's digit is 2^-11 | `Precision::kFp16` |
+| half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-8 = 3.90625e-03, the coarser of the two | `Precision::kBf16` |
 | float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
+| double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
+| half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
+| bfloat16 on a device | 1e-7 | the same base at this store's own digit — 2^-8 = 3.90625e-03, the coarser of the half lane's two — and the plain reciprocal's 1e-7 beside it, which is the fp16-device lane's own measurement of that form on the bodies this store runs | `Precision::kBf16Device` |
 
-A combination at multiplier `m` carries **`m · base + additive`** — the same arithmetic the README's
-contract table states lane by lane. `BoysLaneContracts()` returns those four rows, so a program
+The host's two half lanes are two rows and not one, as the device's half lane's two stores are two:
+the seam — the
+build-defaults header `include/boys/boys_build_defaults.hpp`, and the `BOYS_BUILD_DEFAULTS` CMake
+option a build points at its own replacement — keys a class by the format a return carries, so `Precision::kBf16` is the bfloat16 class's own name and
+`Precision::kBf16Device` is that class's device counterpart, and the
+pairs state one base at two formats' digits — `DefaultPolicy<Precision::kBf16, Shape>` resolves the
+bfloat16 class and not the fp16 one, on the device half as on the host. What the two rows do not do
+is impose a lane on a class: a
+bf16 entry that names no policy is answered by the bf16 row.
+
+The device's four lanes are four rows and not one: each is its own precision of the CUDA surface
+(`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
+own entries publish — `boys/boys_cuda.hpp` states 5.5e-14 for the double entries and `1e-7 + ½ ULP`
+for the half ones, which is tighter than the host half lane's 1.5e-7 + ½ ULP because the device's
+half lane is not the host's.
+
+A combination carries **`base + additive`** — the same arithmetic the README's
+contract table states lane by lane. `BoysLaneContracts()` returns those seven rows, so a program
 reads the figures the tables are written from rather than transcribing them, and the accuracy gate
 reads the same rows to judge a combination against.
 
 **Two figures, two questions, and their names say which is which.**
-`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, tier)` answers *may I rely on
-this combination being at least this accurate*: its `value` is the bound above, at the rung named.
+`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form)` answers *is this
+combination at least this accurate*: its `value` is the bound above, at the form named.
 `BoysAccuracyDelivered(...)` answers *which of these two combinations has been measured to do
 better*: its `value` is the worst of the rows the combination names, each of which publishes what it
 was measured to deliver. Both return an `AccuracyFigure` whose `reading` field says which of the
@@ -1292,43 +1349,55 @@ gate's reference grid, and the certified-routes table above records that the gri
 the two and reads under on a fit that equioscillates. What a whole call delivers is the gate's
 measurement, and the gate's combination table is where that figure lives for every combination.
 
-**A combination this revision does not carry returns no number.** Both accessors return
+**A combination the library does not carry returns no number.** Both accessors return
 `available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
 refusal — the same sentence the gate prints beside the row. A caller cannot mistake a refusal for an
 accuracy. The delivered accessor is absent as well for the half lane, whose error is dominated by
-the format's quantum at the returned value rather than by the call, and for every rung past the
-reference multiplier, because no row publishes a figure measured at one and a scaled guarantee is
-not a measurement.
+the format's quantum at the returned value rather than by the call.
 
-### What this revision carries, and what is owed
+### What the space carries, and what it refuses
 
 The gate crosses the whole space, prints one line per combination — its measured delivered figure
 beside the bound its lane publishes — and ends the block with its own arithmetic. A row of that
-table reads `fp64, chebyshev, split-clenshaw, shipped, orders, m = 64 | 56694 cells | 0 outside |
-1.54485e-12 delivered | 3.52e-12 bound | certified and published`, and a refused one carries no
-figure at all, only the library's own reason.
-The block's own last lines, from a run of the gate on the committed tree:
+table names the five axes and prints the run's four figures: `fp64, chebyshev, split-clenshaw,
+shipped, orders | <cells> cells | <outside> outside | <delivered> delivered | <bound> bound |
+certified and published`, and a refused one carries no figure at all, only the library's own reason.
+The block's own last lines have this shape. Every count in them is **the run's, not the library's**:
+the gate prints what it measured in the tree it was built in, on the machine it ran on, so the
+numbers below are written as the quantities they are rather than as figures this document asserts:
 
-    COMBINATIONS: 336 of 448 member(s) of the option space are certified and published
-                  0 refused with the library's own reason and owed
-                  0 call-site limit(s) name unbuilt work and are owed the same way
-                  112 not runnable on this host, counted apart and not against the library
-                  0 offered and covered by no cell of this block
-                  0 delivering outside the bound its lane publishes
-    the arithmetic: 336 + 0 + 112 + 0 + 0 = 448
-                   the space read off the tables a second way: 448 member(s) over 4 lane(s),
-                   a route axis of 2 2 2 2 route(s), 2 scheme(s), 2 partition(s),
-                   2 axis(es), 7 rung(s)
+    COMBINATIONS: <measured> of <total> member(s) of the option space are certified and published
+                  <refused> refused with the library's own reason and owed
+                  <limits>  call-site limit(s) name unbuilt work and are owed the same way
+                  <apart>   not runnable on this host, counted apart and not against the library
+                  <unaccounted> offered and covered by no cell of this block
+                  <outside> delivering outside the bound its lane publishes
+    the arithmetic: <measured> + <refused> + <apart> + <unaccounted> + <outside> = <total>
+                   the space read off the tables a second way: the same total over its lane(s),
+                   route(s), scheme(s), partition(s) and axis(es)
 
 There are three states and no fourth: certified and published, refused with the library's own reason
 and owed, or not runnable on this host. **A combination the library offers and no row measures lands
-in the fourth count and fails the run**, so a hole cannot go quiet; one that runs and delivers outside
-the bound its lane publishes lands in the fifth and fails it the same way.
+in the unaccounted count and fails the run**, so a hole cannot go quiet; one that runs and delivers
+outside the bound its lane publishes lands in the last and fails it the same way. **Both of those are
+zero in any run this book is held to**: every member the accessor offers is either measured by a row
+or counted under the two books that are not the library's to answer for.
 
-Every member of the space is carried. The 112 that are not certified here are the CUDA lane's: this
-host has no CUDA build, so the gate counts them apart rather than against the library rather than
-pretending they were measured. Building the gate in a CUDA configuration measures them on the card,
-and the figures are that card's, as every device figure is.
+**Which members land in "not runnable on this host" is a property of the build, the machine and the
+arms the gate launches, and this document does not record it.** A configuration built without CUDA
+counts the device lane's members there; a configuration built with it measures the device lanes its
+arms launch and counts the rest apart with the reason, the figures being that card's, as every
+device figure is. What the contract fixes is the rule and not the population: a member this run
+cannot execute is counted apart and named with the reason — no card, no entries, or no arm of this
+gate for that lane — and it never fails the run — while a member the library carries and no row
+measures lands in the unaccounted count and does.
+
+**The refused book reads zero, and that is the state the space is held to.** **The rational route over
+the uniform grid** is the fit for the grid's own intervals, which are fixed by a width law rather than
+cut by a criterion, and it is derived, emitted and served on the host and the device alike, on every
+lane. A combination with no derived fit is refused where it is named, with the reason, rather than
+answered from another partition's fits; the space carries none, which is why the refused count is zero
+in the run above.
 
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 
@@ -1336,15 +1405,15 @@ The gate reads both accessors for a combination in every lane and prints what ea
 the figure the row itself is judged against and the figure the whole call was measured to deliver.
 The headings name the two numbers by what they are, because they are not interchangeable: **`bound`
 is what a caller may rely on, `delivered` is what the combination's fits were measured to deliver.**
-One combination per lane, from this run:
+One combination per lane, and the grid's rational member beside them, from this run:
 
 | Combination | `bound` — `BoysAccuracyGuaranteed` | `delivered` — `BoysAccuracyDelivered` | The row's own bound | What the whole call measured | Where each figure came from |
 |---|---|---|---|---|---|
-| fp64, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
-| fp32, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.08354e-07 | bound: throughout, every region. delivered: `BoysFitRoutesF32()` |
-| fp16, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 1.5e-07 | no figure | 1.5e-07 | 1.08354e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
-| fp32-device, chebyshev, split-clenshaw, shipped, arguments, m = 1 | 2.3e-07 | 1.42109e-14 | 2.3e-07 | not measured — this host cannot run the lane | bound: the lane's documented figure, plus 8e-8 under the fast region-B exponential. delivered: `BoysFitRoutes()` |
-| fp64, rational-minimax, split-clenshaw, narrow, arguments, m = 1 | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
+| fp64, chebyshev, split-clenshaw, shipped, arguments | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
+| fp32, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.7514e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
+| fp16, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | no figure | 1.5e-07 | 1.7514e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| fp32-device, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.42109e-14 | 1.5e-07 | 1.48716e-07 | bound: the row's base figure; "plus 8e-8 under the fast region-B exponential" is the term its fast member adds, and this class's entry does not select that member. delivered: `BoysFitRoutes()` |
+| fp64, rational-minimax, split-clenshaw, narrow, arguments | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
 
 **The delivered figure is a measurement of the fits and never a bound, and the bound is never a
 measurement.** A reader ranking two combinations compares `delivered`; a reader deciding whether a
@@ -1360,21 +1429,22 @@ records that its grid is the coarser of the two and reads under on a fit that eq
 today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the
 gate computes the figure it judges the row against from that same row by its own arithmetic, and
 fails the run when the two differ in any digit. They are two paths over one source, so a change to a
-lane's figure moves both or the run goes red. The fp16 row guaranteed 1.5e-07 and measured at
-1.08354e-07 is the ceiling's half-ULP term at work: the base figure is what the accessor returns,
-and the term of the format is added by the row's own criterion — the gate counts the cells where the
-returned value falls at or below the floor rather than passing them as covered.
+lane's figure moves both or the run goes red. The fp16 row is the ceiling's half-ULP term at work:
+the base figure is what the accessor returns, and the term of the format is added by the row's own
+criterion rather than measured — the fp16 lane runs the single-precision engine's own bodies, so the
+whole call there measures 1.7514e-07, the plain reciprocal's own figure on that lane rather than the
+format's. The gate counts the cells where the returned value falls at or below the floor rather than
+passing them as covered.
 
 The device row's `delivered` figure comes from `BoysFitRoutes()` while its `bound` is the lane's own
 documented figure: the delivered accessor maximises over the fits the combination names, and the
-rows it read are the ones its own `source` string names. It is not a measurement of that lane on
-this host, which cannot run it — the figure for a device lane is a card's, and the CUDA gate is
-where it is taken.
+rows it read are the ones its own `source` string names. It is not a measurement of that lane — the
+figure for a device lane is a card's, and a gate built with CUDA is where it is taken.
 
 ### Asking whether a combination meets a tolerance
 
 A caller that has a target rather than a comparison asks `QueryCombination(precision, route, scheme,
-axis, granularity, tier, tolerance)`, where `tolerance` is the absolute error it needs. The answer is
+axis, granularity, tolerance)`, where `tolerance` is the absolute error it needs. The answer is
 a `CombinationCoverage`: a `verdict`, the request, both figures, and — where the verdict was decided
 by the measured figure rather than the bound — that figure's own `source`.
 
@@ -1383,10 +1453,10 @@ by the measured figure rather than the bound — that figure's own `source`.
 | `kGuaranteedInside` | the bound this combination carries is at or below the request: safe to rely on |
 | `kDeliveredInside` | the bound is above the request and the figure the fits were measured to deliver is at or below it: at the target in what has been measured, and **not** covered by the guarantee |
 | `kOutside` | no figure this library holds for the combination is at or below the request |
-| `kNotCarried` | this revision does not carry the combination: no verdict, no figures, and the library's own reason |
+| `kNotCarried` | the combination is not carried: no verdict, no figures, and the library's own reason |
 
 The verdict is decided by the bound first, so `kGuaranteedInside` is the only state a calculation's
-safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped, m = 1** — bound
+safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped** — bound
 5.5e-14, measured at 4.45751e-14 — the four answers are:
 
 | The caller asks for | The bound | The measured figure | The answer |
@@ -1399,63 +1469,90 @@ safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipp
 Each answer carries the request and both figures, so the reader can check it against the numbers
 that decided it rather than take it.
 
-A combination this revision does not carry is `kNotCarried` with no figure and no verdict, and the
+A combination the library does not carry is `kNotCarried` with no figure and no verdict, and the
 sentence is the accessor's own, so the two kinds of refusal stay apart here as they do at the
-accessor:
+accessor. The refused book reads zero above, so both are calls the space does not have
+rather than members of it, and the two sentences are the enumeration guard and the lane axis:
 
 | Asked of | The answer |
 |---|---|
-| fp64, rational-minimax, split-clenshaw, arguments, narrow, m = 1 — a table this lane has not generated | no verdict, no figure: *the partition's tables do not hold this fit route: the rational minimax route carries one numerator/denominator pair over the whole of region B, and a partition cut per order has no table for it* |
+| a value outside the enumerations this library publishes — a route, a scheme, a packing axis or a partition no table of it names | no verdict, no figure: *the value named is outside the enumeration this library serves, so it names no combination: name a route, a scheme, a packing axis and a partition from the enumerations this revision publishes* |
 | a precision no lane of this library has — a combination the space does not contain | no verdict, no figure: *no lane of this library has that precision* |
 
-The first names work this library has not done and says which table is missing; the second names a
-call the space itself does not have, and no revision of this library could answer it. Both are
-refusals and neither is a figure, which is what they have in common — the sentence is what tells a
-caller which of the two it is holding.
+The first names the axis the call left the space on and hands back the enumerations to name it from;
+the second names a lane no row of this library describes. Both are refusals and neither is a figure,
+which is what they have in common — the sentence is what tells a caller which of the two it is
+holding.
 
-Checked over the whole cross, the two accessors and this entry agree: **366 combinations of this
-build are carried, 530 are refused, and 0 of them disagreed** — every carried combination asked at
-the figure its lane publishes answers inside it, asked at half of that figure answers outside it
-except on the 10 rows where half of it is still at or above the figure those rows were measured to
-deliver, and every refused combination answers with no verdict, no figure and the accessor's own
-reason. Those counts are from `boys-consumer-umbrella`, whose accuracy section prints them and whose
-four requests above are its own; the gate's combination block prints the same comparison for the
-certified rows of each lane.
+Checked over the whole cross, the two accessors and this entry agree: **the recorded run's 192
+combinations are carried or refused with a reason, and 0 of the carried ones disagreed** — every carried combination asked at
+the figure its lane publishes answers inside it, asked at half of that figure answers outside it,
+and every lane publishes a figure to halve. The refused book reads zero above, so no combination is
+left to answer with no verdict and no figure; a member the library has not derived would be
+asked the same question and would answer with the accessor's own reason.
+Those counts are the accuracy gate's own tolerance block, and the block this page quotes is the one
+the gate's recorded run carries — `tests/data/boys_accuracy_gate_run.txt`, whose build's lane table
+is the eight rows `BoysLaneContracts()` publishes.
+`boys-consumer-umbrella` — a check whose translation unit includes `<boys/boys.hpp>` and nothing
+else, and links the library — prints the same comparison in its accuracy section, and its four
+requests above are its own.
 
-Run on the committed tree, the gate's own lines for the tolerance question are:
+The gate's own lines for the tolerance question, as that recorded run has them:
 
-    the tolerance query: 448 carried row(s) asked at the figure each row is judged by and
-                  answered inside it, 448 of them asked at half of that figure and answered
+    the tolerance query: 192 carried row(s) asked at the figure each row is judged by and
+                  answered inside it, 192 of them asked at half of that figure and answered
                   outside it, 0 row(s) whose lane publishes no figure to halve, and 0
                   refused row(s) answered with no verdict and no figure. 0 disagreement(s)
                   with the figures the two accessors answer
 
-The 448 rows are every member of the option space, each carrying a figure at the rung it is judged
-at. None is refused: a combination outside the enumerations is the only request that names no
-combination, and it is answered with the accessor's own sentence rather than with a number.
+The block above is the comparison as the recorded run took it: eight lanes by the twenty-four
+combinations the four axes offer is **192 combinations**, and the run asks all of them. The 192 rows
+are every member of the option space, and the members a host-only build cannot run answer from the
+accessor's own tables like the rest, because the query reads a table rather than a measurement. None
+is refused; a member the library has not derived would be asked the same question and would answer
+with no verdict, no figure and the accessor's own sentence rather than with a number.
 
 ## The default policy, per precision and per device
 
 A caller that has chosen a precision and nothing else writes one name. Every precision the library
-offers has one, each entry of that precision runs it when the call site names no policy — for the half
-lanes as a fixed policy, since those entries take no policy argument at all — and this section states
-what each name selects and the bound it carries.
+offers has one, and an entry that names no policy at the call site is answered by
+`DefaultPolicy<Precision, Shape>`: the class's own row in
+`include/boys/boys_build_defaults.hpp`, which the four `DefaultPolicy*` names below coincide with on a
+class whose row is the five and not otherwise. This section states what each name
+selects and the bound it carries.
 
 **Two of these axes have been measured and two have not, and the table says which is which.** The
-scheme and the partition were set from the option probe's own runs on a quiet host, and **those runs
-did not separate the rows of either axis**: on the double lane's full-accuracy class for the
-all-orders shape, the shipped partition read by the split Clenshaw recurrence and the narrow
-partition read by either scheme came out within 0.9% of each other, against the 5.6 to 7.4 points one
-of those rows moves by from one run to the next, with the class's next row 11.5% to 12% behind them.
-The two settings in the table are therefore two of the rows those runs could not separate rather than
-rows they found cheaper — the probe is what a consumer runs where they deploy, and the figures behind
-these two are its report rather than a recommendation this page can restate, because which option is
-fastest is a property of
-the host, its flags and its card. The route and the packing axis carry the settings the library has
-always shipped and have not been ranked against a timing. Setting any of them from a run is one line per
-name — the aliases in `backend.hpp`, and the device lane's two in `accuracy.hpp` and
-`boys_device_tables.hpp`. *What is not claimed*, at the end of this page, names the lanes nothing
-here was measured on.
+scheme and the partition were set from the option probe's own runs. **The partition default was never
+chosen against its axis.** Every partition-bearing row of those runs is named `narrow`, and the
+comparison that named it had a three-member axis and measured one member of it: `narrow` is the
+default by that comparison and not by a ranking of the whole axis. On the scheme axis the runs compare
+both rows and do not separate them, so that default is one of two rows the instrument could not tell
+apart rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
+and its card, and the probe is what a consumer runs where they deploy. The route and the packing axis
+carry the settings the library has always shipped and have not been ranked against a timing. Setting
+any of them from a run is one line
+per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
+build replaces that file with its own seven rather than editing the tree, which is what lets a
+consumer set them for the machine they deploy on without touching a library header
+(`BOYS_BUILD_DEFAULTS`, CONTRIBUTING.md), and the entries that name no policy then compile those
+choices at no run-time cost. **One of the host five a build cannot move**, and it refuses at compile time
+with the library's own reason rather than compiling something else: the packing axis, because an
+entry that produces one order has no second order to pack into a vector lane. The uniform member of
+the fit granularity is carried: the four batched bodies hand a policy naming the grid to the path that
+reads it, and the accuracy gate's entry book measures those cells as rows. Whether a build *naming*
+that member compiles is measured rather than left open here: class rows naming it are carried by
+`tests/build_defaults_uniform.hpp`, and the `Build defaults (the grid's row built and tested)` step of
+`.github/workflows/ci.yml` configures that header, builds it and runs its suite on two legs. Setting the
+packing axis to what the library already runs is fine; setting it to another member is a build that
+does not compile. The device lane's own two are named in that same file: the division form its
+entries take is `BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM` and the region-B exponential its tables
+read is `BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP`, and `boys/accuracy.hpp` reads each once, as
+`boys::kDefaultDeviceDivisionForm` and `boys::kDefaultDeviceRegionBExp` — of which
+`boys::kDefaultRegionBExp` in `boys_device_tables.hpp` is that same constant spelled for the lane.
+A build that replaces the seam moves the device default too, and a replacement that leaves either
+name out fails to compile at that name rather than taking the committed value silently. *What is
+not claimed*, at the end of this page, names the lanes
+nothing here was measured on.
 
 | Precision | Name | Fit route | Scheme | Granularity | Packing axis | Engine budget |
 |---|---|---|---|---|---|---|
@@ -1466,8 +1563,8 @@ here was measured on.
 
 The route column is the lane's Chebyshev table; the scheme reads the fits the lane sums by Horner's
 rule on their monomial form; the granularity is the narrow partition, a piece cut to the width the
-proved truncation bound supports at the bar it is read under rather than region A's two equal-width
-bands per order and region B's one seed; and the packing axis is the arguments axis, the one a call
+proved truncation bound supports at the bar it is read under rather than the committed partition's
+per-order region-A pieces and its single region-B seed; and the packing axis is the arguments axis, the one a call
 has whether or not anybody names it. What the other member of each axis costs and buys is in *The
 two fit routes*, *Interval granularity*, *The evaluation scheme* and *The packing axis* above.
 
@@ -1479,36 +1576,69 @@ reads a bound off this page relies on is that bound, and it is the lane's own at
 **The bound each name carries is the lane's own**, stated above and not restated here: the double
 single entry at most 1e-15 below x = 1.0855, 3e-14 below x = 11.899848152108484 and 5.5e-14
 everywhere, the double batch entries 5.5e-14 throughout, the float lane 1.5e-7 absolute and
-everywhere, the half lanes `m·1e-7` plus half of the last representable digit of the result. The
-multiplier is the entry's own default, `boys::kBoysFullAccuracyMultiplier`, which is the rung every
-figure on this page is stated at. A call that names an axis is judged against that axis's section
+everywhere, the half lanes `1.5e-7` plus half of the last representable digit of the result. A call
+that names an axis is judged against that axis's section
 rather than against this table.
 
 **Why four names and not one.** The fp16 and bf16 lanes are the float engine under the fp16 budget,
 and the budget is the axis that differs: their region-A and region-B degrees are cut for a 1e-7
-budget where the float lane's are cut for 1.5e-7, so past the reference multiplier the two budgets
-select different rungs and different arithmetic. One default for every precision would be the float
-lane's budget imposed on the half lanes. `DefaultPolicyFp16` and `DefaultPolicyBf16` are one policy
-type — one lane at one budget — named twice so that a document can cite the format its reader uses.
+budget where the float lane's are cut for 1.5e-7, so the two budgets
+select different arithmetic. One default for every precision would be the float
+lane's budget imposed on the half lanes. The four names are one per lane and not one per budget:
+`DefaultPolicyFp16` and `DefaultPolicyBf16` are one policy type — one engine at one budget, a policy
+carrying no format cell — named twice so that a document can cite the format its reader uses. Neither
+name is a class's default. The two half formats are two classes, each with its own row in the seam
+(`DefaultPolicy<Precision::kBf16, Shape>` for the bfloat16 one), and the bf16 class's all-orders row
+is not the fp16 class's: the two entries that row answers part on the route, which is what the check
+below measures and prints.
 
-**The half lanes' entries take no policy argument.** `BoysSingleF16`, `BoysAllOrdersF16`,
-`BoysSingleBf16` and `BoysAllOrdersBf16` take the multiplier and nothing else: the budget is the whole
-of what their default adds to the float lane's, so they run `DefaultPolicyFp16` and
-`DefaultPolicyBf16` as a policy they carry rather than one a call site passes. The name is what a
-document cites and what the check below holds them to.
+**The half lanes' entries take a policy, and their default is their own class's row.** `BoysSingleF16`,
+`BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16` and `BoysAllNAtOrdersF16` take a `Policy` template
+parameter defaulting to `DefaultPolicy<Precision::kFp16, Shape::…>` at their shape, and
+`BoysSingleBf16` and `BoysAllOrdersBf16` the same at `Precision::kBf16`. So an entry runs its class's
+row when the call site names no policy, and a caller who wants the half lane's own five writes
+`DefaultPolicyFp16` or `DefaultPolicyBf16`. The check below holds the entries to the class rows —
+that is the pair whose arithmetic a caller gets — and the two lane names are what this page cites.
 
-**The device lane's default is two names**: `boys::kBoysFullAccuracyMultiplier`, the multiplier the
-CPU entries default to, and `boys::kDefaultRegionBExp`, which is `RegionBExp::kAccurate` — the library
+**The device lane's default is one name**: `boys::kDefaultRegionBExp`, which is
+`RegionBExp::kAccurate` — the library
 exponential, and the arithmetic the f32 batch bodies have always run. `BoysCuda::SingleF32` and the
-device-callable `BoysDeviceSingleF32` are the two entries of the lane that take the second; every
-other entry of the lane takes the first alone. The lane takes no fit route, no scheme, no budget, no
-packing axis and no partition, so a caller that has chosen a device precision and named neither of
-these two has chosen everything the lane has to choose.
+device-callable `BoysDeviceSingleF32` are the two entries of the lane that take it as a choice; every
+other entry of the lane carries the same exponential and offers no choice of it. The lane takes no fit route, no scheme, no budget, no
+packing axis and no partition, so a caller that has chosen a device precision and not named the
+exponential has chosen everything the lane has to choose.
 
 The device lane's bounds are the CPU lane's, precision by precision: CUDA fp64 the double lane's
 figures, CUDA fp32 at `RegionBExp::kAccurate` the float lane's 1.5e-7 in every region, and CUDA fp32
 at `RegionBExp::kFast` that bound plus the corrected seed's own contribution — the region-B
 exponential section above states it, and the device gate measures it.
+
+**The device lane runs the build's multiply-add route, and reports it.** The multiply-add route is a
+build fact rather than a call-site argument, and one selection serves both lanes: `BOYS_MULADD_SEPARATE`
+chooses whether every multiply-add the arithmetic is built from is the fused step, one rounding, or the
+separate step, a rounded product followed by a rounded add. Both spellings of the device lane's step are
+written out in the lane's own headers — the separate step is a fused step with a zero addend followed by
+the add — because a device compiler contracts a bare `a * b + c` into the fused step on its own, which
+would deliver the fused route to a build that selected the separate one. A caller reads the route the
+device arithmetic runs off `BoysCuda::MulAddRouteInForce()`, the device's counterpart of the CPU lane's
+`RouteInForce<T>()`, and the lane's headers read the selection from one definition, so the route a device
+figure was produced under is read rather than inferred from a compiler flag.
+
+**The run that prints it.** The command prints the route in force beside the one this build selected,
+then runs the lane's arithmetic at both routes and at the build's own selection:
+
+    cmake --build <build> --target boys-cuda-route-tests   # needs -DBUILD_CUDA=ON
+    <build>/Release/boys-cuda-route-tests
+
+Each of the three is compared against the exact host reference: the fused route against `std::fma`, the
+separate route against a rounded product followed by a rounded add. The rows that carry the figure are
+how many of the compared cells the two routes part on — the route is a choice of arithmetic and not a
+spelling of one — and that the arithmetic the build delivers is the reported route and not the other
+one. The same checks run over the uniform ladder the batch entry launches, in both stored forms and
+both precisions, and once through the shipped entries themselves — `BoysCuda::AllOrdersF64Uniform`
+and its three siblings, whose arithmetic the library's own translation unit compiled — so the route is
+shown to reach the arithmetic that produces a batch figure, and to have reached the build's kernels
+rather than only the reader's.
 
 **The run that prints these figures.** The first command prints the identity of each name and the
 in-force default as numbers rather than as a checkmark:
@@ -1519,9 +1649,9 @@ in-force default as numbers rather than as a checkmark:
 It prints one line per entry: the cells compared between the name and the same entry with no policy,
 how many of them differ, and the worst difference between the two — zero on every identity row,
 because the name and the in-force default are one call and not two spellings of one arithmetic. Its
-last two rows compare a half lane against the float lane's default at m = 2, where the budget decides
-the rung, and print the number of cells the two part on; that is the figure behind the four names.
-The device lane's two defaults are printed the same way by a check of its own, which a CUDA build
+last two rows compare a half lane against the float lane's default, where the budget decides
+the arithmetic, and print the number of cells the two part on; that is the figure behind the four names.
+The device lane's default is printed the same way by a check of its own, which a CUDA build
 compiles into two translation units because the lane's headers split that way — the batch entry's
 header is a host header, and the device header is what a `.cu` may include:
 
@@ -1532,25 +1662,6 @@ It holds each default to its name at compile time, where two spellings of one en
 function addresses exactly when they are one instantiation, and runs the batch entry and the
 device-callable entry on the card in both spellings, each of them beside `RegionBExp::kFast` as well,
 so a printed row shows which arithmetic the default selected.
-
-**The device lane's run-time rung is checked the same way, and its rows are counts rather than
-checkmarks.** Every named entry of `BoysCuda` that queues a kernel carries its multiplier as a
-template argument and has an `AtRung` sibling that takes the same multiplier as the call's own
-argument, and this check names each of those entries and runs it at each of the twelve rungs:
-
-    cmake --build <build> --target boys-consumer-cuda-rungs     # needs -DBUILD_CUDA=ON
-    <build>/Release/boys-consumer-cuda-rungs
-
-It prints, per precision, the combinations the device book reports as served and the combinations
-that carry a rung-argument name, with the cells each count is over; then the number of values judged
-against the committed reference grid within the figure the option's own book row states at the rung
-it ran at, the number of those outside it, and the number of bit-for-bit comparisons between the
-rung-argument spelling and the same entry's compile-time spelling at the same rung beside the count
-of them on cells where the rung moved the value. Its last block runs the device-callable entry inside
-a kernel at the rung that is resident and at one that is not, and prints what the entry answered for
-each: a value for the first, and `kMultiplierNotResident` with the output untouched for the second.
-That refusal is the rule an entry that accepted a rung and answered at another would break, so it is
-run rather than asserted.
 
 The second command prints the bound each name carries:
 
@@ -1563,7 +1674,7 @@ which a CUDA build runs on the card it was compiled for.
 
 ## What is not claimed
 
-**Speed.** No timing taken so far supports a speed claim for any lane. Every timing available was
+**Speed.** No timing taken supports a speed claim for any lane. Every timing available was
 taken on a loaded machine, on a card with no tensor cores, and with a double-to-single throughput
 ratio near 1 to 32. **Performance is an open question.** Answering it needs a timed run on an
 unloaded machine and on a card chosen to show the difference; the packed-half lane's advantage in

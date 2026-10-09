@@ -1,64 +1,43 @@
 #pragma once
 
 /// \file backend.hpp
-/// Named arithmetic backends: the value type, the packed type, the load /
-/// store / broadcast transport, and the multiply-add with its contraction
-/// behaviour, in one place per precision and width.
+/// Named arithmetic backends: the value type, the packed type, the load / store /
+/// broadcast transport, and the multiply-add with its contraction behaviour, in
+/// one place per precision and width.
 ///
-/// A lane is an arithmetic over one value type at one width, and the kernels
-/// that differ only in that arithmetic are written once against this concept
-/// instead of once per width. Which arithmetic a lane runs in is a name a
-/// report can print (see BoysBackends), so a number a caller holds can be
-/// attributed to the arithmetic that produced it rather than to a type only
-/// the compiler knows.
+/// A lane is an arithmetic over one value type at one width, and the kernels that
+/// differ only in that arithmetic are written once against this concept. Which
+/// arithmetic a lane runs in is a name a report can print (see BoysBackends), so a
+/// number a caller holds can be attributed to the arithmetic that produced it.
 ///
 /// Two multiply-adds are named, because they are two arithmetics:
 ///
-///  - MulAdd is fused: the product is exact and the sum rounds once. It is the
-///    operation a Chebyshev recurrence wants, and the one the kernels are
-///    written to use. Which arithmetic a build delivers for it is the lane's
-///    MulAddRoute: the fused step is an instruction where the target has one
-///    and a call into the C runtime where it does not, and the alternative to
-///    that call is the two-rounding route described below.
-///  - MulSub rounds twice: the product rounds, then the difference rounds. The
-///    two are not interchangeable, and neither is a compiler option: a source
-///    that leaves `a * b - c` bare is a different arithmetic on a target that
-///    contracts than on one that does not, so a kernel that needs the two
-///    roundings says MulSub and gets them on every build.
-///
-/// The fused step is the expensive one on a target without the instruction: a
-/// Clenshaw evaluation is deg + 1 of them per value, so a plain x86-64 build
-/// that leaves MulAdd on the C runtime pays that many calls per value. The
-/// separate route is the alternative: the product rounds and then the sum
-/// rounds, two roundings rather than one, written bare. It is a different
-/// arithmetic and carries a different error, which is why it is a route a
-/// build selects and a report prints rather than a silent substitution.
+///  - MulAdd is fused: the product is exact and the sum rounds once. It is what a
+///    Chebyshev recurrence wants, and where the target has no fused instruction it
+///    is a call into the C runtime.
+///  - MulSub rounds twice: the product rounds, then the difference rounds. A kernel
+///    that needs the two roundings says so, because a bare `a * b - c` is one fused
+///    step on a target that contracts and two roundings on one that does not.
 ///
 /// The two routes coincide on a build that contracts a bare product-plus-add,
 /// because the bare form then IS the fused step. That is measured rather than
-/// assumed (Contracts()), and it is why RouteInForce() can report the fused
-/// route for a build that was asked for the separate one.
+/// assumed (Contracts()), and it is why RouteInForce() can report the fused route
+/// for a build that was asked for the separate one.
 ///
-/// Contracts() reports whether a bare `a * b + c` in a backend's arithmetic is
-/// a single rounding. It is measured rather than declared, because contraction
-/// follows from the target and the flags rather than from the source — and it
-/// is therefore a property of one compiled translation unit, not of the
-/// library as a whole. Each backend's Contracts() answers for the unit that
-/// calls it; BackendInfo carries the answer measured where that backend's
-/// kernels are compiled, so the table describes the arithmetic the lanes
-/// actually run rather than some other unit's.
+/// Contracts() reports whether a bare `a * b + c` is a single rounding in a
+/// backend's arithmetic. It is measured because contraction follows from the target
+/// and the flags rather than from the source, so the answer belongs to one compiled
+/// translation unit. BackendInfo carries the answer measured where that backend's
+/// kernels are compiled, so the table describes the arithmetic the lanes actually
+/// run.
 ///
-/// What a call site selects about *how* an evaluation runs — the fit route
-/// (FitRoute), the scheme the fit's coefficients are summed in (EvalScheme),
-/// a single-precision engine's budget (BoysBudget), the axis a packed
-/// evaluation vectorises over (PackAxis) and how narrowly the fitted domain is
-/// cut into pieces (FitGranularity) — is named here too, and is
-/// carried as ONE parameter (EvalPolicy) rather than as one parameter per axis,
-/// so a further axis is a field on the policy rather than a parameter on every
-/// entry, engine and kernel between the call site and the fit. The contract a
-/// fit route's coefficient set satisfies is FitPolicy, and EvalPolicyLike is
-/// the constraint the entries carry, so a combination the library does not
-/// carry fails where it is named rather than inside a recurrence.
+/// What a call site selects about *how* an evaluation runs - the fit route
+/// (FitRoute), the scheme the fit's coefficients are summed in (EvalScheme), a
+/// single-precision engine's budget (BoysBudget), the axis a packed evaluation
+/// vectorises over (PackAxis) and how narrowly the fitted domain is cut into pieces
+/// (FitGranularity) - is carried as ONE parameter (EvalPolicy) rather than one per
+/// axis, so a further axis is a field on the policy rather than a parameter on
+/// every entry, engine and kernel between the call site and the fit.
 ///
 /// \ingroup boys
 
@@ -76,21 +55,18 @@ namespace boys {
 
 /// Which axis a packed lane vectorises over.
 ///
-/// A packed lane keeps four doubles in a register and a call has to supply four
-/// of something. Which something is a property of the call shape rather than of
-/// the kernel: \c BoysAllOrders is one argument and every order, so the orders
-/// are the only axis with anything in it, while the batch shapes carry several
-/// arguments at one order and can fill a register with those. The two are not
-/// rungs of one design and neither replaces the other - they evaluate the same
-/// stored fits by the same arithmetic, and differ in what the vector lanes
-/// hold and therefore in what a caller pays.
+/// A packed lane keeps four doubles in a register and a call has to supply four of
+/// something. Which something is a property of the call shape: \c BoysAllOrders is
+/// one argument and every order, so the orders are the only axis with anything in
+/// it, while the batch shapes carry several arguments at one order and can fill a
+/// register with those. The two evaluate the same stored fits by the same
+/// arithmetic and differ in what the vector lanes hold, so they are not rungs of
+/// one design and neither replaces the other.
 ///
-/// The axis is one field of an \c EvalPolicy, like the fit route and the
-/// scheme. Naming the orders axis on an entry that has one order is a
-/// combination this library does not carry and is refused where it is named:
-/// a packed lane keeps four orders of one argument and such a call produces
-/// one. The plane entry carries the axis as well, trading the region grouping
-/// that exists to feed the across-arguments lane for it.
+/// The axis is one field of an \c EvalPolicy. Naming the orders axis on an entry
+/// that has one order is a combination this library does not carry and is refused
+/// where it is named: a packed lane keeps four orders of one argument and such a
+/// call produces one.
 ///
 /// \ingroup boys
 enum class PackAxis : std::uint8_t {
@@ -105,8 +81,10 @@ enum class PackAxis : std::uint8_t {
 
 /// The axis the entries pack when the caller names none.
 ///
-/// The shipped one: a call site that names no axis packs the arguments axis.
-inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
+/// The shipped one: a call site that names no axis packs the arguments axis. A
+/// build replaces it through `BOYS_BUILD_DEFAULTS` like the other four
+/// (boys/boys_build_defaults.hpp).
+inline constexpr PackAxis kDefaultPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
 
 /// The name a report prints a packing axis under, and never null.
 ///
@@ -115,122 +93,56 @@ inline constexpr PackAxis kDefaultPackAxis = PackAxis::kArguments;
 /// \returns a string literal naming it: "arguments" or "orders", and "unknown"
 ///          for a value outside the enumerators
 ///
-/// A value outside the enumerators - cast in from outside the enum, or named by
-/// a newer header - is answered rather than refused: a caller that has to tell
-/// "this build does not carry that axis" from "that is not an axis at all" tests
-/// the value against the enumerators itself, because both arrive here as
-/// "unknown".
+/// A value outside the enumerators - cast in from outside the enum, or named by a
+/// newer header - is answered rather than refused, so both arrive here as
+/// "unknown": a caller that has to tell "this build does not carry that axis" from
+/// "that is not an axis at all" tests the value against the enumerators itself.
 const char* PackAxisName(PackAxis axis) noexcept;
 
-/// How narrowly the fitted domain is cut into pieces.
-///
-/// A stored fit is a polynomial over one interval, and a narrower interval
-/// needs a lower degree to hold the same bound: the truncation bound carries
-/// the interval's half-width as `(h/(2d))^d`, so halving a piece buys roughly
-/// `2^d` and raising the degree at a fixed width buys far less. Splitting is
-/// therefore the lever, and how far to take it is a choice with a price on each
-/// side — a narrower piece is fewer coefficients to evaluate per call and more
-/// pieces to store and to select between.
-///
-/// Two partitions are offered rather than a spectrum. Each carries its own
-/// stored counts and its own certified bound, and neither is a rung of the
-/// other: naming one changes the fits that serve the intervals its own report
-/// names, and the shipped partition's coefficients are byte-identical whether
-/// or not the other exists.
-///
-/// **Narrowing is a trade and not a saving.** A narrower piece is fewer
-/// coefficients to read per evaluation and more pieces to store and to look up
-/// in, so the axis trades per-evaluation work against table size. A consumer
-/// whose cost is per evaluation gains; one whose cost is the table gains
-/// nothing and pays the lookup.
-///
-/// **The axis cuts both fitted regions, and region A pays a second criterion.**
-/// Region B's seed is read for itself, so a narrow piece there is held to the
-/// same bound as any other fit of that interval. Region A's pieces are read two
-/// ways: a single-order call reads one for its own value, and the batch entry's
-/// relaxed path reads one as the seed of a downward recursion that carries its
-/// error down to F_0 with a gain of `max(1, b^n / prod(j + 1/2))` at the piece's
-/// right end `b`. That gain's envelope over region A reaches 1.04e5, at order 12
-/// and the region's right edge, while the seeding fallback is taken only below
-/// the band's left edge, where the gain a call reaches is the calling order's
-/// own - 2.18 at order 1, 1.58 at order 2 and 1 at every order from 3 up - and
-/// the walk holds the envelope rather than that, so that no piece's reading
-/// depends on which order an entry seeds from. A narrow piece is therefore held
-/// to whichever of the two readings is tighter at its own right end, so the gain
-/// binds only where it exceeds the ratio of the two bars, and a piece far enough
-/// left is cut to the single-order bar alone. Both readings are parts of one
-/// criterion rather than a choice.
-///
-/// Both routes and both precisions carry the member: the rational family is
-/// fitted over the narrow pieces as its own per-piece pairs, and the
-/// single-precision lanes carry their own narrow tables, each accepted in the
-/// arithmetic its lane runs at both multiply-add routes.
-///
-/// A member the build cannot serve is refused where it is named, with the
-/// reason, rather than answered from the shipped tables: the two partitions'
-/// coefficients are different fits of the same function over the same
-/// interval, so a silent substitution would return the shipped partition's
-/// values under the other's name. Two refusals remain, each naming the work it
-/// would need: the rational route over the narrow partition on the packing axis,
-/// where the route's region-A pairs cover the shipped per-order pieces and the
-/// packed lane steps one order's coefficients to the next at a fixed stride, so
-/// a packed kernel over the pairs' own narrow pieces is a kernel to write; and
-/// the narrow partition on the single-precision lanes past the reference
-/// multiplier, which hold one coefficient set and one degree table and so have no
-/// narrow rung table to cut. The relaxed rungs and the across-orders packing axis
-/// are otherwise built: a rung of this partition is derived against its own
-/// pieces rather than truncated from the shipped rows, and the packed lane
-/// reaches a per-order cut with a gathered fetch, reading each of the four orders
-/// it holds its own piece and coefficients instead of stepping one piece's
-/// coefficients at a fixed stride.
-///
-/// \ingroup boys
-enum class FitGranularity : std::uint8_t {
-    /// The partition the certified lanes are defined by: region A's two bands per
-    /// order and region B's single seed, at the degrees the committed tables
-    /// carry. A caller names it to read those tables.
-    kShipped = 0,
+// DivisionForm and kDefaultDivisionForm are declared in boys/accuracy.hpp, because
+// the CUDA lane's option rows name them and that header is the one both sides of
+// the device boundary can read. Only the name a report prints is here.
 
-    /// A narrower partition of both fitted regions, at the degrees the proved
-    /// truncation bound gives a piece of that width at the bar the piece is read
-    /// under. Fewer coefficients per evaluation, more pieces in the table.
-    kNarrow = 1,
-};
+/// The name a report prints a division form under, and never null.
+///
+/// \param form the form
+///
+/// \returns a string literal naming it: "exact-division", "plain-reciprocal" or
+///          "refined-reciprocal", and "unknown" for a value outside the
+///          enumerators
+///
+/// A value outside the enumerators is answered rather than refused.
+const char* DivisionFormName(DivisionForm form) noexcept;
 
-/// The partition the entries evaluate when the caller names none.
+// RegionBExp, its two members and kDefaultHostRegionBExp are declared in
+// boys/accuracy.hpp, for the reason the division form is: the CUDA lane's option
+// rows name it and that header is the one both sides of the device boundary can
+// read. Only the name a report prints is here.
+
+/// The name a report prints a region-B exponential under, and never null.
 ///
-/// The narrow one: a call site that names no partition reads the narrow pieces'
-/// coefficients, and naming \c kShipped is how a caller asks for the other
-/// partition. The two cut the same fits, so this value is a choice between two
-/// ways of computing the same answer rather than between two accuracies.
+/// \param exp the member
 ///
-/// **It is not the cheaper of the two at either setting of the other axis.** On
-/// the host these were last measured on, the narrow partition was 0.3% to 0.8%
-/// behind the shipped one where the fit is summed by the split Clenshaw
-/// recurrence — inside the 5.6 to 7.4 points one of these rows moves by from one
-/// run to the next — while summed by Horner's rule, the scheme this default
-/// reads, it was 15% to 17% cheaper. What the measurement establishes is a tie:
-/// three rows of the double lane's full-accuracy class for the all-orders shape —
-/// the shipped partition summed by the split Clenshaw recurrence, and the narrow
-/// partition summed by either scheme — came out within 0.9% of each other, with
-/// the class's next row 11.5% to 12% behind them. This default is one of the
-/// three tied rows. A caller who wants this ranking on their own machine runs the
-/// option probe (boys_probe.hpp), which measures it there and names the pairs it
-/// could and could not separate.
-inline constexpr FitGranularity kDefaultFitGranularity = FitGranularity::kNarrow;
+/// \returns a string literal naming it: "accurate" or "fast", and "unknown" for a
+///          value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused.
+const char* RegionBExpName(RegionBExp exp) noexcept;
+
+// FitGranularity and kDefaultFitGranularity are declared in boys/accuracy.hpp, for
+// the reason the division form is: the CUDA lane's option rows name the cut an
+// entry reads its fits from, and that header is the one both sides of the device
+// boundary can read. Only the name a report prints is here.
 
 /// The name a report prints a granularity under, and never null.
 ///
 /// \param granularity the partition
 ///
-/// \returns a string literal naming it: "shipped" or "narrow", and "unknown"
-///          for a value outside the enumerators
+/// \returns a string literal naming it: "shipped", "narrow" or "uniform", and
+///          "unknown" for a value outside the enumerators
 ///
-/// A value outside the enumerators - cast in from outside the enum, or named by
-/// a newer header - is answered rather than refused. This function names a
-/// partition; it does not report whether the build serves one, which is
-/// FitGranularityHasRoute and FitGranularityHasAxis, so a caller that needs the
-/// distinction asks those rather than reading this string.
+/// This names a partition; it does not report whether the build serves one, which
+/// is FitGranularityHasRoute and FitGranularityHasAxis.
 const char* GranularityName(FitGranularity granularity) noexcept;
 
 /// The computation budget a single-precision engine evaluates at.
@@ -253,14 +165,12 @@ enum class BoysBudget : std::uint8_t {
     kFp16 = 1,
 };
 
-/// The region-A partition a fit reads: which piece of the region an argument
-/// falls in and what that piece is.
+/// The region-A partition a fit reads: which piece of the region an argument falls
+/// in and what that piece is.
 ///
-/// A fit names its partition rather than carrying a lookup of its own, because
-/// the lookup is the same on every partition - scan the order's pieces for the
-/// first whose right edge is past the argument - and only the table differs.
-/// The two members are that lookup and that table, so a fit over a second
-/// partition of the same region is the same evaluation over other rows.
+/// A fit names its partition rather than carrying a lookup of its own, because the
+/// lookup is the same on every partition - scan the order's pieces for the first
+/// whose right edge is past the argument - and only the table differs.
 ///
 /// \ingroup boys
 template <typename P>
@@ -269,56 +179,93 @@ concept RegionAPartition = requires(std::size_t index, int order, double x) {
     { P::PieceAt(index) };
 };
 
-/// The fit one region-A route evaluates: its coefficient set and the scheme
-/// the coefficients are read in, named as a type so the evaluation body around
-/// it is written once and instantiated per route. The body is in
-/// boys_impl.hpp, and each model of this concept sits with the coefficient
-/// tables it reads, because a model reads them.
+/// The fit one region-A route evaluates: its coefficient set and the scheme the
+/// coefficients are read in, named as a type so the evaluation body around it is
+/// written once and instantiated per route. The body is in boys_impl.hpp, and each
+/// model of this concept sits with the coefficient tables it reads.
 ///
-/// The body owns everything that is not the fit - the zero argument's closed
-/// form, the region split, the piece lookup, the mapped argument, the
-/// recurrences, the per-order rule and the domains - so a route cannot drift
-/// from the lane around it, and asks a policy for four things:
+/// The body owns everything that is not the fit - the zero argument's closed form,
+/// the region split, the piece lookup, the mapped argument, the recurrences, the
+/// per-order rule and the domains - so a route cannot drift from the lane around
+/// it, and asks a policy for four things:
 ///
-///  - `Partition` is the region-A partition the fit's pieces are stored in, as
-///    a model of RegionAPartition. The pieces, their intervals and the mapping
-///    are that table's, so two fits over one region differ in the scheme or in
-///    the partition rather than in how either is read.
+///  - `Partition` is the region-A partition the fit's pieces are stored in, as a
+///    model of RegionAPartition;
 ///  - `EvalPiece(index, t)` is one region-A piece's value at its own mapped
-///    argument `t`, named by the piece's index in that partition.
-///  - `RegionBSeed(x)` is region B's seed F_0(x).
+///    argument `t`, named by the piece's index in that partition;
+///  - `RegionBSeed(x)` is region B's seed F_0(x);
 ///  - `BandSource` reads the orders the band's regime covers. A source is
-///    constructed at an argument and stepped order by order, so a batch pays
-///    one step per order rather than one whole run of the recurrence per
-///    order. The requirement spells the type `typename`: a dependent
-///    qualified name is otherwise read as a value, and a compiler that does
-///    read it that way rejects the policy.
+///    constructed at an argument and stepped order by order, so a batch pays one
+///    step per order rather than one whole run of the recurrence per order. The
+///    requirement spells the type `typename`: a dependent qualified name is
+///    otherwise read as a value, and a compiler that does read it that way rejects
+///    the policy.
 ///
-/// `kRegionAFitsFrom` is the argument at and above which the policy's own
-/// answer reads those orders.
+/// `kRegionAFitsFrom` is the argument at and above which the policy's own answer
+/// reads those orders.
 template <typename F>
 concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
     { F::kRegionAFitsFrom } -> std::convertible_to<double>;
     { F::EvalPiece(index, t) } -> std::same_as<double>;
     { F::RegionBSeed(x) } -> std::same_as<double>;
-    { typename F::BandSource(x).Next(l, x) } -> std::same_as<double>;
+    { typename F::template BandSource<kDefaultDivisionForm>(x).Next(l, x) } -> std::same_as<double>;
 } && RegionAPartition<typename F::Partition>;
 
-/// The fit one (route, scheme) pair evaluates. The families themselves are in
-/// boys_impl.hpp beside the coefficient tables they read, and this is the join
-/// between the two axes.
+/// The fit one (route, scheme) pair evaluates: the join between the two axes.
 ///
-/// The axes select different things, which is why the join is not a triangle:
-/// the route names the fits, and the scheme names the summation those fits'
-/// coefficients are read in where they have two stored forms. A route whose own
-/// fit has one form is the same fit under either scheme, and the scheme still
-/// reaches the parts of a call that route's fits do not serve - so every pair of
-/// the two enumerations is carried, and the only value rejected here is one
-/// outside the route enumeration.
+/// The route names the fits and the scheme names the summation those fits'
+/// coefficients are read in where they have two stored forms. A route whose own fit
+/// has one form is the same fit under either scheme, and the scheme still reaches
+/// the parts of a call that route's fits do not serve - so every pair of the two
+/// enumerations is carried, and the only value rejected here is one outside the
+/// route enumeration.
 namespace detail {
 
 template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit;
+
+/// The uniform table's fit; see boys_impl.hpp. A family of its own rather than a
+/// third branch of ChebyshevFit, because it is read at a partition that is not a
+/// cut of either derived one: the grid is fixed and its table is laid out
+/// interval-major, so every branch that asks a Chebyshev fit to choose between two
+/// derived partitions has no third answer to give it.
+template <EvalScheme kScheme>
+struct UniformFit;
+
+/// The rational member over the uniform grid; defined in boys_impl.hpp beside the
+/// table it reads.
+///
+/// The rational family fits a numerator/denominator pair over an interval, and a
+/// partition's pieces are what it cuts, so the fixed grid is a partition its fits
+/// are cut over like any other. It is one fit under either scheme: its coefficients
+/// are a monomial numerator and denominator with no Chebyshev form to sum.
+///
+/// **What it hands a caller.** One pair per interval of the grid the Chebyshev
+/// member is read at, fitted over that interval's own cell and read at the mapped
+/// argument the grid's own locator builds for it - \c FlatPoint's \c t,
+/// `2 (x * kFlatPerUnit - iv) - 1`, the same double both members are read at, so one
+/// lookup addresses them. The numerator's coefficients are stored first and the
+/// denominator's `q_1..q_k` after them with its constant term held at 1, so a caller
+/// sums the numerator by Horner, sums the denominator, and divides once.
+///
+/// **The degree is the pair's own, and the table has no single one.** An interval
+/// stores `m + 1 + k` doubles for each of the `kMaxBoysOrder + 1` orders, with `m`
+/// and `k` its own and read off the table's per-interval degree columns; its rows
+/// start at its own offset and step by its own stored count. A caller therefore
+/// reaches an interval's rows through the interval, never through one stride for the
+/// whole member. The cover is the grid's - the intervals the locator spans, and
+/// nothing above them.
+///
+/// The four arrays that carry the layout are the emitter's: a per-interval numerator
+/// degree, denominator degree, stored count and offset beside the coefficients.
+///
+/// **It models FitPolicy, and the members the grid does not serve refuse.**
+/// \c Partition names the same \c RegionAPartition model \c UniformFit names.
+/// \c EvalPiece, \c RegionBSeed and \c BandSource answer with a value no route can
+/// produce rather than with another partition's fits, exactly as \c UniformFit's do:
+/// they complete the contract, and a body that reaches one refuses the partition
+/// where it is named.
+struct RationalFitUniform;
 
 struct RationalFit;
 
@@ -326,10 +273,10 @@ struct RationalFit;
 struct RationalFitNarrow;
 
 /// A route outside the FitRoute enumeration: not a selection this library can
-/// answer, and rejected where the caller names it rather than quietly evaluated
-/// at the default. The run-time selector takes the other reading - a route value
-/// outside the enumeration is the default there - because a value that arrives
-/// at run time is not a caller's compile-time claim that the option exists.
+/// answer, and rejected where the caller names it rather than quietly evaluated at
+/// the default. The run-time selector takes the other reading - a route value
+/// outside the enumeration is the default there - because a value that arrives at
+/// run time is not a compile-time claim that the option exists.
 template <FitRoute kRoute, EvalScheme kScheme, FitGranularity kGranularity>
 struct RouteFit {
     static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
@@ -348,21 +295,46 @@ struct RouteFit<FitRoute::kChebyshev, kScheme, kGranularity> {
     using Type = ChebyshevFit<kScheme, kGranularity>;
 };
 
+/// The uniform route: a Chebyshev family read at a fixed grid rather than a derived
+/// partition, so both schemes are defined for it - it holds both stored forms of its
+/// coefficients - and it is selected by the partition axis.
+///
+/// The rational route's member over the same grid is a family of its own and not a
+/// mode of this one: the two store different things.
+template <EvalScheme kScheme>
+struct RouteFit<FitRoute::kChebyshev, kScheme, FitGranularity::kUniform> {
+    /// The uniform table's fit.
+    using Type = UniformFit<kScheme>;
+};
+
+/// The rational family at the uniform partition: the grid's cells are intervals like
+/// any other partition's pieces, and this member is one numerator/denominator pair
+/// fitted over each of them, in the same stored form the shipped and narrow members
+/// use, and one fit under either scheme for the same reason.
+///
+/// This specialization is what makes that route reachable over the grid: without it
+/// the primary template above would answer a caller naming this route over the grid
+/// with the Chebyshev member, at a certified bound, under the rational route's name,
+/// with nothing reporting it.
+template <EvalScheme kScheme>
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kUniform> {
+    /// The single rational member over the grid, one pair per interval.
+    using Type = RationalFitUniform;
+};
+
 /// The rational family: one fit under either scheme, because its coefficients
 /// are a monomial numerator and denominator with no Chebyshev form to sum.
 template <EvalScheme kScheme>
-struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kShipped> {
+struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kCoarsest> {
     /// The single rational fit, shared by both schemes.
     using Type = RationalFit;
 };
 
-/// The rational route under the narrow partition: the same family fitted over
-/// the narrow pieces' own intervals, one numerator/denominator pair per piece in
-/// both regions, in the same stored form and read at the same mapped arguments
-/// as the shipped member. The intervals are the Chebyshev route's narrow cut of
-/// the region - a partition is a cut of the region and not a property of a
-/// family - so what this member carries is the pairs, and it is one fit under
-/// either scheme for the reason the shipped member is.
+/// The rational route under the narrow partition: the same family fitted over the
+/// narrow pieces' own intervals, one numerator/denominator pair per piece in both
+/// regions, in the same stored form and read at the same mapped arguments as the
+/// shipped member. A partition is a cut of the region and not a property of a
+/// family, so what this member carries is the pairs.
 template <EvalScheme kScheme>
 struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
     /// The single rational fit, one pair per narrow piece.
@@ -371,61 +343,54 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 
 } // namespace detail
 
-/// Everything a call site selects about how an evaluation is performed, apart
-/// from the accuracy multiplier: the fit route, the scheme the fit's
-/// coefficients are summed in, the budget a single-precision engine runs at,
-/// and the axis a packed evaluation vectorises over. One parameter rather than
-/// one per axis, so an axis added later is a field here rather than an argument
-/// on every entry, engine and kernel between the call site and the fit.
+/// Everything a call site selects about how an evaluation is performed: the fit
+/// route, the scheme the fit's coefficients are summed in, the budget a
+/// single-precision engine runs at, the axis a packed evaluation vectorises over,
+/// how narrowly the fitted domain is cut into pieces, how a ladder's steps divide,
+/// and which exponential seeds a region-B ladder.
 ///
-/// The axes are selected together because they are one evaluation rather than
-/// because either implies the other: each names a different thing, and the pair
-/// of the first two names the fit the bodies evaluate. \c Fit is where that
-/// join happens.
+/// The axes are selected together because they are one evaluation, not because
+/// either implies the other: each names a different thing, and the pair of the first
+/// two names the fit the bodies evaluate. \c Fit is where that join happens. The
+/// packing axis is not part of that join - it names which axis a call's values are
+/// spread over, so it changes nothing about which fit answers.
 ///
-/// The packing axis is not part of that join: it names which axis a call's
-/// values are spread over, so it is read by the entries that have a wide axis
-/// to fill and changes nothing about which fit answers. It composes with the
-/// other axes rather than selecting among them.
+/// A combination the build cannot serve - a member of a partition whose fits it does
+/// not hold, or a rung whose table it has not derived - is refused where it is named
+/// rather than at a kernel, because a fallback would return one partition's values
+/// under another's name. The single-precision lanes are not an exception: their
+/// narrow partition's rung tables are derived per partition at compile time like the
+/// double lane's.
 ///
-/// The one error this type can carry is a route outside the FitRoute
-/// enumeration, and it is reported where it is named: the entries constrain
-/// their parameter with EvalPolicyLike, and RouteFit's own assertion is where a
-/// value that is not an option fails.
+/// **Every axis is stated, and no parameter of this template carries a default.** A
+/// spelling that omits a cell is therefore a compile error here, whatever wrote it:
+/// this is the name the default-policy table's rows expand, so a row with a cell
+/// missing fails at the class rather than at the macro that expanded it. The
+/// defaulted spelling is \c EvalPolicy below.
 ///
-/// The one error the axes carry beyond a route outside the enumeration is a
-/// combination the build cannot serve - a partition on the packing axis whose kernel reads
-/// the shipped pieces' shape from order to order, where the route's pairs have no
-/// per-order table of their own - and each is refused where it is named rather than at a
-/// kernel, because the partitions are different fits of the same function over the same
-/// interval and a fallback would return the shipped values under the other partition's
-/// name. The single-precision lanes carry one more: their narrow partition is served at
-/// the reference multiplier and refused past it, where the rung reads the one degree
-/// table this lane stores. The rungs are not among them on the double lane: a relaxed
-/// rung cuts a stored fit's own coefficients, so the rung is derived per partition at
-/// compile time and every rung of every combination above is served there.
-///
-/// \tparam kFitRoute      the fit route; \c FitRoute::kChebyshev by default
-/// \tparam kEvalScheme    the scheme the fit's coefficients are summed in;
-///                        \c kDefaultEvalScheme by default, which is
-///                        \c EvalScheme::kHorner
+/// \tparam kFitRoute      the fit route
+/// \tparam kEvalScheme    the scheme the fit's coefficients are summed in
 /// \tparam kEngineBudget  the computation budget of a single-precision engine,
 ///                        read by the float and half-precision lanes and by
-///                        nothing else; \c BoysBudget::kFloat by default
+///                        nothing else
 /// \tparam kPackedAxis    the axis a packed evaluation vectorises over, read by
-///                        the entries that have a wide axis to fill;
-///                        \c PackAxis::kArguments by default
-/// \tparam kGranularity   how narrowly the fitted domain is cut into pieces;
-///                        \c kDefaultFitGranularity by default, which is
-///                        \c FitGranularity::kNarrow
+///                        the entries that have a wide axis to fill
+/// \tparam kGranularity   how narrowly the fitted domain is cut into pieces
+/// \tparam kDivision      how the recursion's per-order division is performed
+/// \tparam kExp           which exponential seeds a region-B ladder; the host
+///                        default is \c kDefaultHostRegionBExp, which is
+///                        \c RegionBExp::kFast, the arithmetic the double
+///                        lane's per-region figures were measured at
 ///
 /// \ingroup boys
-template <FitRoute kFitRoute = kDefaultFitRoute,
-          EvalScheme kEvalScheme = kDefaultEvalScheme,
-          BoysBudget kEngineBudget = BoysBudget::kFloat,
-          PackAxis kPackedAxis = kDefaultPackAxis,
-          FitGranularity kFitGranularity = kDefaultFitGranularity>
-struct EvalPolicy {
+template <FitRoute kFitRoute,
+          EvalScheme kEvalScheme,
+          BoysBudget kEngineBudget,
+          PackAxis kPackedAxis,
+          FitGranularity kFitGranularity,
+          DivisionForm kDivisionForm,
+          RegionBExp kExp>
+struct StatedEvalPolicy {
     /// The fit this policy evaluates, where the combination is one the library
     /// carries.
     using Fit = typename detail::RouteFit<kFitRoute, kEvalScheme, kFitGranularity>::Type;
@@ -445,14 +410,40 @@ struct EvalPolicy {
     static constexpr PackAxis kPack = kPackedAxis;
     /// How narrowly the fitted domain is cut into pieces.
     static constexpr FitGranularity kGranularity = kFitGranularity;
+    /// How the recursion's per-order division is performed.
+    static constexpr DivisionForm kDivision = kDivisionForm;
+    /// Which exponential seeds a region-B ladder.
+    static constexpr RegionBExp kRegionBExp = kExp;
 };
 
-/// The constraint the entries put on a policy, so a combination the library
-/// does not carry is rejected where the caller names it.
+/// The evaluation policy at the values a call site that names none resolves on:
+/// every axis of \c StatedEvalPolicy, each parameter defaulted, so a caller may name
+/// the one axis it has an opinion about and keep the rest.
 ///
-/// It requires the four axes and the fit the first two join to. The fit's own
-/// contract (FitPolicy) is asserted where the fit is read rather than here,
-/// because a fit the library carries is complete only where its tables are.
+/// **An entry's template default is its class's row, not this name.** Each default
+/// below is the name the build's seam header (`boys/boys_build_defaults.hpp`)
+/// defines, so a build that replaces the seam moves this alias with it, while an
+/// entry defaults to \c DefaultPolicy<kPrecision, kShape>, which the table's row
+/// resolves. A caller who wants the class's own policy names no policy at the call
+/// site; a caller who wants this build's own point names this alias.
+///
+/// \ingroup boys
+template <FitRoute kFitRoute = kDefaultFitRoute,
+          EvalScheme kEvalScheme = kDefaultEvalScheme,
+          BoysBudget kEngineBudget = BoysBudget::kFloat,
+          PackAxis kPackedAxis = kDefaultPackAxis,
+          FitGranularity kFitGranularity = kDefaultFitGranularity,
+          DivisionForm kDivisionForm = kDefaultDivisionForm,
+          RegionBExp kExp = kDefaultHostRegionBExp>
+using EvalPolicy = StatedEvalPolicy<kFitRoute, kEvalScheme, kEngineBudget, kPackedAxis, kFitGranularity,
+                                    kDivisionForm, kExp>;
+
+/// The constraint the entries put on a policy, so a combination the library does not
+/// carry is rejected where the caller names it.
+///
+/// It requires every axis and the fit the first two join to. The fit's own contract
+/// (FitPolicy) is asserted where the fit is read rather than here, because a fit the
+/// library carries is complete only where its tables are.
 ///
 /// \ingroup boys
 template <typename P>
@@ -463,50 +454,45 @@ concept EvalPolicyLike = requires {
     { P::kBudget } -> std::convertible_to<BoysBudget>;
     { P::kPack } -> std::convertible_to<PackAxis>;
     { P::kGranularity } -> std::convertible_to<FitGranularity>;
+    { P::kDivision } -> std::convertible_to<DivisionForm>;
+    { P::kRegionBExp } -> std::convertible_to<RegionBExp>;
 };
 
-/// The evaluation policy a caller gets by naming no axis, one name per
-/// precision: the shortcut for a consumer who has chosen a precision and does
-/// not want to choose anything else.
+/// The evaluation policy a caller gets by naming no axis, one name per precision:
+/// the shortcut for a consumer who has chosen a precision and does not want to
+/// choose anything else.
 ///
-/// Each name is what the entries of that precision run when the call site
-/// names no policy, so a caller may write \c BoysSingle<1.0, DefaultPolicyFp64>
-/// and get the call a caller who named nothing gets — the same instantiation,
-/// not a second one that happens to agree, and the entries' own template
-/// defaults are these names. The four differ in one field and in one only:
+/// Each name is \c EvalPolicy<> at one lane's budget: the point the build's seam
+/// header names, and never a class's row. A caller may write
+/// \c BoysSingle<1.0, DefaultPolicyFp64> to name that point explicitly, and it is
+/// the call a call site that named no policy gets exactly where the table's row for
+/// that class carries the combination this point composes - not the same
+/// instantiation in general. The four differ in the budget alone:
 ///
-///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects the
-///    Chebyshev route, the Horner scheme, the narrow partition and the
-///    arguments-packing axis - whatever \c kDefaultFitRoute,
-///    \c kDefaultEvalScheme, \c kDefaultFitGranularity and \c kDefaultPackAxis
-///    name at the revision a caller builds against - and the budget its policy
-///    carries is inert;
-///  - the **float** lane reads the budget at a relaxed multiplier, and its own
-///    is \c BoysBudget::kFloat;
-///  - the **half** lanes (\c fp16 and \c bf16) are the same engine under the
-///    tighter \c BoysBudget::kFp16 budget, which is the axis that cuts their
-///    fits for a 1e-7 region target rather than the float lane's — this is the
-///    one place the four names differ in more than their spelling, and it is
-///    why a single default for every precision would be the float lane's
-///    budget imposed on the half lanes. It is not an accuracy they can
-///    publish: they run the float lane's arithmetic and store what it returns,
-///    so their published figure is that lane's (1.5e-7) plus the half-ULP
-///    term the store adds;
-///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same
-///    policy type, because fp16 and bf16 are one lane at one budget; they are
-///    named twice so that a document can cite the default for the format its
-///    reader is using, and a reader comparing the two names is comparing a
-///    lane, not a choice.
+///  - the **double** lanes read no budget, so \c DefaultPolicyFp64 selects whatever
+///    \c kDefaultFitRoute, \c kDefaultEvalScheme, \c kDefaultFitGranularity,
+///    \c kDefaultPackAxis and \c kDefaultDivisionForm name at the revision a
+///    caller builds against, and its budget cell is inert;
+///  - the **float** lane reads the budget, and its own is \c BoysBudget::kFloat;
+///  - the **half** lanes (fp16 and bf16) are one engine under the tighter
+///    \c BoysBudget::kFp16 budget, which cuts their fits for a 1e-7 region target
+///    rather than the float lane's. That is not an accuracy they can publish: they
+///    run the float lane's arithmetic and store what it returns, so their published
+///    figure is that lane's 1.5e-7 plus the half-ULP term the store adds - 2^-11 for
+///    the binary16 store, 2^-8 for the bfloat16 one;
+///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same policy
+///    type - one engine, one budget, and no cell of a policy is a format - and
+///    neither is a class's default. What an entry that names no policy resolves to is
+///    \c DefaultPolicy<Precision, Shape>, one row per class, and the fp16 and bf16
+///    classes are two of those rows. These two names are here so that a document can
+///    cite the lane it is writing about.
 ///
-/// **These defaults are a measurement, and the option probe is how it was
-/// taken.** Which option is fastest is a property of the host, its flags and
-/// its card, so the figures behind the two axes that have been measured were
-/// read off the option probe this library ships for a consumer to run where
-/// they deploy, and the axes that have not been measured against it carry the
-/// shipped settings. The line between the two is stated axis by axis in
-/// docs/lane-contract.md; the numbers behind the measured ones are the probe's
-/// own report, on the machine it is run on, and not a figure this header can
-/// restate.
+/// **Which option is fastest is a property of the host, its flags and its card.** The
+/// figures behind the two measured axes were read off the option probe this library
+/// ships for a consumer to run where they deploy, and the axes not measured against
+/// it carry the shipped settings. Which axis is which is stated in
+/// docs/lane-contract.md; the numbers are the probe's own report, on the machine it
+/// is run on, and not a figure this header can restate.
 ///
 /// \ingroup boys
 using DefaultPolicyFp64 = EvalPolicy<>;
@@ -516,16 +502,22 @@ using DefaultPolicyFp64 = EvalPolicy<>;
 /// \ingroup boys
 using DefaultPolicyFp32 = EvalPolicy<>;
 
-/// The fp16 lane's default policy. See \c DefaultPolicyFp64.
+/// The fp16 lane's default policy: the seam's five at the half lane's budget. A
+/// class's own default is \c DefaultPolicy<Precision::kFp16, Shape>, which the
+/// table may state with other cells. See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
 using DefaultPolicyFp16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
-/// The bf16 lane's default policy: the fp16 lane's, because the two formats are
-/// one lane at one budget. See \c DefaultPolicyFp64.
+/// The bf16 lane's default policy: the seam's five at the same half budget, and the
+/// same policy type as \c DefaultPolicyFp16, because the two half formats are one
+/// engine and a policy carries no format cell. The classes are two: an unnamed bf16
+/// call resolves through \c DefaultPolicy<Precision::kBf16, Shape>, which is this
+/// lane's own row, so this name is the lane's five and not the fp16 class's answer.
+/// See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
-using DefaultPolicyBf16 = DefaultPolicyFp16;
+using DefaultPolicyBf16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
 namespace backend {
 
@@ -550,24 +542,22 @@ enum class MulAddRoute : std::uint8_t {
 ///
 /// \param route the route
 ///
-/// \returns a string literal naming it: "fused" or "separate", and "unknown"
-///          for a value outside the enumerators
+/// \returns a string literal naming it: "fused" or "separate", and "unknown" for a
+///          value outside the enumerators
 ///
-/// A value outside the enumerators is answered rather than refused. The route
-/// this names is the one a caller selected, which is not always the one the
-/// build runs: whether the separate route is really two roundings is the
-/// build's contraction, measured per translation unit, and \c RouteInForce<T>()
-/// and BoysBackends() are what report that.
+/// This is the route a caller selected, which is not always the one the build runs:
+/// whether the separate route is really two roundings is the build's contraction,
+/// measured per translation unit, and \c RouteInForce<T>() and BoysBackends() are
+/// what report that.
 const char* MulAddRouteName(MulAddRoute route) noexcept;
 
-/// The arithmetic one lane runs in: a value type, a storage type, the packed
-/// width the kernel operates at, the transport between them, the multiply-add
-/// route, and the multiply-adds the kernels are built from.
+/// The arithmetic one lane runs in: a value type, a storage type, the packed width
+/// the kernel operates at, the transport between them, the multiply-add route, and
+/// the multiply-adds the kernels are built from.
 ///
-/// The storage type is the one the lane's arguments and results are held in
-/// and equals the value type except in the lanes that keep half-precision
-/// arguments and compute in single (f16.hpp), where the same arithmetic is
-/// reached through a narrower transport.
+/// The storage type is the one the lane's arguments and results are held in and
+/// equals the value type except in the lanes that keep half-precision arguments and
+/// compute in single (f16.hpp).
 template <typename B>
 concept ArithmeticBackend = requires(const typename B::Storage* storage,
                                      typename B::Storage* destination,
@@ -605,8 +595,15 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept {
 namespace detail {
 
 /// The fused multiply-add of one scalar type, spelled for that type: the
-/// single-precision form is the single-precision operation, not the
-/// double-precision one narrowed afterwards.
+/// single-precision form is the single-precision operation, not the double-precision
+/// one narrowed afterwards.
+///
+/// One rounding on every build. What it costs is the build's: a translation unit
+/// compiled without the fused instruction set calls the runtime for it, and one
+/// compiled with the set does not - MSVC stops referencing the runtime's `fma` under
+/// /arch:AVX2, which the build facts record per leg as `fma.route`. Naming the
+/// intrinsic here was measured to change nothing: the units that pay the call are
+/// exactly those compiled without the flag.
 ///
 /// \param a the multiplicand
 /// \param b the multiplier
@@ -626,10 +623,10 @@ T Fused(T a, T b, T c) noexcept {
 
 /// The separate multiply-add: the product rounds, then the sum rounds.
 ///
-/// Written bare, which costs no call on any target. On a target that contracts
-/// a bare product-plus-add it is the fused step instead of two roundings, so a
-/// route that means two roundings has to know its build; Contracts() is that
-/// question's answer and RouteInForce() is where the two are put together.
+/// Written bare, which costs no call on any target. On a target that contracts a bare
+/// product-plus-add it is the fused step instead of two roundings, so a route that
+/// means two roundings has to know its build; Contracts() is that question's answer
+/// and RouteInForce() is where the two are put together.
 ///
 /// \param a the multiplicand
 /// \param b the multiplier
@@ -641,14 +638,20 @@ T Separate(T a, T b, T c) noexcept {
     return a * b + c;
 }
 
-/// The route this translation unit's scalar arithmetic was compiled with.
+/// The route this translation unit's arithmetic was compiled with.
 ///
-/// A build fact, set once for the library and inherited by a consumer through
-/// the same public compile definition, so a call site that instantiates a
-/// kernel in its own unit gets the arithmetic the library reports. The default
-/// is the fused route: the certified bounds are the fused arithmetic's, and a
-/// build that changes route changes them.
-#if defined(BOYS_MULADD_SEPARATE)
+/// A build fact, set once for the library and inherited by a consumer through the
+/// same public compile definition, so a call site that instantiates a kernel in its
+/// own unit gets the arithmetic the library reports. The default is the fused route:
+/// the certified bounds are the fused arithmetic's, and a build that changes route
+/// changes them.
+///
+/// **The value is read and not only the spelling**, so `-DBOYS_MULADD_SEPARATE=0` is
+/// the fused route and not the separate one. CMake defines this as 1 or not at all,
+/// but a consumer may pass the option's name with a value of their own, and a header
+/// that answered the separate route for `=0` would select the arithmetic the caller
+/// asked against - silently.
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
 inline constexpr MulAddRoute kSelectedRoute = MulAddRoute::kSeparate;
 #else
 inline constexpr MulAddRoute kSelectedRoute = MulAddRoute::kFused;
@@ -672,10 +675,9 @@ bool MeasureContraction() noexcept;
 /// \returns the route the arithmetic of `T` is actually delivered by
 template <typename T>
 MulAddRoute RouteInForce() noexcept {
-    // The selection is a compile-time constant, so it is tested as one: MSVC
-    // reports a constant conditional expression under /W4, and this tree makes
-    // that an error. Only a build that selected the separate route asks the
-    // contraction question at all.
+    // The selection is a compile-time constant and is tested as one: MSVC reports a
+    // constant conditional expression under /W4, and this tree makes that an error.
+    // Only a build that selected the separate route asks the contraction question.
     if constexpr (kSelectedRoute == MulAddRoute::kSeparate)
     {
         if (MeasureContraction<T>())
@@ -755,10 +757,10 @@ struct Scalar {
 
     /// `a * b + c` at this backend's route.
     ///
-    /// At the fused route the product is exact and the sum rounds once, which
-    /// on a target without the instruction is a call into the C runtime. At the
-    /// separate route the product rounds and then the sum rounds: two
-    /// roundings, no call, and a different value.
+    /// At the fused route the product is exact and the sum rounds once, which on a
+    /// target without the instruction is a call into the C runtime. At the separate
+    /// route the product rounds and then the sum rounds: two roundings, no call, and
+    /// a different value.
     ///
     /// \param a the multiplicand
     /// \param b the multiplier
@@ -776,35 +778,32 @@ struct Scalar {
     }
 
     /// `a * b - c` with two roundings: the product rounds, then the difference
-    /// rounds. Written through the fused form with a zero addend rather than
-    /// as the bare product and difference, because the bare form is a single
-    /// fused step wherever the target has FMA and the contraction setting
-    /// allows it — the default on aarch64, and on any x86 build that passes
-    /// -mfma — so the same source would be two arithmetics. The zero addend is
-    /// the product rounded once and nothing more, leaving a contraction pass
-    /// nothing to fuse.
+    /// rounds.
+    ///
+    /// Written through the fused form with a zero addend rather than as the bare
+    /// product and difference, because a bare `a * b - c` is a single fused step
+    /// wherever the target has FMA and the contraction setting allows it - the default
+    /// on aarch64, and on any x86 build that passes -mfma - so the same source would
+    /// be two arithmetics. The zero addend is the product rounded once and nothing
+    /// more, leaving a contraction pass nothing to fuse.
     ///
     /// \param a the multiplicand
     /// \param b the multiplier
     /// \param c the subtrahend
     ///
-    /// The route does not reach this operation. Its contract is two roundings
-    /// on EVERY build, and the spelling above is the portable way to keep it: a
-    /// bare `a * b - c` is two roundings only where the build does not
-    /// contract, so spelling it that way would make the operation's own
-    /// contract a property of the flags. The zero addend costs one call on a
-    /// target without the instruction, and that is the residue the separate
-    /// route leaves: a correct price for a contract that does not move.
+    /// The route does not reach this operation: its contract is two roundings on
+    /// EVERY build, and the spelling above is the portable way to keep it. The zero
+    /// addend costs one call on a target without the instruction, and that is the
+    /// residue the separate route leaves.
     ///
     /// \returns `a * b - c` with two roundings
     static Packed MulSub(Packed a, Packed b, Packed c) noexcept {
         return detail::Fused(a, b, Packed{0}) - c;
     }
 
-    /// Whether a bare `a * b + c` written in this arithmetic is a single
-    /// rounding, as the translation unit that calls this compiles it. The
-    /// answer is the asking unit's because contraction follows from that
-    /// unit's target and flags; see the file comment.
+    /// Whether a bare `a * b + c` written in this arithmetic is a single rounding, as
+    /// the translation unit that calls this compiles it. The answer is the asking
+    /// unit's, because contraction follows from that unit's target and flags.
     ///
     /// \returns whether the bare form and the fused step agree here
     static bool Contracts() noexcept;
@@ -818,16 +817,15 @@ using ScalarFp32 = Scalar<float>;
 
 namespace detail {
 
-/// Whether the build contracts a bare product-plus-add in the scalar
-/// arithmetic of `T`.
+/// Whether the build contracts a bare product-plus-add in the scalar arithmetic of
+/// `T`.
 ///
-/// Measured, not declared: contraction follows from the target and the flags,
-/// so the only answer worth reporting is the one the build gives. The operands
-/// make the product inexact and then cancel its leading term, so a bare step
-/// that contracts reaches the fused value exactly while one that does not
-/// lands 2^-54 away in double and 2^-26 in single. The operands are read
-/// through volatile so the compiler evaluates the expression rather than the
-/// constant.
+/// Measured, not declared: contraction follows from the target and the flags, so the
+/// only answer worth reporting is the one the build gives. The operands make the
+/// product inexact and then cancel its leading term, so a bare step that contracts
+/// reaches the fused value exactly while one that does not lands 2^-54 away in
+/// double and 2^-26 in single. The operands are read through volatile so the compiler
+/// evaluates the expression rather than the constant.
 ///
 /// \returns whether the bare step and the fused step agree here
 template <typename T>
@@ -860,19 +858,18 @@ struct BackendInfo {
     /// in this build.
     bool contracts;
 
-    /// The multiply-add route in force for this arithmetic, which is the route
-    /// its values were computed at and not merely the one the build selected.
-    /// The two differ where a contracting build was asked for the separate
-    /// route, because there the bare form IS the fused step and the arithmetic
-    /// is the fused one.
+    /// The multiply-add route in force for this arithmetic: the route its values were
+    /// computed at, and not merely the one the build selected. The two differ where a
+    /// contracting build was asked for the separate route, because there the bare form
+    /// IS the fused step.
     MulAddRoute route;
 };
 
 /// The arithmetic backends this build carries.
 ///
-/// The scalar pair is always present. The packed pair is present exactly when
-/// the build has the AVX2 + FMA tier, which is decided at run time on an
-/// x86_64 build and absent entirely elsewhere.
+/// The scalar pair is always present. The packed pair is present exactly when the
+/// build has the AVX2 + FMA tier, which is decided at run time on an x86_64 build and
+/// absent entirely elsewhere.
 ///
 /// \returns the backends, in a fixed order.
 ///

@@ -1,32 +1,23 @@
 #include "boys/boys_transform.hpp"
 
-// The region-A transform lane. The product's structure, the modes' bounds and
-// the kernel itself are in the public header: the kernel is a template defined
-// there, so a consumer's translation unit compiles the rung it uses and no
-// fixed set of multipliers is the surface.
-//
-// This TU holds the default multiplier's instantiations, which the
-// extern-template declarations in that header route the default call sites to:
-// a caller that names no multiplier links against these instead of compiling
-// the kernel again in its own translation unit.
+// The entry's explicit instantiations. The extern-template declarations in the
+// public header route a default call site here, so a caller that names no mode
+// links against these instead of compiling the kernel again in its own
+// translation unit.
 
 namespace boys {
 
-template void BoysRegionAProduct<ProductMode::kTf32, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kTf32>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kBf16, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kBf16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kFp16, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kFp16>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 std::span<const ProductModeInfo> BoysProductModes() noexcept {
-    // The bounds and the floors are the header's own preamble figures, and the
-    // certification column is what says which of them a card can be held to:
-    // the fp64 mode's bound is a measurement of an ordinary IEEE double sum,
-    // and the other five are arithmetic on the fp32 accumulator model the
-    // preamble describes. The single-pass floors are the dense-sweep worst
-    // measurements of tools_tc/compare.py at the same density the split modes'
-    // were taken at, rounded up as those are.
+    // The bounds and the floors are the header's preamble figures, and the
+    // certification column says which of them a card can be held to. The
+    // single-pass floors are worst measurements, rounded up.
     static const ProductModeInfo kRows[] = {
         {ProductMode::kFp64,
          "fp64",
@@ -81,11 +72,11 @@ std::span<const ProductModeInfo> BoysProductModes() noexcept {
     return std::span<const ProductModeInfo>(kRows);
 }
 
-template void BoysRegionAProduct<ProductMode::kFp64, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kFp64>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kTf32x3, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kTf32x3>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-template void BoysRegionAProduct<ProductMode::kBf16x6, kBoysFullAccuracyMultiplier>(
+template void BoysRegionAProduct<ProductMode::kBf16x6>(
     RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
 
 } // namespace boys

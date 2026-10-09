@@ -1,21 +1,7 @@
-// The option probe driver: measures this build's evaluation options on this
-// machine and prints what it found, including whether it found enough to name
-// one.
-//
-// One process, one run: the probe warms up, calibrates its load instrument,
-// takes the passes, refines the options a class left tied, and reports. The
-// exit status is 0 whether or not a default was named — a refusal is one of this
-// tool's results, not a failure of it — so a script that wants the verdict reads
-// it from the text.
-//
-// The knobs move the workload to the caller's own shape (--count, --nmax,
-// --xrange), the protocol to the machine's own patience (--passes, --rounds,
-// --bg, --cal, --canary-spread), the refinement to the caller's own patience
-// (--refine-runs, --refine-factor), and the measured set to the caller's own
-// shortlist (--only, repeatable). Every value that was in force is printed in
-// the report, so a figure is never read without the protocol that produced it,
-// and a name that is no option of this library is printed as such rather than
-// silently measuring nothing.
+// The option probe driver: measures this build's evaluation options on this machine and prints what
+// it found, verdict included. Exit 0 is a result either way: a refusal is one of them, so a script
+// reads the verdict from the text. A measured run exits 1 when its option space does not close (an
+// accounting defect, not a result), 3 on a failed --emit-defaults write, 2 otherwise.
 #include "boys/boys_probe.hpp"
 
 #include <array>
@@ -23,8 +9,15 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
 #include <string>
 #include <vector>
+
+// CMake passes the revision the report was taken at; a build that bypasses it says so rather
+// than naming a revision it did not read.
+#ifndef BoysProbeRevision
+#define BoysProbeRevision "unknown"
+#endif
 
 namespace {
 
@@ -43,8 +36,7 @@ std::string Timestamp() {
     return std::string(buffer.data());
 }
 
-// A comma-separated list of option names, appended to the set the caller is
-// narrowing the measurement to.
+// Appends a comma-separated list of option names to the caller's set.
 void AppendNames(const char* list, std::vector<std::string>& names) {
     const std::string text(list);
 
@@ -87,8 +79,11 @@ void Usage() {
                "                     cannot be separated\n"
                "                     (default 5)\n"
                "  --refine-factor=N  how much longer each refinement run is than\n"
-               "                     one pass protocol: passes and rounds are both\n"
-               "                     multiplied by it (default 5)\n"
+               "                     one pass protocol. The stage refines a tie by\n"
+               "                     asking whether the leader holds up over more\n"
+               "                     rounds of the same comparison, so the factor\n"
+               "                     lengthens the ROUNDS and leaves the passes\n"
+               "                     alone (default 1)\n"
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
                "                     flagged as one that ran on a wandering\n"
@@ -108,6 +103,13 @@ void Usage() {
                "                     build offers). A name that is no option of this\n"
                "                     library, a cell the library refuses, and an option\n"
                "                     this build does not carry are answered apart.\n"
+               "  --emit-defaults=F  write this run's own rankings as a replacement for\n"
+               "                     the build-defaults seam, in the format its\n"
+               "                     BOYS_BUILD_DEFAULT_ROWS consumes, and report which\n"
+               "                     classes carry a measured row and which carry the\n"
+               "                     seam's own names. The file is what the CMake option\n"
+               "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
+               "                     measured no class writes no file.\n"
                "  --help             this text\n"
                "\n"
                "The result is about this machine, this build and this process. It is\n"
@@ -119,6 +121,7 @@ void Usage() {
 
 int main(int argc, char** argv) {
     boys::ProbeOptions options;
+    std::string emitDefaults;
 
     for (int i = 1; i < argc; ++i)
     {
@@ -128,6 +131,18 @@ int main(int argc, char** argv) {
         {
             Usage();
             return 0;
+        } else if (arg.rfind("--emit-defaults=", 0) == 0)
+        {
+            emitDefaults = arg.c_str() + 16;
+        } else if (arg == "--emit-defaults")
+        {
+            if (i + 1 >= argc)
+            {
+                std::fprintf(stderr, "boys-option-probe: --emit-defaults needs a file name\n");
+                return 2;
+            }
+
+            emitDefaults = argv[++i];
         } else if (arg.rfind("--count=", 0) == 0)
         {
             options.count = static_cast<std::size_t>(std::strtoull(arg.c_str() + 8, nullptr, 10));
@@ -180,19 +195,60 @@ int main(int argc, char** argv) {
     const std::string started = Timestamp();
     const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
-    std::printf("boys option probe | started %s | finished %s | seed %llu | verdict %s\n",
+    // The revision follows the timestamp the line already opened with, so a reader keyed on that
+    // stamp reads what it read before, and the report dates itself for a check to hold it to.
+    std::printf("boys option probe | started %s | finished %s | seed %llu | revision %s | "
+                "verdict %s\n",
                 started.c_str(), Timestamp().c_str(),
-                static_cast<unsigned long long>(report.options.seed),
+                static_cast<unsigned long long>(report.options.seed), BoysProbeRevision,
                 report.verdict == boys::OptionProbeVerdict::kRecommend ? "RECOMMEND"
                                                                        : "CANNOT DETERMINE");
 
     // The default and how it was reached, on one line a script can read: a
-    // majority winner and an arbitrary pick among equals are different answers,
-    // and the caller is told which one this is before reading the report.
+    // majority winner and a pick among equals are different answers.
     std::printf("default %s | reached by %s\n", report.recommended.c_str(),
                 boys::OptionProbeDefaultHowName(report.defaultHow).c_str());
 
     const std::string text = boys::FormatOptionProbe(report);
     std::fputs(text.c_str(), stdout);
-    return 0;
+
+    // The seam this run implies, where the caller asked for it: the rows a build pointed at
+    // the file compiles. A run that ranked no class has nothing to write and the entry says
+    // so with an empty text, which is a failure of this command's own contract rather than a
+    // result - the file would be a transcription of the seam and not a measurement.
+    if (!emitDefaults.empty())
+    {
+        const std::string headerText = boys::FormatBuildDefaults(report, started);
+
+        if (headerText.empty())
+        {
+            std::fprintf(stderr,
+                         "boys-option-probe: no defaults written - this run measured no class, "
+                         "so there is no ranking to write\n");
+            return 3;
+        }
+
+        std::ofstream file(emitDefaults, std::ios::binary);
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-option-probe: cannot write '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        file << headerText;
+        file.close();
+
+        if (!file)
+        {
+            std::fprintf(stderr, "boys-option-probe: short write to '%s'\n", emitDefaults.c_str());
+            return 3;
+        }
+
+        std::printf("defaults written: %s | %zu byte(s) | point a build at it with "
+                    "-DBOYS_BUILD_DEFAULTS=%s\n",
+                    emitDefaults.c_str(), headerText.size(), emitDefaults.c_str());
+    }
+
+    return boys::OptionProbeSpaceClosure(report).closed ? 0 : 1;
 }

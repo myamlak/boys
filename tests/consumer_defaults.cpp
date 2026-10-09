@@ -1,30 +1,25 @@
-// Consumer check: the shortcut. One name per precision, from <boys/boys.hpp>
-// alone, and the figures that show each name is the policy its entry already
-// runs.
-//
-// A default that is only the zero value of a template parameter is not
-// something a caller can point at or a document can cite. These names are: a
-// caller that has chosen a precision and no axis writes the name, and what the
-// call then runs is a sentence with a subject.
-//
-// Two claims are checked here, and each prints numbers rather than a checkmark:
-//
-//  * the name and the empty argument list are one call. For the double and
-//    float lanes that is an identity of types - the aliases are `EvalPolicy<>`,
-//    which is what the entries' parameter already defaults to - and the two
-//    spellings are compared on the values as well, over the grid below, because
-//    a type-level argument is not a value-level one;
-//
-//  * where one precision's default is not another's - the half lanes run the
-//    fp16 engine budget where the float lane runs the float one - the entry is
-//    compared against the alias-composed call bit for bit, and beside it
-//    against the float lane's default, so the figure that separates the two
-//    budgets is on the page and not in the reasoning.
-//
-// The second pair of rows is the one place a difference is expected and is not
-// counted as a failure: it is the measurement that says the names are not one
-// name written four times.
-//
+// Consumer check: the policy a call naming nothing compiles, from <boys/boys.hpp> alone, and the
+// figures that show each name is the policy its entry already runs. A template parameter's zero
+// value cannot be pointed at or cited; these names can.
+
+// Two claims are checked, each printing numbers rather than a checkmark. First, the name and the
+// empty argument list are one call, and the two spellings are compared on values as well, because a
+// type-level argument is not a value-level one.
+
+// The name the first claim uses is the class's own row. What an entry's policy parameter defaults
+// to is the row this build's default-policy table carries for the class that entry's precision and
+// shape make - `boys::DefaultPolicy<Precision, Shape>`, which boys/boys.hpp resolves from the one
+// table the seam file carries - and not the shortcut composed from the seam's five.
+
+// The five are the point a class the table does not name falls to, and this build's table names
+// every class: a build that writes its own rows makes a class's default a row of its own choosing,
+// and an entry held to the five would be held to a policy it does not run. So the class-keyed names
+// below are what the entries are compared against; the four shortcut names are asserted as such.
+
+// Second, where one precision's default is not another's (the half lanes run the fp16 engine
+// budget, the float lane the float one), the entry is compared against its own class's call bit for
+// bit, and beside it against the float lane's class: the one place a difference is expected.
+
 // Run:  cmake --build <build> --target boys-consumer-defaults
 //       <build>/boys-consumer-defaults
 //       ctest --test-dir <build> -R boys-consumer-defaults
@@ -41,11 +36,10 @@
 #include <type_traits>
 #include <vector>
 
-// The library's private src/ directory is deliberately NOT on this file's
-// include path: a consumer gets include/ and nothing else. Prove it here rather
-// than assume it. Each name below resolves only if a directory holding that
-// file is on the include path, and those files are the library's sources; five
-// names, so that renaming one does not quietly retire the probe.
+// The library's private src/ is deliberately NOT on this file's include path: a
+// consumer gets include/ and nothing else. Each of the five names below resolves
+// only if a directory holding that source file is on the path, so renaming one still
+// leaves four.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
                                 __has_include("boys_transform.cpp") ||                             \
@@ -57,28 +51,46 @@
 
 namespace {
 
-// The two half types are declared behind the BoysFp16 seam, and every name
-// below that spells one is compiled with the seam. The half section of main
-// states the lanes a build with the seam closed does not carry rather than
-// passing over them in silence.
+// The two half types are declared behind the BoysFp16 seam.
 #if BoysFp16
 using boys::Bf16;
 using boys::F16;
 #endif // BoysFp16
 
-/// The four names, one line each. What each selects, and the bound it carries,
-/// are in docs/lane-contract.md.
+/// The four shortcut names. What each selects, and the bound it carries, are in
+/// docs/lane-contract.md. They are the names a caller writes to ask for one precision and
+/// nothing else; they are **not** what an entry's own parameter defaults to, which is its
+/// class's row below.
 using Fp64Default = boys::DefaultPolicyFp64;
 using Fp32Default = boys::DefaultPolicyFp32;
 using Fp16Default = boys::DefaultPolicyFp16;
 using Bf16Default = boys::DefaultPolicyBf16;
 
-constexpr double kFull = boys::kBoysFullAccuracyMultiplier;
+// The class-keyed names: what an entry's own policy parameter defaults to. `boys::DefaultPolicy<
+// Precision, Shape>` is the name the library resolves a class to - the row this build's seam
+// carries for it, or the five above where it carries none - so a seam that writes its own rows
+// moves these names and leaves the four above. One per class this file's entries make, all host.
+using Fp64Single = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+using Fp64FixedN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
+using Fp64AllN = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllN>;
+using Fp64AllNAtOrders = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>;
+using Fp64AllOrders = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
+using Fp32Single = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
+using Fp32AllN = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>;
+using Fp32AllOrders = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>;
+using Fp16Single = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>;
+using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
+// The two half formats are one engine at one budget and two classes: the seam keys a class by the
+// format a return carries, so this name is the bf16 class's own row and not the fp16 class's. A
+// bf16 entry that names no policy resolves through it (`Precision::kBf16`), which is why the row
+// below compares `BoysAllOrdersBf16<>` against the bf16 class and not against the fp16 class.
+using Bf16Single = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kSingle>;
+using Bf16AllOrders = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kAllOrders>;
 
-// The name denotes the type the entry's parameter defaults to. For the double
-// and the float lane that is `EvalPolicy<>` itself; for the half lanes it is
-// the same row of axes under the fp16 engine budget, which is the one axis
-// this precision reaches and the float lane does not.
+// Each shortcut name denotes the type it is defined as: `EvalPolicy<>` for the double and float
+// lanes; for the half lanes the same axes under the fp16 engine budget. That is a statement about
+// the four names and not about any entry's parameter - the entries' parameters default to the
+// class-keyed names above, and the two coincide only on a class whose row is the five.
 static_assert(std::is_same_v<Fp64Default, boys::EvalPolicy<>>);
 static_assert(std::is_same_v<Fp32Default, boys::EvalPolicy<>>);
 static_assert(Fp64Default::kBudget == boys::BoysBudget::kFloat);
@@ -87,8 +99,7 @@ static_assert(Fp16Default::kBudget == boys::BoysBudget::kFp16);
 static_assert(!std::is_same_v<Fp16Default, Fp64Default>);
 static_assert(std::is_same_v<Bf16Default, Fp16Default>);
 
-// The other four axes are the shipped defaults on every one of the four names,
-// and the half lanes differ from the float lane in the budget alone.
+// The other four axes are the committed defaults on all four names.
 static_assert(Fp64Default::kRoute == boys::kDefaultFitRoute);
 static_assert(Fp64Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp64Default::kPack == boys::kDefaultPackAxis);
@@ -98,39 +109,38 @@ static_assert(Fp16Default::kScheme == boys::kDefaultEvalScheme);
 static_assert(Fp16Default::kPack == boys::kDefaultPackAxis);
 static_assert(Fp16Default::kGranularity == boys::kDefaultFitGranularity);
 
-// Address identity: two function addresses compare equal in a constant
-// expression exactly when the two names are one instantiation, and two
-// instantiations of one entry have the same function-pointer type, so these are
-// the assertions that each entry's *own* default is the name — not that the
-// name is a type the entry could be called with. They are what a revision that
-// changed an entry's template default without changing the alias would fail,
-// which is the defect the shortcut exists to make visible.
-//
-// Only the yes direction is a constant expression. A comparison between two
-// distinct function addresses is not one under the sanitizer configuration this
-// file is also built in: g++ 15 with -fsanitize=address,undefined refuses it
-// with "'(f == g)' is not a constant expression", and a function address
-// against a null pointer with "'(f == 0)'", while two spellings of one function
-// fold. A variable template's initializer is a constant-expression context even
-// where the value is only read at run time, so this comparison cannot be
-// written as one at all; the two controls that show the relation can say no
-// compare their pairs in main() instead, as ordinary pointer comparisons.
+// Address identity: two function addresses compare equal in a constant expression only when the two
+// names are one instantiation, and two instantiations of one entry share a function-pointer type,
+// so these assert that each entry's own default is the name its class resolves to, not merely that
+// the name is a type the entry could be called with. A moved template default or class row fails.
+
+// The alias each entry is held to is its own class's name above, not the lane name: an entry's
+// parameter defaults to `DefaultPolicy<Precision, Shape>` for the class it belongs to:
+// the declarations at BoysSingle, BoysFixedN, BoysAllN, BoysAllNAtOrders, BoysSingleF32,
+// BoysAllNF32 (boys/boys.hpp), and it is the lane name only while the seam carries no row.
+
+// Only the yes direction is a constant expression: comparing two distinct function addresses is not
+// one under the sanitizer configuration this file is also built in - g++ 15 with
+// -fsanitize=address,undefined refuses it with "'(f == g)' is not a constant expression", and a
+// function address against a null pointer with "'(f == 0)'"; two spellings of one function fold.
+
+// A variable template's initializer is a constant-expression context even where the value is only
+// read at run time, so the comparison cannot be written as one; the two controls that can say no
+// compare in main().
 template <auto Left, auto Right> constexpr bool SameCall = (Left == Right);
 
-static_assert(SameCall<&boys::BoysSingle<kFull>, &boys::BoysSingle<kFull, Fp64Default>>);
-static_assert(SameCall<&boys::BoysAllOrders<kFull>, &boys::BoysAllOrders<kFull, Fp64Default>>);
-static_assert(SameCall<&boys::BoysFixedN<kFull>, &boys::BoysFixedN<kFull, Fp64Default>>);
-static_assert(
-    SameCall<&boys::BoysAllNAtOrders<kFull>, &boys::BoysAllNAtOrders<kFull, Fp64Default>>);
-static_assert(SameCall<&boys::BoysSingleF32<kFull>, &boys::BoysSingleF32<kFull, Fp32Default>>);
-static_assert(
-    SameCall<&boys::BoysAllOrdersF32<kFull>, &boys::BoysAllOrdersF32<kFull, Fp32Default>>);
-static_assert(SameCall<&boys::BoysAllNF32<kFull>, &boys::BoysAllNF32<kFull, Fp32Default>>);
+static_assert(SameCall<&boys::BoysSingle<>, &boys::BoysSingle<Fp64Single>>);
+static_assert(SameCall<&boys::BoysAllOrders<>, &boys::BoysAllOrders<Fp64AllOrders>>);
+static_assert(SameCall<&boys::BoysFixedN<>, &boys::BoysFixedN<Fp64FixedN>>);
+static_assert(SameCall<&boys::BoysAllNAtOrders<>, &boys::BoysAllNAtOrders<Fp64AllNAtOrders>>);
+static_assert(SameCall<&boys::BoysSingleF32<>, &boys::BoysSingleF32<Fp32Single>>);
+static_assert(SameCall<&boys::BoysAllOrdersF32<>, &boys::BoysAllOrdersF32<Fp32AllOrders>>);
+static_assert(SameCall<&boys::BoysAllNF32<>, &boys::BoysAllNF32<Fp32AllN>>);
 
 // --- the comparison ---------------------------------------------------------
 
-/// One row of the report: the cells compared, how many of them the two
-/// spellings answered differently, and the furthest apart they were.
+/// One row of the report: cells compared, how many the two spellings answered
+/// differently, and the furthest apart.
 struct Row {
     const char* name = "";
     std::size_t cells = 0;
@@ -140,8 +150,7 @@ struct Row {
     double worstX = 0.0;
 };
 
-// The half types' representation readers, which only the half rows below call
-// and so arrive and leave with the seam those rows are behind.
+// The half types' representation readers, behind the seam with the rows that call them.
 #if BoysFp16
 std::uint16_t Bits(F16 v) noexcept {
     return std::bit_cast<std::uint16_t>(v);
@@ -164,10 +173,8 @@ std::uint64_t Bits(double v) noexcept {
     return bits;
 }
 
-/// Judges one value of a row. Comparison is on the representation, so a
-/// difference that is below a format's resolution still counts: what is being
-/// asked is whether the two spellings are one call, not whether they are
-/// close.
+/// Judges one value of a row. Comparison is on the representation, so a difference
+/// below a format's resolution still counts: the question is one call, not closeness.
 template <class T> void Tally(Row& row, T named, T plain, int n, double x) {
     ++row.cells;
 
@@ -187,8 +194,7 @@ template <class T> void Tally(Row& row, T named, T plain, int n, double x) {
     }
 }
 
-/// A single-order pair at every order and every argument. Both callables take
-/// (order, argument) and return the same type.
+/// A single-order pair. Both callables take (order, argument) and return the same type.
 template <class T, class Named, class Plain>
 Row SingleOrderRow(const std::vector<double>& xs, Named named, Plain plain) {
     Row row;
@@ -250,8 +256,8 @@ Row FixedOrderRow(const std::vector<double>& xs, Named named, Plain plain) {
     return row;
 }
 
-/// A many-argument pair: both callables take (top order, arguments, count,
-/// output, workspace).
+/// A many-argument pair: both callables take (top order, arguments, count, output,
+/// workspace).
 template <class Named, class Plain>
 Row ManyArgRow(const std::vector<double>& xs, Named named, Plain plain) {
     const std::size_t count = xs.size();
@@ -290,14 +296,12 @@ void Print(const Row& row) {
     std::printf("\n");
 }
 
-/// The arguments: a sweep of the whole supported range with the boundaries
-/// where the lanes change arithmetic included as their own samples, so a
-/// difference in what two spellings select has nowhere to hide between
-/// samples. Sorted and deduplicated, because one of the entries compared is
-/// the form that promises its arguments are in order.
+/// The arguments: a sweep of the whole supported range with the boundaries where the
+/// lanes change arithmetic included as their own samples. Sorted and deduplicated,
+/// because one of the entries compared promises its arguments are in order.
 std::vector<double> Arguments() {
-    // The three arguments the accuracy page names: the region-A band end, the
-    // region-B selector and the point the asymptotic branch takes over.
+    // The three arguments the accuracy page names: the region-A band end, the region-B
+    // selector, and where the asymptotic branch takes over.
     constexpr double kBandEnd = 1.0855252345349333;
     constexpr double kRegionB = 11.899848152108484;
     constexpr double kAsymptotic = 28.98933773882074;
@@ -339,8 +343,8 @@ int main() {
     {
         Row row = SingleOrderRow<double>(
             xs,
-            [](int n, double x) { return boys::BoysSingle<kFull, Fp64Default>(n, x); },
-            [](int n, double x) { return boys::BoysSingle<kFull>(n, x); });
+            [](int n, double x) { return boys::BoysSingle<Fp64Single>(n, x); },
+            [](int n, double x) { return boys::BoysSingle<>(n, x); });
         row.name = "fp64 BoysSingle";
         Print(row);
         ++rows;
@@ -350,9 +354,9 @@ int main() {
         Row row = AllOrdersRow<double>(
             xs,
             [](double x, double* out) {
-                boys::BoysAllOrders<kFull, Fp64Default>(boys::kMaxBoysOrder, x, out);
+                boys::BoysAllOrders<Fp64AllOrders>(boys::kMaxBoysOrder, x, out);
             },
-            [](double x, double* out) { boys::BoysAllOrders<kFull>(boys::kMaxBoysOrder, x, out); });
+            [](double x, double* out) { boys::BoysAllOrders<>(boys::kMaxBoysOrder, x, out); });
         row.name = "fp64 BoysAllOrders";
         Print(row);
         ++rows;
@@ -362,10 +366,10 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
-                boys::BoysAllN<kFull, Fp64Default>(nmax, x, out, count, workspace);
+                boys::BoysAllN<Fp64AllN>(nmax, x, out, count, workspace);
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t* workspace) {
-                boys::BoysAllN<kFull>(nmax, x, out, count, workspace);
+                boys::BoysAllN<>(nmax, x, out, count, workspace);
             });
         row.name = "fp64 BoysAllN";
         Print(row);
@@ -376,10 +380,10 @@ int main() {
         Row row = ManyArgRow(
             xs,
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
-                boys::BoysAllN<kFull, Fp64Default>(nmax, x, out, count, boys::BoysSortedArgs{});
+                boys::BoysAllN<Fp64AllN>(nmax, x, out, count, boys::BoysSortedArgs{});
             },
             [](int nmax, const double* x, std::size_t count, double* out, std::size_t*) {
-                boys::BoysAllN<kFull>(nmax, x, out, count, boys::BoysSortedArgs{});
+                boys::BoysAllN<>(nmax, x, out, count, boys::BoysSortedArgs{});
             });
         row.name = "fp64 BoysAllN (sorted tag)";
         Print(row);
@@ -390,10 +394,10 @@ int main() {
         Row row = FixedOrderRow<double>(
             xs,
             [](int n, const double* x, std::size_t count, double* out) {
-                boys::BoysFixedN<kFull, Fp64Default>(n, x, out, count);
+                boys::BoysFixedN<Fp64FixedN>(n, x, out, count);
             },
             [](int n, const double* x, std::size_t count, double* out) {
-                boys::BoysFixedN<kFull>(n, x, out, count);
+                boys::BoysFixedN<>(n, x, out, count);
             });
         row.name = "fp64 BoysFixedN";
         Print(row);
@@ -406,9 +410,9 @@ int main() {
         Row row = SingleOrderRow<float>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleF32<kFull, Fp32Default>(n, static_cast<float>(x));
+                return boys::BoysSingleF32<Fp32Single>(n, static_cast<float>(x));
             },
-            [](int n, double x) { return boys::BoysSingleF32<kFull>(n, static_cast<float>(x)); });
+            [](int n, double x) { return boys::BoysSingleF32<>(n, static_cast<float>(x)); });
         row.name = "fp32 BoysSingleF32";
         Print(row);
         ++rows;
@@ -418,11 +422,11 @@ int main() {
         Row row = AllOrdersRow<float>(
             xs,
             [](double x, float* out) {
-                boys::BoysAllOrdersF32<kFull, Fp32Default>(
+                boys::BoysAllOrdersF32<Fp32AllOrders>(
                     boys::kMaxBoysOrder, static_cast<float>(x), out);
             },
             [](double x, float* out) {
-                boys::BoysAllOrdersF32<kFull>(boys::kMaxBoysOrder, static_cast<float>(x), out);
+                boys::BoysAllOrdersF32<>(boys::kMaxBoysOrder, static_cast<float>(x), out);
             });
         row.name = "fp32 BoysAllOrdersF32";
         Print(row);
@@ -431,20 +435,18 @@ int main() {
     }
 
     // --- half ---------------------------------------------------------------
-    // The half lanes' entries take no policy: they run their own budget. What
-    // is compared here is the entry against the call the name composes to, so
-    // that the name in the documentation is the arithmetic in the entry. The
-    // entries themselves are declared behind the BoysFp16 seam, so a build with
-    // the seam closed enters the branch below it and says so.
+    // The half lane's entry takes a policy like the float lane's and defaults to the fp16 lane's,
+    // so the row compares the entry as a caller writes it against the float lane's entry at that
+    // same policy, converted: the documented name is the entry's arithmetic.
 #if BoysFp16
     {
         Row row = SingleOrderRow<F16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleF16<kFull>(n, F16(static_cast<float>(x)));
+                return boys::BoysSingleF16<>(n, F16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<F16>(boys::BoysSingleF32<kFull, Fp16Default>(
+                return static_cast<F16>(boys::BoysSingleF32<Fp16Single>(
                     n, static_cast<float>(F16(static_cast<float>(x)))));
             });
         row.name = "fp16 BoysSingleF16";
@@ -457,10 +459,10 @@ int main() {
         Row row = AllOrdersRow<F16>(
             xs,
             [](double x, F16* out) {
-                boys::BoysAllOrdersF16<kFull>(boys::kMaxBoysOrder, F16(static_cast<float>(x)), out);
+                boys::BoysAllOrdersF16<>(boys::kMaxBoysOrder, F16(static_cast<float>(x)), out);
             },
             [&scratch](double x, F16* out) {
-                boys::BoysAllOrdersF32<kFull, Fp16Default>(
+                boys::BoysAllOrdersF32<Fp16AllOrders>(
                     boys::kMaxBoysOrder,
                     static_cast<float>(F16(static_cast<float>(x))),
                     scratch.data());
@@ -479,10 +481,10 @@ int main() {
         Row row = SingleOrderRow<Bf16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleBf16<kFull>(n, Bf16(static_cast<float>(x)));
+                return boys::BoysSingleBf16<>(n, Bf16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<Bf16>(boys::BoysSingleF32<kFull, Bf16Default>(
+                return static_cast<Bf16>(boys::BoysSingleF32<Bf16Single>(
                     n, static_cast<float>(Bf16(static_cast<float>(x)))));
             });
         row.name = "bf16 BoysSingleBf16";
@@ -495,11 +497,11 @@ int main() {
         Row row = AllOrdersRow<Bf16>(
             xs,
             [](double x, Bf16* out) {
-                boys::BoysAllOrdersBf16<kFull>(
+                boys::BoysAllOrdersBf16<>(
                     boys::kMaxBoysOrder, Bf16(static_cast<float>(x)), out);
             },
             [&scratch](double x, Bf16* out) {
-                boys::BoysAllOrdersF32<kFull, Bf16Default>(
+                boys::BoysAllOrdersF32<Bf16AllOrders>(
                     boys::kMaxBoysOrder,
                     static_cast<float>(Bf16(static_cast<float>(x))),
                     scratch.data());
@@ -516,53 +518,46 @@ int main() {
     }
 
     // --- why the names are not one name --------------------------------------
-    // Past the reference multiplier the budget decides the rung, so the half
-    // lanes' default and the float lane's are two arithmetics. This row prints
-    // how many cells they part on; it is the figure behind giving each
-    // precision its own name, and it is not a failure either way. At m = 1 the
-    // budget is inert, so this row would read zero and is taken at m = 2.
-    std::printf("  (rows below compare a half lane against the FLOAT lane's default, "
-                "m = 2, where the budget decides the rung)\n");
+    // The half lanes' class and the float lane's single-order class are two arithmetics, the engine
+    // budget being the one axis on which they part; this row prints how many cells they differ on
+    // and is not a failure either way. The float side is that class row, not the seam's five.
+    std::printf("  (rows below compare a half lane against the FLOAT lane's single-order "
+                "class, which is the other engine budget)\n");
     {
         Row row = SingleOrderRow<F16>(
             xs,
-            [](int n, double x) { return boys::BoysSingleF16<2.0>(n, F16(static_cast<float>(x))); },
+            [](int n, double x) { return boys::BoysSingleF16<>(n, F16(static_cast<float>(x))); },
             [](int n, double x) {
-                return static_cast<F16>(boys::BoysSingleF32<2.0, Fp32Default>(
+                return static_cast<F16>(boys::BoysSingleF32<Fp32Single>(
                     n, static_cast<float>(F16(static_cast<float>(x)))));
             });
-        row.name = "fp16 vs the float lane's default";
+        row.name = "fp16 vs the float lane's single-order class";
         Print(row);
     }
     {
         Row row = SingleOrderRow<Bf16>(
             xs,
             [](int n, double x) {
-                return boys::BoysSingleBf16<2.0>(n, Bf16(static_cast<float>(x)));
+                return boys::BoysSingleBf16<>(n, Bf16(static_cast<float>(x)));
             },
             [](int n, double x) {
-                return static_cast<Bf16>(boys::BoysSingleF32<2.0, Fp32Default>(
+                return static_cast<Bf16>(boys::BoysSingleF32<Fp32Single>(
                     n, static_cast<float>(Bf16(static_cast<float>(x)))));
             });
-        row.name = "bf16 vs the float lane's default";
+        row.name = "bf16 vs the float lane's single-order class";
         Print(row);
     }
 
     // --- the negative controls ------------------------------------------------
-    // The same comparison the identity assertions above make, on the pair they
-    // cannot make it on: everything above folds only when two names are one
-    // instantiation, so a comparison that could only ever say yes would leave
-    // that block proving nothing, and the half default and the float lane's are
-    // two names. The comparison is made here rather than in a static assertion
-    // because the sanitizer configuration does not accept it in any
-    // constant-expression context (see the note above SameCall); a revision that
-    // made either of them one call fails this the way it would fail an assertion.
+    // The identity assertions above fold only for one instantiation, so they prove nothing on the
+    // pair that must compare unequal: the half lane's class and the half shortcut name, which
+    // carries the default axes at the fp16 engine budget.
     {
-        const bool singleIsHalf = &boys::BoysSingle<kFull> == &boys::BoysSingle<kFull, Fp16Default>;
-        const bool singleF32IsHalf =
-            &boys::BoysSingleF32<kFull> == &boys::BoysSingleF32<kFull, Fp16Default>;
+        const bool singleIsHalf = &boys::BoysSingle<> == &boys::BoysSingle<Fp16Default>;
+        const bool singleF32IsHalf = &boys::BoysSingleF32<> == &boys::BoysSingleF32<Fp16Default>;
 
-        std::printf("  negative control: the fp16 default and the float default are %s on "
+        std::printf("  negative control: the fp16 shortcut name and the double and float "
+                    "classes are %s on "
                     "BoysSingle, %s on BoysSingleF32\n",
                     singleIsHalf ? "one call" : "two calls",
                     singleF32IsHalf ? "one call" : "two calls");
@@ -571,11 +566,9 @@ int main() {
     }
 #else // BoysFp16
 
-    // Stated, not dropped. With the seam closed this build declares no half
-    // entry, so there is no pair of spellings to compare and no cell to differ
-    // on. The four names themselves are still declared and asserted at the top
-    // of this file; what is absent here is the arithmetic they reach, and the
-    // identity rows counted below are the ones this build can run.
+    // Stated, not dropped. With the seam closed this build declares no half entry, so
+    // there is no pair of spellings to compare; the four names are still asserted at the
+    // top of this file, and what is absent here is the arithmetic they reach.
     std::printf("  fp16/bf16 lanes NOT CARRIED by this build (BoysFp16 = 0): the four "
                 "half-precision entries are declared behind the seam, so the rows those "
                 "lanes own are absent here rather than compared\n");

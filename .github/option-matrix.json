@@ -4,11 +4,12 @@
     {
       "key": "device",
       "kind": "build",
-      "source": "the x86_64 legs of .github/workflows/ci.yml",
+      "source": "the legs of .github/workflows/ci.yml",
       "members": [
         "linux-gcc",
         "linux-clang",
-        "windows-msvc"
+        "windows-msvc",
+        "linux-arm64"
       ]
     },
     {
@@ -225,6 +226,68 @@
       "cmake_args": "-DBOYS_EXPECT_AVX2=1 -DBOYS_MULADD_SEPARATE=ON",
       "selects": {
         "device": "windows-msvc",
+        "route": "separate",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "linux-arm64-fused",
+      "name": "linux-arm64 fused",
+      "runner": "ubuntu-24.04-arm",
+      "toolchain": "gcc",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 0,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=0 -DBOYS_MULADD_SEPARATE=OFF -DCMAKE_CXX_COMPILER=g++",
+      "selects": {
+        "device": "linux-arm64",
+        "route": "fused",
+        "precision": [
+          "fp32",
+          "fp64"
+        ],
+        "family": [
+          "chebyshev",
+          "rational-minimax"
+        ],
+        "evaluation": [
+          "split-clenshaw",
+          "horner"
+        ],
+        "granularity": [
+          "region-a",
+          "region-b",
+          "extended-band"
+        ]
+      }
+    },
+    {
+      "id": "linux-arm64-separate",
+      "name": "linux-arm64 separate",
+      "runner": "ubuntu-24.04-arm",
+      "toolchain": "gcc",
+      "generator": "",
+      "build_jobs": "-j 4",
+      "expect_avx2": 0,
+      "cmake_args": "-DBOYS_EXPECT_AVX2=0 -DBOYS_MULADD_SEPARATE=ON -DCMAKE_CXX_COMPILER=g++ -DCMAKE_CXX_FLAGS=-ffp-contract=off",
+      "selects": {
+        "device": "linux-arm64",
         "route": "separate",
         "precision": [
           "fp32",

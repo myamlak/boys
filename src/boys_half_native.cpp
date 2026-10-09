@@ -5,50 +5,14 @@
 #include <cassert>
 #include <cstddef>
 
-// --- The native half lane ----------------------------------------------------
-//
-// Region C's asymptotic ladder evaluated in packed correctly rounded half
-// arithmetic: one square root and one divide for the seed, then one packed
-// multiply and one packed divide per order. Every value the ladder touches is a
-// half, every operation rounds once, and two arguments travel through the same
-// register -- this is the lane f16.hpp's I/O types surround the fp32 engine
-// for, at half the register traffic per value and none of the engine's
-// precision.
-//
-// Two consequences follow from the arithmetic and are the lane's documented
-// contract, both measured (tests/boys_half_native_test.cpp, and the sweep the
-// bound was derived from):
-//
-//   * The ladder's roundings are relative, so its error is about one half ULP
-//     of whatever value it carries -- an order of magnitude above the I/O
-//     lane's budget, and arithmetic rather than hardware: two correctly rounded
-//     roundings per order land at one ULP where that budget allows half of one.
-//   * The running value is scaled by 2^15, the largest power of two binary16
-//     holds. The scale is exact, so it buys no accuracy; it buys *range*. It is
-//     what keeps the ladder's values in the format's normal range (11
-//     significand bits) and not merely representable (one subnormal bit at a
-//     time) down to F_n(x) = 2^-29, which is 2^-14 * 2^-15: the smallest normal
-//     value, lifted by the largest exact scale. Past that value the lane
-//     returns a subnormal and then a zero by design and claims nothing there;
-//     the ceiling is the end of the claim, not a bound the format's floor
-//     happens to satisfy.
-//
-// The span the ladder has to cross is what bounds the range from the other
-// side: F_0/F_n grows like (2x)^n and the format's normal range is a factor
-// 2^29 wide, so at order 8 the last arguments a scale can reach are around
-// x = 36 whatever scale is chosen -- measured, and reported with the rest of
-// the sweep in the test.
-//
-// Region C only: the tables of regions A and B are not representable in half,
-// so this lane has a precondition (x >= kX1) rather than a fallback, and no
-// accuracy multiplier (region C carries no truncatable resource).
+// Region C's asymptotic ladder in packed correctly rounded half arithmetic: a square root and a
+// divide for the seed, then a packed multiply and divide per order. The roundings are relative,
+// so the error is about one half ULP carried; the running value is scaled by 2^15 to keep the
+// ladder's values normal down to F_n(x) = 2^-29, and the lane has a precondition (x >= kX1).
 
-// The lane is behind the BoysFp16 seam like the entries that declare it: both
-// of them, the packed type they take and return, and the scale constant they
-// document leave the public surface together when the seam is closed, so this
-// file's body is compiled with them. A build with the seam closed has no
-// BoysAllOrdersHalf2 and no BoysAllNF16Native to define, and this file
-// contributes nothing to it rather than failing it.
+// The lane is behind the BoysFp16 seam like the entries that declare it: both entries, the packed
+// type they take and return, and the scale constant they document leave the public surface
+// together, so a build with the seam closed has neither entry to define and this file adds nothing.
 #if BoysFp16
 
 namespace boys {

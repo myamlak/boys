@@ -72,16 +72,26 @@ concurrency:
 # the twelve region entry points (see the guard's comment in src/boys_simd.cpp).
 #
 # Every leg runs the gate the two original legs established: build, ctest (the
-# kernel contract tests, multiplier tests, C-surface tests, boundary pins, the
+# kernel contract tests, C-surface tests, boundary pins, the
 # BOUNDARY-CHECK standalone over the committed reference grid, the dispatch
 # assertion, and the two CONSUMER checks - a translation unit that includes
 # only <boys/boys.hpp> and exercises the whole documented surface, and one that
-# names multipliers the library does not pre-instantiate and links no library
-# at all), the generator byte-identity protocol (no-args in-place regeneration
-# + --check + git diff --exit-code over the two generated files), and the
+# names what the library does not pre-instantiate and links no library
+# at all), the generator byte-identity protocol (each generator's own --check
+# over the committed files; the writes a regeneration makes stay local, which
+# CONTRIBUTING.md states as a rule), and the
 # zero-warning Doxygen build. The two original legs (windows-msvc-release,
 # linux-gcc-release) keep all of it verbatim; the new x86 legs carry the same
 # set so the retention is per-leg rather than workflow-wide.
+#
+# THE DOC-ARITHMETIC GATE is scoped to one combination with the generator and
+# Doxygen steps and for the same reason: it answers a question about the
+# DOCUMENTS, and its answer does not depend on the compiler or the build type,
+# so one leg answers it instead of seven answering it identically. It is the
+# one gate here that reads no build output at all - the documents are its
+# whole input - and it is the reason the figures in them are checked rather
+# than trusted. See the step for what it gates and what it deliberately only
+# reports.
 #
 # The VERDICTS step is a reading step, not a second gate: ctest prints a test's
 # output only when the test fails, so the accuracy gate's verdict and the
@@ -111,7 +121,30 @@ concurrency:
 # The step reads no clock. clang-tidy has no probe step because it builds no
 # binary; it does tidy the probe's source, like every other source in the tree.
 #
-# Action and tool versions are pinned: checkout v7.0.1, msvc-dev-cmd v1.13.0,
+# HOW A ROW GETS INTO THE TABLE. A row is a statement about one leg's build, so
+# only a run of that leg can make one, and the job log is not a file. The step
+# therefore TEES the probe's stdout - the row is the first thing the probe
+# prints, before it compares anything - into build-facts-row.txt, and the step
+# after it uploads that file as an artifact. Ten of the twenty-two legs cannot
+# print a row at all - option-plan and the clang-tidy leg build no binary and the
+# eight option-matrix cells build the accuracy gate and the test suite and no
+# probe - and the twelve that carry this step are the ones that can. A maintainer
+# downloads those artifacts and folds each row in with
+# `python tools/gen_build_facts.py --record <file>`.
+#
+# This is what breaks the bootstrap loop, and it is the only thing that can. The
+# table starts with no CI leg's row, and `tools/gen_build_facts.py --check`
+# refuses such a table rather than passing with nothing to compare - correctly,
+# because a step that goes green having compared nothing is the defect. The leg
+# that runs that check is a different leg from the ones that print rows, and it
+# fails while the table holds no row; the probe's own step PASSES while its leg
+# has no recorded row, printing the row it would record. So the run that fixes
+# the table is a run like the ones that produced these artifacts, and it does not
+# have to be green anywhere else: the artifacts are written by the probe steps,
+# and every step after them is free to fail.
+#
+# Action and tool versions are pinned: checkout v7.0.1, upload-artifact v7.0.1,
+# msvc-dev-cmd v1.13.0,
 # mpmath 1.4.1 (requirements-boys.txt — the committed bytes only reproduce
 # against it), clang-format 18.1.3 (the byte-identity gate's formatter: the
 # generator must format the header with this exact formatter and must fail
@@ -121,10 +154,18 @@ concurrency:
 # mac-intel zips, verified to carry the same flat doxygen-1.18.0/doxygen layout
 # as the Linux tarball).
 #
-# There is deliberately no CUDA leg: CI has no GPU runner, the device pins are
-# a documented local gate, and the timed benchmark passes stay local-only by
-# design (each timed run records machine, clock and commit). The
-# CMake benchmark targets are therefore off in CI (BUILD_BENCHMARKS=OFF).
+# THE CUDA LEG COMPILES AND DOES NOT RUN. CI has no GPU runner, so what this
+# leg can hold is the half of the device surface that is a PROPERTY OF THE
+# SOURCE: that every CUDA translation unit compiles at the standard the library
+# pins and every device target links against the kernels it was written for. It
+# cannot hold a single device fact, and it does not claim one. What it does NOT
+# do is stated as a step AND on the run's own summary, so a reader of the log
+# cannot mistake "compiled" for "tested" (see the linux-cuda job). The device
+# pins stay a documented local gate; the timed benchmark passes stay local-only
+# by design (each timed run records machine, clock and commit), and every other
+# leg keeps BUILD_BENCHMARKS=OFF for that reason. The one exception is the
+# second tree in the CUDA leg, which turns BUILD_BENCHMARKS=ON to COMPILE the
+# two CUDA drivers that live under it and never runs one.
 #
 # --- The dispatch assertion ------------------------------------------------
 #
@@ -187,8 +228,8 @@ jobs:
         run: echo "matrix=$(python3 tools/gen_option_matrix.py --emit)" >> "$GITHUB_OUTPUT"
 
   # -------------------------------------------------------------------------
-  # Every allowed configuration: one build of the accuracy gate in the tree
-  # that configuration names, and the gate run in it.
+  # Every allowed configuration: one build of the accuracy gate and of the test
+  # suite in the tree that configuration names, and both run in it.
   #
   # What a configuration is, which axes it selects and why the matrix is over
   # those, is stated where the list is generated: tools/gen_option_matrix.py.
@@ -200,6 +241,18 @@ jobs:
   # configuration and are expected to differ. A configuration whose books do
   # not hold exits non-zero and fails this job; the run is verbose so the
   # verdict it reached is in the log rather than behind --output-on-failure.
+  #
+  # AND THE TEST SUITE, in that same tree. The gate judges the figures the
+  # library publishes; the suite judges the library's own contract, which
+  # includes relations between two of its lanes that no reference grid states
+  # and that the multiply-add route decides - the across-orders lane's split
+  # Clenshaw body against the across-arguments lane's is one, and the claim
+  # written for it is bit identity at the fused route against a parting no
+  # wider than twice the region-A budget at the separate one
+  # (tests/boys_across_orders_test.cpp). This job is the only place in the
+  # workflow where the separate route is built at all, so a suite run in any
+  # other leg measures the fused arithmetic under whatever name that leg
+  # carries.
   #
   # NO TIMING ANYWHERE IN THIS JOB, and none anywhere in this workflow. What
   # is measured is accuracy and counts. A hosted runner is shared, ephemeral
@@ -231,10 +284,21 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF
           ${{ matrix.generator }} ${{ matrix.cmake_args }}
-      - name: Build (the accuracy gate target)
-        run: cmake --build build ${{ matrix.build_jobs }} --target boys-accuracy-gate
+      - name: Build (the accuracy gate and the test suite)
+        run: cmake --build build ${{ matrix.build_jobs }} --target boys-accuracy-gate boys-tests
       - name: Accuracy gate (this configuration's books)
         run: ctest --test-dir build -V -R boys-accuracy-gate
+      # The suite, in this configuration's own tree. The selection is COUNTED
+      # before it is run, because ctest does not fail on a filter that matched
+      # nothing: measured here, `ctest -R <no match>` exits 0 on 4.2.3, and on
+      # 4.4.2 without --no-tests=error. A step held only to its exit status
+      # would therefore go green having run nothing, which is the failure this
+      # count exists for.
+      - name: Test suite (this configuration's route)
+        shell: bash
+        run: |
+          ctest --test-dir build -N -R '^boys-tests$' | grep -qE '^Total Tests: 1'
+          ctest --test-dir build --output-on-failure -R '^boys-tests$'
 
   # -------------------------------------------------------------------------
   # windows-latest, MSVC, Debug + Release. The original windows-msvc-release
@@ -272,7 +336,21 @@ jobs:
       # ephemeral. Until a leg's row is recorded the step prints the row to
       # record and passes, so a leg added here is never red for being new.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: .\build\boys-build-facts.exe --leg "windows-msvc ${{ matrix.build_type }}" --check docs/build-facts.md
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts.exe --leg "windows-msvc ${{ matrix.build_type }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-windows-msvc-${{ matrix.build_type }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -290,6 +368,46 @@ jobs:
           Copy-Item tests/data/boys_reference.csv boundary-run\boys_reference.csv
           Set-Location boundary-run
           .\boys-boundary-check.exe
+      # The build-defaults seam read on this leg's own compiler. The step of this
+      # name in linux-x86 states what it reads and why it is not a fact about the
+      # sources alone: the tree it configures runs the option probe's own tests,
+      # and a probe's ranking is this machine's - which entry leads a class is a
+      # timing, and the two compilers this configuration now runs on have been read
+      # naming different winners for the same classes. A defect that reads a winner
+      # is one only the compiler that produced it can see, so the configuration
+      # runs here as well as there.
+      #
+      # Release only, this leg's own build type and the gcc step's: the reading is
+      # the compiler's, and MSVC Debug is the configuration this workflow keeps out
+      # of the matrix's doubling rather than the one it needs twice.
+      #
+      # The configure is this leg's own with the seam flag added, on the same
+      # generator and with the matrix's own AVX2 tier, so the two trees differ in
+      # exactly the header the seam resolves to.
+      - name: Build defaults (tuned fixture built and tested)
+        if: ${{ matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-tuned -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }} -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
+          cmake --build build-defaults-tuned
+          ctest --test-dir build-defaults-tuned --output-on-failure
+      # The fit-granularity axis's third member, built and tested. The two fixtures
+      # above move that axis and both name the coarsest partition, so a class resolving
+      # the grid - one table over the whole of the fitted domain - was compiled by no
+      # tree here and by no leg, and the umbrella's granularity lane was free to assert
+      # of every partition what is true of a partition whose stored fits end at x1.
+      # tests/build_defaults_uniform.hpp is that reading: ten rows' granularity cell
+      # moved off the committed value and no other cell of any row, which is what makes
+      # a failure under this tree the axis's rather than the build's. The ten are the
+      # two host lanes' five classes each: a lane's five move together because this
+      # library documents one shape's values in terms of another's, and a draft that
+      # moved one of them alone failed a test whose comparison is that lane's
+      # single-order and fixed-order rows.
+      - name: Build defaults (the grid's row built and tested)
+        if: ${{ matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-uniform -G Ninja -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=${{ matrix.expect_avx2 }} -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
+          cmake --build build-defaults-uniform
+          ctest --test-dir build-defaults-uniform --output-on-failure
   # -------------------------------------------------------------------------
   # ubuntu-latest, GCC and Clang, Debug + Release. The original
   # linux-gcc-release job, unchanged, plus Clang and the Debug configurations.
@@ -299,10 +417,11 @@ jobs:
     runs-on: ubuntu-latest
     # One leg of this job carries the generator, which re-derives the committed
     # tables at full precision and is by far the longest step anywhere in the
-    # matrix - the rest of this leg is about seventy seconds. A ceiling that
-    # truncates it would report a real check as a failure, so this job's limit
-    # is set above what that step costs rather than at the round number the
-    # other jobs share.
+    # matrix, and that same leg carries the step that reads every combination's
+    # figure, which compiles a driver against the revision's own sources; the rest
+    # of this leg is about seventy seconds. A ceiling that truncates either of the
+    # two would report a real check as a failure, so this job's limit is set above
+    # what they cost rather than at the round number the other jobs share.
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -328,9 +447,16 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
+      # Full history, unlike every other job here: one step below holds the
+      # gate's recorded run to the revision the run names, which is an ancestor
+      # of the commit being checked out. A depth-1 checkout carries neither that
+      # commit nor its files, so the step could only report that it cannot tell
+      # - and a check that cannot tell is not one that may pass. The repository
+      # is small enough that this costs seconds.
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
+          fetch-depth: 0
       # The source-integrity gates below answer questions about the SOURCES:
       # whether the committed coefficient tables are what the generator
       # produces, whether the generated pages are what their generators render,
@@ -340,6 +466,16 @@ jobs:
       # leg. The steps that DO depend on the configuration - the build, the
       # tests, and the build-facts probe against this leg's recorded row - are
       # left unscoped, which is what the matrix is for.
+      #
+      # Each of those gates also carries `always()`, and that is a second
+      # condition rather than the same one: a step whose `if:` holds no status
+      # function is read as `success() && <condition>`, so the matrix condition
+      # alone leaves every gate AFTER the first failure of the leg SKIPPED
+      # rather than red. The leg then states one finding, and its reader has no
+      # way to tell the gates that agreed from the gates that never ran - the
+      # answer is missing exactly when a leg has gone wrong, which is when it is
+      # wanted. These gates read the sources and the workflow and nothing the
+      # build makes, so there is no leg on which their answer is unavailable.
       - name: Set up Python + mpmath + clang-format (pinned)
         if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
@@ -358,7 +494,20 @@ jobs:
       # The build's own facts against this leg's recorded row: see the note in
       # the windows-msvc job for what it gates.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-x86-${{ matrix.compiler }}-${{ matrix.build_type }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -399,25 +548,676 @@ jobs:
       # on its merits, not by provenance - so this step is about consistency and
       # nothing else.
       - name: Generator consistency
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         env:
           CLANG_FORMAT: ${{ github.workspace }}/.venv/bin/clang-format
         run: |
           .venv/bin/python tools/gen_boys_coefficients.py --check --header include/boys/boys_coefficients.hpp --reference tests/data/boys_reference.csv
-      - name: Generated tables (platform table, build-facts page, option matrix)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+      - name: Generated tables (platform table, build-facts page, option matrix, entry aliases)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/gen_platform_table.py --check
           .venv/bin/python tools/gen_option_matrix.py --check
           .venv/bin/python tools/gen_build_facts.py --check
+          # The generated block in boys_cuda_options.hpp, whose claim is that two rows of the
+          # device option space reach one kernel. It is derived from the entries' own bodies, so
+          # this is what notices a row that starts or stops being a second name for one.
+          .venv/bin/python tools/gen_entry_aliases.py --check
+      # The seam splicer's own control. The tool writes the committed seam, and what it does
+      # with a row it cannot place is what decides whether a seam names the run it came from:
+      # an emission it did not place must be left as the seam carries it, marker and cells
+      # together, and the fixture is a pair that exercises both kinds of row.
+      - name: Seam splicer (the control)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: .venv/bin/python tools/splice_default_rows.py --control
+      # The probe report's provenance. A report names the revision it was taken at, and the
+      # files the probe reads must not have moved since. This leg is red on the committed
+      # report, which names none: 9688c97 renamed every option cell and no instrument could
+      # notice, so the report described a probe that no longer exists.
+      - name: Probe report (the revision it names, against the files it read)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_run.py --control
+          .venv/bin/python tools/check_probe_run.py
+      # The measured table in the guide, against the report it transcribes. Nothing held it:
+      # changing a figure, a label or a count there was caught by no check, which is how it
+      # came to quote cells the current probe does not emit.
+      - name: Probe table (the figures the guide quotes)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_table.py --control
+          .venv/bin/python tools/check_probe_table.py
+      # The build-defaults round trip: a seam is derived from the committed option-probe report, a
+      # build is configured against it, and that build's suite has to stay green. The two
+      # build-defaults steps of the windows job configure against a committed fixture, which is a
+      # seam a person wrote; this is the one step that puts the emitter's own output through a
+      # compiler, and a seam no build accepts is a default no consumer can be handed. It runs on
+      # this leg and not the gcc one because it configures and builds a whole tree of its own, and
+      # the gcc Release leg already carries the generator - the longest step in the matrix - by
+      # about forty minutes of a three-hour limit. Its tool needs nothing but the standard library,
+      # so this leg needs no virtual environment to run it.
+      - name: Build defaults (a seam emitted from the report, built and tested)
+        if: ${{ always() && matrix.compiler == 'clang' && matrix.build_type == 'Release' }}
+        run: python3 tools/check_defaults_round_trip.py --check --work build-defaults-round-trip
+      # tests/data/boys_accuracy_gate_reference.csv is the grid every accuracy
+      # claim in this tree is measured against: the CPU gate, the CUDA device
+      # gate and the bounds printed beside them all read it, and no step here
+      # did. It is generated, so the committed bytes are a claim about what its
+      # generator produces - the same claim the four generators above make and
+      # the one this file had no way to hold. A cell edited by hand, or a
+      # generator changed without regenerating, moves what every lane is
+      # measured against and leaves every run green; this step is what notices.
+      #
+      # It is the expensive generator under tools/ - a full render is 56694
+      # mpmath evaluations at 80 dps - so its cost is stated rather than left to
+      # be discovered: 2m20s to 2m40s end to end across two runs on the
+      # development host while four other lanes were running on it, of which
+      # 1m56s is the render and the rest the route agreements the generator
+      # prints as its evidence that the grid is right. Both run here, on the one
+      # combination the source-integrity gates above are scoped to, so the price
+      # is paid once rather than on all nineteen legs.
+      #
+      # mpmath is what it needs, and it is this leg that installs it, pinned at
+      # 1.4.1 - the version the committed bytes reproduce against. The generator
+      # exits 2 when it is missing rather than skipping, because a check that
+      # could not run is not a check that passed.
+      - name: Accuracy gate reference (the grid against its generator)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/gen_boys_accuracy_gate_reference.py --check
+      # .github/required-checks.txt is the list branch protection holds a merge
+      # on, and this workflow is what reports those names. Both are written by
+      # hand and every way they can part is silent: a required name no leg
+      # renders leaves the merge held open for a status no job ever posts; a
+      # checker under tools/ whose step was deleted, edited so it no longer
+      # invokes the tool, or scoped to a leg outside the list keeps its file,
+      # its green run and its reader while gating nothing; and a `--leg`
+      # argument naming a leg its own job does not render feeds a comparison
+      # that reports green against no row.
+      #
+      # This step holds the three to each other. The names are read from the
+      # required list, the legs from the matrix this file carries, and the
+      # checks off the tree rather than named here - so a checker is in scope
+      # the moment it lands, and a pull request adding one without the step
+      # that runs it fails here, on the leg that would have run it. That is the
+      # failure this exists for, an instrument that exists and enforces
+      # nothing, and it is the one this tool reported about itself until this
+      # step was added.
+      #
+      # It reads the workflow, the required list and tools/ and nothing else -
+      # no build, no compiler, no network - so it is scoped to one combination
+      # like the gates above it.
+      - name: Required checks (the names required against the checks armed)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_required_checks_are_armed.py --check
+      # Every gate below this line runs on the failure of the ones above it, and
+      # that is what `always()` is for here: without it the first gate to fail
+      # ends the leg and the rest report nothing - the leg states one finding and
+      # is read as though that were the only one there was. That is not
+      # hypothetical: the step above failed on a leg whose examples check, Doxygen
+      # gate and every docs gate had never been run at all, and two of those were
+      # already red on committed content.
+      #
+      # This is the file's own idiom for a step that has to run on a leg that has
+      # already failed (see the build-facts row steps, and the reason stated
+      # there), and the gates below read the tree and the build this leg has
+      # already made, so each answer is one a reader wants even when another gate
+      # has gone red. A gate is not less true for standing beside a failure.
+      # The packed orders lane is a template instantiated once per cell, and its
+      # cells are written out twice - as `extern template` declarations in
+      # include/boys/boys_impl.hpp and as definitions in src/boys_orders_simd.cpp.
+      # A cell that falls out of one of the two lists and not the other fails
+      # silently: declared and never defined is an unresolved external at a
+      # consumer's link, defined and never declared is a second copy of the body
+      # in every translation unit that calls it. No other gate in this file reads
+      # either list, so this step is the only thing that does.
+      - name: Packed orders cells (declared against instantiated)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_orders_packed_cells.py --check
       - name: Boundary standalone check
+        if: ${{ always() }}
         run: |
           mkdir -p boundary-run
           g++ -std=c++17 -O2 tests/boys_boundary_standalone.cpp -o boundary-run/boys-boundary-check
           cp tests/data/boys_reference.csv boundary-run/boys_reference.csv
           cd boundary-run && ./boys-boundary-check
+      # The arithmetic the published prose states over its own numbers. The
+      # accuracy gate judges a bound against a delivered value, and the
+      # generator gates hold the tables to theirs, so a figure that has a
+      # verdict is a figure nobody has to re-derive. A DERIVED statement has no
+      # such check: "a margin of 0.07 per cent", "3.06 times fewer
+      # instructions", "4125493 of 5710087 cells (72.2%)" are arithmetic on
+      # numbers the same sentence prints, and a reader checking one of them has
+      # to do that arithmetic by hand. This step does it mechanically and fails
+      # the leg when the two disagree.
+      #
+      # It reads Python and the documents and nothing else - no build, no
+      # compiler, no network - so it is scoped to one combination like the
+      # generator step above, and it is as fast as reading four files. It runs
+      # --strict, which is the setting it is meant to be trusted under: a
+      # mismatch in the published prose fails the leg.
+      #
+      # Two verdicts are reports and never fail the leg, and both are printed
+      # every run rather than filtered out: "not derivable", where the sentence
+      # does not print the two sides the arithmetic would need, and a mismatch
+      # whose operands came from wider than the configured scope. Neither is a
+      # suppression list - the material is in the log, and the line under the
+      # counts says which of the two the exit status is about.
+      - name: Docs (arithmetic in the published prose)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_doc_arithmetic.py --strict
+      # The lane rows' `source` members are what the example programs print,
+      # and the documents quote them: in a `(from ...)` beside a figure, in a
+      # `[...]` in a column, and in the `bound: ...` cell of a lane-contract
+      # row. A field that grows while a document keeps the text it used to
+      # carry leaves the document describing output the programs no longer
+      # produce, and until this step nothing read the two against each other.
+      # The fp64 and fp32 rows were edited into 583- and 1123-character
+      # rationale paragraphs while docs/getting-started.md kept the
+      # 24-character sentence those rows had said, so the examples printed a
+      # wall into a table column and the documents were quietly wrong about
+      # what they print - caught then by a lane that happened to capture the
+      # programs' output, not by a gate.
+      #
+      # This step fails the leg on a run that is the beginning of a source
+      # string and stops there, and prints every other run it read as one it
+      # makes no claim about: the same brackets hold the documents'
+      # cross-reference labels and the same cells hold their own prose, so a
+      # check that reported those would be reporting its own reader. It reads
+      # the documents and src/boys.cpp and nothing else - no build, no
+      # compiler, no network - so it is scoped to one combination like the
+      # gates above it.
+      - name: Docs (the runs the prose quotes)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_doc_transcripts.py --check
+      # The accuracy gate judges every lane and region against a bound, and
+      # those bounds are constants it transcribes: the block they sit in says
+      # "transcribed from README.md and include/boys/boys.hpp". Nothing read the
+      # two against each other until this step, so a figure edited in a document
+      # and not in the gate left the gate certifying its own transcription - the
+      # run green, the document's claim printed beside the gate's number.
+      #
+      # This step holds each transcribed constant to the cell the same fact is
+      # stated in: the header's contract table, the contract row for the lane in
+      # every document the tool reads, and the README's own copy of the gate's
+      # printed run. Each of those documents is a place a consumer reads these
+      # figures, so a table the ties are not read against is a published figure
+      # nothing holds - the landing page was one, and had drifted, before the
+      # tool's DOCUMENTS list named it. It then
+      # names what it could not tie rather than passing over it - a constant of
+      # the gate that holds a documented figure under another name fails until
+      # it is tied or named, and a figure-bearing row no tie holds fails until
+      # it is named with the reason it is not - so the coverage of the check is
+      # a declared list and not a claim. The correspondence between the two
+      # tables is not one to one and the tool says which ties are set-level for
+      # that reason.
+      #
+      # It reads the three documents, the gate and src/boys.cpp and nothing
+      # else - no build, no compiler, no network - so it is scoped to one
+      # combination like the gates above it, and it is as fast as reading five
+      # files.
+      - name: Docs (the bounds the gate transcribes)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_bound_transcripts.py --check
+      # The step above holds the README's printed-run table to the gate's
+      # recorded run, and a run is a record of one revision: taken before a
+      # change to the library, it still satisfies that tie while the document
+      # states figures this tree's gate may no longer print. This step is the
+      # other half - the record against the code - and it reads the revision out
+      # of the run and asks git what has changed since, over the files the gate
+      # prints from. It cannot see a difference only a build would show, and it
+      # says so; what it can see is a record of a tree that has moved.
+      - name: Docs (the gate's recorded run, against this revision)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_recorded_run.py
+      # The step above asks whether the record still belongs to this tree. It does
+      # not ask what the record covers, and the two are different questions: a
+      # record can be this tree's own and still be one build's, and a build that
+      # carries no CUDA lane measures the host's four lanes and prints a row for
+      # the device's four saying so - so 576 of the space's 1152 cells are
+      # answered by no row at all, and the accessor still claims the library
+      # carries them.
+      #
+      # This step is that reading. It crosses the space the library's own tables
+      # state against the rows the record carries, per lane and per region-B
+      # member, and fails when a combination is measured by no row - which is the
+      # state the record was in until the device half of the run was made, and the
+      # reason the space is now measured rather than merely counted.
+      #
+      # It reads the record, the gate and `git show` of the revision the record
+      # names, and nothing else - no build, no compiler, no CUDA, no network - so
+      # it is scoped to one combination like the gates above it, and it is as fast
+      # as reading five files. It is NOT re-made here: the record is one build's
+      # output on one host, and a leg that made its own would be comparing this
+      # leg's tree against a run of it rather than against the committed record
+      # every other consumer reads.
+      - name: Docs (the combinations the recorded run covers)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_gate_covers_combinations.py --check
+      # A build file can name a source the tree carries and git does not. Two runs went red on
+      # exactly that - `Cannot find source file` - both times a target registered by one writer
+      # while its sources sat untracked in another's tree, and both times on every leg that
+      # clones the repository. This reads every path the build files name and requires the
+      # repository to carry it, before a leg spends twenty minutes learning it the hard way.
+      - name: Docs (every source the build names is carried)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_build_names_committed_sources.py --check
+      # A lane member no body reads is a seat filled by nothing: the loop that fills it walks
+      # past it and every figure the lane publishes rests on arithmetic that never ran. This
+      # reads each member of the device lanes against the bodies that read it, and holds the
+      # ones that are deliberately unread as interface with the reason.
+      - name: Docs (every lane member is read)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_lane_members_read.py --check
+      # The owner's rule: a comment says what the code cannot, and then stops. A run of ordinary
+      # comment lines longer than a few is a comment arguing a case beside code that already
+      # makes it, and this counts what can be counted - documentation comments are exempt by the
+      # rule itself, so `///`, `/**` and `//!` are not what this reads.
+      - name: Docs (comments are brief)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_comments_are_brief.py --check
+      # A document describes what is true, and never what used to be true, what is still owed, or
+      # what an earlier reader got wrong. The phrases that carry those - "until this revision", "is
+      # owed", "no longer", the author's own "I" - are read here. String literals are not read: a
+      # sentence the program prints is output, and the gate's own verdict line says "at this
+      # revision" because that is what it means.
+      - name: Docs (the prose describes the present)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_source_narrative.py --check
+      # The two consumer documents quote what the examples print, and nothing read those runs back:
+      # the ctest legs run every example (`boys-example-*`) and compare nothing, and no tool read an
+      # example's stdout at all - so a change that moved a printed digit left README.md and
+      # docs/getting-started.md quoting a figure no program prints any more, with every leg green.
+      #
+      # This step is the reading. The programs come out of the build this job has just made, by the
+      # directory CMake resolves them into, and each quoted run is compared against what its program
+      # printed. The association between a run and its program is read out of the documents' own
+      # structure - the section that names the example, the block the document presents as a run -
+      # and a block that cannot be associated with a program fails this step too, because that is
+      # how a check like this goes quiet. (tools/check_required_checks_are_armed.py reads this step
+      # as the one that arms this tool.)
+      #
+      # One block is named and not compared: examples/07_option_probe.cpp times its own run against
+      # the host's clock, and the document says of that block that every figure in it is a property
+      # of this host and this run, so the tool reports it by name rather than comparing it.
+      # Scoped to a build that does not contract the multiply-add, because the quoted figures are
+      # such a build's. Measured on CI rather than assumed: every Release leg on gcc, clang and macOS
+      # failed this test on the last digit of F_3(1.25), while every Debug leg passed and MSVC passed
+      # at both - Release contracts, Debug does not, and MSVC does not at these settings. A document
+      # cannot be checked against a build it does not describe, so this runs where the figures came
+      # from. It is deliberately NOT loosened to a tolerance: that would stop it catching a stale
+      # figure, which is the only thing it is for. The ctest registration carries the same scope.
+      # `python3`, not the venv's interpreter: this tool imports stdlib only, and the venv is set up
+      # on the gcc Release leg alone (`if:` on the "Set up Python" step above). Naming
+      # `.venv/bin/python` here exits 127 - command not found - because on a Debug leg there is no
+      # venv at all, which is what the first version of this step did on CI run 3.
+      - name: Examples (the runs the two documents quote)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Debug' }}
+        run: |
+          python3 tools/check_example_transcripts.py --check --examples-dir build
+      # The build-defaults seam offered a consumer five choices when this step was
+      # added - it offers seven now, the host's five and the device lane's two - and
+      # until this step nothing checked that the library reads them. Three of the five were
+      # read by nothing at all - the packing axis, the division form and the fit
+      # granularity compiled hard-coded literals - so a consumer who replaced
+      # the seam header got two choices honoured and three silently ignored, and
+      # the tuned fixture could not notice because it moved the scheme and
+      # copied the library's own values for the other four.
+      #
+      # This step reads the macro names off the seam file and requires each to be
+      # expanded somewhere in include/ or src/. It does not check that a reader
+      # is correct, or that the axis can be moved at all: those are compile-time
+      # facts, and a build that moves an axis and fails is the reading for them.
+      # It is the cheap half - a choice that stops being read at all, which is
+      # the half that goes quiet.
+      - name: Docs (the choices the build-defaults seam offers)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_seam_macros.py --check
+      # The same seam read the expensive way, and the half the step above cannot
+      # supply: that a macro is expanded somewhere in include/ or src/ is a text
+      # fact, while whether the value it names is the value an entry that names no
+      # policy resolves to is a compile-time one, and a build that moves an axis is
+      # the only reading for it. tests/build_defaults_tuned.hpp is that build's
+      # header: it moves the evaluation scheme, the division form and the fit
+      # granularity off the committed values, and tests/boys_backend_test.cpp pins
+      # all five against it, so an axis whose reader stops being reached resolves
+      # the committed value and fails this leg rather than passing quietly. The three
+      # axes that once sat in the seam file named, documented and expanded by
+      # nothing are what this exists for: the fixture could not see them, because
+      # it copied the library's own values for the four it did not move.
+      #
+      # A second configure in a second build directory rather than a leg or a job
+      # of its own. Whether the library reads the choices it declares is a fact
+      # about the SOURCES, and that half is the same on every compiler - which is
+      # why the generator, generated-tables, packed-orders and docs steps above are
+      # scoped to the same one combination. The suite this configure builds is not
+      # all of that half: it carries the option probe's own tests
+      # (tests/boys_probe_test.cpp), and the probe's report is, in CMakeLists' own
+      # words for the probe's driver, a property of the host and the clock - so the
+      # ranking those tests assert on is this leg's build on this leg's machine.
+      # Two probe runs, one on each of the two compilers this configuration now
+      # runs on, reported the same structure - 20 classes, 585 measurements, 144
+      # ranked cells in each all-orders class - and named different winners: all
+      # four all-orders classes, and the report's own recommendation with them. The
+      # block's own text is the same on both compilers, and this leg reads it; a
+      # defect that reads a winner is one only the compiler that produced it can
+      # see, so the configuration is carried on the MSVC Release leg beside this one
+      # (the step of this name in windows-msvc, on that leg's own configure line).
+      #
+      # It also leaves the leg list alone, and that list is what README's platform
+      # table is generated from (tools/gen_platform_table.py --check, run above).
+      #
+      # The configure is this leg's own with one flag added, so the two trees
+      # differ in exactly the header the seam resolves to and the same suite is
+      # the reading of the difference. The dispatch-assertion option is carried
+      # rather than dropped for that reason: a second tree registering one fewer
+      # test than the tree beside it would be a configuration nobody declared.
+      - name: Build defaults (tuned fixture built and tested)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-tuned -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
+            -DBOYS_BUILD_DEFAULTS=tests/build_defaults_tuned.hpp
+          cmake --build build-defaults-tuned -j 4
+          ctest --test-dir build-defaults-tuned --output-on-failure
+      # The granularity axis's third member, for the reason the same step in
+      # windows-msvc states: two fixtures move that axis and both name the coarsest
+      # partition, so a class resolving the grid - one table over the whole fitted
+      # domain, its end past x1 by design - was compiled by nothing, and the umbrella's
+      # granularity lane stated of every partition what holds only of one whose stored
+      # fits end at x1. Ten rows' granularity cells are the whole of what this fixture
+      # moves - the two host lanes' five classes each, a lane's five together for the
+      # reason the same step in windows-msvc states - so a failure under this tree is
+      # the axis's and not the build's.
+      - name: Build defaults (the grid's row built and tested)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          cmake -S . -B build-defaults-uniform -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=OFF -DBOYS_EXPECT_AVX2=1 \
+            -DBOYS_BUILD_DEFAULTS=tests/build_defaults_uniform.hpp
+          cmake --build build-defaults-uniform -j 4
+          ctest --test-dir build-defaults-uniform --output-on-failure
+      # The device surface is described by five hand-written lists and nothing
+      # reconciled them, so they disagreed: four rows of the option enumeration
+      # named entries that had never been declared in any commit - and they
+      # carried report rows with bounds and
+      # built = true, were launched by the measurement tool through a twin's
+      # launcher, and were claimed by the accuracy gate, four mechanisms consumed
+      # the description without one asking whether the entry was there.
+      #
+      # This step is the bijection between the two lists a caller meets: every row
+      # of the enumeration names a member the class declares, and every declared
+      # member is booked by a row. Both directions are defects - a row with no
+      # member is an option the library advertises and cannot deliver, and a
+      # member with no row is an entry no book describes or counts.
+      - name: Device (the options booked against the entries declared)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_entry_bijection.py --check
+      # The step above asks whether the name a row books is DECLARED, and the linker
+      # only asks whether what a caller calls is defined - and neither asks the
+      # question in the middle: is the surface a row books one this library defines.
+      # A row booking a member that is declared and never given a body a caller can
+      # reach compiles nothing, links nothing until something calls it, and is
+      # reported, counted and probed as an option a caller can name. That shape has
+      # reached this tree four times, each time through a different spelling:
+      # BoysCuda::SingleF64Fast, then forty-one members of the same kind, then the
+      # thirty-one bf16 members the device half keyed and the class did not declare,
+      # then BoysCuda::EachOrderBf16 - declared, written as a template in a .cpp and
+      # instantiated nowhere.
+      #
+      # This step reads the three sets side by side - the surfaces the enumeration
+      # books, the members the two headers declare, and the bodies the class's own
+      # translation unit defines, with the explicit instantiation a member template
+      # needs beside its body - and it reads the rows of the library's own option
+      # table against the enumeration, so a row naming an entry no row books is a
+      # row naming no surface at all. It reads files and nothing else: no build, no
+      # compiler, no CUDA toolkit, so it is scoped to this combination like the
+      # steps around it.
+      - name: Device (every surface a row books is declared and defined)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_booked_surface.py --check
+      # The host surface had the same exposure one layer up, and no step read it:
+      # the names three headers declare and the shapes tools/host-shapes.json
+      # places them in were both written by hand and nothing reconciled them, so a
+      # shape nothing reaches read exactly like a shape this surface has.
+      #
+      # This step is the bijection between the two lists a caller meets, in both
+      # directions: a declared name the table does not place is a call whose shape
+      # nothing states, and a name the table places that no header declares is a
+      # shape described for a call that does not exist, which a later reader takes
+      # for a decision. The names are read from the headers rather than from a
+      # second list, so the table cannot agree with itself while disagreeing with
+      # the code.
+      - name: Host (the shapes booked against the names declared)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_host_entry_bijection.py --check
+      # The bijection above has the shape as its unit, and a shape is served when
+      # any precision has an entry for it - so a class the library's enumerations
+      # imply and no header declares is not a shape that is missing, it is a shape
+      # that is present at another precision. This step walks the Precision-by-Shape
+      # cross the header declares and requires every cell to be served by an entry
+      # or to carry a stated reason in the table's `absent` list. A reason is
+      # admissible only for a proved impossibility, so the list being empty is the
+      # statement that the cross is served.
+      - name: Host (every class the enumerations imply)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_class_surface.py --check
+      # The device half has the same exposure in its own key, and neither step
+      # above reaches it: that check walks the host cross, and the device
+      # bijection has the entry as its unit - so a precision the option table
+      # carries rows for at two questions and none at the third reads complete
+      # from inside every list being read, and the entry each of its rows names
+      # is declared. This step walks the DeviceOptionPrecision-by-
+      # DeviceOptionQuestion cross the options header declares, which is the key
+      # src/boys_cuda_probe.cpp counts a class by and the one its build-defaults
+      # emission writes a row's shape cell from, and requires every cell to be
+      # carried by a row of the option table or refused by every row with a
+      # reason the row itself states. It reads two files and nothing else - no
+      # build, no compiler, no CUDA toolkit - so it is scoped to this
+      # combination like the three steps above it.
+      - name: Device (every class the enumerations imply)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_class_surface.py --check
+      # The three steps above walk the device surface cell by cell and every one of them reads a
+      # list this tree wrote. This step walks the SPACE: it takes the axis combinations the
+      # library's own surfaces can express - read from the DeviceEntry enumeration, the option
+      # table, the two device headers and the library's own axis enumerations, never listed in the
+      # tool - and says of each whether an entry implements it. It exists to count what the space
+      # admits and the table does not carry, which is the half no list can report about itself.
+      #
+      # Its three states have no fourth: an implemented combination, an unimplemented one the
+      # library's own words prove impossible (the sentence is quoted with its file and line and the
+      # quotation is checked to occur verbatim), and an unimplemented one with no impossibility
+      # stated, which is a defect by default - "not written yet" is a defect and not an
+      # explanation. It reads the tree at a resolved revision and nothing else - no CUDA build, no
+      # compiler, no card - so the CUDA lane's absence from this leg does not leave it unrun.
+      - name: Device (the option space, class by class)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/device_kernel_surface.py --check
+      # The defaults table is the third hand-written list read against the entries
+      # themselves, and until this step nothing read it: a row for a class no entry
+      # reaches is a default a caller cannot ask for, and it is invisible - the
+      # table reads complete, and the only symptom is that the class cannot be
+      # called. Every build break of 2026-10-02 came from two of these three lists
+      # disagreeing while each read correct from inside the list being read.
+      #
+      # This step is the bijection the header's own prose states, in both
+      # directions: a row whose class no entry names is a class the library does
+      # not offer, and an entry naming an unrowed class is one the build refuses
+      # anyway, so seeing it here means the two lists were read differently.
+      #
+      # It reads include/boys/boys_build_defaults.hpp and the three public headers
+      # and nothing else - no build, no compiler, no network - so it is scoped to
+      # one combination like the two steps above it.
+      - name: Defaults (the rows booked against the entries declared)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_default_rows_have_entries.py
+      # The defaults table books a class, and the entry it names decides that a caller can reach
+      # it - but neither half says the combination can be written as a DEFAULT, which is the fourth
+      # thing a combination the library serves has to survive before it can be handed to a
+      # consumer. The seam's key is a row format with a cell per axis, and a class the key has no
+      # row for, or an axis of a class's policy with no cell in that format, is a combination the
+      # library serves, measures and probes, and no caller can name.
+      #
+      # The seam carries a fold the check is written to see: one engine serves both half formats,
+      # so one lane's tables answer for both, while the seam's own key gives each half format a
+      # class of its own - and only one of the two rows can be a consumer's default. The check
+      # reads that fold off the probe's own source and, when a run's report is handed in, holds it
+      # to the report's verdict; without one it reports the claim the tree carries and says that is
+      # what it did. No probe is run and nothing is built: every reading is textual.
+      - name: Defaults (every class a consumer can be given as a default)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_default_capturability.py --check
+      # The host probe measures the host entries, and its report is read as an account of the
+      # library - so an entry the header declares and the probe never calls is a class whose row
+      # says "no option of this precision and shape produced a figure on this run", a sentence
+      # about the probe wearing the clothes of a sentence about the library. Five entries went
+      # unmeasured that way, and the five seam rows for their classes were written from the file's
+      # own names instead of from a measurement.
+      #
+      # The unit is the declaration and not the name: BoysAllN declares two entries that differ by
+      # their last parameter, one taking a workspace and one taking BoysSortedArgs, and a reading
+      # keyed on the name sees one entry where the surface declares two. An entry the probe may not
+      # measure is named in the tool's own EXCLUDED with a reason, and a reason there has to be a
+      # fact about the question rather than about the work. It reads the public header and the
+      # probe's translation unit and nothing else - no build, no compiler, no card - so it is
+      # scoped to this combination like the gates above it.
+      - name: Host (every declared entry the probe calls)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_measures_every_entry.py
+      # The option space closes in three places and only one of them is a property
+      # this checkout can settle on its own: the host space closes from the
+      # accuracy gate's recorded run, which is committed, while the device and
+      # probe spaces close from the option probes' own reports - and those reports
+      # are what a probe run for keeps PRODUCES. A step that waited for all three
+      # would be waiting for the thing it guards, so this one reads the half that
+      # is a precondition and leaves the other half to be judged after the run
+      # that makes it. What it reads is the recorded run's own printed arithmetic,
+      # so a run that stops printing it fails here rather than passing quietly.
+      - name: Host (every member of the option space accounted for and certified)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_host_space_closes.py
+      # The step above reads the half of the closure that is a precondition. This
+      # one reads the other half: the class-by-class counts of the host option
+      # probe's report, each held to the number of combinations the class can be
+      # instantiated at. Nothing saw that before, because a class the report
+      # states with one measured combination reads as a class that has one - which
+      # is false for every class whose entry is policy-templated, and the reason
+      # the probe enumerates its space per class rather than per lane.
+      #
+      # The report is the committed one, and that is the remedy the check's own
+      # reason names: a probe report is a timing taken on one machine and this
+      # workflow takes no timing anywhere by design, so no leg can produce it, and
+      # a report a check reads belongs in the tree rather than in a scratch
+      # directory. What the step adds is that the counts are held to the library
+      # read at this revision - the classes, the entries the headers declare, and
+      # the one-order exclusion, which the check proves by compiling rather than
+      # by quoting. The compiler is the host's, which is why this step is scoped
+      # to the leg whose CXX is g++ rather than to the leg whose CXX is cl.
+      - name: Host (the classes the probe's report measured, against this revision)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_class_combinations.py --check --report tests/data/boys_option_probe_report.txt
+      # Every class every combination of whose axes the library can be
+      # instantiated at owes a figure, and the figure owes the code that keeps it.
+      # Nothing checked either: a combination the library carries and states no
+      # bound for, and a bound the code it ships does not honour, read as fine to
+      # every other gate, because those gates read the space rather than the
+      # figures over it.
+      #
+      # The figures are the library's own - the accessor's table read, not a
+      # measurement: the check compiles one driver against the revision's own
+      # sources and runs it once, and it evaluates no F_n and times nothing. The
+      # compile is the slow part. It was not armed before because that build did
+      # not deliver: the development host's compiler refused it, C1128, the
+      # section limit on one object file - a limit the library's own build file
+      # answers with /bigobj on the translation unit that passes it, and one the
+      # ELF tools do not have at all. This leg has g++ and no cl, and the
+      # compiler the check builds with is read from the host rather than written
+      # into the check, so the driver builds here and the step carries a measured
+      # exit code instead of a guess.
+      - name: Bounds (every combination's figure, and the code that keeps it)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_combination_bounds.py --check
+      # A conditional that opens a construct and closes it outside its own branch
+      # compiles on the configuration its author is building and fails on every
+      # other one: an `#if` around a `namespace {` that closes after the `#endif`
+      # is balanced on the branch that took the `#if`, and the branch that did not
+      # sees an unbalanced brace. Five arm64 legs went red on exactly that shape,
+      # so the balance is read here rather than left to whichever targets happen
+      # to be built.
+      - name: Sources (a construct a conditional opens is closed inside it)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_conditional_spans.py --check
+      # The scheme arms have the same exposure one layer down, and no compiler sees
+      # all of it. gcc and clang catch an arm the switch is missing through
+      # -Wswitch, but only while the switch has no `default` arm, and a switch that
+      # keeps one for the values cast in from outside the enumeration swallows a
+      # new enumerator exactly as quietly. MSVC emits nothing for an unhandled
+      # enumerator at /W4 either way, and it is the toolchain the release is
+      # verified on.
+      #
+      # This step is the compiler's own rule applied to every switch uniformly:
+      # every enumerator of OrdersScheme is named as an arm of every switch that
+      # dispatches on it. An arm list stopping short of one is not a crash - each
+      # of those switches falls through to the certified sum - so the caller is
+      # handed a different option from the one it named, silently, and the probe
+      # books the cell as measured.
+      - name: Arms (every scheme named by every switch over it)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_enum_arms_covered.py --check
+      # The device probe accounts for its rows from the library's own option table,
+      # which the library asserts is one row per DeviceEntry in enumerator order -
+      # so the accounted space and the enumeration cannot disagree without the
+      # library failing to compile. What can still disagree is whether a row can be
+      # MEASURED: the probe reaches an entry through a hand-written switch in its
+      # own CUDA translation unit, one switch for the launched family and one for
+      # the device-callable one, and an entry no arm reaches takes that switch's
+      # default and produces no figure. The row is then offered, owed a place by
+      # the closure and reported with nothing in it, which reads as a card the
+      # entry is slow on rather than as an arm that was never written.
+      #
+      # This step is the three sets reconciled by name: the enumeration, the rows
+      # of kDeviceOptions, and the probe's own arms with the preprocessor guard
+      # each sits under - because an arm behind `#if BoysFp16` is the seam's, and
+      # the rows it must cover are the ones whose own built cell is that seam's
+      # constant. Both directions are defects: an unarmed row is unmeasurable, and
+      # an arm naming an entry the enumeration does not declare is a switch arm for
+      # an option that does not exist.
+      #
+      # It reads three source files and nothing else - no CUDA build, no compiler,
+      # no card - so the CUDA lane's absence from a leg does not leave this unrun.
+      - name: Device probe (every declared entry armed in the probe's own dispatch)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_device_probe_measures_every_entry.py --check
       - name: Docs (zero-warning Doxygen gate)
-        if: ${{ matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: cmake --build build --target boys-docs
   # -------------------------------------------------------------------------
   # ubuntu-latest, AddressSanitizer + UndefinedBehaviorSanitizer. For kernel
@@ -448,7 +1248,20 @@ jobs:
       # here, so this leg also states that reading the build's own facts is
       # clean under them.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-sanitizers asan+ubsan" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-sanitizers asan+ubsan" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-sanitizers
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion, under the sanitizers)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -480,7 +1293,20 @@ jobs:
       # whether the arithmetic contracts, and what the library's own report says
       # about the multiply-add it carries. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "linux-arm64 gcc Release" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-arm64 gcc Release" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-arm64
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -519,7 +1345,21 @@ jobs:
       # and the build would not compile if it asked - so the processor line is
       # the operating system's report. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: .\build\boys-build-facts.exe --leg "windows-arm64 msvc Release" --check docs/build-facts.md
+        shell: bash
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts.exe --leg "windows-arm64 msvc Release" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-windows-arm64
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -568,7 +1408,20 @@ jobs:
       # whether std::fma survives as a call on a target that has the
       # instruction. See the note in the windows-msvc job.
       - name: Build facts (probe vs docs/build-facts.md)
-        run: ./build/boys-build-facts --leg "macos ${{ matrix.label }}" --check docs/build-facts.md
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "macos ${{ matrix.label }}" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-macos-${{ matrix.label }}
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
       - name: Test (full suite + dispatch assertion)
         run: ctest --test-dir build --output-on-failure
       # ctest prints a test's output only when the test FAILS, so on a green
@@ -641,3 +1494,184 @@ jobs:
             exit 1
           fi
           echo "clang-tidy: every TU parsed, no error: diagnostics"
+
+  # -------------------------------------------------------------------------
+  # THE CUDA LEG, WHICH COMPILES THE DEVICE SOURCES AND RUNS NO KERNEL.
+  #
+  # WHY IT EXISTS. Every other leg configures with -DBUILD_CUDA=OFF, so before
+  # this one not one of the six CUDA translation units in this tree
+  # (src/boys_cuda.cu, src/boys_cuda_probe_kernels.cu, the two consumer kernels
+  # tests/boys_cuda_device_demo.cu and tests/boys_cuda_route_test.cu, the
+  # consumer default check's tests/consumer_cuda_defaults.cu, and the benchmark
+  # driver's benchmarks/boys_cuda_benchmark_kernels.cu) and not one of the
+  # host-side translation units that include the toolkit's headers for them
+  # (src/boys_cuda.cpp, src/boys_cuda_probe.cpp, tests/boys_cuda_test.cpp,
+  # tests/boys_cuda_probe_test.cpp, the two device gate TUs, the consumer
+  # default check's host half and the two benchmark drivers) had ever been
+  # compiled by CI at all. A file that does not parse, a header the toolkit does
+  # not have, a language standard the toolkit refuses, a launcher whose kernel
+  # signature moved: each of those was a red build that no leg could ever
+  # report, for as long as it took a person to build the lane locally.
+  #
+  # WHAT A GPU RUNNER WOULD ADD, AND WHAT THIS LEG IS INSTEAD. CI has no GPU
+  # runner, so this leg holds the half of the device surface that is a property
+  # of the SOURCE rather than of a card: that the device translation units
+  # compile, and that every device target links against the kernels it was
+  # written for. It holds no device fact. It runs no kernel, measures no
+  # duration, and compares no figure against the committed reference grid. A
+  # green run of this leg says the device sources are COMPILED; it says nothing
+  # whatever about what they compute. The device pins stay a documented local
+  # gate, unchanged, and so do the timed passes.
+  #
+  # WHAT IT RUNS, AND WHY EXACTLY THAT. The probe's own test binary is the one
+  # device target carrying tests that are device-free, and which those are is
+  # read off the source rather than guessed at:
+  #   * RunDeviceOptionProbe returns a status BEFORE it touches a device - a
+  #     runtime that cannot report a count, a count of zero, and a device index
+  #     past the count each return kDeviceError, kNoDevice and kDeviceNotFound,
+  #     with a failure string and no classes and no measurements
+  #     (src/boys_cuda_probe.cpp, RunDeviceOptionProbe);
+  #   * the space and closure tests build their reports from the library's own
+  #     tables (BoysDeviceOptions(), BoysDivisionForms()) and take the probe's
+  #     rendering of them, so they need no card and no clock
+  #     (tests/boys_cuda_probe_test.cpp).
+  # The six names below are those tests, and the count is asserted, because a
+  # filter that matched nothing exits zero and this step must not be a green
+  # step that ran nothing. Everything else in that binary needs a card, and so
+  # does every other device target: boys-cuda-tests exits ZERO having executed
+  # none of its seventeen tests (every one is a soft GTEST_SKIP of "no CUDA
+  # device", tests/boys_cuda_test.cpp), so running it here would report a suite
+  # that did not run, and boys-consumer-cuda-defaults, boys-cuda-route-tests and
+  # boys-cuda-accuracy-gate each exit non-zero with "no usable device".
+  #
+  # THE SECOND TREE. benchmarks/boys_cuda_benchmark_kernels.cu and
+  # benchmarks/boys_device_probe.cpp are CUDA translation units too, and they
+  # live under BUILD_BENCHMARKS, which every leg keeps OFF because the TIMED
+  # passes are local-only by design. This leg turns it on in a tree of its own
+  # to COMPILE those two drivers, and runs neither of them: what is local-only
+  # about a benchmark is its timing, and a compiled driver takes no timing.
+  # -------------------------------------------------------------------------
+  linux-cuda:
+    name: linux-cuda compile-only
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
+      # The scope as a step and not only as the comment above, so that it is in
+      # the log of every run this leg makes rather than only in the file.
+      - name: Scope (what this leg proves, and what it does not)
+        run: |
+          cat <<'EOF'
+          =========================================================================
+          SCOPE OF THIS LEG: COMPILED, NOT TESTED.
+          =========================================================================
+          This runner has no GPU. What a green run of this leg proves is a
+          property of the SOURCE:
+            COMPILED  every CUDA translation unit in the tree, at the language
+                      standard the library pins for it, by the pinned toolkit.
+            LINKED    every device target, against the kernels it calls.
+            RUN       six tests of the probe's own suite, the ones the source
+                      says are device-free. They assert the shape of a report
+                      and the status an absent device returns; none of them
+                      reads a clock or touches a card.
+          What it does NOT do, and does not claim: run a kernel, measure a
+          duration, compare a device figure against the committed reference
+          grid, or exercise any device entry point. The device bounds are a
+          documented local gate and this leg is not a substitute for it.
+          A failure here means the device source does not build. A pass here
+          means nothing about what the device code computes.
+          =========================================================================
+          EOF
+      # The toolkit, from NVIDIA's own apt repository. Two packages rather than
+      # the cuda-toolkit metapackage: cuda-compiler-13-3 carries nvcc, and
+      # cuda-cudart-dev-13-3 carries every header this tree includes
+      # (cuda_runtime.h, cuda_fp16.h and cuda.h are all that package's) and
+      # libcudart. No driver package and no device: nvcc compiles device code
+      # with no card present, which is the whole reason this leg can exist.
+      #
+      # The repository path is derived from the image instead of written down:
+      # ubuntu-latest has moved release before, and a hardcoded ubuntu2404 turns
+      # that into a leg that fails inside apt rather than inside the code it is
+      # here to check. The toolkit version IS pinned - 13.3 is the version this
+      # lane is built and verified against locally, and the version the probe's
+      # report names as the toolkit that compiled the kernels.
+      - name: CUDA toolkit 13.3 (nvcc and the runtime; no driver, no card)
+        run: |
+          set -euo pipefail
+          ubuntu="$(. /etc/os-release && echo "${VERSION_ID//./}")"
+          curl -fsSL -o /tmp/cuda-keyring.deb \
+            "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu${ubuntu}/x86_64/cuda-keyring_1.1-1_all.deb"
+          sudo dpkg -i /tmp/cuda-keyring.deb
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cuda-compiler-13-3 cuda-cudart-dev-13-3
+          # A partial install creates no /usr/local/cuda alternatives link, so
+          # nvcc is put on PATH for the steps below: CMake finds the toolkit
+          # from the compiler it finds, and the include and library paths the
+          # device targets need follow from that one fact.
+          echo "/usr/local/cuda-13.3/bin" >> "$GITHUB_PATH"
+          /usr/local/cuda-13.3/bin/nvcc --version
+      - name: Configure (BUILD_CUDA=ON)
+        run: >
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_BENCHMARKS=OFF -DBUILD_CUDA=ON
+      # The whole default target set, not a list of the device targets: with the
+      # CUDA lane on, the CPU accuracy gate and the CUDA consumer target link
+      # boys-cuda and compile against the toolkit's headers too, so what a
+      # device target can break is not confined to the device targets.
+      - name: Build (every CUDA translation unit, every device target)
+        run: cmake --build build -j 4
+      # The build's own facts against this leg's recorded row: see the note in
+      # the windows-msvc job for what it gates.
+      - name: Build facts (probe vs docs/build-facts.md)
+        run: |
+          set -o pipefail
+          ./build/boys-build-facts --leg "linux-cuda compile-only" --check docs/build-facts.md | tee build-facts-row.txt
+      # The row this leg just printed, as a file: the capture `--record` reads.
+      # `always()` because the row is most wanted on a run whose probe failed -
+      # a fact that moved is a row to re-record, not one to lose.
+      - name: Build facts row (the block to record)
+        if: always()
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-facts-row-linux-cuda
+          path: build-facts-row.txt
+          if-no-files-found: ignore
+          retention-days: 30
+      # The six device-free tests, by name. See the job comment for how the list
+      # was established; the counted line below is what keeps a filter that
+      # matched nothing from being a green step.
+      - name: Device-free probe tests (the six that need no card)
+        run: |
+          set -o pipefail
+          ./build/boys-cuda-probe-tests \
+            --gtest_filter='DeviceProbe.ACanaryThatDidNotRunIsNotAQuietCanary:DeviceProbe.AnAbsentDeviceIsAStatusAndNotACrash:DeviceProbe.ARowIsServedOrRefusedAndTheSpaceIsCountedFromTheRows:DeviceProbe.TheClosurePutsEveryMemberOfTheSpaceInOneState:DeviceProbe.AClosureOverARunThatMeasuredNothingFails:DeviceProbe.ARequestForOneEntryIsClosedWithTheRestOfTheSpaceStated' \
+            | tee cuda-tests-without-a-card.txt
+          grep -q '^\[  PASSED  \] 6 tests\.$' cuda-tests-without-a-card.txt
+      # The two CUDA drivers that live under BUILD_BENCHMARKS, COMPILED and
+      # never run. A separate tree because turning benchmarks on in the tree
+      # above would build every timing harness here, which is not what this leg
+      # is for; BOYS_BUILD_TESTS=OFF because the library and its two drivers are
+      # the whole of what this tree is asked to produce.
+      - name: CUDA benchmark drivers (compiled, never run)
+        run: |
+          cmake -S . -B build-drivers -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_CUDA=ON -DBUILD_BENCHMARKS=ON -DBOYS_BUILD_TESTS=OFF
+          cmake --build build-drivers -j 4 --target boys-cuda-benchmark boys-device-probe
+      # The device targets as files, which is what "linked" means: a target that
+      # was configured but not linked is a file that is not here, and `ls` fails
+      # on one of those. `always()` so a red build still reports which of them
+      # got as far as being produced.
+      - name: What was built (the device targets, as files)
+        if: always()
+        run: |
+          ls -l build/boys-cuda-tests \
+                build/boys-cuda-tests-divform-control \
+                build/boys-cuda-probe-tests \
+                build/boys-cuda-accuracy-gate \
+                build/boys-consumer-cuda-defaults \
+                build/boys-cuda-route-tests \
+                build-drivers/boys-cuda-benchmark \
+                build-drivers/boys-device-probe

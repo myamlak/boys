@@ -1,10 +1,13 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/status.hpp"
+#include "boys/boys_cuda_muladd.hpp"
 #include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
 
 #include <cstddef>
+#include <string>
 
 #if BoysFp16
 #include "boys/f16.hpp"
@@ -21,32 +24,15 @@
 
 namespace boys {
 
-/// Result status of the CUDA lane entry points.
-///
-/// The CUDA lane is the one fallible surface of this library: table
-/// uploads, parameter validation, and launches report through this status
-/// (never exceptions). \c kSuccess is 0. The enum carries no payload —
-/// when \c kDeviceError is returned the caller can use the CUDA runtime's
-/// own error reporting (cudaGetLastError, stream capture) for the detail.
-enum class BoysStatus {
-    kSuccess = 0, ///< the call succeeded
-    kInvalidArgument, ///< a parameter was invalid (see the entry's contract)
-    kDeviceError, ///< a CUDA operation failed
-};
+// The status the CUDA lane's entry points report, from boys/status.hpp above: one enum for the
+// whole library rather than one per lane, so a host `*Checked` call and a CUDA call are compared
+// against the same values. It carries no payload - on `kDeviceError` the caller has the CUDA
+// runtime's own reporting (cudaGetLastError, stream capture).
 
-// ---------------------------------------------------------------------------
-// The device option space.
-//
-// One row per option of the surface below, with what a chooser needs to place
-// it, in boys_cuda_options.hpp. The rows are declared there and not here
-// because they are one table with two readers: this header's entries are one,
-// and the device translation units that implement the entries of
-// boys_cuda_device.hpp are the other — those are compiled by nvcc, which cannot
-// take this header (it pulls in the whole library through boys.hpp). The
-// enumerators, the row struct and BoysDeviceOptions() are therefore in the
-// small header, and it is included here so that a caller who reads this surface
-// has the space in the same include.
-// ---------------------------------------------------------------------------
+// The device option space's rows, one per option of the surface below, are in boys_cuda_options.hpp
+// and not here: the table has two readers, this header's entries and the nvcc-compiled units of
+// boys_cuda_device.hpp, which cannot take this header (it pulls in the whole library through
+// boys.hpp). Its enumerators, row struct and BoysDeviceOptions() live there, included here.
 
 /// Device-side Boys evaluation over arrays of (n, x) inputs.
 ///
@@ -55,111 +41,98 @@ enum class BoysStatus {
 /// InitializeTables and the entries are safe to call from multiple host
 /// threads.
 ///
-/// Accuracy is a compile-time property of a batch call: the entry's
-/// kAccuracyMultiplier selects the certified degree table its instantiation
-/// is built with, which is why the first call at a new m uploads that
-/// instantiation's tables. The multiplier is monotonically relaxing exactly as
-/// the CPU lanes document it, and the rungs this lane instantiates are the
-/// twelve of kDeviceRungs (boys_cuda_options.hpp): the option space's seven —
-/// 1, 64, 256, 1024, 4096, 16384 and 65536, the multipliers the CPU tier lane's
-/// AccuracyTier names — beside the lane's own six, the finer set at the low end
-/// and the coarser one at the top, 1, 2, 10, 100, 1e4 and 1e8. The two sets meet
-/// at m = 1 alone. The rung a caller names is therefore a rung the lane serves,
-/// and a caller carrying a tier names it here instead of approximating it by the
-/// nearest member of another set.
+/// Accuracy is a property of the entry and not a choice of the call: an entry
+/// evaluates the certified degree tables this library stores, and it documents
+/// the bound those tables deliver. The device option space
+/// (boys_cuda_options.hpp) carries that figure per row, and the device accuracy
+/// gate certifies each entry against a committed high-precision reference grid.
+/// A caller who needs a figure rather than a table of figures reads it off the
+/// row of the entry it calls.
 ///
-/// The device-callable entries (boys_cuda_device.hpp) are at once the wider
-/// surface and the narrower one. Wider, because each takes the multiplier as a
-/// run-time argument and reads the rung the caller names, so one compiled entry
-/// serves every rung. Narrower, because what those rungs are is the one handle's
-/// tables, and one relaxed rung of them is resident at a time: filling a handle
-/// at a relaxed rung replaces the resident one, and an entry asked for a rung
-/// that is not resident returns BoysDeviceStatus::kMultiplierNotResident and
-/// writes nothing — a value the caller branches on, not a silent choice of
-/// whichever rung happens to be resident. A call at
-/// kBoysFullAccuracyMultiplier reads tables that are always uploaded, so it is
-/// served whatever rung is resident and does not depend on that choice.
+/// The device-callable entries (boys_cuda_device.hpp) are the same arithmetic
+/// seen from inside a kernel: they read the one handle DeviceTables fills and
+/// answer at the same entries' bounds. A caller that writes its own kernel and
+/// calls one of them gets the entry's own arithmetic, not an approximation of
+/// it.
 ///
-/// **One rung is resident, and the size of the rung set does not change that.**
-/// What a larger set changes is which multipliers can be made resident, not what
-/// residency is or what a switch costs. One rung is resident because one rung is
-/// one cut of every table the lane holds, and the batch kernels read their own
-/// cut from the constant bank, where the six lanes' degree tables are 2574 ints:
-/// twelve rungs of them would be 121 KB against the 64 KB it has. So a caller
-/// moving along the ladder pays a fill on each switch, and what a filled handle
-/// holds is unchanged: the addresses of the resident rung's degree tables, the
-/// address of the scalar naming it, and the full-accuracy tables, which no fill
-/// retires.
+/// A device entry documents one bound and answers at it: the library serves one
+/// accuracy, and the entry a caller picks is the arithmetic and the figure it
+/// gets. Nothing about a call selects a weaker arithmetic than the entry's own:
+/// the division form a call may name is one of the three certified divisions of
+/// that arithmetic's ladder steps.
 ///
-/// **A combination is a name and a rung is an argument, on this surface too.**
-/// Every named entry of this class that queues a kernel carries its multiplier
-/// as a template argument, fixed where the call site is written, and every one
-/// of them has an \c AtRung sibling whose first argument is that multiplier as a
-/// value: \c AllOrdersF64AtRung(4096.0, n, x, out, count, stream) is the same
-/// call with the rung decided where the call is made. The two decisions a call
-/// site makes then come apart the way the CPU surface's do — the combination is
-/// written once as a name and resolved where it is written, and the rung is read
-/// off what the caller knows at the call — and a caller moving along the ladder
-/// writes no switch over the twelve.
+/// **The device lane honours the multiply-add route, and reports it.** The
+/// host's routes are selected at build time (`BOYS_MULADD_SEPARATE`) and
+/// reported by `BoysBackends()`, whose `route` field is what the corresponding
+/// arithmetic was *measured* to deliver. The device lane runs that selection
+/// too: it is a public compile definition, so the kernels' translation unit and
+/// a consumer's own inherit the value the host build reads, and every entry of
+/// this class and every device-callable entry of boys_cuda_device.hpp runs the
+/// arithmetic that selection names. `BoysCuda::MulAddRouteInForce()` is where a caller reads it —
+/// the device's counterpart of `RouteInForce<T>()`, one selection covering both
+/// precisions of the lane.
 ///
-/// An \c AtRung call makes the rung it named resident and runs that rung's own
-/// launcher, so the rung it answers at is the rung it was handed and never
-/// another. It follows that an \c AtRung call at a relaxed rung retires whichever
-/// other relaxed rung was resident — there is one set of relaxed tables and one
-/// rung of them, as the paragraph above states — and that a device-callable entry
-/// asked for the retired rung then reports it rather than reading tables that
-/// hold another rung. A call at m = 1 has no relaxed table to make resident,
-/// leaves the resident rung where it is, and retires nothing.
-///
-/// A multiplier that is not one of \c kDeviceRungs is
-/// \c BoysStatus::kInvalidArgument, nothing is launched and the caller's output
-/// is untouched. That is the refusal this surface makes and the device-callable
-/// entries make as \c BoysDeviceStatus::kMultiplierNotResident: the lane answers
-/// at twelve rungs, a multiplier outside them is resident at none of them and can
-/// never be, and a call that answered at whichever rung happened to be resident
-/// instead would be exactly the outcome the rung argument exists to rule out.
-///
-/// What neither surface has is the CPU double lane's per-call tier machinery:
-/// BoysAllOrdersAtTier (one tier, all orders), QueryTier, AccuracyMultiplier and
-/// TierCoverage, the last of which names the region component that would limit a
-/// tier. No device entry reports what an m delivers, because m is the input and
-/// not a selection from a table: the answer is m * B_region from the contract,
-/// which the caller computes. What a caller carrying a CPU tier does not have to
-/// do is approximate it: every tier's multiplier is one of the rungs this lane
-/// serves, so AccuracyMultiplier(tier) is what the entry takes — the template
-/// argument of a batch call, and the run-time argument of a device-callable one,
-/// which is served once BoysCuda::DeviceTables has made that rung resident.
-///
-/// **The device lane does not honour the multiply-add route, and this is a
-/// stated limitation rather than an untested property.** The host's routes are
-/// selected at build time (`BOYS_MULADD_SEPARATE`) and reported by
-/// `BoysBackends()`, whose `route` field is what the corresponding arithmetic
-/// was *measured* to deliver. The device kernels are not on that report and do
-/// not read the selection: they name the fused intrinsic (`__fma_rn`)
-/// directly, so the device arithmetic is fused whatever the host build
-/// selected, and a caller who asked for the separate route gets a second
-/// rounding on the host and a single one on the device. Nothing in a returned
-/// value shows it and no entry reports it — a caller has to read the kernel or
-/// know this paragraph.
-///
-/// This is unbuilt work rather than an impossibility: a kernel written as a bare
-/// product-plus-add leaves the choice to the device compiler's own contraction
-/// setting, the same mechanism the host build uses to deliver the two routes, and
-/// the device lane would then honour the route the way the scalar backends do.
-/// Until that lands, treat the device lane as fused unconditionally: the fused
-/// route's bounds are the ones its values hold, whatever the host build selected.
+/// The device spells both routes out rather than leaving the choice to the
+/// device compiler's contraction setting: the fused step as the fused intrinsic,
+/// the separate step as a product rounded once and then summed, a form no
+/// setting has anything left to fuse. The separate route is therefore two
+/// roundings on the device as it is on the host, and the device delivers the
+/// route it names — measured, not asserted: the CUDA route test holds each route
+/// to the arithmetic it names, bit for bit, over a fixed value set.
 ///
 /// The three shapes per precision family: Single* (one order per argument),
 /// AllOrders* (all orders per argument, top order per element), AllN* (all
 /// orders at every argument, one common top order).
 ///
-/// One entry carries a second axis. The f32 single entry's region-B
-/// exponential is a certified choice of arithmetic — two options, two measured
-/// bounds (boys::RegionBExp in boys_device_tables.hpp) — where every other axis
-/// of this surface is a choice of shape or of accuracy multiplier. The
-/// device-callable single entry of the same precision takes the same option, as
-/// a template argument, so the two lanes' f32 single entries carry one choice
-/// between them and not one each.
+/// **How a name composes.** A name is the shape and the lane — `AllOrdersF64`,
+/// `SingleF16`, `EachOrderBf16` — followed by the spellings of the option vector's
+/// cells, in the option table's own order: the partition (\c Narrow, \c Uniform,
+/// nothing for \c FitGranularity::kCoarsest), the packing axis (\c Orders for
+/// \c PackAxis::kOrders, nothing for the ladder), the route (\c Rat for
+/// \c FitRoute::kRationalMinimax, nothing for the Chebyshev fits), the summation
+/// (\c Horner for \c EvalScheme::kHorner, \c Mono for the fits' monomial form read
+/// in ascending order, nothing for the split Clenshaw) and the region-B
+/// exponential (\c Fast, nothing for \c RegionBExp::kAccurate), which is written
+/// last: `AllOrdersF64NarrowOrdersRatHornerFast`. The grid writes its packing member
+/// before its partition (`AllOrdersF64OrdersUniform`), and the half lane writes its
+/// format where the other lanes write their precision (`AllOrdersBf16`). The rows,
+/// the axis member each name spells and what it reaches are in
+/// boys/boys_cuda_options.hpp; the same choice reached by naming a policy instead is
+/// the class's `<Entry>WithPolicy` member, whose rule and axis spellings are in
+/// boys/boys_cuda_policy.hpp.
+///
+/// Every entry that launches a kernel takes a division form (boys/accuracy.hpp)
+/// — the entry's arithmetic with a different division of its ladder steps, all
+/// three certified, kDefaultDeviceDivisionForm unless the caller names another; the
+/// \c form parameter of each entry below names it. One axis is a certified choice of
+/// arithmetic carried by many entries rather than a shape: the region-B exponential
+/// — two options, two measured bounds (boys::RegionBExp in boys_device_tables.hpp),
+/// and nothing substitutes one for the other. Where a lane carries both members both
+/// are entries of this surface, each named in the paragraph above (\c SingleF64
+/// beside \c SingleF64Fast); the f32 single entry spells the same choice as a
+/// template argument instead. The device-callable
+/// single entry of the same precision takes the same option, as a template
+/// argument, so the two lanes' f32 single entries carry one choice between them.
+///
+/// **Every class of this surface is also reachable by naming a policy.** Beside
+/// the named entries above and below, each class carries a policy-templated member
+/// of its own, `BoysCuda::AllOrdersF64WithPolicy<Policy>(...)`, that dispatches,
+/// while the call site compiles, to the entry the policy names:
+/// boys/boys_cuda_policy.hpp states the rule, the axes each class reads and the
+/// defaults. \c Policy defaults to this build's own row for the class
+/// (`DefaultPolicy<Precision::kFp64Device, Shape::kAllOrders, Device::kDevice>`),
+/// so a call that names no policy reaches the kernel the build's defaults name,
+/// and a policy whose combination has **no kernel** fails to compile, with the
+/// combination named, rather than resolving to a nearby entry.
+///
+/// The member carries the entry's name with `WithPolicy` after it, and not the
+/// entry's name alone, because a second function of a name makes that name an
+/// **overload set**, and the address of an overload set cannot be taken where the
+/// pointer type is deduced — a use this library's own tests make, handing
+/// `&BoysCuda::AllOrdersF64` to a helper that deduces its launch type. With the
+/// suffix each named entry stays the one function of its name: a call that names
+/// one, an address taken by name, and a call naming the class with a division form
+/// all reach exactly what they reached before.
 ///
 /// All entries are asynchronous: the kernel is queued on the caller's
 /// stream and the call returns once the launch is accepted (errors are
@@ -169,8 +142,12 @@ enum class BoysStatus {
 /// An empty batch (count == 0) is a no-op in every entry of every family: no
 /// kernel is queued (a zero-block launch is a CUDA error), the output is
 /// untouched, and the call returns kSuccess. The AllN* entries validate nmax
-/// before they look at count, so an out-of-range nmax is kInvalidArgument
-/// whether or not the batch is empty.
+/// before they look at count, and every entry that takes a division form
+/// validates it before the launch, so neither a bad nmax nor a bad form is
+/// answered by that no-op: an nmax outside [0, kMaxBoysOrder] is
+/// kInvalidArgument on any call, and a form outside the three is
+/// kInvalidArgument on the call that reaches the launch - an entry whose tables
+/// cannot be made resident reports kDeviceError first.
 ///
 /// \ingroup boys
 class BoysCuda {
@@ -182,104 +159,104 @@ public:
     /// \returns kDeviceError when a device operation fails.
     static BoysStatus InitializeTables();
 
-    /// Fills the handle the device-callable entries read
-    /// (boys_cuda_device.hpp) for the current device, uploading the tables if
-    /// they are not uploaded yet — idempotent, on the same terms as
-    /// InitializeTables. An entry reads this handle at the rung this call
-    /// named.
+    /// Fills the handle the device-callable entries read (boys_cuda_device.hpp)
+    /// for the current device, uploading the tables if they are not uploaded yet —
+    /// idempotent, on the same terms as InitializeTables. A handle is filled once
+    /// and read by every device-callable entry; nothing about it is per-call.
     ///
-    /// The handle's full-accuracy tables are uploaded by the call whatever
-    /// multiplier it names, and they are the whole of what a call at
-    /// kBoysFullAccuracyMultiplier needs: it has no relaxed table to make
-    /// resident and leaves whatever rung already is, so a caller may fill one
-    /// handle at a relaxed rung and then run both rungs through it.
-    ///
-    /// One relaxed rung is resident at a time, process-wide per device. Filling
-    /// a handle at a relaxed rung replaces the resident one, and every entry
-    /// then asked for the rung it replaced returns
-    /// BoysDeviceStatus::kMultiplierNotResident rather than reading tables that
-    /// now hold another rung. A caller that wants a relaxed rung makes it
-    /// resident here before the kernel that reads it is launched.
-    ///
-    /// \tparam kAccuracyMultiplier the rung to make resident, one of
-    ///   kDeviceRungs: the option space's rungs (1, 64, 256, 1024, 4096, 16384,
-    ///   65536) beside this lane's own (1, 2, 10, 100, 1e4, 1e8), matched
-    ///   against the entries' own multiplier argument exactly.
     /// \param out the handle to fill; untouched when the call fails
     ///
     /// \pre \c out is a valid pointer to one BoysDeviceTables.
     ///
     /// \returns kSuccess after filling \c out with the current device's table
-    /// addresses and, for a relaxed rung, after that rung's degree tables are
-    /// resident; kDeviceError when the upload or an address query fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
+    /// addresses; kDeviceError when the upload or an address query fails.
     static BoysStatus DeviceTables(BoysDeviceTables* out);
 
-    /// F_n(x[i]) in single precision — the recommended GPU lane on
-    /// consumer hardware (double precision runs there at a fraction of
-    /// single-precision throughput).
+    /// The multiply-add route the device arithmetic of this lane runs.
     ///
-    /// Two bounds, one per region-B exponential (RegionBExp), each derived from
-    /// the condition number of that region's recurrence and confirmed by the
-    /// device gate's sweep:
+    /// The device's counterpart of the host's \c RouteInForce<T>() and of the
+    /// \c route field of \c BoysBackends(): one computation serves both
+    /// precisions of the lane, so one reader answers for both. It is the build's
+    /// \c BOYS_MULADD_SEPARATE selection — a public compile definition, so the
+    /// value a consumer's own translation unit reads is the value the kernels
+    /// were compiled with.
+    ///
+    /// It is a report and not a restatement of the selection: the device spells
+    /// both routes out rather than leaving the choice to the device compiler's
+    /// contraction setting, so the arithmetic delivers the route it names. That
+    /// the delivered arithmetic is the named one is measured — the CUDA route
+    /// test holds each route to its own reference, bit for bit, over a fixed
+    /// value set.
+    ///
+    /// \returns the route every entry of this class, and every device-callable
+    ///          entry of boys_cuda_device.hpp, delivers on this device
+    static constexpr backend::MulAddRoute MulAddRouteInForce() noexcept {
+        return detail::kDeviceMulAddRoute;
+    }
+
+    /// F_n(x[i]) in single precision — the recommended GPU lane on consumer
+    /// hardware (double precision runs there at a fraction of single-precision
+    /// throughput).
+    ///
+    /// Two bounds, one per region-B exponential (RegionBExp), each derived from the
+    /// condition number of that region's recurrence and confirmed by the device
+    /// gate's sweep:
     ///
     ///  - \c RegionBExp::kAccurate, \c kDefaultRegionBExp and the default:
-    ///    |F̂ − F| ≤ m * 1.5e-7, the f32 lane's documented bound, in every
-    ///    region. Measured at m = 1: 1.29e-7 at its worst, 0.86 of the bound.
-    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ m * 1.5e-7 + 8e-8 — the lane's bound
-    ///    plus the corrected seed's own contribution, which the recurrence's
-    ///    amplification caps at 8e-8. Measured at m = 1: 1.44e-7 at its worst,
-    ///    0.63 of that bound; the contribution itself is 5.0e-8, and the option
-    ///    returns the function's sign at every cell the gate audits.
+    ///    |F̂ − F| ≤ 1.5e-7, the f32 lane's documented bound, in every region.
+    ///    Measured: 1.29e-7 at its worst, 0.86 of the bound.
+    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ 1.5e-7 + 8e-8 — the lane's bound plus
+    ///    the corrected seed's own contribution, which the recurrence's amplification
+    ///    caps at 8e-8. Measured: 1.44e-7 at its worst, 0.63 of that bound;
+    ///    the contribution itself is 5.0e-8, and the option returns the function's
+    ///    sign at every cell the gate audits.
     ///
-    /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
-    ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
-    ///   to m * 1.5e-7 via compile-time Chebyshev degree truncation. Monotone
-    ///   in m.
-    /// \tparam kExp which region-B exponential the call runs; the default is
-    ///   \c kDefaultRegionBExp, the lane's documented default
-    ///   (\c RegionBExp::kAccurate). Both are certified at every multiplier
-    ///   this lane instantiates, each against its own bound above; nothing here
-    ///   substitutes one for the other.
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified,
+    ///   each against its own bound above; nothing substitutes one for the other.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier,
-              RegionBExp kExp = kDefaultRegionBExp>
+    template <RegionBExp kExp = kDefaultRegionBExp>
     static BoysStatus SingleF32(
-        const int* n, const double* x, float* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c SingleF32 at a rung named in the call, over the twelve rungs this lane
-    /// serves.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. This is the one class of the surface whose rows
+    /// differ by the region-B exponential, so a policy naming either member
+    /// reaches that member's entry.
     ///
-    /// The same entry with the multiplier as the call's first argument instead of
-    /// a template argument: the rung is made resident by this call and that
-    /// rung's own launcher runs, so the values are the ones the template spelling
-    /// at that multiplier returns. \c kExp stays the template argument it is on
-    /// the entry, because it selects which arithmetic runs and not how much
-    /// accuracy is bought. The class contract states what an \c AtRung call makes
-    /// resident, what it retires, and what it refuses.
+    /// **This class's entry is itself a template** (`SingleF32<RegionBExp>`), and
+    /// this member is a different name, so the two do not compete: the call naming
+    /// the entry keeps reaching it, and a call of this member naming no policy
+    /// reaches this build's row for the class, whose own member is that entry's
+    /// default region-B exponential (\c kDefaultDeviceRegionBExp, boys/accuracy.hpp).
     ///
-    /// \tparam kExp which region-B exponential the call runs; as \c SingleF32
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for; a
+    ///   combination it has none for is a compile error naming the combination.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kSingle, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    template <RegionBExp kExp = kDefaultRegionBExp>
-    static BoysStatus SingleF32AtRung(
-        double multiplier, const int* n, const double* x, float* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus SingleF32WithPolicy(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) in single precision per input (i) — all orders
     /// at every argument, the top order read per element.
@@ -292,356 +269,296 @@ public:
     /// downward recursion amplifies float seed errors beyond the certified
     /// 1.5e-7 float budget (same reasoning as the CPU float batch).
     ///
-    /// \tparam kAccuracyMultiplier as SingleF32; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry (the F0
-    ///   seed's error reaches every output with amplification A_B(l), at most
-    ///   1 + 1.846e-17 over the supported orders).
+    /// The order-0 region-B entry's error reaches every output with
+    /// amplification A_B(l), at most 1 + 1.846e-17 over the supported orders.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF32(
-        const int* n, const double* x, float* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c AllOrdersF32 at a rung named in the call, over the twelve rungs this
-    /// lane serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kAllOrders, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF32AtRung(
-        double multiplier, const int* n, const double* x, float* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus AllOrdersF32WithPolicy(
+        const int* n, const double* x, float* out, std::size_t count, void* stream);
 
-    /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every
-    /// order at every argument of the batch, in one launch.
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax, single precision — every order
+    /// at every argument of the batch, in one launch.
     ///
-    /// Output layout: out[k * count + i] = F_k(x[i]), k = 0..nmax — the
-    /// order-major planes the CPU lane's BoysAllN returns, so a batch moved
-    /// between the CPU and the device lanes is not transposed.
-    ///
-    /// The CPU float lane stops at BoysSingleF32 and BoysAllOrdersF32: it has
-    /// no uniform-order batch, so this entry (and AllNF16, which mirrors it)
-    /// adds a shape the CPU float lane does not have, and takes its layout
-    /// from the double lane's BoysAllN.
+    /// Output layout: out[k * count + i] = F_k(x[i]), k = 0..nmax — the order-major
+    /// planes the CPU lane's BoysAllN returns, so a batch moved between the CPU and
+    /// the device lanes is not transposed. The CPU float lane has no uniform-order
+    /// batch, so this entry (and AllNF16, which mirrors it) adds a shape that lane
+    /// does not have.
     ///
     /// \pre x[i - 1] <= x[i] for every i in [1, count): the arguments are
-    ///      non-decreasing. The kernel classifies each argument itself, so an
-    ///      unsorted batch still returns correct values; what the ordering
-    ///      buys is the classification landing on one path per warp. This
-    ///      entry does not sort its arguments (an internal sort is a launch, a
-    ///      permutation and device scratch, and the caller that builds x is
-    ///      the one that knows its order): a batch in arbitrary order is
-    ///      AllOrdersF32 with the order array set to nmax.
+    ///      non-decreasing. An unsorted batch still returns correct values — the
+    ///      kernel classifies each argument itself — but the ordering lands that
+    ///      classification on one path per warp. This entry does not sort its
+    ///      arguments (an internal sort is a launch, a permutation and device
+    ///      scratch, and the caller that builds x is the one that knows its order):
+    ///      a batch in arbitrary order is AllOrdersF32 with the order array set to
+    ///      nmax.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF32; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry.
     /// \param nmax   highest order, 0..kMaxBoysOrder
     /// \param x      device array of arguments, non-decreasing, each >= 0
     /// \param out    device array, at least count * (nmax + 1) floats
     /// \param count  number of arguments
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllNF32(
-        int nmax, const double* x, float* out, std::size_t count, void* stream);
+        int nmax,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c AllNF32 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF32 at \c RegionBExp::kAccurate,
+    /// \c AllNF32Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param nmax   highest order, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, non-decreasing, each >= 0
-    /// \param out    device array, at least count * (nmax + 1) floats
-    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp32Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane or \c nmax is outside
-    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
-    /// when the table upload or the launch fails.
-    static BoysStatus AllNF32AtRung(
-        double multiplier, int nmax, const double* x, float* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus AllNF32WithPolicy(
+        int nmax, const double* x, float* out, std::size_t count, void* stream);
 
     /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
     /// lane's loosest per-region bound; the others are tighter).
     ///
-    /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
-    ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
-    ///   to m * 5.5e-14 via compile-time Chebyshev degree truncation.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus SingleF64(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c SingleF64 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class
+    /// reads, and the class carries a kernel at both its members — \c SingleF64 at
+    /// \c RegionBExp::kAccurate, \c SingleF64Fast at \c RegionBExp::kFast — so a
+    /// policy naming either reaches that member's entry. A value outside
+    /// \c RegionBExp is a compile error naming it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kSingle, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array receiving F_n(x[i])
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus SingleF64AtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus SingleF64WithPolicy(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) in double precision per input (i) — shape and
     /// layout as AllOrdersF32 (a per-element top order, order-major planes).
     ///
-    /// This is the entry the CPU's run-time tier entry is shaped like
-    /// (BoysAllOrdersAtTier is one argument, all orders, double). The tier is
-    /// named here the way this surface names it — \c AllOrdersF64AtRung takes
-    /// the multiplier as the call's first argument, and \c AllOrdersF64 takes
-    /// it as the template argument below — and the two spellings of one rung
-    /// are one instantiation and one launch rather than two arithmetics. The
-    /// device-callable entry of the same shape (BoysDeviceAllOrdersF64) takes
-    /// the rung as an argument too, and the class contract states what that
-    /// costs it.
+    /// The device-callable entry of the same shape (BoysDeviceAllOrdersF64)
+    /// answers at the same bound.
     ///
-    /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c AllOrdersF64 at a rung named in the call, over the twelve rungs this
-    /// lane serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kAllOrders, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64AtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus AllOrdersF64WithPolicy(
+        const int* n, const double* x, double* out, std::size_t count, void* stream);
 
-    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second
-    /// partition of the double lane's fits: region A's pieces are cut per
-    /// order instead of two to an order, and region B's seed is 5 pieces at
-    /// degree 10 instead of one polynomial over the interval. Shape, layout,
-    /// arguments and the multiplier are AllOrdersF64's.
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with the library's second partition of
+    /// the double lane's fits: region A's pieces are cut per order instead of two to
+    /// an order, and region B's seed is 5 pieces at degree 10 instead of one
+    /// polynomial over the interval. Shape, layout and arguments are
+    /// AllOrdersF64's.
     ///
-    /// The narrow partition is the double lane's (its effective degrees are
-    /// derived for the roles that evaluate those fits, see
-    /// boys_effective_degrees.hpp), so this is a double entry and there is no
-    /// float or fp16 twin of it.
+    /// The partition is the double lane's, so there is no float or fp16 twin of this
+    /// entry (its effective degrees are derived for the roles that evaluate those
+    /// fits, see boys_effective_degrees.hpp).
     ///
-    /// A call at the full-accuracy multiplier reads the degrees the partition
-    /// was stored at and uploads nothing, so it does not disturb a relaxed rung
-    /// another call made resident.
-    ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Narrow(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// \c AllOrdersF64Narrow at a rung named in the call, over the twelve rungs
-    /// this lane serves. The rung is made resident by this call and that rung's
-    /// own launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per order:
+    /// every order's own piece is located and its own fit summed, where the coarsest
+    /// entry seeds the top order's fit and brings the lower orders back down a
+    /// recurrence. Shape, layout and arguments are AllOrdersF64's, and
+    /// the values agree to the fit's own accuracy.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// The choice covers region A and nothing else: past kX0 this entry runs the
+    /// certified all-orders body, which is the interval its claim names. The CPU
+    /// lane's packing axis is the same choice (BoysPackAxes).
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
-
-    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, with region A read as one fit per
-    /// order: every order's own piece is located and its own fit summed, where
-    /// the shipped entry seeds the top order's fit and brings the lower orders
-    /// back down a recurrence. Shape, layout, arguments and the multiplier are
-    /// AllOrdersF64's, and the values agree to the fit's own accuracy.
-    ///
-    /// The choice covers region A and nothing else: past kX0 this entry runs
-    /// the certified all-orders body, which is the interval its claim names.
-    /// The CPU lane's packing axis is the same choice (BoysPackAxes), and its
-    /// orders member's interval is region A for the same reason.
-    ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Orders(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64Orders at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64OrdersAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_n(x[i]) with both of the choices above in force: the
     /// narrow partition's pieces, read one fit per order inside region A and
     /// its piecewise region-B seed outside it, with the certified all-orders
     /// body past kX0.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrders(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// AllOrdersF64NarrowOrders at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other evaluation scheme: every
+    /// piece is summed in the monomial basis by Horner in ascending order, where the
+    /// coarsest entry sums the Chebyshev basis by a split Clenshaw. Shape, layout,
+    /// arguments are AllOrdersF64's.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// The scheme is a choice of basis and not of fit: the two tables carry the same
+    /// fit over the same pieces at the same degree, and each scheme's delivered
+    /// accuracy is its own certified row (kSchemeRows, boys_coefficients.hpp). What
+    /// the choice buys is counted rather than asserted: one multiply-add per
+    /// coefficient against the split Clenshaw's two, at the same stored table size and
+    /// the same degree, so this entry is the cheaper summation where the two issue
+    /// alike; the two are ranked by the option probe.
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowOrdersAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
-
-    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other evaluation scheme:
-    /// every piece is summed in the monomial basis by Horner in ascending
-    /// order, where the shipped entry sums the Chebyshev basis by a split
-    /// Clenshaw. Shape, layout, arguments and the multiplier are AllOrdersF64's.
-    ///
-    /// The scheme is a choice of basis and not of fit: the two tables carry the
-    /// same fit over the same pieces at the same degree, and each scheme's
-    /// delivered accuracy on it is its own certified row (kSchemeRows,
-    /// boys_coefficients.hpp). What the choice buys and costs is counted rather
-    /// than asserted: one multiply-add per coefficient against the split
-    /// Clenshaw's two, at the same stored table size and the same degree, so
-    /// this entry is the cheaper summation of the two on hardware where the two
-    /// issue alike, and the two are ranked by the option probe.
-    ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Mono(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64Mono at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64MonoAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The monomial scheme's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed in the basis
@@ -650,321 +567,1213 @@ public:
     /// this is the same relation to AllOrdersF64Mono that AllOrdersF64Orders
     /// has to AllOrdersF64.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64OrdersMono(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64OrdersMono at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64OrdersMonoAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The monomial scheme over the narrow partition: F_0(x[i])..F_n(x[i]) from
-    /// the narrow pieces, their piecewise region-B seed and their per-rung
+    /// the narrow pieces, their piecewise region-B seed and their own
     /// effective degrees, summed in the basis AllOrdersF64Mono names.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowMono(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64NarrowMono at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowMonoAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, summed in the monomial basis, with
     /// the certified all-orders body past kX0.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrdersMono(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// AllOrdersF64NarrowOrdersMono at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other fit route: every piece is
+    /// a numerator/denominator pair, evaluated as two Horner sums and a division,
+    /// over the same pieces and intervals and in the same region structure as the
+    /// coarsest entry. Shape, layout and arguments are
+    /// AllOrdersF64's.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// The route is a choice of fit and not of scheme: the pair is stored once, so
+    /// both scheme names select this arithmetic and the scheme axis is inert here
+    /// (kEvalSchemeRows, boys_coefficients.hpp, carries each route's own certified
+    /// figures). What the route buys is the pair's degree against the polynomial's at
+    /// the same budget — a numerator and a denominator summed, one division, and the
+    /// route's own stored tables — and the two routes are ranked by the option probe.
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowOrdersMonoAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
-
-    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64 with the other fit route: every
-    /// piece is a numerator/denominator pair, evaluated as two Horner sums and
-    /// a division, over the same pieces and intervals and in the same region
-    /// structure as the shipped entry. Shape, layout, arguments and the
-    /// multiplier are AllOrdersF64's.
-    ///
-    /// The route is a choice of fit and not of scheme: the pair is stored once,
-    /// so both scheme names select this arithmetic and the scheme axis is inert
-    /// here (kEvalSchemeRows, boys_coefficients.hpp, carries each route's own
-    /// certified figures). What the route buys and costs is the pair's degree
-    /// against the polynomial's at the same budget — a numerator and a
-    /// denominator summed, one division, and the route's own stored tables —
-    /// and the two routes are ranked by the option probe.
-    ///
-    /// The rung's cut is the route's own, certified per reading: this shape
+    /// The cut is the route's own, certified per reading: this shape
     /// seeds at its top order's piece and carries that piece's w(b), where
     /// AllOrdersF64OrdersRat reads each order's piece at A = 1.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64Rat(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64Rat at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64RatAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The rational route's orders-axis member: F_0(x[i])..F_n(x[i]) with
     /// region A read as one fit per order, each summed as the pair
     /// AllOrdersF64Rat names. The two choices compose — the axis is a body
     /// choice inside region A, and the route is the family those bodies read —
     /// so this is the same relation to AllOrdersF64Rat that AllOrdersF64Orders
-    /// has to AllOrdersF64. Its rung reads the per-order cut.
+    /// has to AllOrdersF64. It reads the per-order cut.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64OrdersRat(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64OrdersRat at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64OrdersRatAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// The rational route over the narrow partition: F_0(x[i])..F_n(x[i]) from
-    /// the narrow pieces, their piecewise region-B seed and their per-rung
+    /// the narrow pieces, their piecewise region-B seed and their own
     /// effective degrees, each piece summed as the pair AllOrdersF64Rat names.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowRat(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
-
-    /// AllOrdersF64NarrowRat at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
-    ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
-    /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowRatAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// Both of the choices above in force at once: the narrow partition read
     /// one fit per order inside region A, each piece summed as the pair
     /// AllOrdersF64Rat names, with the certified all-orders body past kX0.
     ///
-    /// \tparam kAccuracyMultiplier as AllOrdersF64: m = 1 reads the degrees the
-    ///   tables were stored at, m > 1 this entry's certified table at that rung.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
     /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF64NarrowOrdersRat(
-        const int* n, const double* x, double* out, std::size_t count, void* stream);
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// AllOrdersF64NarrowOrdersRat at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, off the library's third cut of
+    /// the double lane's domain: one *uniform* table — a single grid over
+    /// [0, kFlatHi) at one interval width and one stored degree for every
+    /// order, 245 intervals of width 1/7 at degree 7 (kFlatCoeffs,
+    /// boys_coefficients.hpp). Shape, layout and arguments are
+    /// AllOrdersF64's, and a call delivers inside the same documented double
+    /// batch budget.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// The route is not a re-cut of the pieces the entries above read: every order
+    /// is fitted on its own over each interval, so an argument's ladder is a set of
+    /// independent polynomials rather than one recurrence seeded once and walked up.
+    /// That independence is what the table costs 505.3 KiB and a stored degree per
+    /// order to buy.
+    ///
+    /// Above kFlatHi the table reaches no further and the call falls to the one-term
+    /// asymptotic and its own upward recurrence — the arm region C runs, from the
+    /// lane's own prefactor and stepping by the same (l + 1/2)/x — so the join is
+    /// where this route's fit ends.
+    ///
+    /// **This entry reads the route's full-accuracy arithmetic.** The table's
+    /// one stored degree is the route's own: no coefficient of it is dropped,
+    /// and a criterion that would cut one has nothing here to cut. What the
+    /// entry costs is what the route costs.
+    ///
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF64NarrowOrdersRatAtRung(
-        double multiplier, const int* n, const double* x, double* out, std::size_t count,
-        void* stream);
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64Uniform(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) off the same uniform table as AllOrdersF64Uniform,
+    /// summed in the other form the table stores: every order's coefficients are
+    /// read from the monomial image of its own fit and summed by Horner in
+    /// ascending order, where the entry above sums the Chebyshev image by a split
+    /// Clenshaw. Shape, layout and arguments are
+    /// AllOrdersF64Uniform's, and the grid arithmetic, the join at kFlatHi and the
+    /// asymptotic arm above it are one body for both forms.
+    ///
+    /// The two images are one fit stored twice — the two rows of kFlatRows
+    /// (boys_coefficients.hpp) — and each form's delivered accuracy is its own
+    /// certified row. What the choice buys is counted rather than asserted: one
+    /// multiply-add per coefficient against the split Clenshaw's two, at the same
+    /// stored table size and degree, so this entry is the cheaper summation where
+    /// the two issue alike; the two are ranked by the option probe.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64UniformHorner(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) as AllOrdersF64Uniform, with the route's region-A
+    /// reading named at the packing axis: every order is read from its own fit
+    /// over the argument's interval, and no order is built from another's.
+    ///
+    /// **This is the route's only reading of the grid, so this entry and
+    /// AllOrdersF64Uniform run one kernel and deliver one arithmetic.** A grid that
+    /// stores one fit per order and per interval has no seeded ladder to step, and
+    /// the route's own fit refuses a band source and a region-B seed at compile time
+    /// (UniformFit, boys_impl.hpp) rather than answering from another route's tables.
+    /// The row names the axis member and not a second reading, so a chooser reading
+    /// this family across the packing axis is told the uniform route holds one
+    /// member of it.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersUniform(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// Both of the choices above at once: the uniform route's per-order reading
+    /// summed in the other form its table stores, by Horner over the monomial
+    /// image of every order's own fit.
+    ///
+    /// It is the pair \c AllOrdersF64OrdersUniform and \c AllOrdersF64UniformHorner
+    /// name, composed, and it runs one kernel: the packing axis has one member
+    /// on this route and the scheme axis two, so the four rows of the route are
+    /// two readings and four names.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersUniformHorner(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's own narrow partition: the
+    /// lane's 218 pieces at degree 6, the same shape, layout and arguments as
+    /// AllOrdersF32.
+    ///
+    /// The body's two lane arguments are the split the coarsest float batch entry
+    /// already makes, one partition down: region A's seed is the double lane's piece
+    /// table — the downward recursion amplifies a float seed error past the float
+    /// budget, which is why the float bodies take a seed lane at all — and the
+    /// region-B seed is the float lane's own.
+    ///
+    /// The double lane's ladders at the other region-B exponential.
+    ///
+    /// Each member below is the entry of its own name at \c RegionBExp::kFast — the same lane, the
+    /// same pieces, the same seed lane and the same recurrence, whose region-B seed is that
+    /// member's. The axis is a coordinate of the option and not a second entry: what separates
+    /// `AllOrdersF64` from `AllOrdersF64Fast` is the arithmetic the seed is evaluated in, so the
+    /// two carry a figure each and nothing substitutes one for the other
+    /// (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// The figure is the lane's own, \c 5.5e-14: this lane's fast member is the host's reduced-
+    /// argument polynomial ported rather than re-derived, and the host's own documentation of that
+    /// member is that its relative error sits inside the ladder's requirement below the member's
+    /// cut and that no published figure moves at it. The float lane's `+ 8e-8` is that lane's fast
+    /// member's own contribution, and the double lane's member has no such term.
+    ///
+    /// **One member per kernel, not one per scheme name.** The rational route's pair below is one
+    /// member for both scheme names at this exponential, exactly as the accurate pair above is: the
+    /// pair is stored in one form, so neither name selects a second arithmetic.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry of its own name
+    /// above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64Fast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64Orders
+    /// \c AllOrdersF64Orders at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64Narrow
+    /// \c AllOrdersF64Narrow at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64NarrowOrders
+    /// \c AllOrdersF64NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64Mono
+    /// \c AllOrdersF64Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF64MonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64OrdersMono
+    /// \c AllOrdersF64OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64NarrowMono
+    /// \c AllOrdersF64NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64NarrowOrdersMono
+    /// \c AllOrdersF64NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersMonoFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64Rat
+    /// \c AllOrdersF64Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's, and both of that entry's scheme names reach this one
+    /// member for the reason the block states.
+    static BoysStatus AllOrdersF64RatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64OrdersRat
+    /// \c AllOrdersF64OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF64OrdersRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64NarrowRat
+    /// \c AllOrdersF64NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF64NarrowOrdersRat
+    /// \c AllOrdersF64NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF64NarrowOrdersRatFast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// **This entry reads this lane's own cut of the partition.** The region-B
+    /// degrees are derived over the float lane's pieces (NarrowRegionBDegrees at
+    /// the float batch role, boys_effective_degrees.hpp) and read by the kernel.
+    /// Region A needs no table beside them: this lane's region-A seed is the
+    /// double lane's piece table. So a call reads the stored fit, at the figure
+    /// that row states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Narrow(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The same partition with the other summation: every piece of region A and
+    /// region B is read from the monomial form of its own fit and summed by Horner,
+    /// where \c AllOrdersF32Narrow sums the Chebyshev form by a split Clenshaw.
+    /// Shape, layout and arguments are that entry's.
+    ///
+    /// The two forms are one partition stored twice: the two rows of
+    /// kNarrowARowsF32 and kNarrowBRowsF32 (boys_coefficients.hpp). Each form's
+    /// delivered accuracy is its own certified row, and each form's degrees are
+    /// read from the coefficients the row sums (NarrowRegionBDegrees at
+    /// TailBasis::kMonomial), so the Chebyshev form's table is not this entry's
+    /// to read.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowMono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's own uniform table: the same
+    /// grid the double route reads — one interval width, one stored degree for every
+    /// order and every interval, the table stopping at kFlatHiF32 where the closed
+    /// form takes over — at the lane's degree of 4 rather than the double lane's 8.
+    /// Shape, layout and arguments are AllOrdersF32's, and a call
+    /// delivers inside the float lane's documented budget.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Uniform(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The same grid summed in the other form the table stores: every order's
+    /// coefficients are read from the monomial image of its own fit and summed by
+    /// Horner, where \c AllOrdersF32Uniform sums the Chebyshev image by a split
+    /// Clenshaw. Shape, layout and arguments are that entry's; the
+    /// two are ranked by the option probe.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32UniformHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) in fp32 off the uniform grid's RATIONAL member.
+    ///
+    /// The grid is the same one \c AllOrdersF32Uniform reads — the lane's own, one
+    /// table of equal intervals over [0, kFlatHiF32) — and the route over it is the
+    /// rational family: one numerator/denominator pair per interval, fitted in this
+    /// lane's arithmetic and certified against this lane's bar. It is not a second
+    /// partition: a caller naming this row and one naming the row above are read at
+    /// the same intervals, located by the same map.
+    ///
+    /// The pair is stored in monomial form and read by Horner, so neither scheme name
+    /// a caller may use reaches a second arithmetic and this row's Horner twin runs
+    /// the same kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32UniformRat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformRat under the Horner scheme name. A forwarder and not a
+    /// second row over a second table: the rational member is stored in one form, so
+    /// both scheme names reach one arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns what \c AllOrdersF32UniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
+    static BoysStatus AllOrdersF32UniformRatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The same four on the double lane's grid, whose rational member is the
+    /// double lane's own pair per interval over that lane's intervals. The
+    /// contract and the Horner relation are the float lane's above.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64UniformRat(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64UniformRat under the Horner scheme name.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns what \c AllOrdersF64UniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
+    static BoysStatus AllOrdersF64UniformRatHorner(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) as \c AllOrdersF32UniformRat over the grid's other packing
+    /// axis, whose one member this route has: the grid's rational member stores one
+    /// numerator/denominator pair per interval at the interval's own stored count, so
+    /// there is no per-order reading of the interval to take and this row runs the
+    /// per-argument entry's kernel and arithmetic.
+    ///
+    /// It is not a second fit and not a second partition: a caller naming this row and one
+    /// naming \c AllOrdersF32UniformRat is read at the same intervals, located by the same
+    /// map, and delivered the same figure.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersUniformRat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniformRat under the Horner scheme name. A forwarder and not a
+    /// second row over a second table: the rational member is stored in one form, so both
+    /// scheme names reach one arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns what \c AllOrdersF32OrdersUniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
+    static BoysStatus AllOrdersF32OrdersUniformRatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The same four on the double lane's grid, whose rational member is that lane's own
+    /// pair per interval over its own intervals: the contract and the Horner
+    /// relation are the float lane's above, and the bound is the double batch lane's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF64OrdersUniformRat(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF64OrdersUniformRat under the Horner scheme name.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) doubles
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns what \c AllOrdersF64OrdersUniformRat returns, and its refusals with it:
+    /// this name is that entry's and adds none of its own.
+    static BoysStatus AllOrdersF64OrdersUniformRatHorner(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) in fp32 off the float lane's rational route: region A's
+    /// seed comes from the double lane's rational pair over the coarsest partition —
+    /// the same lane the float lane's other batch entries take their region-A seed
+    /// from, because the downward recursion amplifies a float seed error past the
+    /// float budget — and the region-B seed is the float lane's own rational pair
+    /// over the same partition (kNarrowRatBCoeffsF32's coarsest counterpart,
+    /// kRatBnum and kRatBden).
+    ///
+    /// Shape, layout and arguments are \c AllOrdersF32's, and the
+    /// delivered figure is the float lane's.
+    ///
+    /// **This entry reads this lane's own rational fit.** The region-B pair is
+    /// derived over this lane's own rational fit (RationalRegionBF32Degrees at
+    /// the float batch role) and read by the kernel; region A's seed is the
+    /// double lane's pair. So a call reads the stored pair, at the figure that
+    /// row states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Rat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat under the route's other scheme name. The route's pair is
+    /// stored in monomial form and read by Horner, so neither name selects a second
+    /// arithmetic: this entry runs the one kernel \c AllOrdersF32Rat runs, and the two
+    /// rows exist because a caller naming the scheme must reach the combination it
+    /// named. Shape, layout and arguments are \c AllOrdersF32Rat's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32RatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat over the float lane's narrow partition: region A's
+    /// seed is the double lane's rational pair over the *narrow* pieces and
+    /// region B's is the float lane's pair per narrow piece
+    /// (kNarrowRatBCoeffsF32), which is the partition
+    /// \c AllOrdersF32Narrow reads its Chebyshev fits from. The two lanes'
+    /// readings of one piece therefore share its interval and its mapped
+    /// argument, as the two routes over a piece do on the host lane.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowRat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat under the route's other scheme name, with the
+    /// contract of \c AllOrdersF32RatHorner.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowRatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_n(x[i]) as \c AllOrdersF32, with region A read as one fit per
+    /// order: every order's own piece is located and its own fit summed, where
+    /// the per-argument entry seeds the top order's fit and brings the lower
+    /// orders back down a recurrence. Shape, layout and arguments
+    /// are \c AllOrdersF32's, and the values agree to the fit's own accuracy.
+    ///
+    /// The choice covers region A and nothing else: past kX0 these entries run the
+    /// certified all-orders body, which is the interval their claim names. The CPU
+    /// lane's packing axis is the same choice (BoysPackAxes).
+    ///
+    /// The rows of this axis mirror the double lane's, one per partition and route
+    /// it carries, and each row reads the stored table it sums, the rational
+    /// route's included.
+    ///
+    /// The uniform grid's two orders entries are the route's one reading of the axis:
+    /// the grid's cells each carry their own degree and block start, so an order's own
+    /// value is the order's own block of its interval and there is no second reading
+    /// of the axis to have.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Orders(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders on the narrow partition, with the contract of
+    /// \c AllOrdersF32Narrow: the partition's pieces one fit per order.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowOrders(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders in the monomial basis, with the contract of
+    /// \c AllOrdersF32NarrowMono.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowOrdersMono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders over the fit route's pairs, with the contract of
+    /// \c AllOrdersF32Rat: each order's own piece read at A = 1, where the
+    /// per-argument shape seeds at its top order's piece and carries that piece's
+    /// w(b) down the recursion. The two scheme names select one arithmetic, as
+    /// they do on the route's other shapes.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersRat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat under the route's other scheme name, over the same
+    /// kernel.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersRatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat on the narrow partition, with the contract of
+    /// \c AllOrdersF32NarrowRat.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowOrdersRat(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat under the route's other scheme name, over the
+    /// same kernel.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32NarrowOrdersRatHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Uniform with the orders axis's own rows: the route's one
+    /// reading of the grid, and therefore the kernel \c AllOrdersF32Uniform
+    /// launches. The grid's cells each carry the degree and block start their own
+    /// truncation bound gave them, so an order's value is read from its own block
+    /// of the interval's table and there is no second reading of the axis here —
+    /// the two rows are two *cells* of the space and one arithmetic, which is what
+    /// the grid's own row states.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersUniform(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniform over the grid's other stored form, with the
+    /// contract of \c AllOrdersF32UniformHorner.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersUniformHorner(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN
-    /// documents, |F_hat - F| <= m * 5.5e-14 (the double batch lane's
+    /// documents, |F_hat - F| <= 5.5e-14 (the double batch lane's
     /// per-region budget, the same in every region).
     ///
     /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
     ///      AllNF32 states, for the reason it states there.
     ///
-    /// \tparam kAccuracyMultiplier as SingleF64; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry.
     /// \param nmax   highest order, 0..kMaxBoysOrder
     /// \param x      device array of arguments, non-decreasing, each >= 0
     /// \param out    device array, at least count * (nmax + 1) doubles
     /// \param count  number of arguments
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when the launch fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllNF64(
+        int nmax,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF64 at \c RegionBExp::kAccurate,
+    /// \c AllNF64Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp64Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllNF64WithPolicy(
         int nmax, const double* x, double* out, std::size_t count, void* stream);
 
-    /// AllNF64 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// F_0(x[i])..F_n[i](x[i]) in double precision, each argument's ladder to that
+    /// argument's own order — the shape \c BoysDeviceEachOrderF64 answers in the
+    /// caller's kernel, launched.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
-    /// \param nmax   highest order, 0..kMaxBoysOrder
-    /// \param x      device array of arguments, non-decreasing, each >= 0
-    /// \param out    device array, at least count * (nmax + 1) doubles
-    /// \param count  number of arguments; 0 is the no-op the class documents
+    /// **Output layout.** `out[offset[i] + l] = F_l(x[i])` for `l = 0..n[i]`, and no
+    /// other element of `out` is written: the ladder stops at the argument's own top
+    /// order instead of running to a common one. `offset` is the caller's, a device
+    /// array of `count` ints, so it is the caller's prefix sum that places the
+    /// ladders — at the front of `out`, packed, or interleaved with anything else the
+    /// same kernel produces, which is what the shape is for. The padded alternative is
+    /// \c AllOrdersF64, whose planes carry every order for every argument: it spends
+    /// `count * (kMaxBoysOrder + 1)` values where these spend `sum_i (n[i] + 1)`, and a
+    /// batch whose orders differ pays the difference for values no argument asks for.
+    /// A caller who wants ladders packed in argument order passes `offset[i] =` the
+    /// running total of `n[j] + 1` for `j < i`.
+    ///
+    /// **Ladders must not overlap.** `offset` is trusted, as `n` and `x` are: two
+    /// arguments whose ranges overlap are two arguments writing into one slot. A caller
+    /// building `offset` by prefix sum cannot produce that, and one placing ladders by
+    /// hand is told here that placing two in one place is undefined.
+    ///
+    /// The arithmetic is \c AllOrdersF64's, entry for entry: the same lane, the same
+    /// pieces, the same seed and the same recurrence, handed one value at a time to a
+    /// sink that indexes by `offset[i]` where the padded kernel indexes by a plane.
+    /// Nothing here is a second arithmetic and the bound is the lane's.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array, at least the largest `offset[i] + n[i] + 1` the
+    ///   call reaches
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane or \c nmax is outside
-    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
-    /// when the table upload or the launch fails.
-    static BoysStatus AllNF64AtRung(
-        double multiplier, int nmax, const double* x, double* out, std::size_t count,
-        void* stream);
+    /// \pre `offset[i] >= 0` and `offset[i] + n[i] + 1` is inside `out`, for every i
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF64(
+        const int* n,
+        const double* x,
+        const int* offset,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in single precision: the layout, the offsets and the
+    /// precondition are that entry's, and the arithmetic is \c AllOrdersF32's.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array, at least the largest `offset[i] + n[i] + 1` the
+    ///   call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF32(
+        const int* n,
+        const double* x,
+        const int* offset,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
 #if BoysFp16
     /// F_n(x[i]) in fp16 — the fp16 lane of the certified mixed-precision
@@ -973,76 +1782,90 @@ public:
     /// IEEE-754 binary16 bit patterns of this library's F16 type (see
     /// f16.hpp), so host copies are plain byte copies of count * sizeof(F16).
     ///
-    /// \tparam kAccuracyMultiplier the accuracy multiplier: m = 1 is the
-    ///   bit-identical full-accuracy path; m > 1 relaxes the asserted bound
-    ///   to m * 1e-7 + 1/2 ULP via compile-time Chebyshev degree truncation.
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value — the
+    /// fp16 rows of the device option space (boys_cuda_options.hpp) carry the
+    /// constant part and the half ULP is the format's, and the device accuracy
+    /// gate measures these entries against the sum.
+    ///
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, >= 0
     /// \param out    device array receiving F_n(x[i]) in fp16
     /// \param count  number of elements; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when a device operation fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus SingleF16(
-        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// SingleF16 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class
+    /// reads, and the class carries a kernel at both its members — \c SingleF16 at
+    /// \c RegionBExp::kAccurate, \c SingleF16Fast at \c RegionBExp::kFast — so a
+    /// policy naming either reaches that member's entry. A value outside
+    /// \c RegionBExp is a compile error naming it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kSingle, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of fp16 arguments, >= 0
-    /// \param out    device array receiving F_n(x[i]) in fp16
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus SingleF16AtRung(
-        double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus SingleF16WithPolicy(
+        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) in fp16 per input (i), layout as AllOrdersF32
     /// (out[order * count + i] = F_order(x[i])), device pointers and
     /// stream contract as SingleF16.
     ///
-    /// \tparam kAccuracyMultiplier as SingleF16; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry.
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, >= 0
     /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
     /// \param count  number of elements; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kDeviceError when a device operation fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
     static BoysStatus AllOrdersF16(
-        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// AllOrdersF16 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kAllOrders, Device::kDevice>>
     /// \param n      device array of orders, 0..kMaxBoysOrder
-    /// \param x      device array of fp16 arguments, >= 0
-    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
-    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
     /// \param stream device stream (cudaStream_t) or nullptr for the default
-    ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane, nothing launched and nothing
-    /// written; kDeviceError when the table upload or the launch fails.
-    static BoysStatus AllOrdersF16AtRung(
-        double multiplier, const int* n, const F16* x, F16* out, std::size_t count,
-        void* stream);
+    /// \return whether the batch was launched
+    static BoysStatus AllOrdersF16WithPolicy(
+        const int* n, const F16* x, F16* out, std::size_t count, void* stream);
 
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax in fp16 — the uniform-order
     /// batch of the fp16 lane, layout as AllNF32, device pointers and stream
@@ -1052,39 +1875,2075 @@ public:
     /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
     ///      AllNF32 states, for the reason it states there.
     ///
-    /// \tparam kAccuracyMultiplier as SingleF16; the batch relaxation covers
-    ///   the whole output family via the order-0 region-B entry.
     /// \param nmax   highest order, 0..kMaxBoysOrder
     /// \param x      device array of fp16 arguments, non-decreasing, each >= 0
     /// \param out    device array, at least count * (nmax + 1) fp16 values
     /// \param count  number of arguments; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
     /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
     /// kDeviceError when a device operation fails.
-    template <double kAccuracyMultiplier = kBoysFullAccuracyMultiplier>
-    static BoysStatus AllNF16(int nmax, const F16* x, F16* out, std::size_t count, void* stream);
+    static BoysStatus AllNF16(
+        int nmax,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
 
-    /// AllNF16 at a rung named in the call, over the twelve rungs this lane
-    /// serves. The rung is made resident by this call and that rung's own
-    /// launcher runs; the class contract states what an \c AtRung call makes
-    /// resident and what it refuses.
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the region-B exponential is the axis this class reads, and the class carries
+    /// a kernel at both its members — \c AllNF16 at \c RegionBExp::kAccurate,
+    /// \c AllNF16Fast at \c RegionBExp::kFast — so a policy naming either reaches
+    /// that member's entry. A value outside \c RegionBExp is a compile error naming
+    /// it.
     ///
-    /// \param multiplier the accuracy multiplier m, one of \c kDeviceRungs,
-    ///   matched exactly against the rung this call makes resident
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kFp16Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllNF16WithPolicy(
+        int nmax, const F16* x, F16* out, std::size_t count, void* stream);
+
+    /// The fp16 counterparts of the float lane's other bodies: each entry
+    /// below computes what the float entry of the same name computes
+    /// (AllOrdersF32Narrow and the family beside it), at the same tables, the
+    /// same partitions, the same seed lane and the same arithmetic, and stores
+    /// what it returns as fp16. The half lane's own definition is that it runs
+    /// the float engine's bodies, so an entry of it is not a second arithmetic:
+    /// it is that body with `__half` I/O around it.
+    ///
+    /// Each is named for the float entry it mirrors, with `F16` in place of
+    /// `F32`, so the two lanes' surfaces are one table read twice rather than
+    /// two tables. The contract each carries is the one its float counterpart's
+    /// declaration states, and every one of them takes the device pointers, the
+    /// stream and the division form \c AllOrdersF16 above takes. None of them
+    /// takes the ordering precondition: that belongs to the uniform-order shapes
+    /// (\c AllNF16), and every entry here carries a per-element order array.
+    ///
+    /// The figure they answer at is \c Precision::kFp16Device's own row of
+    /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
+    /// digit of the returned value, which in this format is 2^-11. It is not the
+    /// float lane's \c 1.5e-7, and it is not the bf16 class's 1e-7 + 2^-8: the
+    /// two stores are two classes of this lane (boys/boys_build_defaults.hpp) and
+    /// the store is this format's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16
+    ///   values, order-major as \c AllOrdersF16 writes it
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs, of the three certified
+    ///   forms (DivisionForm, boys/accuracy.hpp)
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Narrow(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowMono's arithmetic and contract, stored fp16: the
+    /// narrow partition in its monomial basis, which is the form the Horner
+    /// scheme name sums.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat's arithmetic and contract, stored fp16: the rational
+    /// route over the coarsest partition. The route's pair is stored in one form
+    /// and read by Horner, so both scheme names reach this one entry.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Rat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Rat under the route's other scheme name. A forwarder and
+    /// not a second arithmetic: it runs \c AllOrdersF16Rat's kernel and returns
+    /// its status.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16RatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat's arithmetic and contract, stored fp16: the
+    /// rational route over the narrow partition, with the same two scheme names
+    /// reaching one kernel that \c AllOrdersF16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Uniform's arithmetic and contract, stored fp16: the float
+    /// lane's uniform grid in its Chebyshev blocks.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Uniform(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformHorner's arithmetic and contract, stored fp16. The
+    /// grid's two entries are two stored forms of one fit and not two
+    /// arithmetics, for the reason the float declaration states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformRat's arithmetic and contract, stored fp16: the
+    /// grid's rational route, with the same two scheme names reaching one
+    /// kernel that \c AllOrdersF16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16UniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16UniformRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders' arithmetic and contract, stored fp16: the float
+    /// lane's other packing axis over the coarsest partition. It reads region A
+    /// one fit per order rather than seeding the top order's fit and bringing
+    /// the lower orders down a recurrence, and it is one entry for both scheme
+    /// names, as its float counterpart is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Orders(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders' arithmetic and contract, stored fp16: the
+    /// orders axis over the narrow partition.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrders(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersMono's arithmetic and contract, stored fp16:
+    /// the orders axis over the narrow partition in its monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat's arithmetic and contract, stored fp16: the
+    /// orders axis on the rational route over the coarsest partition, with the
+    /// route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16OrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat's arithmetic and contract, stored fp16:
+    /// the orders axis on the rational route over the narrow partition, with
+    /// the route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16NarrowOrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16NarrowOrdersRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniform's arithmetic and contract, stored fp16. The
+    /// grid's cells carry their own degree and block start, so the route's
+    /// packing axis has one member here and this entry runs the kernel
+    /// \c AllOrdersF16Uniform launches.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniform(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's monomial basis over the orders axis: the kernel
+    /// \c AllOrdersF16UniformHorner launches, for the reason
+    /// \c AllOrdersF16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's rational route over the orders axis: the kernel
+    /// \c AllOrdersF16UniformRat launches, for the reason
+    /// \c AllOrdersF16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformRat(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16OrdersUniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16OrdersUniformRatHorner(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The half lane's fast region-B reading of the single shape, beside
+    /// \c SingleF16 as \c SingleF32Fast stands beside \c SingleF32.
+    ///
+    /// The two differing exponentials are the two certified members of \c RegionBExp
+    /// (boys_device_tables.hpp), and the choice is one of arithmetic rather than of
+    /// kernel: this entry runs the same float engine, storing what it returns into
+    /// fp16, with the lane's fast exponential in region B's seed in place of the
+    /// library routine's. Its bound is \c SingleF32Fast's constant term plus the half
+    /// format's own.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in fp16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleF16Fast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+#endif // BoysFp16
+
+    /// The coarsest partition's ladder in the monomial basis on the float lane, beside
+    /// \c AllOrdersF64Mono as this lane's \c AllOrdersF32NarrowMono stands beside
+    /// \c AllOrdersF64NarrowMono.
+    ///
+    /// The pieces are the coarsest partition's own, the fit is the one
+    /// \c AllOrdersF32 carries, and what differs is the summation its stored
+    /// coefficients are read by: Horner over the monomial form rather than the split
+    /// Clenshaw recurrence over the Chebyshev one. The two forms are one fit stored
+    /// twice, so the two entries differ in the summation and in nothing else.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Mono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Mono on the coarsest partition's orders reading, with the
+    /// contract of \c AllOrdersF32Orders: each order's own piece located and summed
+    /// where it lies, in the monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32OrdersMono(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The float lane's ladders at the other region-B exponential, the double lane's
+    /// block above read at this lane's kernels: the same lane, the same pieces, the
+    /// same seed lane and the same recurrence, whose region-B seed is that member's.
+    ///
+    /// The axis is a coordinate of the option and not a second entry, so what
+    /// separates `AllOrdersF32` from `AllOrdersF32Fast` is the arithmetic the seed is
+    /// evaluated in. This lane's fast member is the floated reading of the double
+    /// lane's own, whose contribution to the returned value the recurrence caps at
+    /// 8e-8: the figure is the lane's bound plus that term, \c 1.5e-7 \c + \c 8e-8,
+    /// and nothing substitutes one exponential for the other (`RegionBExp`,
+    /// boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name.** The rational route's pair
+    /// is one member for both scheme names at this exponential, exactly as the
+    /// accurate pair above is: the pair is stored in one form, so neither name
+    /// selects a second arithmetic.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) floats
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF32Fast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32Orders
+    /// \c AllOrdersF32Orders at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32Narrow
+    /// \c AllOrdersF32Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowOrders
+    /// \c AllOrdersF32NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32Mono
+    /// \c AllOrdersF32Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32MonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32OrdersMono
+    /// \c AllOrdersF32OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowMono
+    /// \c AllOrdersF32NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowOrdersMono
+    /// \c AllOrdersF32NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersMonoFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32Rat
+    /// \c AllOrdersF32Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF32RatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32RatHorner
+    /// \c AllOrdersF32RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32RatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32OrdersRat
+    /// \c AllOrdersF32OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32OrdersRatHorner
+    /// \c AllOrdersF32OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32OrdersRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowRat
+    /// \c AllOrdersF32NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowRatHorner
+    /// \c AllOrdersF32NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowOrdersRat
+    /// \c AllOrdersF32NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersRatFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF32NarrowOrdersRatHorner
+    /// \c AllOrdersF32NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF32NarrowOrdersRatHornerFast(
+        const int* n,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The single and all-N shapes at the other region-B exponential, one member per
+    /// shape for the reason the ladders above have one per kernel: the member is a
+    /// compile-time choice of arithmetic, so the choice is a second entry and not a
+    /// parameter.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name; only the region-B exponential differs. The double lane's
+    /// member carries the lane's own figure and no added term; the float lane's
+    /// carries \c 1.5e-7 \c + \c 8e-8, as the block above states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (SingleF64Fast); or the
+    ///   highest order, 0..kMaxBoysOrder (the all-N members)
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) (SingleF64Fast) or
+    ///   out[k * count + i] = F_k(x[i]), k = 0..nmax
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus SingleF64Fast(
+        const int* n,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllNF64
+    /// \c AllNF64 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF64Fast(
+        int nmax,
+        const double* x,
+        double* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllNF32
+    /// \c AllNF32 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF32Fast(
+        int nmax,
+        const double* x,
+        float* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+#if BoysFp16
+    /// The half lane's rows of the two entries above: the same float engine's bodies
+    /// with this lane's fp16 store around them, as every half-lane ladder row is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF16Mono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF16Mono on the coarsest partition's orders reading.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersF16OrdersMono(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in fp16 — the each-order shape (see that entry for the
+    /// layout, the offsets and the precondition) over this lane's store, behind
+    /// the BoysFp16 seam.
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value, the figure
+    /// the fp16 rows of the device option space carry.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of F16 arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array of F16, at least the largest `offset[i] + n[i] + 1`
+    ///   the call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderF16(
+        const int* n,
+        const F16* x,
+        const int* offset,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The half lane's ladders at the other region-B exponential, its own block above
+    /// read the way the float lane's block is: the same kernels, the same seed/lane
+    /// pairs, and the second argument of the pair moved.
+    ///
+    /// The lane's definition is that it runs the float engine's arithmetic and stores
+    /// what it returns, so the member here is the float lane's fast reading and not a
+    /// second half arithmetic. Its figure is \c SingleF16Fast's: the float lane's
+    /// fast term plus the half format's own, and nothing substitutes one exponential
+    /// for the other (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name**, as the double lane's block
+    /// states it: a rational pair is stored in one form, so the two scheme names
+    /// reach the one member.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (AllNF16Fast: the
+    ///   highest order, 0..kMaxBoysOrder)
+    /// \param x      device array of fp16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) fp16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersF16Fast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16Orders
+    /// \c AllOrdersF16Orders at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16Narrow
+    /// \c AllOrdersF16Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowOrders
+    /// \c AllOrdersF16NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16Mono
+    /// \c AllOrdersF16Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF16MonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16OrdersMono
+    /// \c AllOrdersF16OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowMono
+    /// \c AllOrdersF16NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowOrdersMono
+    /// \c AllOrdersF16NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersMonoFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16Rat
+    /// \c AllOrdersF16Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersF16RatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16RatHorner
+    /// \c AllOrdersF16RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16RatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16OrdersRat
+    /// \c AllOrdersF16OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16OrdersRatHorner
+    /// \c AllOrdersF16OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16OrdersRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowRat
+    /// \c AllOrdersF16NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowRatHorner
+    /// \c AllOrdersF16NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowOrdersRat
+    /// \c AllOrdersF16NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersRatFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersF16NarrowOrdersRatHorner
+    /// \c AllOrdersF16NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersF16NarrowOrdersRatHornerFast(
+        const int* n,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllNF16
+    /// \c AllNF16 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNF16Fast(
+        int nmax,
+        const F16* x,
+        F16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+
+
+    /// F_n(x[i]) in bfloat16 — the bfloat16 lane of the certified mixed-precision
+    /// boundary (behind the BoysFp16 seam). Device pointers and stream
+    /// contract as the F32/F64 entries; the bfloat16 values are the raw
+    /// IEEE-754 binary16 bit patterns of this library's Bf16 type (see
+    /// f16.hpp), so host copies are plain byte copies of count * sizeof(Bf16).
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value — the
+    /// bfloat16 rows of the device option space (boys_cuda_options.hpp) carry the
+    /// constant part and the half ULP is the format's, and the device accuracy
+    /// gate measures these entries against the sum.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in bfloat16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleBf16(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_nmax(x[i]) in bfloat16 per input (i), layout as AllOrdersF32
+    /// (out[order * count + i] = F_order(x[i])), device pointers and
+    /// stream contract as SingleBf16.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The class above reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the route, scheme, partition and packing axis the policy names, dispatched
+    /// to this class's entry for that combination while the call site compiles,
+    /// run at the policy's division form. A combination this class has no kernel
+    /// for is a compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kAllOrders, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllOrdersBf16WithPolicy(
+        const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
+    /// The bfloat16 counterparts of the float lane's other bodies: each entry
+    /// below computes what the float entry of the same name computes
+    /// (AllOrdersF32Narrow and the family beside it), at the same tables, the
+    /// same partitions, the same seed lane and the same arithmetic, and stores
+    /// what it returns as bfloat16. The bfloat16 lane's own definition is that it runs
+    /// the float engine's bodies, so an entry of it is not a second arithmetic:
+    /// it is that body with `__half` I/O around it.
+    ///
+    /// Each is named for the float entry it mirrors, with `Bf16` in place of
+    /// `F32`, so the two lanes' surfaces are one table read twice rather than
+    /// two tables. The contract each carries is the one its float counterpart's
+    /// declaration states, and every one of them takes the device pointers, the
+    /// stream and the division form \c AllOrdersBf16 above takes. None of them
+    /// takes the ordering precondition: that belongs to the uniform-order shapes
+    /// (\c AllNBf16), and every entry here carries a per-element order array.
+    ///
+    /// The figure they answer at is \c Precision::kBf16Device's own row of
+    /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
+    /// digit of the returned value, which in this format is 2^-8 = 3.90625e-03.
+    /// It is not the float lane's \c 1.5e-7, and it is not the fp16 class's
+    /// 1e-7 + 2^-11 either: the two stores are two classes of this lane
+    /// (boys/boys_build_defaults.hpp) and the store is this format's.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16
+    ///   values, order-major as \c AllOrdersBf16 writes it
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs, of the three certified
+    ///   forms (DivisionForm, boys/accuracy.hpp)
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Narrow(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowMono's arithmetic and contract, stored bfloat16: the
+    /// narrow partition in its monomial basis, which is the form the Horner
+    /// scheme name sums.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Uniform's arithmetic and contract, stored bfloat16: the float
+    /// lane's uniform grid in its Chebyshev blocks.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Uniform(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformHorner's arithmetic and contract, stored bfloat16. The
+    /// grid's two entries are two stored forms of one fit and not two
+    /// arithmetics, for the reason the float declaration states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Rat's arithmetic and contract, stored bfloat16: the rational
+    /// route over the coarsest partition. The route's pair is stored in one form
+    /// and read by Horner, so both scheme names reach this one entry.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Rat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Rat under the route's other scheme name. A forwarder and
+    /// not a second arithmetic: it runs \c AllOrdersBf16Rat's kernel and returns
+    /// its status.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16RatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowRat's arithmetic and contract, stored bfloat16: the
+    /// rational route over the narrow partition, with the same two scheme names
+    /// reaching one kernel that \c AllOrdersBf16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32UniformRat's arithmetic and contract, stored bfloat16: the
+    /// grid's rational route, with the same two scheme names reaching one
+    /// kernel that \c AllOrdersBf16Rat states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16UniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16UniformRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32Orders' arithmetic and contract, stored bfloat16: the float
+    /// lane's other packing axis over the coarsest partition. It reads region A
+    /// one fit per order rather than seeding the top order's fit and bringing
+    /// the lower orders down a recurrence, and it is one entry for both scheme
+    /// names, as its float counterpart is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Orders(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrders' arithmetic and contract, stored bfloat16: the
+    /// orders axis over the narrow partition.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrders(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersMono's arithmetic and contract, stored bfloat16:
+    /// the orders axis over the narrow partition in its monomial basis.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersRat's arithmetic and contract, stored bfloat16: the
+    /// orders axis on the rational route over the coarsest partition, with the
+    /// route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32NarrowOrdersRat's arithmetic and contract, stored bfloat16:
+    /// the orders axis on the rational route over the narrow partition, with
+    /// the route's two scheme names reaching one kernel.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16NarrowOrdersRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersF32OrdersUniform's arithmetic and contract, stored bfloat16. The
+    /// grid's cells carry their own degree and block start, so the route's
+    /// packing axis has one member here and this entry runs the kernel
+    /// \c AllOrdersBf16Uniform launches.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniform(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's monomial basis over the orders axis: the kernel
+    /// \c AllOrdersBf16UniformHorner launches, for the reason
+    /// \c AllOrdersBf16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The grid's rational route over the orders axis: the kernel
+    /// \c AllOrdersBf16UniformRat launches, for the reason
+    /// \c AllOrdersBf16OrdersUniform states.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformRat(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16OrdersUniformRat under the route's other scheme name. A
+    /// forwarder and not a second arithmetic.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16OrdersUniformRatHorner(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// F_0(x[i])..F_nmax(x[i]) at one common nmax in bfloat16 — the uniform-order
+    /// batch of the bfloat16 lane, layout as AllNF32, device pointers and stream
+    /// contract as SingleBf16. Like AllNF32 it has no CPU bfloat16 counterpart (the
+    /// CPU bfloat16 lane stops at BoysSingleBf16 and BoysAllOrdersBf16).
+    ///
+    /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
+    ///      AllNF32 states, for the reason it states there.
+    ///
     /// \param nmax   highest order, 0..kMaxBoysOrder
-    /// \param x      device array of fp16 arguments, non-decreasing, each >= 0
-    /// \param out    device array, at least count * (nmax + 1) fp16 values
+    /// \param x      device array of bfloat16 arguments, non-decreasing, each >= 0
+    /// \param out    device array, at least count * (nmax + 1) bfloat16 values
     /// \param count  number of arguments; 0 is the no-op the class documents
     /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
     ///
-    /// \returns kSuccess after the launch is queued; kInvalidArgument when
-    /// \c multiplier is not a rung of this lane or \c nmax is outside
-    /// [0, kMaxBoysOrder], nothing launched and nothing written; kDeviceError
-    /// when the table upload or the launch fails.
-    static BoysStatus AllNF16AtRung(
-        double multiplier, int nmax, const F16* x, F16* out, std::size_t count, void* stream);
+    /// \returns kInvalidArgument when nmax is outside [0, kMaxBoysOrder],
+    /// kDeviceError when a device operation fails.
+    static BoysStatus AllNBf16(
+        int nmax,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's rows of the two entries above: the same float engine's bodies
+    /// with this lane's bfloat16 store around them, as every half-lane ladder row is.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersBf16Mono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c AllOrdersBf16Mono on the coarsest partition's orders reading.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the table upload or the launch fails.
+    static BoysStatus AllOrdersBf16OrdersMono(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's fast region-B reading of the single shape, beside
+    /// \c SingleBf16 as \c SingleF32Fast stands beside \c SingleF32.
+    ///
+    /// The two differing exponentials are the two certified members of \c RegionBExp
+    /// (boys_device_tables.hpp), and the choice is one of arithmetic rather than of
+    /// kernel: this entry runs the same float engine, storing what it returns into
+    /// bfloat16, with the lane's fast exponential in region B's seed in place of the
+    /// library routine's. Its bound is \c SingleF32Fast's constant term plus the half
+    /// format's own.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array receiving F_n(x[i]) in bfloat16
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus SingleBf16Fast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \c EachOrderF64 in bfloat16 — the each-order shape (see that entry for the
+    /// layout, the offsets and the precondition) over this lane's store, behind
+    /// the BoysFp16 seam.
+    ///
+    /// The lane's bound: |F̂ − F| ≤ 1e-7 + 1/2 ULP of the returned value, the figure
+    /// the bfloat16 rows of the device option space carry.
+    ///
+    /// \tparam kExp which region-B exponential the call runs, default
+    ///   \c kDefaultRegionBExp (\c RegionBExp::kAccurate). Both are certified, each
+    ///   against its own bound; nothing substitutes one for the other.
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of Bf16 arguments, >= 0
+    /// \param offset device array of `count` ints; `offset[i]` is where argument i's
+    ///   ladder starts
+    /// \param out    device array of Bf16, at least the largest `offset[i] + n[i] + 1`
+    ///   the call reaches
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when the launch fails.
+    template <RegionBExp kExp = kDefaultRegionBExp>
+    static BoysStatus EachOrderBf16(
+        const int* n,
+        const Bf16* x,
+        const int* offset,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 lane's ladders at the other region-B exponential, its own block above
+    /// read the way the float lane's block is: the same kernels, the same seed/lane
+    /// pairs, and the second argument of the pair moved.
+    ///
+    /// The lane's definition is that it runs the float engine's arithmetic and stores
+    /// what it returns, so the member here is the float lane's fast reading and not a
+    /// second half arithmetic. Its figure is \c SingleBf16Fast's: the float lane's
+    /// fast term plus the half format's own, and nothing substitutes one exponential
+    /// for the other (`RegionBExp`, boys/accuracy.hpp).
+    ///
+    /// **One member per kernel, not one per scheme name**, as the double lane's block
+    /// states it: a rational pair is stored in one form, so the two scheme names
+    /// reach the one member.
+    ///
+    /// The parameters, the layout and the precondition of each member are the entry
+    /// of its own name above; only the region-B exponential differs.
+    ///
+    /// \param n      device array of orders, 0..kMaxBoysOrder (AllNBf16Fast: the
+    ///   highest order, 0..kMaxBoysOrder)
+    /// \param x      device array of bfloat16 arguments, >= 0
+    /// \param out    device array, at least count * (kMaxBoysOrder + 1) bfloat16 values
+    /// \param count  number of elements; 0 is the no-op the class documents
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \param form   which division form the call runs: the entry's arithmetic with a different
+    ///   division of its ladder steps, one of the three certified forms (DivisionForm,
+    ///   boys/accuracy.hpp); kDefaultDeviceDivisionForm unless another is named.
+    ///
+    /// \returns kDeviceError when a device operation fails.
+    static BoysStatus AllOrdersBf16Fast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16Orders
+    /// \c AllOrdersBf16Orders at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16Narrow
+    /// \c AllOrdersBf16Narrow at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowOrders
+    /// \c AllOrdersBf16NarrowOrders at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16Mono
+    /// \c AllOrdersBf16Mono at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersBf16MonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16OrdersMono
+    /// \c AllOrdersBf16OrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowMono
+    /// \c AllOrdersBf16NarrowMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowOrdersMono
+    /// \c AllOrdersBf16NarrowOrdersMono at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersMonoFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16Rat
+    /// \c AllOrdersBf16Rat at the region-B exponential the block above states; its parameters and
+    /// its precondition are that entry's.
+    static BoysStatus AllOrdersBf16RatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16RatHorner
+    /// \c AllOrdersBf16RatHorner at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16RatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16OrdersRat
+    /// \c AllOrdersBf16OrdersRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16OrdersRatHorner
+    /// \c AllOrdersBf16OrdersRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16OrdersRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowRat
+    /// \c AllOrdersBf16NarrowRat at the region-B exponential the block above states; its parameters
+    /// and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowRatHorner
+    /// \c AllOrdersBf16NarrowRatHorner at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowOrdersRat
+    /// \c AllOrdersBf16NarrowOrdersRat at the region-B exponential the block above states; its
+    /// parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllOrdersBf16NarrowOrdersRatHorner
+    /// \c AllOrdersBf16NarrowOrdersRatHorner at the region-B exponential the block above states;
+    /// its parameters and its precondition are that entry's.
+    static BoysStatus AllOrdersBf16NarrowOrdersRatHornerFast(
+        const int* n,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// \copydoc AllNBf16
+    /// \c AllNBf16 at the region-B exponential the block above states; its parameters and its
+    /// precondition are that entry's.
+    static BoysStatus AllNBf16Fast(
+        int nmax,
+        const Bf16* x,
+        Bf16* out,
+        std::size_t count,
+        void* stream,
+        DivisionForm form = kDefaultDeviceDivisionForm);
+
+    /// The bfloat16 single class reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// the kernel \c Policy names, chosen while the call site compiles, run at the
+    /// policy's division form. The region-B exponential is the axis this class reads,
+    /// and the class carries a kernel at both its members — \c SingleBf16 at
+    /// \c RegionBExp::kAccurate, \c SingleBf16Fast at \c RegionBExp::kFast — so a policy
+    /// naming either reaches that member's entry. A value outside \c RegionBExp is a
+    /// compile error naming it.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kSingle, Device::kDevice>>
+    /// \param n      device array of orders, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, >= 0
+    /// \param out    device array receiving F_n(x[i])
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus SingleBf16WithPolicy(
+        const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
+    /// The bfloat16 all-N class reached by naming a policy (boys/boys_cuda_policy.hpp):
+    /// as \c SingleBf16WithPolicy, over the all-N shape's kernel \c AllNBf16 and its
+    /// \c RegionBExp::kFast counterpart \c AllNBf16Fast.
+    ///
+    /// \tparam Policy a policy naming a combination this class has a kernel for.
+    ///   Defaults to this build's row for the class.
+    template <EvalPolicyLike Policy =
+                  DefaultPolicy<Precision::kBf16Device, Shape::kAllN, Device::kDevice>>
+    /// \param nmax   the highest order, 0..kMaxBoysOrder
+    /// \param x      device array of arguments, non-decreasing, each >= 0
+    /// \param out    device array receiving the ladder each argument asked for
+    /// \param count  number of elements
+    /// \param stream device stream (cudaStream_t) or nullptr for the default
+    /// \return whether the batch was launched
+    static BoysStatus AllNBf16WithPolicy(
+        int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream);
+
 #endif // BoysFp16
 };
 
+/// The option space's rows counted by the arithmetic each one selects, as a report states
+/// it: how many names the space offers against how many distinct arithmetic they reach, and
+/// the names that are a second one of a row beside them.
+///
+/// Declared here rather than in boys_cuda_options.hpp, which is the space's own header,
+/// because it returns a string and that header is compiled by nvcc. The counts are the
+/// space's and not this function's: the rows come from \c BoysDeviceOptions and the division
+/// forms from \c BoysDivisionForms, so a row added to the space is counted here without an
+/// edit.
+///
+/// \returns the statement, one line per alias row under the counts, ending with a newline
+///
+/// \ingroup boys
+std::string FormatDeviceArithmeticStatement();
+
+#if BoysFp16
+/// \cond
+namespace detail {
+
+/// The region-B exponential a bf16 policy member's refusal arm is instantiated on, so that a value
+/// outside the enumeration fails the build at that arm rather than being answered by the last one.
+/// The reading boys_cuda_policy.hpp's \c ExpTag carries, declared here for the members below.
+template <RegionBExp kExp>
+struct Bf16ExpTag {};
+
+} // namespace detail
+/// \endcond
+
+/// The bfloat16 single class reached by naming a policy: the entry, its bound and its parameter
+/// contract are `BoysCuda::SingleBf16` and `BoysCuda::SingleBf16Fast` as this header declares
+/// them, and this overload is the member the policy's region-B exponential names, run at the
+/// policy's division form.
+template <EvalPolicyLike Policy>
+BoysStatus BoysCuda::SingleBf16WithPolicy(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate)
+    {
+        return BoysCuda::SingleBf16(n, x, out, count, stream, Policy::kDivision);
+    }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::SingleBf16Fast(n, x, out, count, stream, Policy::kDivision);
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::Bf16ExpTag<Policy::kRegionBExp>>,
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
+        return BoysStatus::kDeviceError;
+    }
+}
+
+/// The bfloat16 all-N class reached by naming a policy, on the reading above.
+template <EvalPolicyLike Policy>
+BoysStatus BoysCuda::AllNBf16WithPolicy(
+    int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream) {
+    if constexpr (Policy::kRegionBExp == RegionBExp::kAccurate)
+    {
+        return BoysCuda::AllNBf16(nmax, x, out, count, stream, Policy::kDivision);
+    }
+    else if constexpr (Policy::kRegionBExp == RegionBExp::kFast)
+    {
+        return BoysCuda::AllNBf16Fast(nmax, x, out, count, stream, Policy::kDivision);
+    }
+    else
+    {
+        static_assert(detail::kAlwaysFalse<detail::Bf16ExpTag<Policy::kRegionBExp>>,
+                      "this switch enumerates the two region-B exponentials, "
+                      "RegionBExp::kAccurate and RegionBExp::kFast: a third value added to "
+                      "RegionBExp must be given its own arm here rather than inheriting the last "
+                      "one's kernel");
+        return BoysStatus::kDeviceError;
+    }
+}
+#endif // BoysFp16
+
 } // namespace boys
+
+// The policy-templated members declared above - each class's entry named <Entry>WithPolicy - their
+// definitions and the dispatch rule live in boys_cuda_policy.hpp, included last so a member's
+// definition sees its class complete; the bf16 classes' members are defined above. A unit that
+// includes this header gets the layer with its surface, in either include order.
+#include "boys/boys_cuda_policy.hpp"
