@@ -1,5 +1,5 @@
 boys accuracy gate
-reference    : C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv
+reference    : /mnt/c/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv
                33 orders x 1718 arguments = 56694 points
 boundaries   : x_ext=1.0855252345349333  x0=11.899848152108484  x1=28.98933773882074
 tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.8978702998256569 | n<=32 10.783587858916762
@@ -102,8 +102,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision b41f3fa
-  reference: C:/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
+accuracy gate, revision c890269
+  reference: /mnt/c/Users/myaml/dev/boys-arm64diag/tests/data/boys_accuracy_gate_reference.csv (1718 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
   ------------------------------------------------------------------------------------------------------------------------------
@@ -482,7 +482,7 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   entry's own body. The lane holds one stored table and one recurrence, so it serves one
   scheme; BoysPackedLaneServes is where the library says which, and this is that
   statement held to the values
-  split-clenshaw         3230 cell(s)     2015 differ  reaches the lane: yes  BoysPackedLaneServes says: yes  met
+  split-clenshaw         3230 cell(s)     2014 differ  reaches the lane: yes  BoysPackedLaneServes says: yes  met
   horner                 3230 cell(s)        0 differ  reaches the lane: no   BoysPackedLaneServes says: no   met
   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1337,7 +1337,7 @@ the one the launched all-orders rows of their lane name, and each cell is
                                them differently
     fp32                       accurate           16327872  1.7514e-07
     fp32                       fast               16327872  1.7514e-07
-    fp32                       the two members were compared at 16327872 value(s), and delivered 0 of
+    fp32                       the two members were compared at 16327872 value(s), and delivered 660 of
                                them differently
     fp16                       accurate           16327872   0.0002438
     fp16                       fast               16327872   0.0002438
@@ -1356,7 +1356,7 @@ the one the launched all-orders rows of their lane name, and each cell is
   column is zero for every form is a lane the axis selects no arithmetic on: its
   three names reach one body, and one is what it was certified at
     lane                        axis           cell(s)   form(s)    compared plain-reciprocal refined-reciprocal
-    fp64                        arguments     20409840         3    13606560     2757216           0
+    fp64                        arguments     20409840         3    13606560     2757440           0
     fp32                        arguments     20409840         3    13606560     1685076           0
     fp16                        arguments     20409840         3    13606560        1166           0
     bf16                        arguments     20409840         3    13606560       16320           0
@@ -1372,7 +1372,7 @@ the one the launched all-orders rows of their lane name, and each cell is
     fp16-device                 orders         2040984         3     1360656          83           0
     bf16-device                 arguments      2040984         3     1360656        1710           0
     bf16-device                 orders         2040984         3     1360656        1710           0
-    total                                                           97967232     7653502           0
+    total                                                           97967232     7653726           0
   OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
@@ -1413,7 +1413,7 @@ the granularity-axis rows: which partition of the fitted domain a call reads, me
   -------------------------------------------------------------------------------------------------------------------------------------------------------------
   shipped    split-clenshaw  stored fits, region A            21318 1e-15                  2.22045e-16              0.222  n=0, x=0.17485         verified at this revision
   shipped    split-clenshaw  stored seed, region B              248 3e-14                  9.9365e-15               0.331  n=0, x=11.8998         verified at this revision
-  shipped    split-clenshaw  orders entry, below band          7821 5.5e-14                1.11022e-16            0.00202  n=0, x=1e-08           verified at this revision
+  shipped    split-clenshaw  orders entry, below band          7821 5.5e-14                1.11022e-16            0.00202  n=0, x=0.0437124       verified at this revision
   shipped    split-clenshaw  orders entry, band and below     21318 5.5e-14                3.21618e-15             0.0585  n=16, x=4.89985        verified at this revision
   shipped    split-clenshaw  orders entry, region B            8184 5.5e-14                9.9365e-15               0.181  n=0, x=11.8998         verified at this revision
   shipped    split-clenshaw  single entry, region A            7821 1e-15                  2.22045e-16              0.222  n=0, x=0.17485         verified at this revision
@@ -1422,7 +1422,7 @@ the granularity-axis rows: which partition of the fitted domain a call reads, me
   shipped    split-clenshaw  plane entry, band and below      21318 5.5e-14                3.21618e-15             0.0585  n=16, x=4.89985        verified at this revision
   shipped    horner          stored fits, region A            21318 1e-15                  1.11022e-16              0.111  n=0, x=0.001           verified at this revision
   shipped    horner          stored seed, region B              248 3e-14                  9.9365e-15               0.331  n=0, x=11.8998         verified at this revision
-  shipped    horner          orders entry, below band          7821 5.5e-14                1.11022e-16            0.00202  n=0, x=1e-08           verified at this revision
+  shipped    horner          orders entry, below band          7821 5.5e-14                1.11022e-16            0.00202  n=0, x=0.0437124       verified at this revision
   shipped    horner          orders entry, band and below     21318 5.5e-14                3.21618e-15             0.0585  n=16, x=4.89985        verified at this revision
   shipped    horner          orders entry, region B            8184 5.5e-14                9.9365e-15               0.181  n=0, x=11.8998         verified at this revision
   shipped    horner          single entry, region A            7821 1e-15                  1.11022e-16              0.111  n=0, x=0.001           verified at this revision
@@ -1520,13 +1520,13 @@ partitions hold the same bound over the same interval, so an accuracy row cannot
 them apart; a difference can, and a region where the per-argument entry's two readings
 differ and this entry's do not is a region this entry answered from the other
 partition's fits.
-  the per-argument entry's own separation, the reference these rows are held to: A 7586, band 12871, B 8098, C 66 cell(s)
+  the per-argument entry's own separation, the reference these rows are held to: A 7586, band 12872, B 8098, C 66 cell(s)
   entry                      cells    differ  A/band/B/C     worst |d|    worst cell         verdict
   ------------------------------------------------------------------------------------------------------------------------------------
-  plane entry                56694     25097  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
-  plane entry, sorted        56694     25097  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
-  per-element tops           29237     12821  yes/yes/yes/yes 1.09295e-14  n=19, x=28.9893    answers with the grid's own values
-  fixed-order entry          56694     28621  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
+  plane entry                56694     25086  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
+  plane entry, sorted        56694     25086  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
+  per-element tops           29237     12808  yes/yes/yes/yes 1.09295e-14  n=19, x=28.9893    answers with the grid's own values
+  fixed-order entry          56694     28622  yes/yes/yes/yes 5e-14        n=32, x=28.9893    answers with the grid's own values
   ------------------------------------------------------------------------------------------------------------------------------------
   PARTITION RESULT: 4 of 4 batched entr(ies) answer a policy naming the uniform grid
                     with a reading the narrow member does not answer with, in every region where
