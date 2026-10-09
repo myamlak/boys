@@ -579,9 +579,10 @@ jobs:
         run: |
           .venv/bin/python tools/check_probe_run.py --control
           .venv/bin/python tools/check_probe_run.py
-      # The measured table in the guide, against the report it transcribes. Nothing held it:
-      # changing a figure, a label or a count there was caught by no check, which is how it
-      # came to quote cells the current probe does not emit.
+      # The measured table in the guide, and the figures the sentences around it state, against the
+      # report they transcribe. Nothing held either: changing a figure, a label or a count in the
+      # table, or a figure written into a sentence beside it, was caught by no check, which is how
+      # the table came to quote cells the current probe does not emit.
       - name: Probe table (the figures the guide quotes)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
