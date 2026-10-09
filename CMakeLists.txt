@@ -1031,6 +1031,12 @@ int main() {
     add_executable(boys-option-probe benchmarks/boys_option_probe.cpp)
     target_link_libraries(boys-option-probe PRIVATE boys)
     target_compile_features(boys-option-probe PRIVATE cxx_std_20)
+    # The revision the report was taken at, as the accuracy gate states its own: a report
+    # read months later is otherwise attributable to nothing, and nothing can hold one to
+    # the tree it describes. 9688c97 renamed every option cell and the committed report did
+    # not follow, because it named no revision for a check to disagree with.
+    target_compile_definitions(boys-option-probe PRIVATE
+        BoysProbeRevision="${BOYS_GATE_REVISION}")
     boys_strict_warnings(boys-option-probe)
 
     # The defaults command: what this build's unnamed calls resolve to, class by

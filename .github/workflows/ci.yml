@@ -570,6 +570,23 @@ jobs:
       - name: Seam splicer (the control)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: .venv/bin/python tools/splice_default_rows.py --control
+      # The probe report's provenance. A report names the revision it was taken at, and the
+      # files the probe reads must not have moved since. This leg is red on the committed
+      # report, which names none: 9688c97 renamed every option cell and no instrument could
+      # notice, so the report described a probe that no longer exists.
+      - name: Probe report (the revision it names, against the files it read)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_run.py --control
+          .venv/bin/python tools/check_probe_run.py
+      # The measured table in the guide, against the report it transcribes. Nothing held it:
+      # changing a figure, a label or a count there was caught by no check, which is how it
+      # came to quote cells the current probe does not emit.
+      - name: Probe table (the figures the guide quotes)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_probe_table.py --control
+          .venv/bin/python tools/check_probe_table.py
       # The build-defaults round trip: a seam is derived from the committed option-probe report, a
       # build is configured against it, and that build's suite has to stay green. The two
       # build-defaults steps of the windows job configure against a committed fixture, which is a

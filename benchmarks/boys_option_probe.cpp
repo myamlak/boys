@@ -13,6 +13,12 @@
 #include <string>
 #include <vector>
 
+// CMake passes the revision the report was taken at; a build that bypasses it says so rather
+// than naming a revision it did not read.
+#ifndef BoysProbeRevision
+#define BoysProbeRevision "unknown"
+#endif
+
 namespace {
 
 std::string Timestamp() {
@@ -189,9 +195,12 @@ int main(int argc, char** argv) {
     const std::string started = Timestamp();
     const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
-    std::printf("boys option probe | started %s | finished %s | seed %llu | verdict %s\n",
+    // The revision follows the timestamp the line already opened with, so a reader keyed on that
+    // stamp reads what it read before, and the report dates itself for a check to hold it to.
+    std::printf("boys option probe | started %s | finished %s | seed %llu | revision %s | "
+                "verdict %s\n",
                 started.c_str(), Timestamp().c_str(),
-                static_cast<unsigned long long>(report.options.seed),
+                static_cast<unsigned long long>(report.options.seed), BoysProbeRevision,
                 report.verdict == boys::OptionProbeVerdict::kRecommend ? "RECOMMEND"
                                                                        : "CANNOT DETERMINE");
 
