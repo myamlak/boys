@@ -277,9 +277,28 @@ __m256d HornerGathered(C coeff, int deg, __m256d t) noexcept {
     return acc;
 }
 
+// The same walk at a degree the caller fixes. kDeg is a constant expression, so the trip count
+// is one and the coefficient index is a compile-time offset into each tap: the compare, the
+// branch and the pointer step leave the body. The taps are HornerGathered's, coefficient for
+// coefficient and in the same order, so the sum is the same double.
+template <backend::MulAddRoute kMulAddRoute, int kDeg, class C>
+__m256d HornerAtDegree(C coeff, __m256d t) noexcept {
+    static_assert(kDeg > 0, "a fixed degree is a positive one; the runtime walk is HornerGathered");
+
+    __m256d acc = coeff(kDeg);
+
+    for (int k = kDeg - 1; k >= 0; --k)
+    {
+        acc = StepMulAdd<kMulAddRoute>(acc, t, coeff(k));
+    }
+
+    return acc;
+}
+
 // One order's fit at one argument, in the lane's own arithmetic and mapping:
-// the scalar tail runs this so that its value is the vector's.
-template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
+// the scalar tail runs this so that its value is the vector's. kDeg fixed at a positive degree
+// reads the Horner walk at that degree; 0 reads it at the runtime `deg`.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, int kDeg = 0>
 double ScalarFit(const double* base, int deg, double t) noexcept {
     const BroadcastCoefficients coeff{base};
     const __m256d tv = _mm256_set1_pd(t);
@@ -287,7 +306,14 @@ double ScalarFit(const double* base, int deg, double t) noexcept {
 
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
-        _mm256_storeu_pd(lanes, HornerGathered<kMulAddRoute>(coeff, deg, tv));
+        if constexpr (kDeg > 0)
+        {
+            static_cast<void>(deg);
+            _mm256_storeu_pd(lanes, HornerAtDegree<kMulAddRoute, kDeg>(coeff, tv));
+        } else
+        {
+            _mm256_storeu_pd(lanes, HornerGathered<kMulAddRoute>(coeff, deg, tv));
+        }
     } else if constexpr (kScheme == OrdersScheme::kDirectSum)
     {
         _mm256_storeu_pd(lanes, ChebyshevDirectSum<kMulAddRoute>(coeff, deg, tv));
@@ -357,6 +383,21 @@ __m256d GroupSum(C coeff, int deg, __m256d tv) noexcept {
     } else
     {
         return ClenshawSplitGathered<kMulAddRoute>(coeff, deg, tv);
+    }
+}
+
+// GroupSum at a degree the caller fixes where the table's own is a compile-time constant.
+// Only the Horner walk carries one: the other two schemes are read at a degree a group of four
+// orders takes the largest of (GroupDegree), which is a runtime value by construction.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, int kDeg, class C>
+__m256d GroupSumAtDegree(C coeff, int deg, __m256d tv) noexcept {
+    if constexpr (kScheme == OrdersScheme::kHorner && kDeg > 0)
+    {
+        static_cast<void>(deg);
+        return HornerAtDegree<kMulAddRoute, kDeg>(coeff, tv);
+    } else
+    {
+        return GroupSum<kMulAddRoute, kScheme>(coeff, deg, tv);
     }
 }
 
@@ -485,14 +526,50 @@ static_assert(FlatDegreesCarried(),
 // are four consecutive doubles at a stride of one order count, so the fetch is a load where
 // the interval-major form pays a load and a join per lane. The grid stores the shape its
 // lane reads, which is what settles the choice the shipped tables' fetch has to weigh.
-template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, int kDeg = 0>
 __m256d TransposedGroup(const double* base, int l, int orders, int deg, __m256d tv) noexcept {
     const double* const groupBase = base + l;
     const auto coeff = [&](int k) {
         return _mm256_loadu_pd(groupBase + static_cast<std::ptrdiff_t>(k) * orders);
     };
 
-    return GroupSum<kMulAddRoute, kScheme>(coeff, deg, tv);
+    return GroupSumAtDegree<kMulAddRoute, kScheme, kDeg>(coeff, deg, tv);
+}
+
+// One interval's ladder, at a degree the caller fixes where it is a constant and at `deg`
+// otherwise: kDeg = 0 is the runtime walk. The interval is the caller's, so the two forms
+// differ in nothing but the coefficient walk.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, int kDeg>
+void UniformOrdersAt(int nmax,
+                     double* out,
+                     std::size_t stride,
+                     const double* base,
+                     const double* rows,
+                     int orderStride,
+                     int deg,
+                     double t) noexcept {
+    const __m256d tv = _mm256_set1_pd(t);
+
+    int l = 0;
+
+    if (nmax >= 3)
+    {
+        for (; l + 3 <= nmax; l += 4)
+        {
+            // Every order is read at this interval's own stored degree, so the
+            // group has no degree to take the largest of.
+            StoreGroup(out,
+                       l,
+                       stride,
+                       TransposedGroup<kMulAddRoute, kScheme, kDeg>(base, l, kMaxOrder + 1, deg, tv));
+        }
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme, kDeg>(
+            rows + static_cast<std::ptrdiff_t>(l) * orderStride, deg, t);
+    }
 }
 
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
@@ -511,27 +588,23 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
     const double* const base = transposed + at.block;
     const double* const rows = table + at.block;
 
-    const __m256d tv = _mm256_set1_pd(at.t);
-
-    int l = 0;
-
-    if (nmax >= 3)
+    // kFlatDegs carries two degrees, so the interval's walk is specialised on both and the
+    // runtime form below is reached only by a grid carrying a third. Each arm is the same
+    // Horner walk with its trip count known, so a value is the value it was at every bit.
+    switch (deg)
     {
-        for (; l + 3 <= nmax; l += 4)
-        {
-            // Every order is read at this interval's own stored degree, so the
-            // group has no degree to take the largest of.
-            StoreGroup(out,
-                       l,
-                       stride,
-                       TransposedGroup<kMulAddRoute, kScheme>(base, l, kMaxOrder + 1, deg, tv));
-        }
-    }
-
-    for (; l <= nmax; ++l)
-    {
-        out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme>(
-            rows + static_cast<std::ptrdiff_t>(l) * orderStride, deg, at.t);
+    case 6:
+        UniformOrdersAt<kMulAddRoute, kScheme, 6>(nmax, out, stride, base, rows, orderStride, deg,
+                                                  at.t);
+        return;
+    case 8:
+        UniformOrdersAt<kMulAddRoute, kScheme, 8>(nmax, out, stride, base, rows, orderStride, deg,
+                                                  at.t);
+        return;
+    default:
+        UniformOrdersAt<kMulAddRoute, kScheme, 0>(nmax, out, stride, base, rows, orderStride, deg,
+                                                  at.t);
+        return;
     }
 }
 
@@ -1039,6 +1112,23 @@ template <EvalScheme kScheme,
 void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept {
     using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
+
+    // Past the fits every order is one seed stepped once per order, and the step at order l is the
+    // step at order l whatever the ladder's top is: a call to nmax and a call to l below nmax share
+    // their first l steps. Walking the ladder once costs nmax steps where the loop below pays
+    // (nmax + 1)(nmax + 2) / 2. The join is the one the single-order lane recurses above, kFlatHi
+    // where the route reads the grid and kX1 where it reads region B, and below it the orders are
+    // not one ladder - the grid's cells, the per-order region-A fits and region B's own entry each
+    // answer a different argument set - so the per-order call stands there.
+    const bool aboveFits = (kGranularity == FitGranularity::kUniform)
+                               ? x > detail::kFlatHi
+                               : x >= detail::kX1;
+
+    if (aboveFits)
+    {
+        BoysAllNBodyRegionC<kForm>(nmax, x, stride, out);
+        return;
+    }
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -2158,8 +2248,10 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             // Past the grid - which reaches above kX1, so this is the asymptotic's own
             // domain - and on a host without the vector tier, the entry is the certified
             // scalar single lane at the policy the caller named, one order at a time.
-            // That lane reads this partition's own table and domain.
-            if (x >= detail::kFlatHi || !BoysAvx2Available())
+            // That lane reads this partition's own table and domain. The grid's last
+            // interval closes on kFlatHi itself, which the locator maps to that interval's
+            // own right end, so only an argument past kFlatHi is past the grid.
+            if (x > detail::kFlatHi || !BoysAvx2Available())
             {
                 ScalarOrders<kScheme, kRoute, kGranularity, kForm>(nmax, x,
                                                                                        out, 1);

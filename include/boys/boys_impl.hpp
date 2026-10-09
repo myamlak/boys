@@ -2600,7 +2600,9 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
     // through to the asymptotic by the tests themselves.
     if constexpr (Policy::kGranularity == FitGranularity::kUniform)
     {
-        if (x < detail::kFlatHi)
+        // kFlatHi belongs to the grid: the locator clamps the last interval's own
+        // index and maps the argument to that interval's right end.
+        if (x <= detail::kFlatHi)
         {
             UniformAllOrders<Policy>(nmax, x, out);
 
@@ -2714,7 +2716,8 @@ double SingleOrder(int n, double x) noexcept {
     // so this is the whole of what the route has to answer for here.
     if constexpr (Policy::kGranularity == FitGranularity::kUniform)
     {
-        if (x < detail::kFlatHi)
+        // kFlatHi belongs to the grid, for the reason AllOrdersBody gives.
+        if (x <= detail::kFlatHi)
         {
             return UniformSingleOrder<Policy>(n, x);
         }

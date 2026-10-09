@@ -651,7 +651,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         built[2].delivered = uniformWorst;
         built[2].bound = uniformWorst;
         built[2].lo = 0.0;
-        built[2].hi = detail::kFlatHi;
+        built[2].hi = std::nextafter(detail::kFlatHi, HUGE_VAL);
 
         return built;
     }();
