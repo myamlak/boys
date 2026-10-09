@@ -33,7 +33,33 @@ What it checks, and refuses on:
   to the emission's, read back after the write rather than assumed from the write;
 * a row the emission states no marker for is a class the seam carries, so that nothing
   the emission states is dropped in silence;
-* no class is carried twice by either file, because one class is one row.
+* no class is carried twice by either file, because one class is one row;
+* every run a row names is a run the seam's prose names. The prose names each run by its
+  day and the record cell states it as `<machine>-<date>`, so the day is the token the two
+  are read through, and a date is read wherever it appears rather than a sentence parsed.
+  A row whose record names a day the prose does not is the sentence the splice would leave
+  standing over rows it does not describe; a record naming no day is a run the prose cannot
+  be read against at all.
+
+What it does not check, and why, of the sentences a splice can outlive:
+
+* the run's hour and its protocol - the processors, the tier present, the seed, the passes,
+  the rounds, the arguments, the order. No row states one: a record is `<machine>-<date>`,
+  and a check of these would compare the sentence against itself.
+* the machine as the prose spells it, beside the machine word a record carries, `Quadro T1000`
+  beside `quadro-t1000`. Both are readable, and a rule that equated the two spellings would be
+  this tool's invention rather than a reading of the file.
+* a sentence about what the rows are: that they are measurements taken on a machine, that a
+  half's rows carry one record name. A splice can falsify either, and finding the sentence
+  means reading English, where the wording is a person's to change: a check anchored on a
+  wording disarms in silence when the wording moves. The cell behind the first is held by
+  `check_default_capturability.py`, which refuses a measurement that names no run; the second
+  is a sentence a partial splice obliges a person to rewrite, and the tool cannot read the
+  rewrite back.
+* the count of cells a row carries. It is readable and it is not refused on: an emission
+  written before the two provenance cells existed carries rows of another count, and that
+  emission is one this tool is asked to splice. The row macro is what refuses a row that does
+  not expand.
 
 Usage:
 
@@ -44,7 +70,8 @@ Usage:
 Exit status: 0 when the seam carries the emitted rows; 1 when it does not and was not
 asked to change; 2 when the two files cannot be reconciled - a placed row the seam has
 no class for, a row the emission states no marker for and the seam has no class to keep
-for it, or a class one of them carries twice.
+for it, a class one of them carries twice, or a row whose run the seam's prose does not
+name.
 """
 
 from __future__ import annotations
@@ -60,7 +87,6 @@ from pathlib import Path
 # is the `/* ... */` run immediately above it, one complete comment per line, which is
 # where a run states how the row was reached. They are read as a pair because a row the
 # emission states no marker for is a row it did not place.
-ROW = re.compile(r"^\s*X\((?:[^()]|\([^()]*\))*\)\s*$")
 MARKER = re.compile(r"^\s*/\*.*\*/\s*$")
 
 DEVICE = "X(kDevice"
@@ -76,6 +102,11 @@ ROW_CLOSES = re.compile(r"\)\s*$")
 # The cells a row is keyed on: the device, the precision lane and the shape. Two rows
 # with the same three are two answers for one class, which is not a table.
 KEY_CELLS = 3
+
+# The two provenance cells a row ends with, and the day a record names. A row that states
+# neither has the cells of a seam written before they existed, and is read as naming no run.
+BASIS_CELLS = ("RowBasis::kMeasured", "RowBasis::kChosen")
+DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
 class Refusal(Exception):
@@ -142,12 +173,68 @@ def is_device(row: tuple[list[str], list[str]]) -> bool:
     return any(DEVICE in line for line in row[1])
 
 
-def class_of(row: tuple[list[str], list[str]]) -> str:
-    """The class a row is keyed on, spelled as the seam spells its three cells."""
+def cells(row: tuple[list[str], list[str]]) -> list[str]:
+    """A row's cells, in the order the row macro writes them."""
     text = " ".join(content(line) for line in row[1])
     inside = text[text.index("(") + 1 : text.rindex(")")]
 
-    return " ".join(cell.strip() for cell in inside.split(",")[:KEY_CELLS])
+    return [cell.strip() for cell in inside.split(",")]
+
+
+def class_of(row: tuple[list[str], list[str]]) -> str:
+    """The class a row is keyed on, spelled as the seam spells its three cells."""
+    return " ".join(cells(row)[:KEY_CELLS])
+
+
+def provenance(row: tuple[list[str], list[str]]) -> tuple[str, str] | None:
+    """The (basis, record) a row ends with, or None when it states no provenance."""
+    stated = cells(row)
+
+    return (stated[-2], stated[-1]) if len(stated) >= 2 and stated[-2] in BASIS_CELLS else None
+
+
+def prose_of(text: str) -> str:
+    """The seam's own prose: every line this tool does not write.
+
+    A marker is the emission's statement about its row and is written with it, so a marker is not
+    read here: a marker naming a run would otherwise corroborate the row carrying it.
+    """
+    return "\n".join(line for kind, _marker, body in elements(text) if kind != "row" for line in body)
+
+
+def disagreement(spliced: str) -> str | None:
+    """The row whose run the file's prose does not name, or None when the two agree.
+
+    A row names a run and the prose beside the rows names runs the same way, by their day, so a
+    day is what the two are read through - the cells and the prose are compared as tokens and not
+    as sentences.
+    """
+    named = set(DAY.findall(prose_of(spliced)))
+
+    for marker, body in read_rows(spliced):
+        row = (marker, body)
+        stated = provenance(row)
+
+        if stated is None:
+            continue
+
+        record = stated[1].strip('"')
+
+        if not record:
+            continue
+
+        day = DAY.search(record)
+
+        if day is None:
+            return (f"the row for the class {class_of(row)} names the run {record}, which states no "
+                    "day, and the prose beside the rows names each run by its day")
+
+        if day.group() not in named:
+            return (f"the row for the class {class_of(row)} names the run {record}, and the prose "
+                    f"beside the rows names no run of {day.group()}: the rows and the sentences "
+                    "around them would be left disagreeing")
+
+    return None
 
 
 def splice(
@@ -278,6 +365,56 @@ CONTROL_TWICE = CONTROL_SPLICED + (
     "      RegionBExp::kAccurate)\\\n"
 )
 
+# The run cells and the sentence beside them. One row is written three times: as the seam whose
+# prose names the run its row came from, as the earlier run's row, and as the row the next run
+# emits, which differs from the seam's own in the figure its marker states. Two splices follow: into
+# the seam whose prose names the arriving run's day, which is the write the rows and the prose agree
+# on, and into the earlier seam, which leaves a sentence naming the run of the row that was
+# replaced - the disagreement this pair is here to refuse.
+CONTROL_RUN_SEAM = (
+    "#pragma once\n"
+    "\n"
+    "/// A one-row seam for the control whose prose names the run its row came from, 2026-01-09.\n"
+    "\n"
+    "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"
+    "    /* measured: 1.00 ns per argument on this host, reached by vote */\\\n"
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kAccurate, RowBasis::kMeasured, \"host-2026-01-09\")\\\n"
+)
+
+CONTROL_RUN_EARLIER = CONTROL_RUN_SEAM.replace("2026-01-09", "2026-01-02")
+CONTROL_RUN_EMISSION = CONTROL_RUN_SEAM.replace("1.00 ns", "2.00 ns")
+CONTROL_RUN_UNDATED = CONTROL_RUN_EMISSION.replace('"host-2026-01-09"', '"host-undated"')
+
+# Two runs in one half, and a splice over the first of them. The prose names both days and the
+# emission names the first run's day, so both rows stand and the write is taken: what is refused is
+# the row that arrived and not the half it arrived in. An emission writes back the table in force's
+# row, record and all, for a class its run did not measure, so a half holding two runs is a file the
+# emitters produce.
+CONTROL_RUNS_SEAM = (
+    "#pragma once\n"
+    "\n"
+    "/// A two-row seam for the control: the runs 2026-01-02 and 2026-01-16, each named here.\n"
+    "\n"
+    "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n"
+    "    /* measured: 0.50 ns per argument on this host, reached by ordered */\\\n"
+    "    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kAccurate, RowBasis::kMeasured, \"host-2026-01-02\")\\\n"
+    "    /* measured: 3.00 ns per argument on this host, reached by vote */\\\n"
+    "    X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\\\n"
+    "      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\\\n"
+    "      RegionBExp::kFast, RowBasis::kMeasured, \"host-2026-01-16\")\\\n"
+)
+
+# What that splice implies: the first row replaced by the emission's own, marker and cells, and the
+# second left as the seam carries it.
+CONTROL_RUNS_SPLICED = CONTROL_RUNS_SEAM.replace(
+    "/* measured: 0.50 ns per argument on this host, reached by ordered */",
+    "/* measured: 1.00 ns per argument on this host, reached by vote */",
+)
+
 
 def control() -> int:
     """Splice the fixture pair, and require each planted defect refused."""
@@ -362,12 +499,64 @@ def control() -> int:
         recorded("a class the seam carries twice", code, 2)
         print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
 
+        run_emission = work / "run-emission.hpp"
+        run_emission.write_text(CONTROL_RUN_EMISSION, encoding="utf-8", newline="\n")
+        current = work / "current.hpp"
+        current.write_text(CONTROL_RUN_SEAM, encoding="utf-8", newline="\n")
+        run_pair = ["--emitted", str(run_emission), "--seam", str(current)]
+
+        # The run the row names is a run the prose names too, so this is the write the two agree on.
+        code, _out, _err = silent(run_pair)
+        recorded("a seam whose prose names the run the arriving row names", code, 0)
+
+        if current.read_bytes() != CONTROL_RUN_EMISSION.encode("utf-8"):
+            problems.append("the run splice is not the seam its pair implies")
+
+        code, _out, _err = silent([*run_pair, "--check"])
+        recorded("the spliced run seam, --check", code, 0)
+
+        # The spliced seam's sentence names the run of the row that was replaced and not the run the
+        # row names: the refusal this tool exists to make, planted as the day the prose states.
+        stale = work / "stale.hpp"
+        stale.write_text(CONTROL_RUN_EARLIER, encoding="utf-8", newline="\n")
+        code, _out, err = silent(["--emitted", str(run_emission), "--seam", str(stale)])
+        recorded("a seam whose prose names the run of the replaced row", code, 2)
+        print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
+
+        if stale.read_bytes() != CONTROL_RUN_EARLIER.encode("utf-8"):
+            problems.append("the refused splice wrote to the seam")
+
+        code, _out, _err = silent(["--emitted", str(run_emission), "--seam", str(stale), "--check"])
+        recorded("the stale seam, --check", code, 2)
+
+        # A record that names no day: the run behind the row cannot be read against the prose.
+        undated = work / "undated.hpp"
+        undated.write_text(CONTROL_RUN_UNDATED, encoding="utf-8", newline="\n")
+        code, _out, err = silent(["--emitted", str(undated), "--seam", str(stale)])
+        recorded("a row whose record names no day", code, 2)
+        print(f"control: it printed {err.strip() or '(nothing on the error stream)'}")
+
+        if stale.read_bytes() != CONTROL_RUN_EARLIER.encode("utf-8"):
+            problems.append("the refused splice wrote to the seam")
+
+        # Two runs in one half, each named by the prose: taken, because an emission writes back the
+        # table in force's row for a class its run did not measure.
+        runs = work / "runs.hpp"
+        runs.write_text(CONTROL_RUNS_SEAM, encoding="utf-8", newline="\n")
+        earlier = work / "earlier-emission.hpp"
+        earlier.write_text(CONTROL_RUN_EARLIER, encoding="utf-8", newline="\n")
+        code, _out, _err = silent(["--emitted", str(earlier), "--seam", str(runs)])
+        recorded("a half whose rows name two runs, both named by the prose", code, 0)
+
+        if runs.read_bytes() != CONTROL_RUNS_SPLICED.encode("utf-8"):
+            problems.append("the splice over the first of two runs is not the seam its pair implies")
+
     if problems:
         print("splice_default_rows: the control failed: " + "; ".join(problems), file=sys.stderr)
         return 1
 
-    print(f"splice_default_rows: control passed every one of its {checked} check(s) over the "
-          f"fixture pair")
+    print(f"splice_default_rows: control passed every one of its {checked} check(s) over its own "
+          f"fixtures")
     return 0
 
 
@@ -457,6 +646,14 @@ def main(argv: list[str]) -> int:
     if landed != placed:
         print("splice_default_rows: the rows that arrive are not the rows the emission "
               "states - refusing to write", file=sys.stderr)
+        return 2
+
+    # The rows are not the whole file: the sentences beside them name the same runs, and a splice
+    # that moves the rows past those sentences leaves a file that disagrees with itself.
+    disagreed = disagreement(spliced)
+
+    if disagreed is not None:
+        print(f"splice_default_rows: {disagreed}", file=sys.stderr)
         return 2
 
     if options.check:
