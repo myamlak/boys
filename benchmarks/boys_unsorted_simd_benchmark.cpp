@@ -9,7 +9,7 @@
 // ARE those definitions and not lookalikes. Four of that unit's definitions are the library's in
 // this build, which this target links as well, so they are renamed for the length of the include;
 // a new external definition there needs the same treatment, and the duplicate-symbol error asks.
-#define BoysAvx2Available BoysAvx2AvailableFromShippedUnit
+#define DetectAvx2 DetectAvx2FromShippedUnit
 #define AppendPackedBackends AppendPackedBackendsFromShippedUnit
 #define DetectF16c DetectF16cFromShippedUnit
 #define F16cAvailable F16cAvailableFromShippedUnit
@@ -39,7 +39,7 @@
 #undef F16cAvailable
 #undef DetectF16c
 #undef AppendPackedBackends
-#undef BoysAvx2Available
+#undef DetectAvx2
 
 #include <algorithm>
 #include <chrono>

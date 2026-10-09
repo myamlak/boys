@@ -28,6 +28,26 @@
 #include <new>
 
 namespace boys {
+
+namespace detail {
+
+// CPUID and OSXSAVE on x86_64, false on every other target. Out of line so the
+// definition below reads one cached answer; not an entry point, and deliberately
+// not declared in the public header.
+bool DetectAvx2() noexcept;
+
+} // namespace detail
+
+// boys/boys.hpp declares this entry and carries its contract; the definition is
+// inline here so a caller on the argument path pays a load of the cached answer
+// rather than a call and a feature test. The function-local static is one object
+// across every TU, so the answer is still read once per process.
+inline bool BoysAvx2Available() noexcept
+{
+    static const bool available = detail::DetectAvx2();
+    return available;
+}
+
 namespace detail {
 
 constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2

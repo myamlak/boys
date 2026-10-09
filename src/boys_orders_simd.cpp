@@ -1113,13 +1113,10 @@ void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept 
     using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
 
-    // Past the fits every order is one seed stepped once per order, and the step at order l is the
-    // step at order l whatever the ladder's top is: a call to nmax and a call to l below nmax share
-    // their first l steps. Walking the ladder once costs nmax steps where the loop below pays
-    // (nmax + 1)(nmax + 2) / 2. The join is the one the single-order lane recurses above, kFlatHi
-    // where the route reads the grid and kX1 where it reads region B, and below it the orders are
-    // not one ladder - the grid's cells, the per-order region-A fits and region B's own entry each
-    // answer a different argument set - so the per-order call stands there.
+    // Past the fits one ladder replaces the per-order loop below: nmax steps where that loop pays
+    // (nmax + 1)(nmax + 2) / 2. The join is the one the single-order lane recurses above - kFlatHi
+    // on the grid, kX1 on region B - and below it the orders are not one ladder, so the per-order
+    // call stands.
     const bool aboveFits = (kGranularity == FitGranularity::kUniform)
                                ? x > detail::kFlatHi
                                : x >= detail::kX1;
@@ -2245,12 +2242,10 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
         }
         else
         {
-            // Past the grid - which reaches above kX1, so this is the asymptotic's own
-            // domain - and on a host without the vector tier, the entry is the certified
-            // scalar single lane at the policy the caller named, one order at a time.
-            // That lane reads this partition's own table and domain. The grid's last
-            // interval closes on kFlatHi itself, which the locator maps to that interval's
-            // own right end, so only an argument past kFlatHi is past the grid.
+            // Past the grid, or without the vector tier, the entry is the certified scalar single
+            // lane at the policy the caller named, one order at a time. The grid's last interval
+            // closes on kFlatHi itself - the locator maps it to that interval's right end - so
+            // only an argument past kFlatHi is past the grid.
             if (x > detail::kFlatHi || !BoysAvx2Available())
             {
                 ScalarOrders<kScheme, kRoute, kGranularity, kForm>(nmax, x,

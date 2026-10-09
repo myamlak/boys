@@ -49,16 +49,12 @@
 // must check BoysAvx2Available() first; the FMA chains require the FMA feature bit too.
 
 namespace boys::detail {
-namespace {
-
-using detail::kX0;
-using detail::kX1;
-
-constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // CPUID + OSXSAVE detection of the AVX2 + FMA scope (the F64/F32 lanes'
 // engine). FMA belongs to the scope, it is not an optional extra: a processor
 // with AVX2 but no FMA would be dispatched into an unimplemented instruction.
+// Defined here rather than in the header: this unit holds the one copy, and the
+// inline test's function-local static calls it once per process.
 bool DetectAvx2() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
@@ -96,6 +92,13 @@ bool DetectAvx2() noexcept {
     return avx2;
 #endif
 }
+
+namespace {
+
+using detail::kX0;
+using detail::kX1;
+
+constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // e^{-x} on [0, 30]: a degree-4 Taylor table, one row per abscissa x_i = i * kStep, padded to 8
 // doubles for the gathers' legal scale 8; worst absolute error 1.83e-17. A row holds the quartic
@@ -216,15 +219,6 @@ inline __m256d ClenshawB4(__m256d xv) noexcept {
 } // namespace
 
 } // namespace boys::detail
-
-namespace boys {
-
-bool BoysAvx2Available() noexcept {
-    static const bool available = detail::DetectAvx2();
-    return available;
-}
-
-} // namespace boys
 
 namespace boys::detail {
 
@@ -688,17 +682,11 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // tails the x86 entries run for their last count % 4 elements.
 namespace boys::detail {
 
-} // namespace boys::detail
-
-namespace boys {
-
-bool BoysAvx2Available() noexcept {
+// The AVX2 tier does not exist on a non-x86_64 target, so the inline
+// availability test reads false and every entry below is the scalar lane.
+bool DetectAvx2() noexcept {
     return false;
 }
-
-} // namespace boys
-
-namespace boys::detail {
 
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
