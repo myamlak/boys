@@ -583,6 +583,207 @@ TEST(BoysTest, AsymptoticBehavior) {
     }
 }
 
+TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
+    // The far region carries two representations and this holds the entry that
+    // reaches the second one to its contract: the recurrence name is the default
+    // entry's values bit for bit, the table's name is the default's wherever the
+    // table's rows do not reach, and inside the table's span the two agree to the
+    // figure measured below. Neither name moves the default, which is the
+    // recurrence and is what the published figures were measured at.
+    using boys::FarRepresentation;
+    constexpr int kMax = boys::kMaxBoysOrder;
+    std::vector<double> named(kMax + 1);
+    std::vector<double> shipped(kMax + 1);
+
+    // The recurrence name is the shipped entry outright. The arguments straddle
+    // the table's span, its left edge and the region boundaries, so a fallback
+    // that missed any of them would show here.
+    for (double x : {0.5, 11.5, 12.5, 28.5, boys::detail::kX1, 30.0, 60.0, 116.0, 117.0, 400.0})
+    {
+        boys::BoysAllOrders(kMax, x, shipped.data());
+        boys::BoysAllOrdersWithFarRepresentation(
+            FarRepresentation::kAsymptoticRecurrence, kMax, x, named.data());
+
+        for (int n = 0; n <= kMax; ++n)
+        {
+            EXPECT_EQ(named[n], shipped[n]) << "n=" << n << " x=" << x;
+        }
+
+        // The table's name is the shipped entry's outside the span, bit for bit:
+        // the table answers [kScaledFarX0, kScaledFarX1) and nothing beside it.
+        if (x < boys::detail::kScaledFarX0 || x >= boys::detail::kScaledFarX1)
+        {
+            boys::BoysAllOrdersWithFarRepresentation(
+                FarRepresentation::kScaledTable, kMax, x, named.data());
+
+            for (int n = 0; n <= kMax; ++n)
+            {
+                EXPECT_EQ(named[n], shipped[n]) << "n=" << n << " x=" << x;
+            }
+        }
+    }
+
+    // Inside the span the table is held to the committed reference grid - the 45-digit
+    // values the accuracy gate itself reads - and not to the shipped entry. The shipped
+    // entry answers this region from the asymptotic form, whose relative error at the
+    // span's left edge runs to 0.7098 at n = 32 (measured at x = 29.136, the sweep the
+    // figure was read from): that error is the defect the table exists to remove, so
+    // asserting the two agree would be asserting against the reference.
+    double worst = 0.0;
+    double worst_x = 0.0;
+    int worst_n = 0;
+    std::size_t checked = 0;
+
+    for (const auto& row : gReference)
+    {
+        if (row.x < boys::detail::kScaledFarX0 || row.x >= boys::detail::kScaledFarX1)
+        {
+            continue;
+        }
+
+        boys::BoysAllOrdersWithFarRepresentation(
+            FarRepresentation::kScaledTable, row.n, row.x, named.data());
+        const double rel = std::abs(named[row.n] - row.value) / std::abs(row.value);
+
+        if (rel > worst)
+        {
+            worst = rel;
+            worst_x = row.x;
+            worst_n = row.n;
+        }
+
+        ++checked;
+    }
+
+    // Measured, not derived: 1.3219e-15 at n = 32, x = 31 over these 330 cells, against the
+    // row's own delivered figure of 1.7764e-15 - itself the same fused and separate, so the
+    // margin below is over a quantity that does not move with the multiply-add route.
+    EXPECT_GT(checked, 300u) << "the reference grid carries too few cells in the span to hold it";
+    EXPECT_LE(worst, 3e-15) << "worst at n=" << worst_n << " x=" << worst_x;
+}
+
+TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
+    // Region C carries a third representation and this holds the entry that reaches it
+    // to its contract. The corrected seed is the same function reached more accurately,
+    // not a second definition: the shipped region C arithmetic with its two errors
+    // repaired - the closed form's erfc(sqrt(x)) seed error, and the exp(-x)/2 term the
+    // shipped step drops - so the shipped arm is measured beside it here rather than
+    // agreed with. Neither name moves the default.
+    using boys::FarRepresentation;
+    constexpr int kMax = boys::kMaxBoysOrder;
+    std::vector<double> named(kMax + 1);
+    std::vector<double> shipped(kMax + 1);
+
+    // Below kX1 the fitted regions answer and the name changes nothing: bit for bit,
+    // down to the double immediately under the boundary.
+    for (double x : {0.5, 11.5, 12.5, 28.5, std::nextafter(boys::detail::kX1, 0.0)})
+    {
+        boys::BoysAllOrders(kMax, x, shipped.data());
+        boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax, x,
+                                                  named.data());
+
+        for (int n = 0; n <= kMax; ++n)
+        {
+            EXPECT_EQ(named[n], shipped[n]) << "n=" << n << " x=" << x;
+        }
+    }
+
+    // Region C against the committed reference grid - the 45-digit values the accuracy
+    // gate reads - with the shipped arm measured over the same cells, so the figure the
+    // repair is worth is in the failure text and not only in a comment.
+    double worst = 0.0;
+    double worst_x = 0.0;
+    double shipped_worst = 0.0;
+    double shipped_x = 0.0;
+    int worst_n = 0;
+    int shipped_n = 0;
+    std::size_t checked = 0;
+
+    for (const auto& row : gReference)
+    {
+        if (row.x < boys::detail::kX1)
+        {
+            continue;
+        }
+
+        boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, row.n, row.x,
+                                                  named.data());
+        boys::BoysAllOrders(row.n, row.x, shipped.data());
+
+        const double rel = std::abs(named[row.n] - row.value) / std::abs(row.value);
+        const double srel = std::abs(shipped[row.n] - row.value) / std::abs(row.value);
+
+        if (rel > worst)
+        {
+            worst = rel;
+            worst_x = row.x;
+            worst_n = row.n;
+        }
+
+        if (srel > shipped_worst)
+        {
+            shipped_worst = srel;
+            shipped_x = row.x;
+            shipped_n = row.n;
+        }
+
+        ++checked;
+    }
+
+    EXPECT_EQ(checked, 330u) << "the reference grid has stopped covering region C";
+    EXPECT_LE(worst, 1.2e-14) << "worst at n=" << worst_n << " x=" << worst_x
+                              << ", shipped at n=" << shipped_n << " x=" << shipped_x << " is "
+                              << shipped_worst;
+
+    // The join, measured at ONE argument: the seed the branch below would have built
+    // there, against the closed form the branch above uses. That is the step the branch
+    // placement creates on its own - the caller's own step across the join also carries
+    // the function's variation over the double that separates two arguments, which every
+    // branch has and no branch is accountable for.
+    const double join = boys::detail::kSeedCorrectionX1;
+    const double m = boys::detail::kBoysHalfSqrtPi / std::sqrt(join);
+    const double fitted = m * (1.0 + boys::detail::SeedCorrectionAt(join));
+    // The measured step is one unit roundoff of this value (1.84e-16), which is the
+    // claim: the correction ends where it has nothing left to remove.
+    EXPECT_LE(std::abs(fitted - m) / m, 4.0e-16)
+        << "the seed steps by " << std::abs(fitted - m) / m << " where the correction stops";
+
+    // At the join the correction is off and the seed is the closed form, bit for bit;
+    // at that same argument the branch below would have built a different seed. Together
+    // with the step above, that is what the branch placement states.
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 0, join,
+                                             named.data());
+    EXPECT_EQ(named[0], m);
+    EXPECT_NE(fitted, m);
+
+    // And the caller's own step across the join, over the whole ladder: the two
+    // branches read at the two doubles that straddle it.
+    std::vector<double> below(kMax + 1);
+    std::vector<double> above(kMax + 1);
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax,
+                                             std::nextafter(join, 0.0), below.data());
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax, join,
+                                             above.data());
+
+    double step = 0.0;
+    int step_n = 0;
+
+    for (int n = 0; n <= kMax; ++n)
+    {
+        const double at = std::abs(below[n] - above[n]) / std::abs(above[n]);
+
+        if (at > step)
+        {
+            step = at;
+            step_n = n;
+        }
+    }
+
+    EXPECT_LE(step, 2.0e-14) << "the ladder steps by " << step << " relative ("
+                             << std::abs(below[step_n] - above[step_n])
+                             << " absolute) at n=" << step_n << " across the join";
+}
+
 // Region-B exp-Taylor gather-table pin: the shipped ExpTable is private to its TU, so this is a
 // deliberately independent replica - 3001 rows at step 0.01, row i the quartic Taylor polynomial of
 // e^{-x} in the monomial basis of the ABSOLUTE argument x, sign folded into the row, and Eval

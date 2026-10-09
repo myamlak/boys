@@ -948,6 +948,189 @@ double UniformSingleOrder(int n, double x) noexcept {
     return UniformOrderAt<Policy>(FlatLocate(x), n);
 }
 
+// The far region's stored representation: a Chebyshev fit per (interval, order)
+// of the asymptotically scaled H_n = 2 F_n x^(n+1/2) / Gamma(n+1/2) - the
+// regularized lower incomplete gamma, a function of order one across the whole
+// region where F spans some twenty orders of magnitude - and the one multiply per
+// order that recovers F from it. A second representation of the region the seed
+// and its upward recurrence already serve, carried beside it (FarRepresentation,
+// accuracy.hpp), not in place of it.
+
+// The far table's degrees, held to the reader's contract rather than assumed, for
+// the reason the uniform grid's are: the split Clenshaw's odd part is the D
+// family's finalization and is derived for an even degree of at least 4, and a
+// degree above the read cap is beyond the coefficients the interval stores. A
+// partition that did not meet either would be summed into a different polynomial.
+constexpr bool ScaledFarDegreesCarried() noexcept {
+    for (std::size_t iv = 0; iv < static_cast<std::size_t>(detail::kScaledFarIntervals); ++iv)
+    {
+        const int deg = detail::kScaledFarDegs[iv];
+
+        if (deg < 4 || deg % 2 != 0 || deg > detail::kScaledFarReadCap)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(ScaledFarDegreesCarried(),
+              "every interval of the scaled far table must be fitted at an even degree "
+              "between 4 and the read cap: an odd degree would drop the leading odd "
+              "coefficient the split Clenshaw summation seeds from, and a degree above the "
+              "cap is beyond the coefficients the interval carries");
+
+/// Where an argument sits on the far partition: the interval it falls in, that
+/// interval's first coefficient, and the argument mapped into it.
+///
+/// The partition's intervals are not of one width - a derived one is graded, and
+/// the placeholder is equal only because nobody has derived one - so the interval
+/// is found by bisection over the edges and not by a product. The edges are the
+/// partition's data; that they increase is the only fact about them a reader is
+/// entitled to assume, and kScaledFarEdges' own static_assert is what makes it one.
+struct FarPoint {
+    std::size_t iv; ///< the interval the argument falls in
+    std::size_t block; ///< kScaledFarOffsets[iv], this interval's order-0 coefficient
+    double t; ///< the argument mapped into [-1, 1) on that interval
+};
+
+inline FarPoint FarLocate(double x) noexcept {
+    constexpr std::size_t kIntervals = static_cast<std::size_t>(detail::kScaledFarIntervals);
+    // The largest iv with kScaledFarEdges[iv] <= x, the caller having established
+    // kScaledFarX0 <= x < kScaledFarX1 and the edges tiling exactly that span.
+    std::size_t lo = 0;
+    std::size_t hi = kIntervals;
+
+    while (hi - lo > 1)
+    {
+        const std::size_t mid = lo + (hi - lo) / 2;
+
+        if (x < detail::kScaledFarEdges[mid])
+        {
+            hi = mid;
+        } else
+        {
+            lo = mid;
+        }
+    }
+
+    const double a = detail::kScaledFarEdges[lo];
+    const double b = detail::kScaledFarEdges[lo + 1];
+
+    return FarPoint{
+        lo, static_cast<std::size_t>(detail::kScaledFarOffsets[lo]), 2.0 * (x - a) / (b - a) - 1.0};
+}
+
+/// One order off the scaled far table, at the split Clenshaw its coefficients
+/// were certified in - the same summation, operation for operation, as the
+/// generator measures the table's delivered error with.
+inline double ScaledFarOrderAt(const FarPoint& at, int l) noexcept {
+    const int deg = detail::kScaledFarDegs[at.iv];
+    const double* c = detail::kScaledFarCoeffs.data() + at.block +
+                      static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
+
+    return ClenshawSplit<backend::ScalarFp64>(c, deg, at.t);
+}
+
+/// One argument's whole ladder off the scaled far table, with the recovery the
+/// stored function needs: H_n is what the table holds and F_n is what a caller
+/// receives, and the two differ by m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
+///
+/// The running form of m is the region's own (BoysAllNBodyRegionC's ladder step
+/// for step), so the recovery costs the far call the arithmetic it already paid
+/// rather than a second one: one multiply-add per order here, and the division
+/// form is the policy's, as every other ladder's is.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, kScaledFarX0 <= x < kScaledFarX1
+/// \param out  receives nmax + 1 values, out[k] = F_k(x)
+template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double* out) noexcept {
+    const FarPoint at = FarLocate(x);
+    double m = kBoysHalfSqrtPi / std::sqrt(x);
+    const double invx = StepReciprocal<kForm>(x);
+    out[0] = ScaledFarOrderAt(at, 0) * m;
+
+    for (int l = 1; l <= nmax; ++l)
+    {
+        m = DivideStep<kForm>((l - 0.5) * m, x, invx);
+        out[l] = ScaledFarOrderAt(at, l) * m;
+    }
+}
+
+// The far region's third representation: the entry's own seed and ladder with the
+// two things wrong with them repaired. It stores no value of the function - nine
+// coefficients of the correction alone, against the far table's 12,342 - and spends
+// the ladder's recurrence to make them.
+//
+// The seed sqrt(pi)/(2 sqrt(x)) is F_0 * H_0 with H_0 = erf(sqrt(x)) held at 1, so
+// its relative error is erfc(sqrt(x)): 2.65e-14 at kX1, above the unit roundoff
+// until kSeedCorrectionX1. One polynomial carries that error over
+// [kX1, kSeedCorrectionX1), and at and above that argument erfc has fallen below
+// the roundoff and the held 1 is already the correctly rounded H_0.
+//
+// The ladder is BoysAllNBodyRegionC's step with the term region C drops:
+// F_l = ((l - 1/2) F_(l-1) - exp(-x)/2) / x. At kX1 that dropped term is 6.6 times
+// F_32, so it is not a small correction at high order: over the committed
+// reference's region C the shipped arithmetic's worst relative error is 2.55, at
+// n = 32, x = 29. Its absolute error there, 4.94e-14, is inside the 5.5e-14 its
+// contract bounds it by, which is the difference this arm buys.
+
+// The correction's degree, held to the reader's contract rather than assumed, for
+// the reason the far table's degrees are: the split Clenshaw's odd part is the D
+// family's finalization and is derived for an even degree of at least 4, so a
+// degree that did not meet it would be summed into a different polynomial.
+constexpr bool SeedCorrectionDegreeCarried() noexcept {
+    return detail::kSeedCorrectionDeg >= 4 && detail::kSeedCorrectionDeg % 2 == 0;
+}
+
+static_assert(SeedCorrectionDegreeCarried(),
+              "the corrected seed's fit must be at an even degree of at least 4: an odd "
+              "degree would drop the leading odd coefficient the split Clenshaw summation "
+              "seeds from");
+
+static_assert(detail::kSeedCorrectionX0 == detail::kX1,
+              "the corrected seed's fit must open at kX1, where the region it corrects does");
+
+/// The correction the closed form is missing, H_0 - 1, at an argument inside its
+/// span. The caller reads it as 1.0 + this, which is where the 1 comes back.
+inline double SeedCorrectionAt(double x) noexcept {
+    const double t = 2.0 * (x - detail::kSeedCorrectionX0) /
+                         (detail::kSeedCorrectionX1 - detail::kSeedCorrectionX0) -
+                     1.0;
+
+    return ClenshawSplit<backend::ScalarFp64>(detail::kSeedCorrectionCoeffs.data(),
+                                              detail::kSeedCorrectionDeg, t);
+}
+
+/// One argument's whole ladder from the corrected seed.
+///
+/// The exp is the accurate member of region B's axis, which is the library
+/// routine; the fast member is region B's bound's business and is not measured
+/// over this region. The division form is the policy's, as every ladder's is.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, kX1 <= x
+/// \param out  receives nmax + 1 values, out[k] = F_k(x)
+template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
+    double f = kBoysHalfSqrtPi / std::sqrt(x);
+
+    if (x < detail::kSeedCorrectionX1)
+    {
+        f *= 1.0 + SeedCorrectionAt(x);
+    }
+
+    const double invx = StepReciprocal<kForm>(x);
+    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
+    out[0] = f;
+
+    for (int l = 1; l <= nmax; ++l)
+    {
+        f = UpwardStep<kForm>(l, f, x, invx, expx);
+        out[l] = f;
+    }
+}
+
 // The rational minimax route: a numerator/denominator pair per piece, read by Horner
 // in the same mapped argument, the denominator stored as q_1..q_k with q_0 held at
 // 1. An alternative to the shipped route rather than a replacement: the same pieces,
