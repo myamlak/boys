@@ -4351,10 +4351,10 @@ static_assert(PackingCellIsNamed<DevicePacking::kLadder>() &&
 // class it carries and the row as the tokens that class's file wrote it with, so a row of the
 // committed file reaches the file this run writes exactly as it arrived.
 #define BOYS_DEVICE_PROBE_SEAM_ROW(device, precision, shape, route, scheme, budget, pack,          \
-                                   granularity, division, exp)                                     \
+                                   granularity, division, exp, basis, record)                      \
     {#device, #precision, #shape,                                                                  \
      "    X(" #device ", " #precision ", " #shape ", " #route ", " #scheme ", " #budget ", "       \
-     #pack ", " #granularity ", " #division ", " #exp ")\\\n"},
+     #pack ", " #granularity ", " #division ", " #exp ", " #basis ", " #record ")\\\n"},
 
 /// One row of the table in force: the class it carries, as that table's own list spells it,
 /// and the row itself, as that table's own list writes it.
@@ -4416,9 +4416,71 @@ bool InFastestGroup(const DeviceProbeRanking& ranking, const std::string& name) 
     return false;
 }
 
+namespace {
+
+/// A machine's name as a record name spells it: lowercase, with every run of characters that is
+/// not a letter or a digit written as one hyphen.
+std::string RecordSlug(const std::string& machine) {
+    std::string slug;
+
+    for (const char character : machine)
+    {
+        const bool digit = character >= '0' && character <= '9';
+        const bool letter = (character >= 'a' && character <= 'z') ||
+                            (character >= 'A' && character <= 'Z');
+
+        if (digit || letter)
+        {
+            slug.push_back(letter && character < 'a' ? static_cast<char>(character + 32) : character);
+        }
+        else if (!slug.empty() && slug.back() != '-')
+        {
+            slug.push_back('-');
+        }
+    }
+
+    while (!slug.empty() && slug.back() == '-')
+    {
+        slug.pop_back();
+    }
+
+    return slug;
+}
+
+/// The record name a device run's rows carry: the card and the date the run was stamped with, in
+/// the shape the seam's own prose spells (`quadro-t1000-2026-10-06`), and empty where the stamp
+/// names no day. A stamp of a run that measured no named card carries the device lane's own word,
+/// so a row of such a run still names the run it came from rather than nothing.
+///
+/// The name describes the run and does not move when the tree does, which is what a revision in
+/// the cell would do: every commit after the run would leave the row naming a tree the run was not
+/// taken at.
+std::string DeviceRecordName(const std::string& takenAt) {
+    const std::size_t comma = takenAt.find(", ");
+    const bool named = comma != std::string::npos;
+    std::string machine = named ? RecordSlug(takenAt.substr(0, comma)) : std::string("device");
+    const std::string stamp = named ? takenAt.substr(comma + 2) : takenAt;
+
+    if (stamp.size() < 10 || stamp[4] != '-' || stamp[7] != '-')
+    {
+        return std::string();
+    }
+
+    if (machine.empty())
+    {
+        machine = "device";
+    }
+
+    return machine + "-" + stamp.substr(0, 10);
+}
+
+} // namespace
+
 DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report,
                                                  const std::string& takenAt) {
     DeviceDefaultsEmission emission;
+
+    const std::string record = DeviceRecordName(takenAt);
 
     std::string rows;
     bool measured = false;
@@ -4656,12 +4718,19 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
                              group, at.c_str(), replaces);
             }
 
+            // The row's provenance, as the two cells the format carries: the marker above states
+            // it in prose, and a program reads it here. A walkover is the one row of this file
+            // that is a choice - the entry stood alone, so nothing ranked it - and no run stands
+            // behind the combination it states.
+            const char* const basis = walkover ? "RowBasis::kChosen" : "RowBasis::kMeasured";
+            const std::string recordCell = walkover ? std::string() : record;
+
             rows += Text("    X(kDevice, %s, %s, %s, %s,\\\n"
                          "      %s, %s, %s,\\\n"
-                         "      %s, %s)\\\n",
+                         "      %s, %s, %s, \"%s\")\\\n",
                          precisionCell, shapeCell, SeamRouteCell(row->route),
                          SeamSchemeCell(row->scheme), SeamBudgetCell(precision), packCell,
-                         SeamGranularityCell(*row), formCell, expCell);
+                         SeamGranularityCell(*row), formCell, expCell, basis, recordCell.c_str());
 
             measured = measured || !walkover;
             writtenClasses.push_back(SeamClass{precisionCell, shapeCell});
@@ -4760,6 +4829,13 @@ DeviceDefaultsEmission FormatDeviceBuildDefaults(const DeviceProbeReport& report
     text += "/// a measurement. A row whose class established none of the three is refused rather\n";
     text += "/// than written. A class this run did not measure keeps the row the table in force\n";
     text += "/// carries, written back by the list below.\n";
+    text += "///\n";
+    text += "/// **The last two cells are the same statement a program reads.** The basis is\n";
+    text += "/// `RowBasis::kMeasured` on a row one of the three statements above places and\n";
+    text += "/// `RowBasis::kChosen` on a walkover, and the record names the run the row came from as\n";
+    text += "/// `<card>-<date>`: this run's name on this run's rows, and the name the table in force\n";
+    text += "/// carries on the rows written back, because those rows are that run's and not this\n";
+    text += "/// one's. A walkover's record is empty - no run ranks a row that stood alone.\n";
     text += "\n";
     text += "/// The seven a class the list below carries no row for resolves to: the build's own\n";
     text += "/// values, which is what this build compiled before this file existed. Five are the\n";

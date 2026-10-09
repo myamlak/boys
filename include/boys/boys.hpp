@@ -453,6 +453,28 @@ enum class Shape : std::uint8_t {
     kAllNAtOrders, ///< the ladder at every argument, each stopping at its own top order
 };
 
+/// What a row of the default-policy table's combination is, as a cell of the row
+/// rather than as a sentence beside it.
+///
+/// The table is the one file in this library whose rows are machine-readable
+/// claims about a machine, and the two members below are the whole of what such a
+/// row's provenance says: \c kMeasured is a combination a run measured and ranked,
+/// and \c kChosen is a combination this file states - the build's own five, a class
+/// a run ranked no cell of, or an entry that stood alone. The distinction is read
+/// by tools and by a consumer at compile time (\c DefaultPolicyFor::kBasis), and it
+/// is a cell rather than a comment because a comment is not something a program can
+/// read: a row whose prose said "measured" and whose cells this build chose is a row
+/// no reader could find.
+///
+/// \ingroup boys
+enum class RowBasis {
+    /// A run's own winner for this class, with the figure it took.
+    kMeasured,
+
+    /// A stated default: the row is an answer, not the winner of a comparison.
+    kChosen,
+};
+
 namespace detail {
 
 /// The budget a class of this lane falls back to when the table names no row
@@ -505,12 +527,12 @@ struct DefaultPolicyRow {
     static constexpr bool kCarried = false;
 };
 
-// The macro takes all seven cells because EvalPolicy's parameters carry defaults and
+// The macro takes all seven axis cells because EvalPolicy's parameters carry defaults and
 // StatedEvalPolicy's do not: a row naming six compiles the seventh from a default it never
-// chose, and a cell left out fails in the class rather than the list - a cell added owes the same.
+// chose, and a cell left out fails in the class rather than the list - the two added owe the same.
 /// \cond
 #define BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack,  \
-                                kGranularity, kDivision, kExp)                                 \
+                                kGranularity, kDivision, kExp, kRowBasis, kRowRecord)          \
     template <>                                                                                \
     struct DefaultPolicyRow<Device::kDevice, Precision::kPrecision, Shape::kShape> {            \
         using Type =                                                                           \
@@ -518,7 +540,12 @@ struct DefaultPolicyRow {
         static_assert(EvalPolicyLike<Type>,                                                     \
                       "a row of the default-policy table does not name an evaluation policy: " \
                       "one of its cells is not an axis of the combination it is read as");      \
+        static_assert(kRowBasis == RowBasis::kMeasured || kRowBasis == RowBasis::kChosen,       \
+                      "a row of the default-policy table names a basis that is neither of the " \
+                      "two a row can have");                                                    \
         static constexpr bool kCarried = true;                                                  \
+        static constexpr RowBasis kBasis = kRowBasis;                                           \
+        static constexpr const char* kRecord = kRowRecord;                                      \
     };
 
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
@@ -541,7 +568,7 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 /// stored in. A row for a class no entry names is a combination nothing asks for,
 /// and an entry added at a class this list does not carry fails to compile until
 /// its row is written.
-#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp)
+#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp, RowBasis::kChosen, "")
 #define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN) X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN) X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders) X(kBf16, kSingle) X(kBf16, kFixedN) X(kBf16, kAllN) X(kBf16, kAllNAtOrders) X(kBf16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
@@ -561,7 +588,7 @@ BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
     BOYS_DEFAULT_POLICY_ROW(kDevice, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,      \
                             LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,          \
                             kDefaultFitGranularity, kDefaultDeviceDivisionForm,                     \
-                            kDefaultDeviceRegionBExp)
+                            kDefaultDeviceRegionBExp, RowBasis::kChosen, "")
 #define BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS(X)                                                    \
     X(kFp64Device, kSingle) X(kFp64Device, kAllOrders) X(kFp64Device, kAllN)                        \
     X(kFp32Device, kSingle) X(kFp32Device, kAllOrders) X(kFp32Device, kAllN)                        \
@@ -617,6 +644,23 @@ struct DefaultPolicyFor {
     /// and read by the report that prints what a build will do.
     static constexpr bool kCarried =
         detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::kCarried;
+
+    /// Whether this class's combination is a measurement or a stated choice, read
+    /// from the row's own basis cell rather than from a sentence beside it.
+    ///
+    /// A class with no row has neither, and the assertion above is what a caller
+    /// reaches first.
+    static constexpr RowBasis kBasis =
+        detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::kBasis;
+
+    /// The record this class's row was taken from: the name of the run whose file
+    /// carries the revision it was measured at, or an empty string where no run
+    /// stands behind the row and the combination is a stated choice.
+    ///
+    /// \sa boys/boys_build_defaults.hpp, which states what a record name is and
+    ///     what a row's basis means
+    static constexpr const char* kRecord =
+        detail::DefaultPolicyRow<kDevice, kPrecision, kShape>::kRecord;
 };
 
 /// The policy a class compiles when its call site names no policy: the name an

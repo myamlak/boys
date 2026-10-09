@@ -38,23 +38,33 @@ inline constexpr const char* VersionString() noexcept
     return kVersionString;
 }
 
-/// The seam this build's unnamed calls resolve through: which file supplied the
-/// seven choices — the host lane's five, the fit route, the evaluation scheme,
-/// the packing axis, the division form and the fit granularity, and the device
-/// lane's own division form and region-B exponential — as a caller can query it.
+/// The identity of the defaults seam the library this unit links was built with:
+/// which file supplied the seven choices — the host lane's five, the fit route,
+/// the evaluation scheme, the packing axis, the division form and the fit
+/// granularity, and the device lane's own division form and region-B exponential —
+/// as a caller can query it.
 ///
-/// A build configured with the `BOYS_BUILD_DEFAULTS` CMake option hashed the
-/// file the option named and reports that sha256, 64 lowercase hexadecimal
-/// digits. A build that replaced nothing reports
-/// \c "the committed header (the shipped choices)", which is the file every
-/// bound in this repository was measured with.
+/// A library configured with the `BOYS_BUILD_DEFAULTS` CMake option was compiled
+/// against the file the option named and reports that file's sha256, 64 lowercase
+/// hexadecimal digits. A library that replaced nothing reports
+/// \c "the committed header (the shipped choices)", which is the file every bound
+/// in this repository was measured with.
+///
+/// **The answer describes the library and not the unit that asked.** The function
+/// is compiled into the library, so a translation unit built against an installed
+/// `include/` tree - one that carries no replacement and no digest definition -
+/// still reports the seam of the library it linked. That is the question a
+/// consumer has: whether the artifact it is running is the one its baseline was
+/// taken with. A value fixed in the header answers a different question, which is
+/// what the unit itself was compiled against, and a caller asking it already knows
+/// the answer.
 ///
 /// **The digest is a content identity, and that is what makes it comparable**:
 /// two builds that compiled the same seam file report the same string on any
 /// machine, whatever configured them, so a consumer whose regression baseline
 /// moved can first ask whether the library it linked is the one the baseline was
 /// taken with. The seam file carries the machine, the date and the probe figures
-/// its choices were measured on in its own comments (the contract in
+/// its choices were measured on in its own cells and comments (the contract in
 /// `boys/boys_build_defaults.hpp`), so two seams that share a digest share those
 /// too.
 ///
@@ -64,33 +74,14 @@ inline constexpr const char* VersionString() noexcept
 /// resolves are the `boys-defaults` command's report, class by class, and the
 /// seam's own seven are what that report's header prints beside them.
 ///
-/// The value is a compile-time constant, fixed when the build was configured: a
-/// seam file edited after that is a configure that has to run again, which the
-/// copy the targets read is a dependency of. A unit compiled against an installed
-/// `include/` tree by hand, without the library target's definitions, carries no
-/// digest and reports the committed identity — the words describe the unit that
-/// reported them, and a build that replaced its seam is one that carries the
-/// digest the target defines.
-inline constexpr const char* kBuildDefaultsSeamIdentity =
-#if defined(BOYS_BUILD_DEFAULTS_SEAM_SHA256)
-    BOYS_BUILD_DEFAULTS_SEAM_SHA256;
-#else
-    "the committed header (the shipped choices)";
-#endif
-
-/// The identity of the defaults seam this build resolved its unnamed calls
-/// through.
+/// The digest is fixed when the library was configured: a seam file edited after
+/// that is a configure that has to run again, which the copy the targets read is a
+/// dependency of.
 ///
 /// \returns the seam's identity as a string — the sha256 of the header
 ///          `BOYS_BUILD_DEFAULTS` named, or
 ///          \c "the committed header (the shipped choices)" — which needs no
 ///          allocation and stays valid for the life of the program
-///
-/// \sa kBuildDefaultsSeamIdentity, which is the value this returns and states
-///     what it does and does not carry
-inline constexpr const char* BuildDefaultsSeamIdentity() noexcept
-{
-    return kBuildDefaultsSeamIdentity;
-}
+const char* BuildDefaultsSeamIdentity() noexcept;
 
 } // namespace boys

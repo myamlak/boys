@@ -99,143 +99,145 @@
 #define BOYS_BUILD_DEFAULT_FIT_GRANULARITY FitGranularity::kNarrow
 
 // The committed file's own row list, transcribed cell for cell, with the one cell this
-// fixture moves marked below. One row per class, ten cells each, the region-B exponential
-// last; the comments are the committed file's own provenance for its measured rows.
+// fixture moves marked below. One row per class, twelve cells each: the region-B exponential,
+// then the basis and the record. **Every row of this fixture is a stated default and names no
+// run** - the combinations are this file's, and the figure a marker quotes beside a row is the
+// committed file's provenance for the row that cell was taken from and not for this one.
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
     /* measured: m = 1 all-orders ladder, 92.89 ns per argument; the granularity cell of
        this row and of the four below is the one this fixture moves, from the narrow
        partition to the grid over the whole fitted domain. */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* measured: m = 1 all-orders ladder, the refinement vote's winner; the granularity
        cell is this fixture's, for the reason the float block below states */\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kUniform,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     /* measured: the half lane's vote winner, from the run whose key carried the
        two half formats as one lane; this is the fp16 class's row */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* the first cell this fixture moves: the granularity, to the grid over the whole
        fitted domain, in place of the narrow partition the committed file names here.
        Every other cell of this row is the committed file's own. */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* the five macros above: no probe run has ranked this shape on any lane; the
        granularity cell is this fixture's, for the reason the single row states */\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* The float lane's five carry the same cell and move together for the same reason, measured:
        the six-row draft of this file, moving this one row of the five, failed
        BoysHostClassesTest.TheNewFixedNEntriesAreTheirPerArgumentLoop, whose comparison is exactly
        the first and third rows below. */\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* no probe run has ranked these four shapes on this lane; every other cell of them is
        the committed file's own */\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp32, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* the same on the half lane: three shapes no probe run has ranked */\
     X(kHost, kFp16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* measured: m = 1, the bf16 all-orders class's own entry, 116.06 ns per argument, reached by
        the unanimous vote over the refinement runs - the run of 2026-10-04, a
        12-logical-processor AVX2+FMA host, seed 47, whose key carries the two half formats as two
        classes; the fp16 row above is the earlier run's verdict, one lane for both formats. */\
     X(kHost, kBf16, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* no probe run has ranked these four shapes on this lane: the row carries the
        committed five at the half budget, as the fp16 class's unranked shapes do */\
     X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kBf16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kBf16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
     /* measured: the fp64 single class, 'device-single-fp64-plain-reciprocal', 1.383 ns per argument, reached by vote */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp64 all-orders class, 'device-all-orders-fp64-narrow-rat-horner-plain-reciprocal', 0.199 ns per argument, reached by ordered */\
     X(kDevice, kFp64Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp64 all-n class, 'device-all-n-fp64', 0.107 ns per argument, reached by ordered */\
     X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp32 single class, 'device-single-fp32-plain-reciprocal', 0.143 ns per argument, reached by vote */\
     X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp32 all-orders class, 'all-orders-fp32-uniform-horner-plain-reciprocal', 0.713 ns per argument, reached by chosen-among-equals */\
     X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kOrders, FitGranularity::kUniform,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp32 all-n class, 'all-n-fp32-plain-reciprocal', 1.961 ns per argument, reached by refined */\
     X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp16 single class, 'device-single-fp16', 0.178 ns per argument, reached by vote */\
     X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp16 all-orders class, 'device-all-orders-fp16-plain-reciprocal', 0.349 ns per argument, reached by vote */\
     X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kPlainReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: the fp16 all-n class, 'device-all-n-fp16', 0.266 ns per argument, reached by refined */\
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* a choice, not a measurement: the run this file reproduces ranked no bf16 device class, so
        these three rows are the committed seam's own for them - the same five names at the class's
        half budget and the device lane's own two cells - transcribed cell for cell and carrying no
        figure of this file */\
     X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* A device row's cells are the winning entry's own axes, at the arithmetic its figure was
        measured at: route, scheme, packing axis and granularity come from the lane's own option
        table (boys/boys_cuda_options.hpp), the form cell is that figure's form, and the exponential

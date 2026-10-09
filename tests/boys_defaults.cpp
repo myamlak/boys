@@ -5,11 +5,14 @@
 
 #include "boys/boys.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdio>
 #include <span>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 namespace {
 
@@ -124,6 +127,33 @@ constexpr std::size_t kSeamRowCount = 0 BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_RO
 constexpr std::array<Precision, kSeamRowCount> kSeamLanes{
     BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_ROW_LANE)};
 #undef BOYS_DEFAULTS_ROW_LANE
+
+/// The provenance a row states, in a form this report can walk: what the combination's standing is
+/// and which run it came from. The cells are read by the row macro's own names and not by position,
+/// so a cell the format gains is carried here without an edit.
+struct RowProvenance {
+    RowBasis basis;
+    const char* record;
+};
+
+#define BOYS_DEFAULTS_ROW_PROVENANCE(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget, kPack, \
+                                     kGranularity, kDivision, kExp, kRowBasis, kRowRecord)         \
+    RowProvenance{kRowBasis, kRowRecord},
+constexpr std::array<RowProvenance, kSeamRowCount> kSeamProvenance{
+    BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_ROW_PROVENANCE)};
+#undef BOYS_DEFAULTS_ROW_PROVENANCE
+
+// A measured row's combination came out of a run, and a row that stated it was measured and named
+// no run would be the free-text provenance these two cells exist to replace. A choice names none:
+// it is an answer this file states, and no run stands behind it.
+#define BOYS_DEFAULTS_ROW_NAMES_ITS_RUN(kDevice, kPrecision, kShape, kRoute, kScheme, kBudget,      \
+                                        kPack, kGranularity, kDivision, kExp, kRowBasis, kRowRecord) \
+    static_assert(kRowBasis != RowBasis::kMeasured || kRowRecord[0] != '\0',                        \
+                  "a measured row of this build's BOYS_BUILD_DEFAULT_ROWS names no record: a "     \
+                  "measurement belongs to a run, and a row that cannot name the run is a row whose " \
+                  "provenance nothing can read (include/boys/boys_build_defaults.hpp)");
+BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULTS_ROW_NAMES_ITS_RUN)
+#undef BOYS_DEFAULTS_ROW_NAMES_ITS_RUN
 #else
 /// A build whose seam carries no row list has no cells to read lanes from.
 constexpr std::size_t kSeamRowCount = 0;
@@ -525,6 +555,46 @@ void PrintHeader() {
 #if defined(BOYS_BUILD_DEFAULT_ROWS)
     std::printf("table            the header's own row list (BOYS_BUILD_DEFAULT_ROWS), one row per "
                 "class the header names\n");
+
+    // The rows' provenance, as the rows themselves state it: what each combination's standing is,
+    // and the runs the measured ones came from. Read from the cells and not written here, so a
+    // seam spliced from a new run reports the new run without an edit.
+    std::size_t measured = 0;
+    std::vector<std::string> records;
+
+    for (const RowProvenance& row : kSeamProvenance)
+    {
+        if (row.basis != RowBasis::kMeasured)
+        {
+            continue;
+        }
+
+        measured += 1;
+
+        if (std::find(records.begin(), records.end(), row.record) == records.end())
+        {
+            records.push_back(row.record);
+        }
+    }
+
+    std::printf("provenance       %zu of the %zu row(s) are measurements and %zu are stated "
+                "choices\n",
+                measured, kSeamRowCount, kSeamRowCount - measured);
+    std::printf("                 the record(s) the measured rows name: ");
+
+    if (records.empty())
+    {
+        std::printf("none\n");
+    }
+    else
+    {
+        for (std::size_t index = 0; index < records.size(); ++index)
+        {
+            std::printf("%s%s", index ? ", " : "", records[index].c_str());
+        }
+
+        std::printf("\n");
+    }
 #else
     std::printf("table            no row list (BOYS_BUILD_DEFAULT_ROWS is undefined): the table is "
                 "composed from the five\n"

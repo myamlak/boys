@@ -90,6 +90,22 @@ KEY_ROW_MACROS = (
     "BOYS_DEFAULT_POLICY_BUILD_DEVICE_ROWS",
 )
 
+# The cells a row of the format carries: the three of the class key, one per axis of a policy, and
+# the two that say what the combination is and which run it came from. Only the first two groups
+# are read as a combination here; the provenance cells are held to their own two values below.
+PROVENANCE_CELLS = 2
+
+# The cells before the provenance ones: the key's three and the seven axes of a policy, which the
+# map in `row_states_seam_names` reads by position.
+KEY_AND_AXIS_CELLS = 10
+
+# The two provenance cells, as the header that declares the basis spells it: what the combination
+# is, and the name of the run it came from. A row whose basis is a measurement names a run; a row
+# that names none is a choice, and a choice is what a row no run stands behind is.
+BASIS_MEASURED = "RowBasis::kMeasured"
+BASIS_CHOSEN = "RowBasis::kChosen"
+RECORD = re.compile(r'^"(?P<name>[^"]*)"$')
+
 # The seven names a seam states beside its rows: the host's five and the device lane's two. Read
 # from the file by name, so a seam that stops defining one is an error here rather than a hole.
 SEAM_NAMES = {
@@ -724,8 +740,8 @@ def row_states_seam_names(row: Row, names: dict[str, str], device: bool,
     is a row carrying a measurement - which is what a row of a class a probe ranked is, and what
     the row's own marker says beside it.
     """
-    if len(row.cells) < 10:
-        return False, ["the row has fewer than ten cells"]
+    if len(row.cells) < KEY_AND_AXIS_CELLS + PROVENANCE_CELLS:
+        return False, [f"the row has fewer than {KEY_AND_AXIS_CELLS + PROVENANCE_CELLS} cells"]
     want = {
         3: names.get("route", ""),
         4: names.get("scheme", ""),
@@ -862,15 +878,23 @@ def main() -> int:
         failures.append(f"the row format's cells could not be read from {SEAM_ROW_MACRO} in "
                         "boys.hpp, so nothing below is held to the format it writes")
     else:
+        axis_cells = len(cells_named) - 3 - PROVENANCE_CELLS
         print(f"THE ROW FORMAT, as {SEAM_ROW_MACRO} takes it: {len(cells_named)} cell(s) - "
               + ", ".join(cells_named))
         print(f"  the key cells: {cells_named[0]}, {cells_named[1]}, {cells_named[2]}")
+        provenance = cells_named[3 + axis_cells:]
+        print("  the provenance cells: " + (", ".join(provenance) if provenance else "none"))
         print(f"  the axes of StatedEvalPolicy: "
               + ", ".join(f"{kind} {param}" for kind, param in axes))
-        if len(cells_named) - 3 != len(axes):
-            failures.append(f"the row format takes {len(cells_named) - 3} axis cell(s) and a policy "
+        if axis_cells != len(axes):
+            failures.append(f"the row format takes {axis_cells} axis cell(s) and a policy "
                             f"has {len(axes)} axes: the two are held to each other by no compiler "
                             "here, and a row short of a cell is a combination nobody decided")
+        if len(cells_named) < 3 + len(axes) + PROVENANCE_CELLS:
+            failures.append(f"the row format takes {len(cells_named)} cell(s) and a row of it "
+                            f"carries {3 + len(axes)} cells of key and axes beside "
+                            f"{PROVENANCE_CELLS} of provenance: a row with no provenance cell is a "
+                            "row whose combination nothing states the standing of")
 
     # ---- the per-class table ---------------------------------------------------------------
     print()
@@ -882,7 +906,7 @@ def main() -> int:
     axes_ok = 0
     cell_axis_ok = 0
     for row in rows:
-        if len(row.cells) < 10:
+        if len(row.cells) < 3 + len(axes) + PROVENANCE_CELLS:
             failures.append(f"the row at {os.path.relpath(row.source, REPO)}:{row.line} carries "
                             f"{len(row.cells)} cell(s) and the format takes {len(cells_named)}")
             continue
@@ -895,9 +919,29 @@ def main() -> int:
         if bare(row.cells[2]) not in shape_members:
             failures.append(f"the row at {row.line} names the shape cell {row.cells[2]}, which is "
                             f"no member of Shape")
+        # The two provenance cells: what the combination's standing is, and which run it came from.
+        # A measured row names a run, and a row that names none is a choice.
+        basis_cell = row.cells[3 + len(axes)]
+        record_cell = row.cells[3 + len(axes) + 1]
+        if basis_cell not in (BASIS_MEASURED, BASIS_CHOSEN):
+            failures.append(f"the row at {row.line} states its basis as {basis_cell}, which is "
+                            f"neither {BASIS_MEASURED} nor {BASIS_CHOSEN}: a row whose standing is "
+                            "neither is a row no reader can tell a measurement from a choice in")
+        record = RECORD.match(record_cell)
+        if record is None:
+            failures.append(f"the row at {row.line} states its record as {record_cell}, which is "
+                            "not a quoted name: a record is the name of the run the row came from "
+                            "and not an expression")
+        elif basis_cell == BASIS_MEASURED and not record.group("name"):
+            failures.append(f"the row at {row.line} is a measurement and names no record: a "
+                            "measured combination was measured in a run, and a row that cannot say "
+                            "which one is the provenance this cell exists to carry")
+        elif not record.group("name") and basis_cell != BASIS_CHOSEN:
+            failures.append(f"the row at {row.line} names no record and states its basis as "
+                            f"{basis_cell}: only a stated choice stands behind no run")
         # One cell per axis, and the cell names a member of the axis it belongs to.
         seen: dict[int, str] = {}
-        for cell in range(3, 10):
+        for cell in range(3, 3 + len(axes)):
             owners = [kind for kind, members in axis_members.items()
                       if bare(row.cells[cell]) in members]
             if len(owners) != 1:
@@ -906,10 +950,10 @@ def main() -> int:
                                 "is a combination the row cannot be read as")
                 continue
             seen[cell] = owners[0]
-        if len(seen) == 7 and len(set(seen.values())) == 7:
+        if len(seen) == len(axes) and len(set(seen.values())) == len(axes):
             cell_axis_ok += 1
             order = [axes[i][0] for i in range(len(axes))]
-            got = [seen[cell] for cell in range(3, 10)]
+            got = [seen[cell] for cell in range(3, 3 + len(axes))]
             if got != order:
                 failures.append(f"the row at {row.line} writes its axis cells as {got} and "
                                 f"StatedEvalPolicy takes them as {order}")

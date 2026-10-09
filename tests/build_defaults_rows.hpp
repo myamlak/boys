@@ -18,8 +18,10 @@
 // (include/boys/boys.hpp expands one branch or the other): a class the list omits has no default policy. A class is
 // a (device, precision, shape) triple, so the device's three lanes are the other half, on their own division form.
 
-// The host rows name RegionBExp::kFast, the host's own default (kDefaultHostRegionBExp); every row is ten cells,
-// its last the region-B exponential, and a row that leaves one out does not compile (include/boys/boys.hpp).
+// The host rows name RegionBExp::kFast, the host's own default (kDefaultHostRegionBExp); every row is twelve cells,
+// its eleventh the basis and its twelfth the record, and a row that leaves one out does not compile
+// (include/boys/boys.hpp). Every row of this fixture is a stated default and names no run: the combinations are this
+// file's, and the marker beside a row says which one it is and not what measured it.
 
 //   cmake -S . -B build-defaults-rows -DBOYS_BUILD_DEFAULTS=tests/build_defaults_rows.hpp
 #define BOYS_BUILD_DEFAULTS_TEST_ROWS 1
@@ -34,73 +36,73 @@
     /* the class this fixture moves: the scheme, to the split Clenshaw recurrence */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     /* the five above, at each class's own lane budget */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kFast)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kChosen, "")\
     /* the device half: the five above at each device lane's budget, beside the device lane's
        own division form and its own region-B member, one row per class */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kBf16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")\
     X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner,\
       BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kNarrow,\
-      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate)
+      DivisionForm::kRefinedReciprocal, RegionBExp::kAccurate, RowBasis::kChosen, "")
 
 // Committed: the device lane's own two names, which this fixture does not move. A device class
 // resolves its form and its region-B exponential to these and never to the host's five above.

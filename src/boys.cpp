@@ -12,6 +12,18 @@
 
 namespace boys {
 
+// The seam the library this unit is part of was compiled against. Defined here and not in the
+// header because the answer is the artifact's and not the unit's: compiled once, into the library,
+// with that target's own definitions. An inline constant is fixed per translation unit and reports
+// the seam a consumer compiled against rather than the one it linked.
+const char* BuildDefaultsSeamIdentity() noexcept {
+#if defined(BOYS_BUILD_DEFAULTS_SEAM_SHA256)
+    return BOYS_BUILD_DEFAULTS_SEAM_SHA256;
+#else
+    return "the committed header (the shipped choices)";
+#endif
+}
+
 template double BoysSingle<>(int n, double x) noexcept;
 template void BoysAllOrders<>(int nmax, double x, double* out) noexcept;
 template void BoysFixedN<>(

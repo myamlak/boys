@@ -6399,7 +6399,7 @@ struct SeamClass {
 };
 
 #define BOYS_PROBE_SEAM_CLASS(device, precision, shape, route, scheme, budget, pack, granularity,  \
-                              division, exp)                                                     \
+                              division, exp, basis, record)                                      \
     {#device, #precision, #shape},
 
 /// The classes the seam in force carries, read from its own `BOYS_BUILD_DEFAULT_ROWS` list
@@ -6435,6 +6435,14 @@ struct EmittedSeamRow {
     std::string cells; ///< the X(...) call, wrapped where the seam wraps it
     std::string marker; ///< the comment above it: a measurement, or a choice and why
     bool measured = false; ///< whether the row is this run's own winning combination
+
+    /// The provenance cell the row's cells carry: a run's own winner, or a default this file
+    /// states. It is the field the marker states in prose, in the cell a program can read.
+    const char* basis = "RowBasis::kChosen";
+
+    /// The run whose winner the row carries, which is the name of the record that run wrote and
+    /// empty where the combination is a stated default and no run stands behind it.
+    std::string record;
 
     /// Whether the row states one entry this run measured of the class, that entry standing
     /// alone: a class the library carries one entry for has nothing to compare, and the seam's
@@ -6622,11 +6630,10 @@ constexpr SeamLaneBudget kSeamLaneBudgets[] = {
 /// reads and does not understand is still a class the file it replaces carries, and a row
 /// written from the seam's own tokens cannot disagree with the seam about which class it is for.
 ///
-/// Every axis the policy carries has a cell here, the region-B exponential included. A cell
-/// the row format leaves out is a cell the seam's row macro takes and this writer must
-/// therefore write: the row it emits is read back by the seam's own macro, and a call short
-/// of one cell is an error where that macro expands rather than a row that resolves to the
-/// default of the axis nobody wrote.
+/// Every axis the policy carries has a cell here, the region-B exponential included, and so do
+/// the two provenance cells: a row the SeamRows below writes is read back by the seam's own
+/// macro, and a call short of a cell is an error where that macro expands rather than a row that
+/// resolves to the default of the axis nobody wrote.
 std::string SeamRowCall(const std::string& deviceToken,
                         const std::string& precisionToken,
                         const std::string& shapeToken,
@@ -6636,13 +6643,29 @@ std::string SeamRowCall(const std::string& deviceToken,
                         PackAxis pack,
                         FitGranularity granularity,
                         DivisionForm division,
-                        RegionBExp exp) {
+                        RegionBExp exp,
+                        const char* basis,
+                        const std::string& record) {
     return Text("    X(%s, %s, %s, %s, %s, %s,\\\n"
                 "      %s, %s, %s,\\\n"
-                "      %s)\\\n",
+                "      %s, %s, \"%s\")\\\n",
                 deviceToken.c_str(), precisionToken.c_str(), shapeToken.c_str(),
                 RouteCell(route), SchemeCell(scheme), BudgetCell(budget), PackCell(pack),
-                GranularityCell(granularity), DivisionCell(division), ExpCell(exp));
+                GranularityCell(granularity), DivisionCell(division), ExpCell(exp), basis,
+                record.c_str());
+}
+
+/// The record name this run's rows carry: the machine and the date the run was stamped with, in
+/// the shape the seam's own prose spells (`host-2026-10-05`), and empty where the stamp names no
+/// day. A run of another day names another record, so no row can name a run it was not measured
+/// in - which a revision in the cell would do, since every commit after it moves the tree.
+std::string HostRecordName(const std::string& takenAt) {
+    if (takenAt.size() < 10 || takenAt[4] != '-' || takenAt[7] != '-')
+    {
+        return std::string();
+    }
+
+    return "host-" + takenAt.substr(0, 10);
 }
 
 /// The rows this run's own rankings imply, one per class the seam in force carries, in the
@@ -6658,7 +6681,7 @@ std::string SeamRowCall(const std::string& deviceToken,
 /// division form and its own region-B exponential. A row keyed to a device class with the
 /// host's members under it is the one thing this writer may not produce: a build pointed at
 /// it would resolve an unnamed device call through the host's seam.
-std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
+std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report, const std::string& record) {
     const SeamFive five = FileFive();
     std::vector<EmittedSeamRow> rows;
 
@@ -6708,7 +6731,8 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             row.deviceHalf = true;
             row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
                                     five.route, five.scheme, five.pack, five.granularity,
-                                    kDefaultDeviceDivisionForm, kDefaultDeviceRegionBExp);
+                                    kDefaultDeviceDivisionForm, kDefaultDeviceRegionBExp, row.basis,
+                                    row.record);
             rows.push_back(std::move(row));
             continue;
         }
@@ -6728,6 +6752,12 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
 
             row.measured = !walkover;
             row.choiceAlone = walkover;
+
+            if (!walkover)
+            {
+                row.basis = "RowBasis::kMeasured";
+                row.record = record;
+            }
 
             if (walkover)
             {
@@ -6751,7 +6781,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
             row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget,
                                     written->route, written->scheme, written->pack,
                                     written->granularity, written->division,
-                                    written->regionBExp);
+                                    written->regionBExp, row.basis, row.record);
             rows.push_back(std::move(row));
             continue;
         }
@@ -6766,7 +6796,7 @@ std::vector<EmittedSeamRow> SeamRows(const OptionProbeReport& report) {
                      "       library's own region-B exponential */\\\n";
         row.cells = SeamRowCall(klass.device, klass.precision, klass.shape, budget, five.route,
                                 five.scheme, five.pack, five.granularity, five.division,
-                                kDefaultHostRegionBExp);
+                                kDefaultHostRegionBExp, row.basis, row.record);
         rows.push_back(std::move(row));
     }
 
@@ -6859,7 +6889,10 @@ std::size_t SeamClassCount() {
 /// seam's own key reaches anyway: those classes are the reason the account is written, and the
 /// run that produced them measured them.
 void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
-    const std::vector<EmittedSeamRow> rows = SeamRows(report);
+    // No record name: this block accounts for the rows a run measured and writes no row of its
+    // own, so the provenance cell is not read here. The file a caller asked for is the one that
+    // carries it (`FormatBuildDefaults`).
+    const std::vector<EmittedSeamRow> rows = SeamRows(report, std::string());
     std::size_t measured = 0;
 
     for (const EmittedSeamRow& row : rows)
@@ -7053,7 +7086,8 @@ void AppendDefaultsBlock(std::string& text, const OptionProbeReport& report) {
 } // namespace
 
 std::string FormatBuildDefaults(const OptionProbeReport& report, const std::string& takenAt) {
-    const std::vector<EmittedSeamRow> rows = SeamRows(report);
+    const std::string record = HostRecordName(takenAt);
+    const std::vector<EmittedSeamRow> rows = SeamRows(report, record);
 
     if (std::none_of(rows.begin(), rows.end(),
                      [](const EmittedSeamRow& row) { return row.measured; }))
@@ -7122,7 +7156,10 @@ std::string FormatBuildDefaults(const OptionProbeReport& report, const std::stri
     text += "/// arithmetic the class's first place was measured at. A row marked a choice is one the\n";
     text += "/// run did not rank, and it states the five above with the lane's own exponential: the\n";
     text += "/// host's on a host class, and the device lane's beside its own division form on a class\n";
-    text += "/// of the device half.\n";
+    text += "/// of the device half. The last two cells are the provenance the marker states in prose:\n";
+    text += "/// the basis, `RowBasis::kMeasured` on a row this run placed first and `RowBasis::kChosen`\n";
+    text += "/// on one it did not, and the record name this run's rows carry - the machine and the day\n";
+    text += "/// this run was stamped with, empty where the stamp it was given names no day.\n";
     text += "#define BOYS_BUILD_DEFAULT_ROWS(X)\\\n";
 
     // The device rows share one statement rather than carrying one marker each: they are all the

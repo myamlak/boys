@@ -515,8 +515,10 @@ def seam_rows(text: str) -> dict[tuple[str, str, str], dict[str, str]]:
     """The default rows of a seam file: (device, precision, shape) -> the combination's cells.
 
     A row is ``X(device, precision, shape, route, scheme, budget, packing, granularity, division,
-    exponential)``. The cells are the library's own spellings; which axis member each names is
-    resolved by the caller, which is the only place that holds the report's naming of the axes.
+    exponential, basis, record)``. The cells are the library's own spellings; which axis member
+    each names is resolved by the caller, which is the only place that holds the report's naming of
+    the axes. The last two cells are the row's provenance - what the combination is and which run
+    it came from - and are not axes of it, so they are not read here.
     """
     found: dict[tuple[str, str, str], dict[str, str]] = {}
     keys = ("route", "scheme", "budget", "packing", "granularity", "division", "exponential")
@@ -524,11 +526,11 @@ def seam_rows(text: str) -> dict[tuple[str, str, str], dict[str, str]]:
     for call in SEAM_CALL.findall(join_continuations(text)):
         cells = [cell.strip() for cell in call.split(",")]
 
-        if len(cells) != 10 or not cells[0].startswith("k"):
+        if len(cells) != 3 + len(keys) + 2 or not cells[0].startswith("k"):
             continue
 
         device = cells[0][1:].lower()
-        found[(device, cells[1], cells[2])] = dict(zip(keys, cells[3:]))
+        found[(device, cells[1], cells[2])] = dict(zip(keys, cells[3:3 + len(keys)]))
 
     return found
 

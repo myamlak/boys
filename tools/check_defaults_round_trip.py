@@ -128,6 +128,9 @@ SEAM_ROW = re.compile(
 NAMES = re.compile(r"^#define (BOYS_BUILD_DEFAULT_[A-Z_]+) (\S+)$", re.MULTILINE)
 HOST_EXP = re.compile(r"\bkDefaultHostRegionBExp\s*=\s*(RegionBExp::\w+)")
 
+# The day the run that wrote a report was stamped with, off the line the report opens with.
+STARTED = re.compile(r"\|\s*started\s+(?P<date>\d{4}-\d{2}-\d{2})")
+
 SEAM_PROSE = """#pragma once
 
 /// \\file
@@ -150,7 +153,9 @@ ROWS_PROSE = """/// The classes this file sets a default for: **one row per clas
 /// A measured row is one the report's run placed first in its class, and the combination below is
 /// that row's own, cell for cell. A row marked a choice is one the report ranked no cell of: it
 /// states the seven names above at its own lane's budget, and every cell is a choice rather than a
-/// measurement.
+/// measurement. The last two cells are that statement in a form a program reads: the basis, a
+/// `RowBasis` member, and the record the measured rows carry - the name of the run the report
+/// states - which is empty on a row that is a choice.
 #define BOYS_BUILD_DEFAULT_ROWS(X)\\
 """
 
@@ -205,15 +210,38 @@ def parse_report(text: str) -> dict[tuple[str, str], dict]:
     return ranked
 
 
-def row_text(device: str, precision: str, shape: str, cells: list[str]) -> str:
-    """One row of the row list, in the shape the seam's own macro takes."""
+def row_text(device: str, precision: str, shape: str, cells: list[str], basis: str,
+             record: str) -> str:
+    """One row of the row list, in the shape the seam's own macro takes.
+
+    The last two cells are the row's provenance, and they are written the way the probes write
+    them: the basis a `RowBasis` member, the record the name of the run the row came from, as a
+    quoted string and empty where the row is a choice and no run stands behind it.
+    """
     route, scheme, budget, pack, granularity, division, exp = cells
 
     return (
         f"    X({device}, {precision}, {shape}, {route}, {scheme}, {budget},\\\n"
         f"      {pack}, {granularity}, {division},\\\n"
-        f"      {exp})\\\n"
+        f"      {exp}, {basis}, \"{record}\")\\\n"
     )
+
+
+def record_name(report_text: str) -> str:
+    """The record name the report's rows carry: the machine and the date the run was stamped with.
+
+    A row names the run it came from, and this run is the option probe's on the host it was taken
+    on, so the name is `host-<date>`. A report whose stamp names no day names no run, and a
+    measured row that named none would be the free-text provenance this cell replaces.
+    """
+    match = STARTED.search(report_text)
+
+    if match is None:
+        die(f"the report {REPORT} states no `started <timestamp>` line, so the run its rows are "
+            f"from cannot be named and no measured row of the emitted seam could say which run it "
+            f"came from")
+
+    return f"host-{match.group('date')}"
 
 
 def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
@@ -249,6 +277,7 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
         die(f"the header {ACCURACY} states no kDefaultHostRegionBExp for a host row to fall back to")
 
     body: list[str] = []
+    record = record_name(report_text)
     device_rows = [row for row in rows if row[0] == "kDevice"]
     device_marker = (
         "    /* a choice, not a measurement: no device run stands, so each of\n"
@@ -267,7 +296,7 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
 
             cells = [names[host[0]], names[host[1]], budget, names[host[2]], names[host[3]],
                      names[DEVICE_NAMES[0]], names[DEVICE_NAMES[1]]]
-            body.append(row_text(device, precision, shape, cells))
+            body.append(row_text(device, precision, shape, cells, "RowBasis::kChosen", ""))
             continue
 
         winner = ranked.get((precision_word(precision), SHAPE_WORD[shape]))
@@ -278,7 +307,8 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
             marker = (f"    /* measured: {winner['nanoseconds']:.2f} ns per argument{reached}"
                       f"{sorted_note} */\\\n")
             body.append(marker)
-            body.append(row_text(device, precision, shape, winner["cells"]))
+            body.append(row_text(device, precision, shape, winner["cells"], "RowBasis::kMeasured",
+                                 record))
             continue
 
         marker = (
@@ -289,7 +319,7 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
         cells = [names[host[0]], names[host[1]], budget, names[host[2]], names[host[3]],
                  names[host[4]], host_exp[1]]
         body.append(marker)
-        body.append(row_text(device, precision, shape, cells))
+        body.append(row_text(device, precision, shape, cells, "RowBasis::kChosen", ""))
 
     text = SEAM_PROSE
 

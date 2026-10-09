@@ -73,7 +73,7 @@
 /// table's own format
 ///
 ///     X(device, precision, shape, route, scheme, budget, packing axis,
-///       granularity, division form, region-B exponential)
+///       granularity, division form, region-B exponential, basis, record)
 ///
 /// A class is a (device, precision, shape) triple - the device a call runs on,
 /// the precision lane an entry is built at, and the question that entry answers -
@@ -105,156 +105,175 @@
 /// probe's winners for this host - 12 logical processors, the AVX2+FMA tier
 /// present, seed 47, 5 passes of 5 rounds over 16384 arguments to order 32 - run
 /// 2026-10-05T10:19:50Z, and the figure beside each is that class's time per
-/// argument. A row is a property of the machine it was measured on, so a build on
-/// another host has its own winners and the probe is what finds them.
+/// argument. They all carry one record name: this host's own word and the day the
+/// run was stamped with. A row is a property of the machine it was measured on, so
+/// a build on another host has its own winners and the probe is what finds them.
 ///
 /// **The device rows are a run's own winners.** Every member of the space - the
 /// library's 352 device option rows crossed with its three division forms - was
 /// measured on a Quadro T1000 on 2026-10-06 and published, 1056 of 1056, none
-/// refused. The run measured that no entry of a class beats the entry its row
-/// names; it could not order the fastest entries of a class against each other,
+/// refused. They all carry one record name: the card's own word and the day that run
+/// was stamped with. The run measured that no entry of a class beats the entry its
+/// row names; it could not order the fastest entries of a class against each other,
 /// so each row is one of the entries that class measured as equally fast and the
-/// report states the resolution it reached beside it. A row belongs to the card
-/// it was measured on, so another card has its own winners.
+/// report states the resolution it reached beside it. A row belongs to the card it
+/// was measured on, so another card has its own winners.
 ///
-/// A row's marker says which of the two it is: a measurement, with the figure the
-/// class's winner took and how it was reached; or a choice, where the run ranked
-/// no cell of the class or an entry stood alone. Cells are written as enumerator
-/// names, unqualified because the types are not declared yet at the point this
-/// file is read, and the list is expanded where every enumeration it names is
-/// visible - so a cell naming an enumerator another axis owns is a compile error
-/// there rather than a default nobody reads. Every row writes all seven cells,
-/// the exponential included: a row that left one out would be compiled with a
-/// template default the row never chose.
+/// **What a row's combination is, and what it came from, are its last two cells
+/// rather than a sentence beside it.** The basis is `RowBasis::kMeasured` where a
+/// run ranked the class and the combination below is a winner that run took, and
+/// `RowBasis::kChosen` where the combination is a default this file states: the
+/// fallback the seven names make, a class a run ranked no cell of, or a class
+/// whose one entry stood alone. The record names the run the row came from, as
+/// `<machine>-<date>`, and it is empty exactly where no run stands behind the row.
+/// A name and not a revision: a revision is a second thing to rewrite on every
+/// re-record, and a row that carried one would describe the tree reading it rather
+/// than the run that produced it. The record a name points at is the file that run
+/// wrote, kept under `tests/data/`, which carries the revision the run was taken
+/// at and the paths the measurement depends on.
+///
+/// The marker above a row is prose and carries the rest: on a measurement, the
+/// figure the class's winner took and how it was reached; on a choice, why the run
+/// wrote the combination it states.
+///
+/// Cells are written as enumerator names, bare where the row's own key is what the
+/// enumeration's name means and qualified where an axis is, and the list is
+/// expanded where every enumeration it names is visible - so a cell naming an
+/// enumerator another axis owns is a compile error there rather than a default
+/// nobody reads. Every row writes all seven axis cells, the exponential included: a
+/// row that left one out would be compiled with a template default the row never
+/// chose. The two provenance cells are the row macro's own parameters for the same
+/// reason, so a row that leaves either out does not compile either - a row whose
+/// provenance nothing states is the defect this format exists to remove.
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
     /* measured: 88.66 ns per argument on this host, reached by vote */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 94.49 ns per argument on this host, reached by vote */\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 171.74 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 302.68 ns per argument on this host, reached by vote */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 674.53 ns per argument on this host, reached by vote */\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 98.17 ns per argument on this host, reached by vote through the sorted-arguments call */\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 140.56 ns per argument on this host, reached by vote */\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 240.08 ns per argument on this host, reached by ordered */\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 104.60 ns per argument on this host, reached by vote */\
     X(kHost, kFp32, kAllN, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 551.11 ns per argument on this host, reached by refined */\
     X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 125.34 ns per argument on this host, reached by vote */\
     X(kHost, kFp32, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 358.79 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 782.96 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 165.25 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 229.58 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 107.21 ns per argument on this host, reached by refined */\
     X(kHost, kBf16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 253.84 ns per argument on this host, reached by ordered */\
     X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 577.52 ns per argument on this host, reached by ordered */\
     X(kHost, kBf16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 116.60 ns per argument on this host, reached by vote */\
     X(kHost, kBf16, kAllN, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 140.28 ns per argument on this host, reached by vote */\
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
     /* measured: 'device-single-fp64-fast', in its class's fastest group */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-single-fp32', in its class's fastest group */\
     X(kDevice, kFp32Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-single-fp16-fast-exact-division', in its class's fastest group */\
     X(kDevice, kFp16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-orders-fp64-narrow-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-orders-fp32-rat-horner-exact-division', in its class's fastest group */\
     X(kDevice, kFp32Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-orders-fp16-uniform-horner-exact-division', in its class's fastest group */\
     X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kExactDivision,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-n-fp64', in its class's fastest group */\
     X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'all-n-fp32-fast-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-n-fp16-fast', in its class's fastest group */\
     X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast)\
+      RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-single-bfloat16-exact-division', in its class's fastest group */\
     X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-orders-bfloat16-uniform-rat-horner-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kBf16Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
     /* measured: 'device-all-n-bfloat16-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate)\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
 
 /// Which of the two files this is: the committed one defines it, a replacement
 /// does not, and the seam test reads it to know which pins apply. It is not a claim
