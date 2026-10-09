@@ -569,7 +569,11 @@ class Library:
         self.devices = list(self.enum_members("Device", self.header))
         self.routes = list(self.enum_members("FitRoute", self.accuracy))
         self.schemes = list(self.enum_members("EvalScheme", self.accuracy))
-        self.axes = list(self.enum_members("PackAxis", self.backend))
+        # The packing axis has stood in one header and then the other, and this reads a
+        # revision rather than the working tree: a run recorded before the move carries it in
+        # backend.hpp. Both are read, and neither being read is the loud case below.
+        self.axes = list(self.enum_members("PackAxis", self.accuracy)) or \
+            list(self.enum_members("PackAxis", self.backend))
         self.partitions = list(self.enum_members("FitGranularity", self.accuracy))
         self.forms = list(self.enum_members("DivisionForm", self.accuracy))
         self.exps = list(self.enum_members("RegionBExp", self.accuracy))
@@ -1427,6 +1431,11 @@ def unit_for(precision: str, shape: str, pack: str, entries: dict[str, str]) -> 
     }[shape]
 
     return ("#include <boys/boys.hpp>\n"
+            "// The policy-taking entries, where this revision declares them beside the front door:\n"
+            "// a revision that predates that header declares them in boys/boys.hpp itself.\n"
+            "#if __has_include(<boys/kernels.hpp>)\n"
+            "#include <boys/kernels.hpp>\n"
+            "#endif\n"
             "void Instantiate() {\n"
             f"    [[maybe_unused]] {scalar} x = {VALUE[precision]};\n"
             f"    [[maybe_unused]] {scalar} xs[8] = {{}};\n"

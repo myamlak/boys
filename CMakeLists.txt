@@ -712,7 +712,7 @@ if (BOYS_BUILD_TESTS)
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
@@ -761,7 +761,7 @@ int main() {
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
@@ -814,7 +814,7 @@ int main() {
     # about the axis. That shape has the probe below, and its verdict is booked
     # as the shape limit it is.
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     float in[33] = {};
     float out[33] = {};
@@ -830,7 +830,7 @@ int main() {
     # and a packing axis has nothing to pack.
     unset(BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS CACHE)
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;

@@ -138,6 +138,20 @@ UNARMED = {
         "so the two are armed together on the machine where a commit is made, and neither is a "
         "leg of the workflow"
     ),
+    "check_flag_independence.py": (
+        "it is armed as a ctest test (boys-flag-independence), registered by CMakeLists.txt and "
+        "run by the leg's own Test step, because what it reads is four programs' output: it needs "
+        "the two halves of one translation unit BUILT, which is the step that builds this tree and "
+        "not a step that reads it. A step of its own here would rebuild the four variants for a "
+        "verdict the Test step has already reached"
+    ),
+    "check_seam_identity.py": (
+        "armed with check_flag_independence.py and for the same reason: it compiles and LINKS a "
+        "call against the library this leg has built (boys-seam-identity), so its input is an "
+        "artifact of the Build step rather than text of this tree. It is listed here rather than "
+        "armed as a step because a step that ran before the build would read nothing and report "
+        "the refusal it is looking for"
+    ),
 }
 
 

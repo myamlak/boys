@@ -419,6 +419,11 @@ def control_unit(precision: str, shape: str, pack: str) -> str:
     call = CALL[shape].format(shape=shape[1:], suffix=SUFFIX[precision], policy=policy)
 
     return ("#include <boys/boys.hpp>\n"
+            "// The policy-taking entries, where this revision declares them beside the front door:\n"
+            "// a revision that predates that header declares them in boys/boys.hpp itself.\n"
+            "#if __has_include(<boys/kernels.hpp>)\n"
+            "#include <boys/kernels.hpp>\n"
+            "#endif\n"
             "void Instantiate() {\n"
             f"    [[maybe_unused]] {SCALAR[precision]} x = {VALUE[precision]};\n"
             f"    [[maybe_unused]] {SCALAR[precision]} xs[8] = {{}};\n"

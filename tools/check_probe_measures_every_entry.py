@@ -50,7 +50,7 @@ import sys
 # The one header that declares the host entries this probe measures, and the sources a probe
 # measures from. The CUDA surface is a separate build and a separate probe
 # (`boys-device-probe`), so it is not read here; a host entry is what this check is about.
-DECLARING_HEADERS = ["include/boys/boys.hpp"]
+DECLARING_HEADERS = ["include/boys/boys.hpp", "include/boys/kernels.hpp"]
 PROBE_SOURCES = ["src/boys_probe.cpp"]
 
 # What makes a declaration an entry: it returns `void` and writes its results, or it returns
@@ -294,11 +294,28 @@ def brace_spans(text: str) -> list[tuple[int, int, int | None]]:
     return [(open_, close, parent) for open_, close, parent in spans]
 
 
+def inline_namespace(text: str, open_brace: int) -> bool:
+    """Whether the scope opening at `open_brace` is an `inline namespace`.
+
+    Such a scope is transparent: its members are reached as members of the namespace around it,
+    so a declaration inside one is surface rather than implementation. Every other nested scope
+    - a plain namespace, a struct, a function body - is not.
+    """
+    header = text[max(0, open_brace - 120) : open_brace]
+    return re.search(r"\binline\s+namespace\s+[A-Za-z_][A-Za-z0-9_]*\s*$", header) is not None
+
+
 def surface_regions(text: str) -> list[tuple[int, int, list[tuple[int, int]]]]:
     """The top-level `namespace boys` ranges, each with the child ranges to leave out.
 
     A declaration that sits inside a nested namespace, a struct or a function body is
     implementation, not surface: only what sits directly in `namespace boys` is read.
+
+    **An `inline namespace` is not a nested namespace for this rule.** Its members are found
+    as members of the enclosing namespace - `boys::BoysSingle` names one whether it is written
+    there directly or inside the namespace the build's seam names - so a declaration inside one
+    is as reachable as a declaration outside it, and excluding it would read a surface that is
+    smaller than the one a caller sees.
     """
 
     spans = brace_spans(text)
@@ -313,7 +330,8 @@ def surface_regions(text: str) -> list[tuple[int, int, list[tuple[int, int]]]]:
             continue
 
         children = [(child_open, child_close) for i, (child_open, child_close, p) in enumerate(spans)
-                    if p == index and child_close > 0]
+                    if p == index and child_close > 0
+                    and not inline_namespace(text, child_open)]
         regions.append((open_, close, children))
 
     return regions
