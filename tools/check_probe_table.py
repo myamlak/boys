@@ -266,9 +266,9 @@ def compare_prose(doc_path: pathlib.Path, report_path: pathlib.Path, document: s
     """Hold the figures the section states in sentences to the report's own cells.
 
     Each reading below is a phrase of the section's and the report's cell the phrase is about: the
-    phrase is written here, the figure is read out of the report. A phrase the section no longer
-    carries is a finding as well, because a sentence and the reading of it are one thing - a
-    reading kept after its sentence was rewritten is a check over nothing.
+    phrase is written here, the figure is read out of the report. A phrase a reading needs and the
+    section does not carry is a finding as well, because a sentence and the reading of it are one
+    thing: a reading whose sentence is absent is a check over nothing.
 
     The section's numerals are then read as a set: one the report carries no cell for is a figure
     no run recorded, which is the defect no comparison of cell against cell can find, because
