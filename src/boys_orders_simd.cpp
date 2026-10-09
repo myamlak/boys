@@ -344,16 +344,10 @@ int GroupDegree(Degrees degrees, std::size_t flat, int pieceStride, int stored) 
     return deg;
 }
 
-// One vector of four orders' values from a polynomial table, the group's first
-// order being l.
-template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
-__m256d ShippedGroup(
-    const double* base, int l, int orderStride, int deg, __m128i step, __m256d tv) noexcept {
-    const double* const groupBase = base + static_cast<std::ptrdiff_t>(l) * orderStride;
-    const auto coeff = [&](int k) {
-        return StepCoefficients<kComposed>(groupBase, orderStride, step, k);
-    };
-
+// One group of four orders' values, summed by the scheme's own recurrence: the
+// fetch is the caller's, the summation this.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, class C>
+__m256d GroupSum(C coeff, int deg, __m256d tv) noexcept {
     if constexpr (kScheme == OrdersScheme::kHorner)
     {
         return HornerGathered<kMulAddRoute>(coeff, deg, tv);
@@ -364,6 +358,19 @@ __m256d ShippedGroup(
     {
         return ClenshawSplitGathered<kMulAddRoute>(coeff, deg, tv);
     }
+}
+
+// One vector of four orders' values from a polynomial table, the group's first
+// order being l.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
+__m256d ShippedGroup(
+    const double* base, int l, int orderStride, int deg, __m128i step, __m256d tv) noexcept {
+    const double* const groupBase = base + static_cast<std::ptrdiff_t>(l) * orderStride;
+    const auto coeff = [&](int k) {
+        return StepCoefficients<kComposed>(groupBase, orderStride, step, k);
+    };
+
+    return GroupSum<kMulAddRoute, kScheme>(coeff, deg, tv);
 }
 
 // A group of four orders into the caller's layout.
@@ -454,23 +461,56 @@ static_assert(std::size(kFlatOffsets) == static_cast<std::size_t>(kFlatIntervals
 static_assert(std::size(kFlatMonoCoeffs) == std::size(kFlatCoeffs),
               "the grid's two stored forms are parallel - same intervals, same orders, same "
               "degrees - so a scheme picks a table and a summation and changes no geometry");
+
+// The transposed twin is a permutation of those blocks and its read rule is a stride, so a
+// twin emitted with the wrong one is a compile error here rather than a wrong value at a
+// caller: the first interval's order 0 and order 1 are read out of both shapes.
+static_assert(std::size(kFlatTransposedCoeffs) == std::size(kFlatCoeffs) &&
+                  std::size(kFlatTransposedMonoCoeffs) == std::size(kFlatCoeffs),
+              "the transposed twin holds the same coefficients as the interval-major form, so "
+              "the two are addressed by the same offsets");
+static_assert(kFlatTransposedCoeffs[0] == kFlatCoeffs[0] &&
+                  kFlatTransposedCoeffs[kMaxOrder + 1] == kFlatCoeffs[1] &&
+                  kFlatTransposedCoeffs[1] == kFlatCoeffs[kFlatDegs[0] + 1],
+              "the twin's k-th coefficient of order l is the interval-major table's k-th "
+              "coefficient of that order: the coefficient index steps by kMaxOrder + 1 and the "
+              "order by one");
 static_assert(FlatDegreesCarried(),
               "every interval of the uniform grid must be fitted at an even degree between 4 "
               "and the read cap: the split Clenshaw recurrence this lane sums the far orders "
               "with is written for an even degree of at least four, and a degree above the cap "
               "is beyond the coefficients the interval stores");
 
-template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed>
+// One group of four orders out of the transposed twin: the four orders' k-th coefficients
+// are four consecutive doubles at a stride of one order count, so the fetch is a load where
+// the interval-major form pays a load and a join per lane. The grid stores the shape its
+// lane reads, which is what settles the choice the shipped tables' fetch has to weigh.
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
+__m256d TransposedGroup(const double* base, int l, int orders, int deg, __m256d tv) noexcept {
+    const double* const groupBase = base + l;
+    const auto coeff = [&](int k) {
+        return _mm256_loadu_pd(groupBase + static_cast<std::ptrdiff_t>(k) * orders);
+    };
+
+    return GroupSum<kMulAddRoute, kScheme>(coeff, deg, tv);
+}
+
+template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme>
 void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noexcept {
+    // The groups read the transposed twin and the tail the interval-major form: four orders'
+    // coefficients are consecutive in one and one order's own are consecutive in the other.
+    const double* const transposed =
+        (kScheme == OrdersScheme::kHorner) ? kFlatTransposedMonoCoeffs.data()
+                                           : kFlatTransposedCoeffs.data();
     const double* const table =
         (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
 
     const FlatPoint at = FlatLocate(x);
     const int deg = kFlatDegs[at.iv];
     const int orderStride = deg + 1;
-    const double* const base = table + at.block;
+    const double* const base = transposed + at.block;
+    const double* const rows = table + at.block;
 
-    const __m128i step = _mm_set_epi32(3 * orderStride, 2 * orderStride, orderStride, 0);
     const __m256d tv = _mm256_set1_pd(at.t);
 
     int l = 0;
@@ -479,22 +519,19 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
     {
         for (; l + 3 <= nmax; l += 4)
         {
-            // The four orders' copies of the cell lie one order apart, which is
-            // the stride the fetch steps by; every order is read at this
-            // interval's own stored degree, so the group has no degree to take
-            // the largest of.
+            // Every order is read at this interval's own stored degree, so the
+            // group has no degree to take the largest of.
             StoreGroup(out,
                        l,
                        stride,
-                       ShippedGroup<kMulAddRoute, kScheme, kComposed>(
-                           base, l, orderStride, deg, step, tv));
+                       TransposedGroup<kMulAddRoute, kScheme>(base, l, kMaxOrder + 1, deg, tv));
         }
     }
 
     for (; l <= nmax; ++l)
     {
         out[static_cast<std::size_t>(l) * stride] = ScalarFit<kMulAddRoute, kScheme>(
-            base + static_cast<std::ptrdiff_t>(l) * orderStride, deg, at.t);
+            rows + static_cast<std::ptrdiff_t>(l) * orderStride, deg, at.t);
     }
 }
 
@@ -2076,8 +2113,8 @@ BOYS_ORDERS_F32_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16,          
 
 // The entry the public surface's orders axis dispatches to (boys_impl.hpp). The multiplier picks
 // the degree a fit is read at and the partition the table it is read from; the division form
-// selects nothing here. The stored fit is summed composed rather than gathered: the two are the
-// same lane value for value, and composed is the cheaper on the machine this lane was measured on.
+// selects nothing here. The stored fit is summed from the transposed twin where the partition
+// carries one, one coefficient index at a time, both fetches being one lane value for value.
 template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity,
@@ -2092,10 +2129,10 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
 
     if constexpr (kGranularity == FitGranularity::kUniform)
     {
-        // The fixed grid, which the lane reads as the one contiguous ladder it is: every order's
-        // coefficients of one interval sit one after the other, so the fetch that steps an order to the
-        // next is a stride here as on the shipped cover, and the argument's interval is one multiply and
-        // a truncation rather than a scan of piece edges. Every rung is served by this body.
+        // The fixed grid, which the lane reads as the one contiguous ladder it is: an interval's
+        // coefficients are one block, its own degree + 1 per order in the interval-major form and one
+        // coefficient index across kMaxOrder + 1 orders in the transposed one, and the argument's
+        // interval is one multiply and a truncation rather than a scan of piece edges.
 
         if (x == 0.0)
         {
@@ -2129,7 +2166,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
                 return;
             }
 
-            UniformOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme), true>(
+            UniformOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme)>(
                 nmax, x, out, 1);
         }
 

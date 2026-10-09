@@ -833,8 +833,9 @@ static_assert(FlatRatPairsCarried(),
 /// two spellings of the same index arithmetic would be two chances to disagree
 /// about which interval an argument falls in. The interval is carried and not only
 /// its offset, because the table's degree is the interval's own: an order's
-/// coefficients are reached at the stride kFlatDegs[iv] + 1, and the group reader
-/// takes the same stride for the four orders it gathers.
+/// coefficients are reached at the stride kFlatDegs[iv] + 1, which is the stride
+/// the single-order read walks; the group reader reads the grid's transposed
+/// shape, one coefficient index across the orders.
 struct FlatPoint {
     std::size_t iv;    ///< the interval the argument falls in
     std::size_t block; ///< kFlatOffsets[iv], this interval's order-0 coefficient
@@ -3293,10 +3294,11 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 ///
 /// It evaluates each order's own fit and reaches no order by a recursion, so its values are the per-order
 /// fits' values: at the certified split Clenshaw scheme they are the across-arguments lane's values bit
-/// for bit, and the suite asserts that identity. The coefficients are fetched composed - four loads and
-/// the shuffles that join them - rather than with one gather instruction, which is the same lane by
-/// construction and cheaper in retired slots on the machines measured; the gathered fetch is kept beside
-/// it so the pair stays measurable.
+/// for bit, and the suite asserts that identity. The shipped cover's coefficients are fetched composed -
+/// four loads and the shuffles that join them - rather than with one gather instruction, which is the same
+/// lane by construction and cheaper in retired slots on the machines measured; the gathered fetch is kept
+/// beside it so the pair stays measurable. The uniform grid stores its coefficients with the order
+/// innermost, so its lane reads one coefficient index at a time and has no fetch to choose.
 ///
 /// Below kX0 only. Past it the entry runs the certified scalar single lane one order at a time, at the
 /// policy the caller named, so a relaxed multiplier falls back to that rung of that route rather than to
