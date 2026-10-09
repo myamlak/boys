@@ -624,10 +624,11 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
     }
 
     // Inside the span the table is held to the committed reference grid - the 45-digit
-    // values the accuracy gate itself reads - and not to the shipped entry. The shipped
-    // entry answers this region from the asymptotic form, whose relative error at the
-    // span's left edge runs to 0.7098 at n = 32 (measured at x = 29.136, the sweep the
-    // figure was read from): that error is the defect the table exists to remove, so
+    // values the accuracy gate itself reads - and not to the shipped entry: above the
+    // flat grid the shipped entry is the asymptotic form, whose relative error at n = 32
+    // runs to 2.55 just above it (2.5517 at x = 29.001, 1.88 by x = 30, measured at
+    // 29.136, 29.5 and 29.853 too), and below the grid's own top it is the grid's
+    // 8.1e-13. That asymptotic error is the defect the table exists to remove, so
     // asserting the two agree would be asserting against the reference.
     double worst = 0.0;
     double worst_x = 0.0;
