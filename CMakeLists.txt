@@ -528,6 +528,25 @@ else()
         "BoysAvx2Available() reports false.")
 endif()
 
+# The revision this tree is at, read at configure time, for every program here that writes a
+# record: the accuracy gate and both probes. A record naming no revision is attributable to
+# nothing and can be held to nothing - a renamed option cell once left the committed probe
+# report describing a probe that no longer existed, and no instrument could say so because
+# the report named no revision for a check to disagree with. Computed here and not inside a
+# block, because the two probes are built under options the gate's block does not cover.
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE BOYS_GATE_REVISION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET)
+endif()
+if(NOT BOYS_GATE_REVISION)
+    set(BOYS_GATE_REVISION "unknown")
+endif()
+
 # --- Tests (gtest; the reference grid is located via BoysDataDir) -----------
 if (BOYS_BUILD_TESTS)
     include(CTest)
@@ -608,21 +627,6 @@ if (BOYS_BUILD_TESTS)
     # It exits non-zero on any exceeded claim; passes that hold only because
     # the returned value is below what the format can hold are counted apart.
     #
-    # The gate prints the revision it measured, read from the tree at configure
-    # time, so "verified at this revision" names one: a result pasted into a
-    # report months later would otherwise be attributable to nothing.
-    find_package(Git QUIET)
-    if(GIT_FOUND)
-        execute_process(
-            COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE BOYS_GATE_REVISION
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET)
-    endif()
-    if(NOT BOYS_GATE_REVISION)
-        set(BOYS_GATE_REVISION "unknown")
-    endif()
     add_executable(boys-accuracy-gate tests/boys_accuracy_gate.cpp)
     target_link_libraries(boys-accuracy-gate PRIVATE boys)
     target_include_directories(boys-accuracy-gate PRIVATE src)
