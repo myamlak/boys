@@ -1506,6 +1506,16 @@ def flat_block_lines(flat):
     correct table wrongly, and no check of the coefficients alone would catch
     it.
 
+    The same coefficients are emitted a second time with the order innermost,
+    which is the shape a vector of four orders reads: one coefficient index of
+    four orders is then four consecutive doubles and the fetch is one load,
+    where the interval-major form steps between the four by the interval's own
+    degree + 1 and pays a load and a join per lane. It is a permutation of the
+    same values and not a second table - same count, same offsets, same block
+    lengths - so what the two differ in is which axis a reader walks
+    contiguously, and a reader that wants an order's own polynomial whole reads
+    the interval-major form. Each shape's read rule is stated beside it.
+
     Two things separate it from the derived partitions, and the option probe
     measures both. The grid is equal-width and derived, so the interval an
     argument falls in is one multiply and a truncation rather than a scan of
@@ -1561,9 +1571,30 @@ def flat_block_lines(flat):
         for i in range(0, len(values), 6):
             lines.append("  " + ", ".join(values[i:i + 6]) + ",")
         lines.append("});")
+    # The same coefficients with the order innermost, which is the order the
+    # vector lane reads: one coefficient index across the four orders a group
+    # carries is four consecutive doubles, where the form above steps between
+    # them by the interval's degree + 1. The offsets are the ones above - the
+    # transposition moves values inside a block and leaves its length alone.
+    lines.append("// The same coefficients transposed, one coefficient index at a time: the k-th\n"
+                 "// coefficient of order l is at kFlatOffsets[iv] + k * (kMaxOrder + 1) + l,\n"
+                 "// and the same for kFlatTransposedMonoCoeffs. Four orders' k-th coefficients\n"
+                 "// are then consecutive and a group reads them in one load.")
+    for name, column in (("kFlatTransposedCoeffs", 3), ("kFlatTransposedMonoCoeffs", 4)):
+        values = [fmt(per_order[n][iv][column][k])
+                  for iv in range(intervals)
+                  for k in range(degs[iv] + 1)
+                  for n in range(MAX_ORDER + 1)]
+        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
+        for i in range(0, len(values), 6):
+            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
+        lines.append("});")
     lines.append(f"static_assert(std::size(kFlatCoeffs) == {stored} &&\n"
-                 f"                  std::size(kFlatMonoCoeffs) == {stored},\n"
-                 "              \"the uniform table must hold every interval of every order\");")
+                 f"                  std::size(kFlatMonoCoeffs) == {stored} &&\n"
+                 f"                  std::size(kFlatTransposedCoeffs) == {stored} &&\n"
+                 f"                  std::size(kFlatTransposedMonoCoeffs) == {stored},\n"
+                 "              \"the uniform table must hold every interval of every order, in\"\n"
+                 "              \" both of its shapes\");")
     lines.append(f"static_assert(std::size(kFlatDegs) == kFlatIntervals &&\n"
                  f"                  std::size(kFlatOffsets) == kFlatIntervals + 1,\n"
                  "              \"the uniform table must carry one degree and one offset per "
@@ -1584,6 +1615,66 @@ def flat_block_lines(flat):
                      f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
     lines.append("});")
     return lines
+
+
+def header_array(text, name):
+    """One emitted double array, read back out of the written header.
+
+    The reader's own rule addresses the emitted text, so a check of the writer's
+    in-memory lists is a check of something the reader never sees. This reads what
+    was written: the array's values as the file spells them, in order.
+    """
+    marker = f"auto {name} = std::to_array<double>"
+    start = text.index("({", text.index(marker)) + 2
+    return [float(value)
+            for value in text[start:text.index("});", start)].replace("\n", " ").split(",")
+            if value.strip()]
+
+
+def flat_transposed_findings(path, grid):
+    """The transposed twin against the interval-major table it permutes.
+
+    The two shapes hold one value per stored coefficient, and a twin emitted with
+    the wrong stride or the wrong index order is a table a reader addresses
+    correctly and reads wrongly. A second emission of the same code holds the
+    file to the derivation and cannot see that class: both emissions carry the
+    same mistake. This walks the read rule over the written arrays instead - every
+    (interval, order, coefficient) of one shape against the index the reader looks
+    it up at in the other - so a twin that is not the transposition is a finding
+    here rather than a wrong value at a caller.
+    """
+    degs = grid["degs"]
+    offsets = flat_grid_offsets(grid)
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+
+    findings = []
+
+    for plain_name, twin_name in (("kFlatCoeffs", "kFlatTransposedCoeffs"),
+                                  ("kFlatMonoCoeffs", "kFlatTransposedMonoCoeffs")):
+        plain = header_array(text, plain_name)
+        twin = header_array(text, twin_name)
+
+        if len(plain) != len(twin):
+            findings.append(f"{path}: {len(twin)} {twin_name} against {len(plain)} "
+                            f"{plain_name}")
+            continue
+
+        mismatch = next(
+            ((iv, order, k)
+             for iv, deg in enumerate(degs)
+             for order in range(MAX_ORDER + 1)
+             for k in range(deg + 1)
+             if plain[offsets[iv] + order * (deg + 1) + k]
+             != twin[offsets[iv] + k * (MAX_ORDER + 1) + order]),
+            None)
+
+        if mismatch is not None:
+            iv, order, k = mismatch
+            findings.append(f"{path}: {twin_name} does not transpose {plain_name} at "
+                            f"interval {iv}, order {order}, coefficient {k}")
+
+    return findings
 
 
 # ---------------------------------------------------------------------------
@@ -6295,6 +6386,9 @@ def main():
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
+            for finding in flat_transposed_findings(tmp_header, flat["grid"]):
+                ok = False
+                print(f"DRIFT: {finding}")
             for generated, committed in ((tmp_header, args.header),
                                          (tmp_reference, args.reference)):
                 with open(generated, "rb") as fg, open(committed, "rb") as fc:
@@ -6314,6 +6408,11 @@ def main():
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
                  flat_f32, flat_rat, flat_rat_f32)
     format_header(args.header)
+    # The file just written is what a reader compiles against, so its transposed
+    # twin is held to the read rule here as well as in --check: a table emitted
+    # in the wrong shape is a wrong value at a caller and never a build error.
+    for finding in flat_transposed_findings(args.header, flat["grid"]):
+        raise RuntimeError(finding)
     print(f"wrote {args.header}")
 
     os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
