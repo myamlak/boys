@@ -541,7 +541,32 @@ if(GIT_FOUND)
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         OUTPUT_VARIABLE BOYS_GATE_REVISION
         OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET)
+        RESULT_VARIABLE _boys_git_status
+        ERROR_VARIABLE _boys_git_output)
+    # git being installed is not this directory being a work tree, and the two cases it
+    # leaves have opposite answers. A source tarball has no `.git` entry, the read failing
+    # there is what is expected, and the fallback below is the whole answer. A `.git` entry
+    # git could not read is a tree that has a revision and cannot name it: "unknown" is then
+    # false rather than a fallback, and the record the gate and the two probes write is
+    # refused by the checker after the run, when the run is spent. Every git query fails
+    # alike when the gitdir cannot be resolved, so the entry on disk separates the two, not
+    # another command.
+    if(NOT _boys_git_status STREQUAL "0" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+        string(STRIP "${_boys_git_output}" _boys_git_output)
+        message(FATAL_ERROR
+            "boys: this source tree is a git work tree (\"${CMAKE_CURRENT_SOURCE_DIR}/.git\" "
+            "is present) but its revision could not be read. The accuracy gate and the "
+            "probes stamp that revision into the record they write, and \"unknown\" would "
+            "leave the record attributable to no tree, so the configure stops here rather "
+            "than after a probe or gate run.\n"
+            "  command: \"${GIT_EXECUTABLE}\" rev-parse --short HEAD\n"
+            "  exit:    ${_boys_git_status}\n"
+            "  output:  ${_boys_git_output}\n"
+            "A source tree with no git, or with no .git entry - a tarball - is not this case, "
+            "and configures as it did before.")
+    endif()
+    unset(_boys_git_status)
+    unset(_boys_git_output)
 endif()
 if(NOT BOYS_GATE_REVISION)
     set(BOYS_GATE_REVISION "unknown")
