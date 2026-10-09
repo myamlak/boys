@@ -1721,9 +1721,8 @@ def flat_transposed_findings(path, grid):
 # The left edge is the library's own boundary and not a number of this file's:
 # the far table opens where region B ends, so the two tile the argument line
 # with no gap and no overlap between them, and a change to X1 above moves this
-# with it. It also repairs the arguments between X1 and 29: the published worst
-# relative cell, 2.55 at n = 32, sits at x = X1 itself, where a table opening at
-# 29 would pay the same coefficient budget and answer nothing.
+# with it. It also buys the arguments between X1 and 29, which a table opening at
+# 29 would pay the same coefficient budget for and leave to the flat grid.
 FAR_X0 = X1
 
 # PROVISIONAL, and the one number here that is not derived from the tree. The

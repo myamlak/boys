@@ -1072,9 +1072,10 @@ template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double
 // The ladder is BoysAllNBodyRegionC's step with the term region C drops:
 // F_l = ((l - 1/2) F_(l-1) - exp(-x)/2) / x. At kX1 that dropped term is 6.6 times
 // F_32, so it is not a small correction at high order: over the committed
-// reference's region C the shipped arithmetic's worst relative error is 2.55, at
-// n = 32, x = 29. Its absolute error there, 4.94e-14, is inside the 5.5e-14 its
-// contract bounds it by, which is the difference this arm buys.
+// reference's cells above kFlatHi, where the default's own region C opens, its
+// worst relative error is 1.88 at n = 32, x = 30. Its absolute error there,
+// 1.49e-14, is inside the 5.5e-14 its contract bounds it by, which is the
+// difference this arm buys.
 
 // The correction's degree, held to the reader's contract rather than assumed, for
 // the reason the far table's degrees are: the split Clenshaw's odd part is the D

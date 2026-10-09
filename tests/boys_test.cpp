@@ -688,9 +688,11 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
         }
     }
 
-    // Region C against the committed reference grid - the 45-digit values the accuracy
-    // gate reads - with the shipped arm measured over the same cells, so the figure the
-    // repair is worth is in the failure text and not only in a comment.
+    // Region C against the committed 45-digit reference grid, with the shipped arm
+    // measured over the same cells, so the figure the repair is worth is in the failure
+    // text and not only in a comment. The grid's region C is ten arguments, kX1 through
+    // 100, and this case measures those cells: the arm's span is [kX1, inf), and above
+    // the grid's top nothing here reaches it.
     double worst = 0.0;
     double worst_x = 0.0;
     double shipped_worst = 0.0;
@@ -731,7 +733,10 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
     }
 
     EXPECT_EQ(checked, 330u) << "the reference grid has stopped covering region C";
-    EXPECT_LE(worst, 1.2e-14) << "worst at n=" << worst_n << " x=" << worst_x
+    // Measured at 1.958e-15, n = 32, x = 29, alike on msvc, gcc and clang and alike
+    // under both multiply-add routes. The bar stands at twice that: a regression bar
+    // with headroom over the measurement, and not the measurement.
+    EXPECT_LE(worst, 4.0e-15) << "worst at n=" << worst_n << " x=" << worst_x
                               << ", shipped at n=" << shipped_n << " x=" << shipped_x << " is "
                               << shipped_worst;
 
@@ -779,6 +784,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
         }
     }
 
+    // Measured at 5.87e-15 at n = 32, 1.2e-28 absolute. The bar stands above the
+    // measurement, as the one over the grid does.
     EXPECT_LE(step, 2.0e-14) << "the ladder steps by " << step << " relative ("
                              << std::abs(below[step_n] - above[step_n])
                              << " absolute) at n=" << step_n << " across the join";
