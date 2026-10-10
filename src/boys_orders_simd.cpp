@@ -2678,3 +2678,20 @@ BOYS_ORDERS_UNIFORM_RATIONAL_INSTANTIATIONS(EvalScheme::kHorner, DivisionForm::k
 } // namespace boys::detail
 
 #endif // BOYS_SIMD_X86
+
+namespace boys::detail {
+
+// The flat grid's one-order fit, instantiated here so the recurrence is compiled with the
+// fused instruction set this translation unit carries. It is FitSum's own walk - the portable
+// body's - so the two agree at every bit; the flag is what differs, not the arithmetic.
+template <EvalScheme kScheme>
+double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept {
+    return FitSum<kScheme, backend::ScalarFp64>(cheb, mono, deg, t);
+}
+
+template double FlatFitSum<EvalScheme::kHorner>(const double*, const double*, int,
+                                                double) noexcept;
+template double FlatFitSum<EvalScheme::kSplitClenshaw>(const double*, const double*, int,
+                                                       double) noexcept;
+
+} // namespace boys::detail

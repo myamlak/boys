@@ -928,6 +928,20 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
     }
 }
 
+// One order's fit off the grid's stored coefficients, summed in the translation unit that
+// carries the fused instruction set (boys_orders_simd.cpp). The walk is FitSum's - the same
+// coefficients in the same order - so the value is the portable body's at every bit, and the
+// fused step is the instruction there rather than a call into the C runtime. A build without
+// the vector tier defines it too and never reaches it: BoysAvx2Available() is false there and
+// the portable body answers.
+template <EvalScheme kScheme>
+double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept;
+
+extern template double FlatFitSum<EvalScheme::kHorner>(const double*, const double*, int,
+                                                       double) noexcept;
+extern template double FlatFitSum<EvalScheme::kSplitClenshaw>(const double*, const double*, int,
+                                                              double) noexcept;
+
 // One argument's ladder off the uniform table: every order read from its own
 // coefficients, none from another's.
 template <typename Policy>
@@ -947,6 +961,30 @@ void UniformAllOrders(int nmax, double x, double* out) noexcept {
 template <typename Policy>
 double UniformSingleOrder(int n, double x) noexcept {
     return UniformOrderAt<Policy>(FlatLocate(x), n);
+}
+
+// One order off the grid, taken from the translation unit that carries the fused instruction
+// set where one is present, and from UniformSingleOrder above where none is. The index, the
+// coefficients and the walk are that body's own, so the value is its value at every bit: what
+// changes is where the fused step comes from, the instruction or a call into the C runtime.
+template <typename Policy>
+double FlatSingleOrder(int n, double x) noexcept {
+    if constexpr (Policy::kRoute == FitRoute::kChebyshev)
+    {
+        if (BoysAvx2Available())
+        {
+            const FlatPoint at = FlatLocate(x);
+            const std::size_t base =
+                at.block + static_cast<std::size_t>(n) *
+                               static_cast<std::size_t>(detail::kFlatDegs[at.iv] + 1);
+
+            return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base,
+                                               detail::kFlatMonoCoeffs.data() + base,
+                                               detail::kFlatDegs[at.iv], at.t);
+        }
+    }
+
+    return UniformSingleOrder<Policy>(n, x);
 }
 
 // The far region's stored representation: a Chebyshev fit per (interval, order)
@@ -1073,10 +1111,10 @@ template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double
 // The ladder is BoysAllNBodyRegionC's step with the term region C drops:
 // F_l = ((l - 1/2) F_(l-1) - exp(-x)/2) / x. At kX1 that dropped term is 6.6 times
 // F_32, so it is not a small correction at high order: over the committed
-// reference's cells above kFlatHi, where the default's own region C opens, its
-// worst relative error is 1.88 at n = 32, x = 30. Its absolute error there,
-// 1.49e-14, is inside the 5.5e-14 its contract bounds it by, which is the
-// difference this arm buys.
+// reference's cells above kFlatHi, where the default's own region C opens, the
+// default ladder's worst error is 1.88 of the value at n = 32, x = 30, and
+// 1.49e-14 in absolute terms; the 1.88 of the value is the figure the contract
+// states now, and repairing the dropped term is what this arm buys.
 
 // The correction's degree, held to the reader's contract rather than assumed, for
 // the reason the far table's degrees are: the split Clenshaw's odd part is the D
@@ -2923,7 +2961,7 @@ double SingleOrder(int n, double x) noexcept {
         // kFlatHi belongs to the grid, for the reason AllOrdersBody gives.
         if (x <= detail::kFlatHi)
         {
-            return UniformSingleOrder<Policy>(n, x);
+            return FlatSingleOrder<Policy>(n, x);
         }
     }
 
@@ -3470,10 +3508,10 @@ void BoysAllNAtOrdersF32Impl(
 // reaching them directly partitions its arguments by region itself, which is the batch entries'
 // work.
 
-// The certified per-value bounds: A's error is at most 1e-15 over [0, kX0), B's and C's at most
-// 5.5e-14. Measured against the committed reference grid: A holds that bound below the extended
-// band and lands 1.4e-15 at n = 32 on the band itself, C lands 5.0e-14, inside its bound with 10%
-// slack, and B lands 2.2e-13 at n = 32, x = kX0 - four times its own bound.
+// The per-region bars the fits are cut against, absolute and none of them the lane's published
+// bound (1e-13 of the value): A at most 1e-15 over [0, kX0), B's and C's at most 5.5e-14. The
+// committed reference grid lands 1.4e-15 on the band at n = 32, C 5.0e-14 inside its bar with 10%
+// slack, and B 2.2e-13 at n = 32, x = kX0 - four times its own bar.
 
 // Region B is therefore served by the scalar body in the batch entry. On a non-x86_64 target these
 // are defined against the certified scalar lanes (boys_simd.cpp) and BoysAvx2Available() is false.
@@ -4052,9 +4090,9 @@ void BoysAllNRunUngrouped(int nmax,
 /// which of the two scalar bodies the sort's path split assigned an argument to does not choose the
 /// kernel; the lane serves the band as well, at its band accuracy.
 ///
-/// Region B keeps its scalar body: BoysRegionBSimd does not hold its own documented bound across the
-/// region - at n = 32, x = kX0 it lands 2.2e-13 from the reference against its 5.5e-14 - and the scalar
-/// body is the per-argument path's own, exact to the bit.
+/// Region B keeps its scalar body: BoysRegionBSimd does not hold the region's own bar across the
+/// region - at n = 32, x = kX0 it lands 2.2e-13 from the reference against the 5.5e-14 the region's
+/// fits are cut against - and the scalar body is the per-argument path's own, exact to the bit.
 inline void BoysAllNRunGrouped(int nmax,
                                const double* x,
                                double* out,
