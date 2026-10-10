@@ -1983,6 +1983,7 @@ def scaled_far_ref(n, x):
 # no derivation produces and a reader could mistake for one.
 FAR_PLACEHOLDER_INTERVALS = 22
 FAR_PLACEHOLDER_DEG = 16
+FAR_PLACEHOLDER_WIDTH = (FAR_X1 - FAR_X0) / FAR_PLACEHOLDER_INTERVALS
 
 
 def far_placeholder_partition():
