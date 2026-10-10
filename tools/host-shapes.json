@@ -207,6 +207,10 @@
    "shape": "ladder-scalar-out",
    "spelling": "run-time route, with a scheme-carrying overload"
   },
+  "BoysAllOrdersWithFarRepresentation": {
+   "shape": "ladder-scalar-out",
+   "spelling": "run-time far-region representation, in the place BoysAllOrdersWithRoute names the partition's fits"
+  },
   "BoysAllOrdersF32": {
    "shape": "ladder-scalar-out",
    "spelling": "template; the float lane"
