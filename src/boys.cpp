@@ -160,6 +160,47 @@ void BoysAllOrdersWithRoute(
     BoysAllOrders<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(nmax, x, out);
 }
 
+void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
+                                        int nmax,
+                                        double x,
+                                        double* out) noexcept {
+    // A representation this build does not serve is the default entry outright,
+    // the fallback BoysAllOrdersWithRoute takes for a route it does not serve: the
+    // default is named where it is declared rather than spelled here.
+    const FarRepresentation selected =
+        far == FarRepresentation::kScaledTable || far == FarRepresentation::kCorrectedSeed
+            ? far
+            : kDefaultFarRepresentation;
+
+    // The table serves the span its rows report and nothing else: outside it the
+    // default entry answers, at its own values and by its own code, so the join at
+    // kScaledFarX0 and the edge at kScaledFarX1 are not a second implementation of
+    // the arguments beyond them.
+    if (selected == FarRepresentation::kScaledTable && x >= detail::kScaledFarX0 &&
+        x < detail::kScaledFarX1)
+    {
+        // The division form is the default entry's: this entry names the far
+        // representation and no other axis, so the recovery's ladder divides the
+        // way an unnamed division form divides rather than substituting a form the
+        // caller did not name.
+        detail::ScaledFarAllOrders<kDefaultDivisionForm>(nmax, x, out);
+        return;
+    }
+
+    // The corrected seed serves region C, which is the whole of [kX1, inf): below
+    // it the fitted regions answer. Its span is the region itself rather than a
+    // table's, because the seed correction and the stepped exp term are properties
+    // of the region; at order 0 the correction ends at kSeedCorrectionX1, above
+    // which the two arms' seeds agree.
+    if (selected == FarRepresentation::kCorrectedSeed && x >= detail::kX1)
+    {
+        detail::CorrectedSeedAllOrders<kDefaultDivisionForm>(nmax, x, out);
+        return;
+    }
+
+    BoysAllOrders<SelectorClass>(nmax, x, out);
+}
+
 // The evaluation-scheme report. Both tables are built once from the generated rows;
 // the route in force is a build fact, so which of a row's two figures a query answers
 // with is decided here.

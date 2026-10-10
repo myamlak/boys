@@ -63,7 +63,7 @@ from fractions import Fraction
 from functools import lru_cache
 
 try:
-    from mpmath import mp, mpf, cos, exp, pi
+    from mpmath import erf, erfc, mp, mpf, cos, exp, gamma, pi, sqrt
 except ImportError:
     if "--check" in sys.argv:
         # The regeneration ctest: CI runs without the pip package skip.
@@ -1717,6 +1717,20 @@ def header_ints(text, name):
             if value.strip()]
 
 
+def header_int_array(text, name):
+    """One emitted int array, read back out of the written header, as ints.
+
+    The same read as header_array's, for the tables whose entries are indices
+    rather than values: an offset read as a float and used as an index is a
+    different mistake from the one this exists to catch.
+    """
+    marker = f"auto {name} = std::to_array<int>"
+    start = text.index("({", text.index(marker)) + 2
+    return [int(value)
+            for value in text[start:text.index("});", start)].replace("\n", " ").split(",")
+            if value.strip()]
+
+
 def flat_transposed_findings(path, grid):
     """The transposed twin against the interval-major table it permutes.
 
@@ -1869,6 +1883,688 @@ def flat_relative_findings(path, lane, npts=8):
                 findings.append(
                     f"{path}: interval {iv}, order {n} delivers {worst:.6e} relative at "
                     f"x = {at!r}, above the {mp.nstr(bar, 3)} bar of the {lane} lane")
+
+    return findings
+
+
+# ---------------------------------------------------------------------------
+# The scaled far table: the asymptotically scaled F over [FAR_X0, FAR_X1)
+# ---------------------------------------------------------------------------
+# Substituting u = x t^2 in F_n's own integral gives F_n(x) = x^-(n+1/2)
+# gamma(n+1/2, x) / 2, so
+#
+#     H_n(x) = 2 F_n(x) x^(n+1/2) / Gamma(n+1/2) = gamma(n+1/2, x) / Gamma(n+1/2)
+#
+# is the regularized lower incomplete gamma. It is 1 at large x and it is a
+# function of order one across the whole far region, where F spans some twenty
+# orders of magnitude: over [29, 117) F_32 rises from 1.9e-14 to 1.8e-21 while
+# H_32 rises from 0.281 to 1. A polynomial fit of H is therefore a fit of a
+# function whose coefficients carry no cancellation, which is what the far
+# region's F fits could not be, and it is what the header's stored table holds.
+#
+# The defect from 1 is NOT the (n + 1/2)/(2x) an asymptotic reading suggests: it
+# is x^(n-1/2) e^-x / Gamma(n+1/2), exponential in x, which is why the band
+# immediately above FAR_X0 is the hard one - H_32 is still 0.281 at x = 29 - and
+# why the bands widen as x grows.
+#
+# Recovery is one multiply per order: F_n = H_n m_n with
+#
+#     m_n = Gamma(n+1/2) / (2 x^(n+1/2)),
+#
+# the running m_n = m_(n-1) (n - 1/2) / x from m_0 = Gamma(1/2)/(2 sqrt(x)) =
+# sqrt(pi)/(2 sqrt(x)). The 2 is H's own - it is what H is defined with above -
+# so it belongs in m and not in the caller.
+# The left edge is the library's own boundary and not a number of this file's:
+# the far table opens where region B ends, so the two tile the argument line
+# with no gap and no overlap between them, and a change to X1 above moves this
+# with it. It also buys the arguments between X1 and 29, which a table opening at
+# 29 would pay the same coefficient budget for and leave to the flat grid.
+FAR_X0 = X1
+
+# PROVISIONAL, and the one number here that is not derived from the tree. The
+# region the table covers is [kX1, inf) and the right edge is where the table
+# stops paying for itself against the asymptotic lane above it; that crossover
+# is being located by measurement elsewhere and is not decided here. Until it
+# lands this is the placeholder's own edge, the block takes X0 and X1 from the
+# partition's edges rather than from these two names, and a derived partition
+# replaces both by carrying its own.
+FAR_X1 = mpf(117)
+
+# The scheme the stored form is read at, named rather than numbered: the far
+# table stores the Chebyshev form, whose reader is the split Clenshaw, and the
+# index is looked up in SCHEME_NAMES so that renaming or reordering the schemes
+# moves this with them.
+FAR_SCHEME = SCHEME_NAMES.index("split-clenshaw")
+
+# The far sweep's density, arguments per interval. It is not the uniform
+# table's SCHEME_MEASURE_POINTS: a reference call here costs about 10 ms, because
+# boys_ref walks its series to the term floor and the terms of a far argument
+# peak near l = x, so a 1024-point sweep over this region's intervals is an hour
+# of clock. The figure only has to be at or above what a grid in the tree can
+# find, and the committed reference grid carries nine points in [29, 117), a mean
+# gap of 8.9. FAR_MEASURE_POINTS over the placeholder's width is a spacing of a
+# quarter, more than an order finer than that.
+FAR_MEASURE_POINTS = 32
+
+# sqrt(pi)/2 as boys_impl.hpp spells it, kBoysHalfSqrtPi on its own line 33: the
+# seed the reader's recovery starts from. Repeated here rather than read from
+# the header because the measurement has to be the reader's arithmetic and not
+# the measurement's own idea of it, and a reader seeded differently would show
+# up as a mismatch between this instrument and the library rather than as two
+# instruments agreeing on a value neither lane computes.
+HALF_SQRT_PI = 0.886226925452758014
+
+
+def scaled_far_ref(n, x):
+    """H_n(x), read from the same reference F the rest of this file is validated
+    against rather than from a second incomplete-gamma implementation.
+
+    The identity above is what makes the two the same number, so a table fitted
+    against this and a reader recovering F through it agree with the shipped
+    lanes by construction and not by a second opinion about the special
+    function. At 30 digits the two agree to between 2e-27 and 2e-31.
+    """
+    return 2 * boys_ref(n, x) * x ** (n + mpf("0.5")) / gamma(n + mpf("0.5"))
+
+
+# THE PARTITION IS DATA, AND THIS IS A PLACEHOLDER.
+#
+# The partition that meets the far region's target relative bar - its interval
+# edges and its one degree per interval - is derived elsewhere and is spliced in
+# here when it lands. What is below is a placeholder: equal width at one degree
+# throughout, which is the shape a partition has when nobody has derived it. It
+# is not a decision this file makes, no figure its rows carry is a claim about
+# the far region, and the derived partition is expected to cut the band
+# immediately above FAR_X0 much more finely than this and to widen as x grows:
+# H_32 is still 0.281 at the left edge and reaches 1 well before the right one.
+# The count rather than the width, so the placeholder's intervals are equal in
+# the way a partition nobody has derived is equal: a width would leave the last
+# interval a sliver of whatever the region's length left over, which is a shape
+# no derivation produces and a reader could mistake for one.
+FAR_PLACEHOLDER_INTERVALS = 22
+FAR_PLACEHOLDER_DEG = 16
+
+
+def far_placeholder_partition():
+    """The placeholder partition as (edges, degrees): what a derived one replaces.
+
+    Equal width and one degree, so the placeholder is recognisable as one
+    wherever it appears. A derived partition enters this file's machinery
+    through the same pair and nothing else about the far table changes.
+    """
+    width = (FAR_X1 - FAR_X0) / FAR_PLACEHOLDER_INTERVALS
+    edges = [FAR_X0 + i * width for i in range(FAR_PLACEHOLDER_INTERVALS)]
+    edges.append(FAR_X1)
+    return edges, [FAR_PLACEHOLDER_DEG] * FAR_PLACEHOLDER_INTERVALS
+
+
+def cheb_coeffs_of(fn, a, b, deg):
+    """cheb_coeffs over an arbitrary function of x, for the fits whose target is
+    not F itself."""
+    mid = (a + b) / 2
+    half = (b - a) / 2
+    nodes = [mid + half * cos(pi * (k + mpf("0.5")) / (deg + 1)) for k in range(deg + 1)]
+    values = [fn(x) for x in nodes]
+    coeffs = []
+    for j in range(deg + 1):
+        s = mpf(0)
+        for k in range(deg + 1):
+            s += values[k] * cos(pi * j * (k + mpf("0.5")) / (deg + 1))
+        factor = mpf(1) / (deg + 1) if j == 0 else mpf(2) / (deg + 1)
+        coeffs.append(factor * s)
+    return coeffs
+
+
+def scaled_far_ladder(n, x):
+    """m_0..m_n as the reader's recovery builds them, and the direct form of each.
+
+    The reader's own ladder, step for step with BoysAllNBodyRegionC: the seed
+    kBoysHalfSqrtPi / sqrt(x) and one DivideStep<kForm>((l - 1/2) * m, x, invx)
+    per order. At the default division form that step is bit-identical to exact
+    division, which is how it is spelled here; the other two forms are the
+    reader's to choose and this instrument is not where they are measured.
+
+    The direct form is the same quantity without the ladder, one gamma and one
+    pow, and it is carried because the two are a choice: the figure a table
+    delivers is the ladder's and the tabulated row has to be able to say so.
+
+    Returns (ladder, direct), both indexed by order.
+    """
+    xd = float(x)
+    m = HALF_SQRT_PI / math.sqrt(xd)
+    ladder = [m]
+    for l in range(1, n + 1):
+        m = (l - 0.5) * m / xd
+        ladder.append(m)
+    direct = [math.gamma(l + 0.5) / (2.0 * xd ** (l + 0.5)) for l in range(n + 1)]
+    return ladder, direct
+
+
+def scaled_far_delivered(cs, n, a, b, npts):
+    """What the split Clenshaw reaches over [a, b], in the reader's arithmetic.
+
+    Three figures per route, because the value a caller receives is not the fit
+    alone: F_n is H_n times m_n, and m_n carries a rounding of its own. So the
+    fit's relative error is measured against H, the recovery's against the
+    direct form of m, and the delivered error against the reference F - the
+    last being the product of the two and the only one that is a claim about
+    what the table delivers to a caller.
+
+    H's own instrument rather than fit_delivered's: this fit approximates the
+    scaled function, so the fit figure is measured against H and not against F
+    - a table whose H fit is at 1e-16 and whose recovery is at 1e-15 delivers
+    1e-15, and reporting only the first would understate it by an order.
+
+    One scheme and not two: the table stores the Chebyshev form alone, so the
+    monomial reading has no coefficients to read and a second column would be a
+    figure for a table nobody stores.
+    """
+    af = float(a)
+    bf = float(b)
+    worst = {"fit": [0.0, 0.0], "recovery": [0.0, 0.0], "delivered": [0.0, 0.0]}
+    for i in range(npts + 1):
+        x = af + (bf - af) * (i / npts)
+        if x >= bf:
+            x = math.nextafter(bf, 0.0)
+        h_ref = float(scaled_far_ref(n, x))
+        # F's own reference at the same argument, which the call above has
+        # already made: boys_ref is memoised, so this is a lookup and not a
+        # second walk of its series.
+        f_ref = float(boys_ref(n, x))
+        ladder, direct = scaled_far_ladder(n, x)
+        for route, fused in ((0, True), (1, False)):
+            h_fit = clenshaw_route(cs, x, af, bf, fused)
+            fit = abs(h_fit / h_ref - 1.0)
+            recovery = abs(ladder[n] / direct[n] - 1.0)
+            delivered = abs(h_fit * ladder[n] / f_ref - 1.0)
+            for name, value in (("fit", fit), ("recovery", recovery),
+                                ("delivered", delivered)):
+                if value > worst[name][route]:
+                    worst[name][route] = value
+    return worst
+
+
+def scaled_far_order(job):
+    """One order's fits over the far partition.
+
+    The job carries the partition for the reason flat_order's carries its grid:
+    a worker starts fresh, so a partition derived here would be a second
+    derivation free to disagree with the one the block writer emits the offsets
+    from. Each interval is fitted at its own degree, which is why the partition
+    carries one.
+    """
+    n, edges, degs = job
+    intervals = []
+    worst = {name: [0.0, 0.0] for name in ("fit", "recovery", "delivered")}
+    for iv, deg in enumerate(degs):
+        a = edges[iv]
+        b = edges[iv + 1]
+        cs = [float(c)
+              for c in cheb_coeffs_of(lambda x: scaled_far_ref(n, x), a, b, deg)]
+        intervals.append((float(a), float(b), deg, cs))
+        w = scaled_far_delivered(cs, n, a, b, FAR_MEASURE_POINTS)
+        for name in worst:
+            for route in (0, 1):
+                worst[name][route] = max(worst[name][route], w[name][route])
+    return n, intervals, worst
+
+
+def scaled_far_table(partition, workers=NARROW_WORKERS):
+    """The far table over the partition the caller names, with what it delivers.
+
+    The partition enters as (edges, degrees) and is the only thing about this
+    table that is a choice: the fits, the stored form, the offsets and the rows
+    are all read off it. No bar is imposed here - the far region's target is
+    derived elsewhere and this table is not certified against one - so the rows
+    carry the measured figure and the block writer says what it measured.
+    """
+    edges, degs = partition
+    jobs = [(n, edges, degs) for n in range(MAX_ORDER + 1)]
+    # workers = 1 runs the orders in this process. A pool is the default because
+    # the far fits are minutes of reference walks and the orders are independent;
+    # the serial path exists because a spawn pool is a host facility that can
+    # fail, and a fit that cannot start is a worse failure than a slow one.
+    if workers <= 1:
+        out = [scaled_far_order(job) for job in jobs]
+    else:
+        with multiprocessing.get_context("spawn").Pool(
+                min(len(jobs), workers)) as pool:
+            out = pool.map(scaled_far_order, jobs)
+    per_order = [intervals for _n, intervals, _w in out]
+    worst = {name: [0.0, 0.0] for name in ("fit", "recovery", "delivered")}
+    for _n, _intervals, w in out:
+        for name in worst:
+            for route in (0, 1):
+                worst[name][route] = max(worst[name][route], w[name][route])
+    bounds = {name: [scheme_bound(worst[name][r]) for r in (0, 1)]
+              for name in worst}
+    return {"orders": per_order, "worst": worst, "bounds": bounds,
+            "edges": list(edges), "degs": list(degs)}
+
+
+def scaled_far_offsets(degs):
+    """Where each interval's block starts, plus the end of the last one: the
+    prefix sum of (kMaxOrder + 1) * (degree + 1), as the uniform grid's is."""
+    offsets = [0]
+    for deg in degs:
+        offsets.append(offsets[-1] + (MAX_ORDER + 1) * (deg + 1))
+    return offsets
+
+
+def scaled_far_block_lines(far):
+    """The far table as the header stores it.
+
+    Interval-major, [interval][order][coefficient], the uniform grid's own
+    layout for the uniform grid's own reason: one argument's whole ladder is one
+    contiguous block, so the 33 polynomials a far argument reads sit in
+    consecutive cache lines. The degrees differ per interval, so the table has
+    no single stride and the block writer emits the degrees and the offsets
+    beside the coefficients and states the read rule in a line. A stride the
+    coefficients do not have reads a correct table wrongly, and no check of the
+    coefficients alone would catch it.
+
+    One stored form, the Chebyshev one: the region below this table is read by
+    the policy's scheme, but a far argument reads THIS table, and the entry that
+    reaches it names a representation rather than a scheme. A monomial twin
+    would be a second copy of the same fit that nothing reads.
+
+    The two constants beside it are the region's edges and the recovery rule.
+    H is not F, so the block states the one multiply that turns a stored value
+    into the value a caller receives.
+    """
+    edges = far["edges"]
+    degs = far["degs"]
+    cap = max(degs)
+    intervals = len(degs)
+    offsets = scaled_far_offsets(degs)
+    stored = offsets[-1]
+    per_order = far["orders"]
+    if [iv[2] for iv in per_order[0]] != list(degs):
+        raise RuntimeError("the far table's fits are not on the partition the block "
+                           "writer is emitting: the degrees disagree")
+    x0 = edges[0]
+    x1 = edges[-1]
+    lines = [
+        f"// The scaled far table: H_n = gamma(n + 1/2, x) / Gamma(n + 1/2) over",
+        f"// [kScaledFarX0, kScaledFarX1) = [{fmt(x0)}, {fmt(x1)}), one Chebyshev fit per",
+        f"// (interval, order) at the interval's own degree (kScaledFarDegs), cap",
+        f"// kScaledFarReadCap = {cap}. F_n is recovered from a stored H_n by one multiply per",
+        "// order: F_n = H_n * m_n, the running m_n = m_(n-1) * (n - 1/2) / x from",
+        "// m_0 = sqrt(pi) / (2 * sqrt(x)).",
+        "// Read at kScaledFarCoeffs[kScaledFarOffsets[iv] + order * (kScaledFarDegs[iv] + 1) + k]",
+        "// for k <= kScaledFarDegs[iv].",
+        f"inline constexpr double kScaledFarX0 = {fmt(x0)};",
+        f"inline constexpr double kScaledFarX1 = {fmt(x1)};",
+        f"inline constexpr int kScaledFarReadCap = {cap};",
+        deg_assert("kScaledFarReadCap"),
+        f"inline constexpr int kScaledFarIntervals = {intervals};",
+        "// One degree per interval, and the placeholder partition's own: this table's",
+        "// partition is derived elsewhere and spliced in here (see the generator's",
+        "// FAR_PLACEHOLDER_WIDTH).",
+        "inline constexpr auto kScaledFarDegs = std::to_array<int>({",
+    ]
+    for i in range(0, len(degs), 12):
+        lines.append("  " + ", ".join(str(d) for d in degs[i:i + 12]) + ",")
+    lines.append("});")
+    lines.append("// The partition's edges, kScaledFarIntervals + 1 of them, tiling the region:")
+    lines.append("inline constexpr auto kScaledFarEdges = std::to_array<double>({")
+    e = [fmt(v) for v in edges]
+    for i in range(0, len(e), 4):
+        lines.append("  " + ", ".join(e[i:i + 4]) + ",")
+    lines.append("});")
+    lines.append("// Where each interval's block starts, and the end of the last one:")
+    lines.append("inline constexpr auto kScaledFarOffsets = std::to_array<int>({")
+    for i in range(0, len(offsets), 12):
+        lines.append("  " + ", ".join(str(o) for o in offsets[i:i + 12]) + ",")
+    lines.append("});")
+    values = [fmt(c)
+              for iv in range(intervals)
+              for n in range(MAX_ORDER + 1)
+              for c in per_order[n][iv][3]]
+    lines.append("inline constexpr auto kScaledFarCoeffs = std::to_array<double>({")
+    for i in range(0, len(values), 6):
+        lines.append("  " + ", ".join(values[i:i + 6]) + ",")
+    lines.append("});")
+    lines.append(f"static_assert(std::size(kScaledFarCoeffs) == {stored},\n"
+                 "              \"the far table must hold every interval of every order, at\"\n"
+                 "              \" the degrees kScaledFarDegs describes\");")
+    lines.append(f"static_assert(std::size(kScaledFarDegs) == kScaledFarIntervals &&\n"
+                 f"                  std::size(kScaledFarOffsets) == kScaledFarIntervals + 1 &&\n"
+                 f"                  std::size(kScaledFarEdges) == kScaledFarIntervals + 1,\n"
+                 "              \"the far table must carry one degree and one offset per \"\n"
+                 "              \"interval, and one more edge than intervals\");")
+    lines.append(f"static_assert(kScaledFarOffsets[kScaledFarIntervals] == {stored},\n"
+                 "              \"the offsets must reach the end of the far table\");")
+    lines.append(f"static_assert(kScaledFarEdges[0] == kScaledFarX0 &&\n"
+                 f"                  kScaledFarEdges[kScaledFarIntervals] == kScaledFarX1,\n"
+                 "              \"the far partition's edges must tile the region the table \"\n"
+                 "              \"serves\");")
+    lines.append("// The degrees are held to the split Clenshaw's contract where the reader is,")
+    lines.append("// as the uniform table's are (ScaledFarDegreesCarried in boys_impl.hpp): an")
+    lines.append("// odd degree is summed into a different polynomial there, and the read cap is")
+    lines.append("// the widest row the table carries.")
+    lines.append("// The join: the far table opens where region B ends, so the two tile the")
+    lines.append("// argument line with no gap and no overlap. Written as an identity rather")
+    lines.append("// than as two copies of one number, because a table that opened above kX1")
+    lines.append("// would leave the arguments between them to the asymptotic lane and a table")
+    lines.append("// that opened below it would answer arguments region B already owns.")
+    lines.append("static_assert(kScaledFarX0 == kX1,")
+    lines.append("              \"the scaled far table must open at kX1, the end of region B\");")
+    lines.append("")
+    lines.append("// The far table's certification rows, in the uniform table's form: the worst")
+    lines.append("// relative error the table delivers in each multiply-add route, measured over")
+    lines.append("// every interval of every order and rounded up to a power of two. One row,")
+    lines.append("// because the table stores one form; the scheme it names is the one that")
+    lines.append("// reads it. Three figures, because a caller receives F and the table stores")
+    lines.append("// H: the fit's own relative error, the recovery's - the running m_n ladder")
+    lines.append("// against the direct form of the same quantity - and the delivered error of")
+    lines.append("// their product against the reference F, which is the only one of the three")
+    lines.append("// that is a claim about a value a caller gets. It is a measurement of the")
+    lines.append("// partition named beside it: this table's partition is being derived")
+    lines.append("// elsewhere and the row is not a certification against the far target.")
+    lines.append("struct ScaledFarRow { int scheme, deg, intervals, stored;")
+    lines.append("                       double fit_fused, fit_separate;")
+    lines.append("                       double rec_fused, rec_separate;")
+    lines.append("                       double del_fused, del_separate; };")
+    lines.append("inline constexpr auto kScaledFarRows = std::to_array<ScaledFarRow>({")
+    lines.append(f"  {{{FAR_SCHEME}, {cap}, {intervals}, {stored},")
+    lines.append(f"   {fmt(far['bounds']['fit'][0])}, {fmt(far['bounds']['fit'][1])},")
+    lines.append(f"   {fmt(far['bounds']['recovery'][0])}, {fmt(far['bounds']['recovery'][1])},")
+    lines.append(f"   {fmt(far['bounds']['delivered'][0])}, {fmt(far['bounds']['delivered'][1])}}},")
+    lines.append("});")
+    return lines
+
+
+def scaled_far_findings(path, partition=None):
+    """The written far table against the reader's own index rule.
+
+    Reads the arrays back out of the header text and walks
+    `kScaledFarOffsets[iv] + order * (kScaledFarDegs[iv] + 1) + k` over them, so
+    a table emitted with the wrong stride or the wrong offsets is a finding here
+    rather than a wrong value at a caller. The coefficients are evaluated at the
+    scheme that reads them and compared against the reference H.
+
+    partition, when the caller names one, is the (edges, degrees) the table was
+    fitted on, and the written geometry is compared against it element for
+    element. That comparison is not redundant with the evaluation: a degree-16
+    fit of H extrapolates accurately a whole unit past its interval, so a table
+    written with an edge one unit out delivers values inside the tolerance (it
+    was measured) and only this comparison sees it. flat_transposed_findings
+    takes the grid for the same reason.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+
+    findings = []
+
+    edges = header_array(text, "kScaledFarEdges")
+    degs = [int(v) for v in header_int_array(text, "kScaledFarDegs")]
+    offsets = [int(v) for v in header_int_array(text, "kScaledFarOffsets")]
+
+    if partition is not None:
+        want_edges, want_degs = partition
+        if len(want_edges) != len(edges) or len(want_degs) != len(degs):
+            findings.append(f"{path}: the far table carries {len(degs)} intervals and "
+                            f"{len(edges)} edges, and its partition has {len(want_degs)} "
+                            f"and {len(want_edges)}")
+        else:
+            if list(want_degs) != degs:
+                bad = next(iv for iv in range(len(degs)) if want_degs[iv] != degs[iv])
+                findings.append(f"{path}: the far table's interval {bad} is written at "
+                                f"degree {degs[bad]}, and its partition fits it at "
+                                f"degree {want_degs[bad]}")
+            # Against the double the writer emits, not against the partition's own
+            # value: the header stores a double, so an edge the partition holds at
+            # 30 digits is written and read back at the nearest one, and comparing
+            # the two as written decimals would find a difference in every edge.
+            if any(float(want_edges[iv]) != edges[iv] for iv in range(len(edges))):
+                bad = next(iv for iv in range(len(edges))
+                           if float(want_edges[iv]) != edges[iv])
+                findings.append(f"{path}: the far table's edge {bad} is written as "
+                                f"{edges[bad]}, and its partition cuts at "
+                                f"{float(want_edges[bad])}")
+    # The stored form is summed by the scheme that reads it, which is the
+    # reader's own pairing: the Chebyshev table by the split Clenshaw. Summing
+    # it with another scheme's recurrence is a finding about the check and not
+    # about the table.
+    for name, chebyshev in (("kScaledFarCoeffs", True),):
+        table = header_array(text, name)
+
+        if len(degs) + 1 != len(edges):
+            findings.append(f"{path}: {len(edges)} edges against {len(degs)} intervals")
+            continue
+        if len(offsets) != len(degs) + 1:
+            findings.append(f"{path}: {len(offsets)} offsets against {len(degs)} intervals")
+            continue
+
+        expected = 0
+        for iv, deg in enumerate(degs):
+            if offsets[iv] != expected:
+                findings.append(f"{path}: {name} interval {iv} starts at {offsets[iv]}, and "
+                                f"the degrees before it store {expected}")
+                break
+            expected += (MAX_ORDER + 1) * (deg + 1)
+        else:
+            if offsets[-1] != expected or expected != len(table):
+                findings.append(f"{path}: {name} stores {len(table)} values, and its offsets "
+                                f"and degrees describe {expected}")
+
+        for iv in range(1, len(edges)):
+            if not edges[iv - 1] < edges[iv]:
+                findings.append(f"{path}: the far partition's edge {iv} is not above edge "
+                                f"{iv - 1}")
+
+        mismatch = None
+        for iv, deg in enumerate(degs):
+            for order in range(MAX_ORDER + 1):
+                for probe in range(SCALED_FAR_PROBES):
+                    x = edges[iv] + (edges[iv + 1] - edges[iv]) * (probe + mpf("0.5")) / SCALED_FAR_PROBES
+                    cs = [table[offsets[iv] + order * (deg + 1) + k]
+                          for k in range(deg + 1)]
+                    if chebyshev:
+                        got = clenshaw_route(cs, float(x), edges[iv], edges[iv + 1], True)
+                    else:
+                        t = 2.0 * (float(x) - edges[iv]) / (edges[iv + 1] - edges[iv]) - 1.0
+                        got = horner_double(cs, t, True)
+                    want = float(scaled_far_ref(order, x))
+                    if abs(got - want) > SCALED_FAR_PROBE_TOL:
+                        mismatch = (iv, order, x, got, want)
+                        break
+                if mismatch is not None:
+                    break
+            if mismatch is not None:
+                break
+
+        if mismatch is not None:
+            iv, order, x, got, want = mismatch
+            findings.append(f"{path}: {name} interval {iv} order {order} evaluates to {got:.17e} "
+                            f"at x = {float(x):.17e}, and the reference H is {want:.17e}")
+
+    return findings
+
+
+# The verifier's probe: how many arguments per interval the far check samples,
+# and the residual above which the stored coefficients are not the fit they
+# claim to be. The tolerance is loose by the table's own standard and tight by
+# the standard of a wrong stride, which is what it is for: a transposed block
+# reproduces a function nothing like H.
+SCALED_FAR_PROBES = 8
+SCALED_FAR_PROBE_TOL = 1e-6
+
+
+# ---------------------------------------------------------------------------
+# The corrected seed over region C
+# ---------------------------------------------------------------------------
+# Region C is [kX1, inf) and the library seeds it with sqrt(pi) / (2 sqrt(x)),
+# which is F_0 = H_0(x) * sqrt(pi) / (2 sqrt(x)) with H_0 = erf(sqrt(x)) held at
+# 1. The closed form's relative error is therefore 1 - H_0 = erfc(sqrt(x)):
+# 2.65e-14 at kX1, and 8.0e-53 at 117. Nothing else in the region is smaller -
+# the recovery, when the region is read as a table, is a multiply - so near kX1
+# the seed is the whole of the path's error.
+#
+# The correction is one polynomial over the span where the closed form is NOT
+# exact to double precision, and the span's right edge is that sentence made
+# numeric: erfc(sqrt(x)) reaches the unit roundoff 2^-53 at 34.38, above which
+# the closed form is already the correctly rounded H_0 and a correction has
+# nothing left to remove. Carrying it further would be the over-wide table's
+# own defect one level down.
+SEED_CORRECTION_FLOOR = mpf(2) ** -53
+
+
+def seed_correction_join():
+    """The smallest double at which erfc(sqrt(x)) has fallen to the unit roundoff.
+
+    Derived rather than chosen, and rounded UP to a double at the end, so the
+    constant the header emits satisfies its own property on the platform that
+    reads it and not only in exact arithmetic. The property is what the verifier
+    re-tests, and it pins the value: a join one ulp lower has erfc above the
+    floor and a join above it corrects an argument the closed form already
+    answers.
+    """
+    # Bisected to 1e-25 and no finer: at mp.dps = 30 an argument near 34 keeps 28
+    # digits after the point, so a tighter tolerance is not reachable and the
+    # loop would not stop. Nine digits beyond the double's own resolution is as
+    # much as the rounding-up below can use.
+    lo, hi = X1, mpf(64)
+    while hi - lo > mpf("1e-25"):
+        mid = (lo + hi) / 2
+        if erfc(sqrt(mid)) > SEED_CORRECTION_FLOOR:
+            lo = mid
+        else:
+            hi = mid
+    x1 = float(hi)
+    while erfc(sqrt(mpf(x1))) > SEED_CORRECTION_FLOOR:
+        x1 = math.nextafter(x1, math.inf)
+    return mpf(x1)
+
+
+# Degree 8: the smallest degree at which the polynomial's own error is two
+# orders below the half ulp a delivered value rounds to, which is where the
+# corrected seed becomes the correctly rounded erf rather than merely a good
+# approximation to it. Measured over 20001 arguments: degree 6 fits H_0 - 1 to
+# 1.09e-17, degree 8 to 2.56e-19, degree 10 to 4.10e-21. Past 8 the polynomial is
+# some four orders below the arm's own delivered error, whose worst over the
+# committed reference's region C is 1.96e-15 at order 32, so the extra coefficients
+# buy the caller nothing.
+SEED_CORRECTION_DEG = 8
+
+# The verifier's sweep over the span, and the residual above which the written
+# polynomial is not the correction. The bar is two orders above the fit's own
+# 2.6e-19 and below the half ulp 5.55e-17 the delivered value rounds at, so a
+# sign, an order or a degree written wrong is a finding while the rounding the
+# reader cannot avoid is not.
+SEED_CORRECTION_PROBES = 64
+SEED_CORRECTION_PROBE_TOL = 1e-16
+
+
+def seed_correction_coeffs(deg=SEED_CORRECTION_DEG, x1=None):
+    """H_0 - 1 over [kX1, join): the correction the closed form is missing.
+
+    H_0 - 1 and not H_0. The function being fitted varies by 2.6e-14 across the
+    span while its own value is 1, so coefficients fitted to H_0 are O(1) and
+    must cancel by thirteen digits to carry it - measured, that form's error
+    floors at 1.08e-17 by degree 10 and stops improving, the coefficient
+    rounding having become the limit. The difference's coefficients are 1e-14,
+    the reader's one addition puts the 1 back, and the fit keeps improving with
+    degree the way an approximation should.
+    """
+    return cheb_coeffs_of(lambda x: erf(sqrt(x)) - 1, X1,
+                          seed_correction_join() if x1 is None else x1, deg)
+
+
+def seed_correction_block_lines(x1, deg, cs):
+    """The corrected seed as the header stores it: the span, the degree, and the
+    one polynomial that fills the span."""
+    lines = [
+        "// The corrected seed over region C. The closed form the library already has,",
+        "// sqrt(pi) / (2 sqrt(x)), is F_0 * H_0 with H_0 = erf(sqrt(x)) held at 1, so its",
+        "// relative error is erfc(sqrt(x)) - 2.65e-14 at kX1. That error falls to the",
+        "// unit roundoff 2^-53 at kSeedCorrectionX1, where the closed form is already the",
+        "// correctly rounded H_0 and a correction has nothing left to remove; this",
+        "// polynomial carries H_0 - 1 over [kX1, kSeedCorrectionX1) and the closed form",
+        "// answers at and above it. Read as 1.0 + q(t) by the split Clenshaw, in the",
+        "// mapped argument.",
+        "inline constexpr double kSeedCorrectionX0 = kX1;",
+        f"inline constexpr double kSeedCorrectionX1 = {fmt(x1)};",
+        f"inline constexpr int kSeedCorrectionDeg = {deg};",
+        deg_assert("kSeedCorrectionDeg"),
+        "inline constexpr auto kSeedCorrectionCoeffs = std::to_array<double>({",
+    ]
+    values = [fmt(c) for c in cs]
+    for i in range(0, len(values), 3):
+        lines.append("  " + ", ".join(values[i:i + 3]) + ",")
+    lines.append("});")
+    lines.append(f"static_assert(std::size(kSeedCorrectionCoeffs) == {deg + 1},\n"
+                 "              \"the corrected seed stores one coefficient per degree\");")
+    return lines
+
+
+def header_scalar(text, name, type_="double"):
+    """One emitted constant, read back out of the written header.
+
+    The corrected seed's join is the constant this exists for. It is a derived
+    number, and a check of the derivation's in-memory value is a check of a
+    number the reader never sees.
+    """
+    marker = f"inline constexpr {type_} {name} = "
+    start = text.index(marker) + len(marker)
+    return float(text[start:text.index(";", start)])
+
+
+def seed_correction_findings(path):
+    """The written corrected seed against the property it exists for.
+
+    Three things the header can carry wrongly and nothing else would see. The
+    join must be the SMALLEST double at which erfc(sqrt(x)) reaches the unit
+    roundoff - a hand-typed one a few ulps out is a correction that stops early
+    or runs on, and both compile. The left edge must be kX1, because the
+    correction opens where region C does. And the polynomial, summed at the
+    scheme the reader sums it with, must deliver H_0 over the span.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+
+    findings = []
+    x0 = header_scalar(text, "kX1")
+    x1 = header_scalar(text, "kSeedCorrectionX1")
+    deg = int(header_scalar(text, "kSeedCorrectionDeg", "int"))
+    cs = header_array(text, "kSeedCorrectionCoeffs")
+
+    # Spelled as the identity rather than as a second copy of the number, so the
+    # correction opens where region C opens by construction; a literal there is
+    # the drift this reads for.
+    if "inline constexpr double kSeedCorrectionX0 = kX1;" not in text:
+        findings.append(f"{path}: the corrected seed's left edge is not written as kX1, so "
+                        f"it can drift from the region it corrects")
+
+    if erfc(sqrt(mpf(x1))) > SEED_CORRECTION_FLOOR:
+        findings.append(f"{path}: erfc(sqrt(kSeedCorrectionX1)) = "
+                        f"{mp.nstr(erfc(sqrt(mpf(x1))), 6)} is above the unit roundoff "
+                        f"{mp.nstr(SEED_CORRECTION_FLOOR, 6)}, so the correction stops "
+                        f"before the closed form is exact")
+    else:
+        below = math.nextafter(x1, -math.inf)
+        if erfc(sqrt(mpf(below))) <= SEED_CORRECTION_FLOOR:
+            findings.append(f"{path}: kSeedCorrectionX1 = {x1!r} is not the smallest double "
+                            f"whose erfc has reached the unit roundoff: {below!r} has reached "
+                            f"it too")
+
+    if deg < 4 or deg % 2 != 0:
+        findings.append(f"{path}: the corrected seed is fitted at degree {deg}, and the split "
+                        f"Clenshaw's odd part is derived for an even degree of at least 4")
+    elif len(cs) != deg + 1:
+        findings.append(f"{path}: the corrected seed is fitted at degree {deg} and stores "
+                        f"{len(cs)} coefficients")
+
+    if not findings:
+        for i in range(SEED_CORRECTION_PROBES + 1):
+            x = x0 + (x1 - x0) * i / SEED_CORRECTION_PROBES
+            got = 1.0 + clenshaw_route(cs, x, x0, x1, True)
+            want = float(erf(sqrt(mpf(x))))
+            if abs(got - want) > SEED_CORRECTION_PROBE_TOL:
+                findings.append(f"{path}: the corrected seed delivers {got:.17e} at x = "
+                                f"{x:.17e}, and the reference H_0 is {want:.17e}")
+                break
 
     return findings
 
@@ -5765,7 +6461,7 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
 def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
                  scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat, flat_rat_f32):
+                 flat_f32, flat_rat, flat_rat_f32, scaled_far):
     with open(path, "w", newline="\n") as f:
         f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT. Not API: the tables the\n")
         f.write("// entries are compiled from - split-Clenshaw Chebyshev fits of F_n(x): region A seeds\n")
@@ -5888,6 +6584,17 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # The rational family over that same grid, beside the Chebyshev member
         # rather than in place of it. See flat_rat_block_lines.
         for line in flat_rat_block_lines(flat_rat):
+            f.write(line + "\n")
+        f.write("\n")
+        # The scaled far table, beside the recurrence that serves the region
+        # rather than in place of it. See scaled_far_block_lines.
+        for line in scaled_far_block_lines(scaled_far):
+            f.write(line + "\n")
+        f.write("\n")
+        # The corrected seed, the third representation of the same region: wholly
+        # derived here, so nothing is passed in for it. See seed_correction_coeffs.
+        for line in seed_correction_block_lines(seed_correction_join(), SEED_CORRECTION_DEG,
+                                                seed_correction_coeffs()):
             f.write(line + "\n")
         f.write("\n")
         ext_deg, ext_cs, ext_mono = ext_cheb
@@ -6242,6 +6949,16 @@ def main():
     parser.add_argument("--f32-flat-out", default="",
                         help="where --f32-flat-only writes the table's header block "
                              "(default: nowhere, the figures are printed instead)")
+    parser.add_argument("--far-only", action="store_true",
+                        help="fit only the scaled far table over the placeholder "
+                             "partition and write its header block to --far-out, "
+                             "without fitting the rest of the table (the block's "
+                             "byte-identity check without the hours-long full "
+                             "generation)")
+    parser.add_argument("--far-out", default="",
+                        help="where --far-only writes the block (default a scratch "
+                             "name beside the committed header; clang-format must "
+                             "find the repo .clang-format, so keep it inside the tree)")
     parser.add_argument("--f32-flat-rat-only", action="store_true",
                         help="fit only the float lane's rational member over its "
                              "uniform grid and print what each interval stores and "
@@ -6266,6 +6983,34 @@ def main():
     if args.reference_only:
         os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
         write_reference(args.reference)
+        return 0
+
+    if args.far_only:
+        # The scaled far table's block alone, for the reason --narrow-only
+        # exists: the full generation takes hours and this table is a partition
+        # of degree-16 fits, so the block is reproduced and compared on its own.
+        # scaled_far_block_lines is shared with write_header, which is what
+        # keeps the two from drifting.
+        far = scaled_far_table(far_placeholder_partition())
+        far_out = args.far_out or (args.header + ".far-tmp.hpp")
+        os.makedirs(os.path.dirname(far_out) or ".", exist_ok=True)
+        with open(far_out, "w", newline="\n") as f:
+            f.write("#include <array>\n#include <cstddef>\n\n"
+                    "namespace boys::detail {\n\n")
+            for line in scaled_far_block_lines(far):
+                f.write(line + "\n")
+            f.write("\n}  // namespace boys::detail\n")
+        for finding in scaled_far_findings(far_out, (far["edges"], far["degs"])):
+            raise RuntimeError(finding)
+        print(f"wrote {far_out}")
+        print(f"the scaled far table: {len(far['degs'])} intervals over "
+              f"[{mp.nstr(FAR_X0, 4)}, {mp.nstr(FAR_X1, 4)}), degrees "
+              f"{min(far['degs'])}..{max(far['degs'])}, "
+              f"{scaled_far_offsets(far['degs'])[-1]} stored")
+        for name in ("fit", "recovery", "delivered"):
+            print(f"  {name + ' relative':20s} worst {far['worst'][name][0]:.4e} / "
+                  f"{far['worst'][name][1]:.4e} (fused / separate), bound "
+                  f"{far['bounds'][name][0]:.4e}")
         return 0
 
     if args.narrow_only:
@@ -6548,6 +7293,23 @@ def main():
               f"{flat['worst'][scheme][1]:.6e} relative (fused / separate), published "
               f"{flat['bounds'][scheme][0]:.6e}")
 
+    # The scaled far table: the asymptotically scaled F over [FAR_X0, FAR_X1).
+    # Beside the recurrence that serves the region rather than in place of it,
+    # and over the placeholder partition until the derived one lands - the
+    # partition is data and this function takes it as such.
+    far_part_edges, far_part_degs = far_placeholder_partition()
+    print(f"fitting the scaled far table over the placeholder partition "
+          f"({len(far_part_degs)} intervals of width "
+          f"{mp.nstr(FAR_PLACEHOLDER_WIDTH, 3)}, degree "
+          f"{FAR_PLACEHOLDER_DEG} throughout) ...")
+    scaled_far = scaled_far_table((far_part_edges, far_part_degs))
+    print(f"  the scaled far table: {len(scaled_far['degs'])} intervals over "
+          f"[{mp.nstr(FAR_X0, 4)}, {mp.nstr(FAR_X1, 4)}), "
+          f"{scaled_far_offsets(scaled_far['degs'])[-1]} stored")
+    for name in ("fit", "recovery", "delivered"):
+        print(f"  {name + ' relative':20s} worst {scaled_far['worst'][name][0]:.4e} / "
+              f"{scaled_far['worst'][name][1]:.4e} (fused / separate)")
+
     # The same table for the float lane: the lane's own grid, derived from the
     # lane's own bound, format and read cap, and its figure read in the lane's
     # own arithmetic. Beside the double table rather than instead of it, as the
@@ -6653,7 +7415,7 @@ def main():
                          (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                          rat_a_f32, rat_b_f32, narrow, narrow_a,
                          narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                         flat_f32, flat_rat, flat_rat_f32)
+                         flat_f32, flat_rat, flat_rat_f32, scaled_far)
             format_header(tmp_header)
             write_reference(tmp_reference)
             ok = True
@@ -6668,6 +7430,13 @@ def main():
                 for finding in flat_relative_findings(tmp_header, lane):
                     ok = False
                     print(f"DRIFT: {finding}")
+            for finding in scaled_far_findings(
+                    tmp_header, (scaled_far["edges"], scaled_far["degs"])):
+                ok = False
+                print(f"DRIFT: {finding}")
+            for finding in seed_correction_findings(tmp_header):
+                ok = False
+                print(f"DRIFT: {finding}")
             for generated, committed in ((tmp_header, args.header),
                                          (tmp_reference, args.reference)):
                 with open(generated, "rb") as fg, open(committed, "rb") as fc:
@@ -6685,12 +7454,22 @@ def main():
                  (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
                  rat_a_f32, rat_b_f32, narrow, narrow_a,
                  narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat, flat_rat_f32)
+                 flat_f32, flat_rat, flat_rat_f32, scaled_far)
     format_header(args.header)
     # The file just written is what a reader compiles against, so its transposed
     # twin is held to the read rule here as well as in --check: a table emitted
     # in the wrong shape is a wrong value at a caller and never a build error.
     for finding in flat_transposed_findings(args.header, flat["grid"]):
+        raise RuntimeError(finding)
+    # The same for the far table: its read rule is a stride the coefficients do
+    # not carry, so the written file is walked here as well.
+    for finding in scaled_far_findings(args.header,
+                                      (scaled_far["edges"], scaled_far["degs"])):
+        raise RuntimeError(finding)
+    # And the corrected seed, whose join is derived: the written constant is what
+    # a reader gets, so its property is re-tested on the text and not on the
+    # derivation's own value.
+    for finding in seed_correction_findings(args.header):
         raise RuntimeError(finding)
     print(f"wrote {args.header}")
 

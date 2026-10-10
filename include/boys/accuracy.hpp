@@ -635,5 +635,64 @@ enum class MulAddRoute : std::uint8_t {
 /// carry the kernel for it.
 inline const char* MulAddRouteName(MulAddRoute route) noexcept;
 } // namespace backend
+/// How the far region's values are reached: the representations of one region,
+/// all carried, none substituted for another.
+///
+/// The far region is \c [kX1, inf), and its boundary is not a partition's to
+/// move: however the fitted regions are cut below it, an argument above \c kX1
+/// is served today by one seed and a dependent upward recurrence. That is one
+/// representation of the region, and it is what this axis is beside.
+///
+/// **They are not a partition.** Every partition of the fitted regions is
+/// served by the same seed-plus-recurrence above \c kX1, so an arm of the
+/// partition axis could not name any of them: the representation is orthogonal
+/// to where the boundary is, and it is a choice of its own. \c kCorrectedSeed is
+/// the one arm that is not a second definition of the function at all - it is the
+/// recurrence's arithmetic with its two defects repaired - which is why the pairs
+/// are ranked by measurement rather than by construction.
+///
+/// **A named representation serves the arguments it covers and changes nothing
+/// else.** \c kAsymptoticRecurrence is the entry's own body over the whole
+/// region, at the default entry's values. \c kScaledTable serves the arguments
+/// in \c [kScaledFarX0, kScaledFarX1) from the stored scaled table and is the
+/// default entry's elsewhere, so every argument a caller may pass is answered
+/// under either name and the values outside the table's span are the same under
+/// both.
+///
+/// \ingroup boys
+enum class FarRepresentation : std::uint8_t {
+    /// The seed and the upward recurrence: \c F_0 = sqrt(pi)/(2 sqrt(x)) and one
+    /// dependent step per order, which is the region's own arithmetic and what
+    /// every published far-region figure was measured at.
+    kAsymptoticRecurrence = 0,
+
+    /// The stored scaled table: a Chebyshev fit per (interval, order) of
+    /// \c H_n = 2 F_n x^(n+1/2) / Gamma(n+1/2), the regularized lower incomplete
+    /// gamma, read at each order and multiplied by a running \c m_n. The far
+    /// orders are then independent of one another where the recurrence makes them
+    /// a chain, and the table's own delivered error is published in its rows.
+    kScaledTable = 1,
+
+    /// The same recurrence, seeded and stepped correctly. The seed above is the
+    /// closed form \c sqrt(pi)/(2 sqrt(x)), which is \c F_0 * H_0 with \c H_0
+    /// held at 1: its relative error is \c erfc(sqrt(x)), 2.65e-14 at \c kX1.
+    /// This arm carries that error as one polynomial over the span where it is
+    /// above the unit roundoff, \c [kX1, kSeedCorrectionX1), and the ladder adds
+    /// the \c exp(-x)/2 term the asymptotic step drops, which at \c kX1 is
+    /// larger than \c F_32 itself.
+    kCorrectedSeed = 2,
+};
+
+/// The representation the far region takes when the caller names none.
+///
+/// **The recurrence, because the table has not been ranked yet.** The recurrence
+/// and the table are ranked by the option probe on the machine it is run on, and
+/// the probe has not run over the scaled table: no timing, no delivered-error
+/// comparison against the recurrence over the same arguments, no crossover against
+/// the asymptotic lane above the table's right edge. Until it has, the default
+/// stays where the published figures were measured, and this name records that it
+/// is the published-figure representation rather than the measured winner.
+inline constexpr FarRepresentation kDefaultFarRepresentation =
+    FarRepresentation::kAsymptoticRecurrence;
 
 } // namespace boys

@@ -1117,6 +1117,43 @@ void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noe
 void BoysAllOrdersWithRoute(
     FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
+/// F_0(x)..F_nmax(x) in double precision at a run-time-selected representation of
+/// the far region - the batch entry's contract, with the named representation
+/// serving the arguments it covers and the default entry answering the rest.
+///
+/// The far region is \c [kX1, inf), and it is the region no partition reaches: an
+/// argument above \c kX1 is served by a seed and a dependent upward recurrence
+/// under whatever partition the fitted regions are read at. The representation is
+/// therefore not a fourth arm of the partition axis, and this entry names it
+/// where BoysAllOrdersWithRoute names the partition's fits.
+///
+/// \c kScaledTable serves \c [kScaledFarX0, kScaledFarX1) from the stored scaled
+/// table and returns the default entry's values everywhere else, exactly as a
+/// route returns the default's outside the intervals its rows report: every
+/// argument the library accepts is answered under either name, and the arguments
+/// the table covers are the only ones the two differ on. \c kAsymptoticRecurrence
+/// is the default entry outright, so a caller who names it receives today's values
+/// bit for bit.
+///
+/// \c kCorrectedSeed serves \c [kX1, inf) and returns the default entry's values
+/// below it. It is the same function reached more accurately, not a second
+/// definition: the default entry's own seed and ladder with the two errors region C
+/// carries repaired - the closed form's \c erfc(sqrt(x)) seed error, and the
+/// \c exp(-x)/2 term the region's step drops - so inside the region its values are
+/// its own, and a caller may not mix the two arms at one argument.
+///
+/// \param far  the far region's representation, a property of this call only
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, >= 0
+/// \param out  receives nmax + 1 values, out[k] = F_k(x); every value is written
+///             whatever representation is named
+///
+/// \ingroup boys
+void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
+                                        int nmax,
+                                        double x,
+                                        double* out) noexcept;
+
 
 
 
