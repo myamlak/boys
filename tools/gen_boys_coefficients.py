@@ -1789,15 +1789,21 @@ FLAT_READ = {
 }
 
 
-def header_scalar(text, name):
+def header_scalar(text, name, type_=None):
     """One emitted constant, read back out of the written header.
 
     The DECLARATION is what is read, type and all: the block writes the constant
     into the prose above itself as well - "width kFlatWidth = 0.25," in the
     uniform table's own comment - so a search for the name alone stops at the
     comment and reads the rest of the paragraph as the value.
+
+    A caller that knows the type may name it. One that does not is read against
+    every type the header writes, so an int constant is found as readily as a
+    double one - which is what the uniform table's interval count needs, and
+    what it silently did not get while a second definition of this name took
+    the two-argument calls and read them as double.
     """
-    for ctype in ("int", "double", "float"):
+    for ctype in ((type_,) if type_ else ("int", "double", "float")):
         marker = f"inline constexpr {ctype} {name} = "
         if marker in text:
             start = text.index(marker) + len(marker)
@@ -2498,18 +2504,6 @@ def seed_correction_block_lines(x1, deg, cs):
     lines.append(f"static_assert(std::size(kSeedCorrectionCoeffs) == {deg + 1},\n"
                  "              \"the corrected seed stores one coefficient per degree\");")
     return lines
-
-
-def header_scalar(text, name, type_="double"):
-    """One emitted constant, read back out of the written header.
-
-    The corrected seed's join is the constant this exists for. It is a derived
-    number, and a check of the derivation's in-memory value is a check of a
-    number the reader never sees.
-    """
-    marker = f"inline constexpr {type_} {name} = "
-    start = text.index(marker) + len(marker)
-    return float(text[start:text.index(";", start)])
 
 
 def seed_correction_findings(path):
