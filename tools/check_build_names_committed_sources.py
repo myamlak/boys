@@ -11,6 +11,11 @@ The check is mechanical: read every CMake file's quoted source paths, and requir
 one to be present **and tracked**. Untracked is the case that matters; absent is caught
 by CMake itself, but it is caught here first and with a clearer sentence.
 
+Two things in a build file name a path without being one the build reads: a commented
+line, and the argument of a `message(` command. A diagnostic names a header by the
+spelling its `#include` uses - `boys/boys.hpp` for `include/boys/boys.hpp` - and no
+clone fails over a sentence. Neither is read here.
+
     python tools/check_build_names_committed_sources.py
     python tools/check_build_names_committed_sources.py --check    # exit 1 on a finding
 
@@ -65,6 +70,41 @@ def tracked(root: Path, relative: str) -> bool:
     return found.returncode == 0
 
 
+def in_comment(text: str, position: int) -> bool:
+    start = text.rfind("\n", 0, position) + 1
+    while start < len(text) and text[start] in " \t":
+        start += 1
+    return start < len(text) and text[start] == "#"
+
+
+def diagnostic_spans(text: str) -> list[tuple[int, int]]:
+    """The argument list of every `message(` command, as (start, end) offsets.
+
+    A message may run over several lines and its strings may hold parentheses, so the
+    list is found by walking to the paren that closes the one the command opened.
+    """
+    spans = []
+    for command in re.finditer(r"(?<![\w.])message\s*\(", text):
+        if in_comment(text, command.start()):
+            continue
+        depth, index = 0, command.end() - 1
+        while index < len(text):
+            character = text[index]
+            if character == '"':
+                index += 1
+                while index < len(text) and text[index] != '"':
+                    index += 2 if text[index] == "\\" else 1
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    break
+            index += 1
+        spans.append((command.start(), index + 1))
+    return spans
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -75,16 +115,21 @@ def main(argv: list[str]) -> int:
     absent, untracked, named = [], [], 0
 
     for cmake in cmake_files(root):
-        for line in cmake.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.lstrip().startswith("#"):
-                continue
-            for found in PATH_IN_LINE.finditer(line):
-                relative = found.group(1)
-                named += 1
-                if not (root / relative).is_file():
-                    absent.append((cmake, relative))
-                elif not tracked(root, relative):
-                    untracked.append((cmake, relative))
+        text = cmake.read_text(encoding="utf-8", errors="replace")
+        prose = diagnostic_spans(text)
+        offset = 0
+        for line in text.splitlines(keepends=True):
+            if not line.lstrip().startswith("#"):
+                for found in PATH_IN_LINE.finditer(line):
+                    if any(begin <= offset + found.start() < end for begin, end in prose):
+                        continue
+                    relative = found.group(1)
+                    named += 1
+                    if not (root / relative).is_file():
+                        absent.append((cmake, relative))
+                    elif not tracked(root, relative):
+                        untracked.append((cmake, relative))
+            offset += len(line)
 
     for workflow in workflow_files(root):
         for line in workflow.read_text(encoding="utf-8", errors="replace").splitlines():
