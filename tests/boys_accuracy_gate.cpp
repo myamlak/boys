@@ -3,7 +3,7 @@
 // tools/gen_boys_accuracy_gate_reference.py, whose routes agree to 1e-81 - 65 to 81 orders below
 // the tightest bound here). Any claim not verified at this revision exits non-zero.
 
-#include <boys/boys.hpp>
+#include <boys/kernels.hpp>
 #include <boys/f16.hpp>
 
 // The store-half lanes and the packed simd-half kernels are declared behind the BoysFp16

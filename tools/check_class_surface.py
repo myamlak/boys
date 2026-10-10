@@ -34,7 +34,12 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
+# The front door carries the classifications' keys - the two enumerations - and the kernel header
+# carries the entries' own default policies, which are what names a class here. Both are read: an
+# entry declared without the key is an entry this check cannot place, and one declared in the
+# other file alone is not a class served.
 HEADER = REPO / "include" / "boys" / "boys.hpp"
+ENTRY_HEADER = REPO / "include" / "boys" / "kernels.hpp"
 TABLE = pathlib.Path(__file__).resolve().parent / "host-shapes.json"
 
 # A class is named by an entry's own default policy: `DefaultPolicy<Precision::kX, Shape::kY>`, the
@@ -126,13 +131,14 @@ def main() -> int:
     args = parser.parse_args()
 
     text = visible(HEADER.read_text(encoding="utf-8", errors="replace"))
+    entries = visible(ENTRY_HEADER.read_text(encoding="utf-8", errors="replace"))
     precisions = enumerators(text, "Precision")
     shapes = enumerators(text, "Shape")
 
     # The device precisions are the device lane's classes, served from boys_cuda.hpp under their own
     # key; this check is the host surface, so they are not part of the cross it walks.
     host = [p for p in precisions if not p.endswith("Device")]
-    served = set(CLASS.findall(code_only(text)))
+    served = set(CLASS.findall(code_only(entries)))
     stated = absent_reasons(args.table)
 
     missing = []

@@ -155,6 +155,7 @@ endif()
 add_library(boys
     src/boys.cpp
     src/boys_c.cpp
+    src/boys_defaults.cpp
     src/boys_half_native.cpp
     src/boys_orders_simd.cpp
     src/boys_probe.cpp
@@ -292,9 +293,16 @@ if (BOYS_BUILD_DEFAULTS)
     # another working directory hashes the file it copied and not a stranger.
     get_filename_component(BOYS_BUILD_DEFAULTS_FILE "${BOYS_BUILD_DEFAULTS}" ABSOLUTE)
     file(SHA256 "${BOYS_BUILD_DEFAULTS_FILE}" BOYS_BUILD_DEFAULTS_SEAM_SHA256)
+    # The same digest again as an identifier, because the front door names the namespace its
+    # default entries are compiled into from the seam, and a namespace is named by a token
+    # rather than by a string. A translation unit compiled against one seam and linked against
+    # a library built with another therefore fails to link; the string above is what it reports
+    # once it does (`include/boys/version.hpp`, BuildDefaultsSeamIdentity()).
+    set(BOYS_BUILD_DEFAULTS_SEAM_IDENT "seam_${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
     target_compile_definitions(boys PUBLIC
         BOYS_BUILD_DEFAULTS_REPLACED=1
-        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
+        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+        BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
     message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the seven choices an "
         "unnamed call resolves to are that header's, and they are a measurement on the machine "
         "it was taken on. sha256 ${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
@@ -704,7 +712,7 @@ if (BOYS_BUILD_TESTS)
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
@@ -753,7 +761,7 @@ int main() {
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
@@ -806,7 +814,7 @@ int main() {
     # about the axis. That shape has the probe below, and its verdict is booked
     # as the shape limit it is.
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     float in[33] = {};
     float out[33] = {};
@@ -822,7 +830,7 @@ int main() {
     # and a packing axis has nothing to pack.
     unset(BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS CACHE)
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
@@ -969,6 +977,137 @@ int main() {
     target_compile_definitions(boys-consumer-option-space PRIVATE
         BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
     boys_strict_warnings(boys-consumer-option-space)
+
+    # --- What an unnamed call resolves to is the library's ----------------------
+    #
+    # A call site that names no policy links an entry the library compiled, so what a translation
+    # unit's own optimization level, target features and contraction setting do to the arithmetic
+    # stops at the header it reads. Three properties hold that up, and each is measured here
+    # rather than stated:
+    #
+    #  1. A call that NAMES a policy compiles from boys/kernels.hpp and from no other header of
+    #     this library. Measured by compiling the call from the front door alone and requiring it
+    #     not to build: a declaration left in the front door would compile and fail at LINK, and
+    #     a promise the linker keeps is not the property. The control beside it compiles the same
+    #     call with the kernel header, so a probe that failed for its own reasons - a typo, a
+    #     missing include path - is caught rather than read as a refusal.
+    #
+    #  2. The entries belong to the seam the library was built with: the front door defines them
+    #     in a namespace named from the seam's digest, so a translation unit compiled against
+    #     another seam does not link against this library. Measured by linking one.
+    #
+    #  3. The entries' values do not move with the caller's flags. Measured by building one
+    #     program four ways and comparing the digests they print.
+    if (BOYS_BUILD_TESTS)
+        unset(BOYS_FRONT_DOOR_HOLDS_A_POLICY CACHE)
+        unset(BOYS_KERNELS_HEADER_COMPILES_THE_CALL CACHE)
+        set(_boys_gate_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+        set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        set(_boys_gate_std "-std=c++20")
+        if (MSVC)
+            set(_boys_gate_std "/std:c++20 /EHsc")
+        endif()
+
+        set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
+        check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    return boys::BoysSingle<boys::EvalPolicy<>>(0, 1.0) == 0.0 && out[0] == 0.0;
+}
+" BOYS_FRONT_DOOR_HOLDS_A_POLICY)
+
+        set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
+        check_cxx_source_compiles("
+#include <boys/kernels.hpp>
+int main() {
+    double out[33] = {};
+    return boys::BoysSingle<boys::EvalPolicy<>>(0, 1.0) == 0.0 && out[0] == 0.0;
+}
+" BOYS_KERNELS_HEADER_COMPILES_THE_CALL)
+
+        if (BOYS_FRONT_DOOR_HOLDS_A_POLICY OR NOT BOYS_KERNELS_HEADER_COMPILES_THE_CALL)
+            message(FATAL_ERROR
+                "boys: the front door must not compile a call that names a policy, and the kernel "
+                "header must. Compiling from boys/boys.hpp alone returned "
+                "${BOYS_FRONT_DOOR_HOLDS_A_POLICY}, compiling the same call from boys/kernels.hpp "
+                "returned ${BOYS_KERNELS_HEADER_COMPILES_THE_CALL}: the first must be false and "
+                "the second true, so that naming a policy is refused where it is written.")
+        endif()
+        message(STATUS "boys: a call naming a policy compiles from boys/kernels.hpp and not from "
+            "the front door, measured by compiling it both ways")
+
+        unset(CMAKE_REQUIRED_FLAGS)
+        unset(CMAKE_REQUIRED_INCLUDES)
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_gate_type}")
+        unset(_boys_gate_type)
+
+        if (MSVC)
+            message(STATUS "boys: the flag-independence check is not built here — its variants "
+                "are -O2, -O3 -march=native with each contraction setting, and -O2 -mavx2 -mfma, "
+                "and none of them is a spell this compiler takes. The property is the library's "
+                "on either host; what is unmeasured on this one is the fourth reading of it.")
+        else()
+            find_package(Python3 COMPONENTS Interpreter QUIET)
+            set(_boys_flag_variants o2 fast nofast avx2)
+            set(_boys_flag_programs "")
+            foreach (variant IN LISTS _boys_flag_variants)
+                add_executable(boys-flag-independence-${variant}
+                    tests/boys_flag_independence.cpp)
+                target_link_libraries(boys-flag-independence-${variant} PRIVATE boys)
+                boys_strict_warnings(boys-flag-independence-${variant})
+                if (variant STREQUAL "o2")
+                    # Stated last on the command line, so it replaces the build type's own level
+                    # rather than joining it: this variant is the one a caller gets from -O2.
+                    set(_boys_variant_flags -O2)
+                elseif (variant STREQUAL "fast")
+                    set(_boys_variant_flags -O3 -march=native -ffp-contract=fast)
+                elseif (variant STREQUAL "nofast")
+                    set(_boys_variant_flags -O3 -march=native -ffp-contract=off)
+                else()
+                    set(_boys_variant_flags -O2 -mavx2 -mfma)
+                endif()
+                target_compile_options(boys-flag-independence-${variant}
+                    PRIVATE ${_boys_variant_flags})
+                list(APPEND _boys_flag_programs $<TARGET_FILE:boys-flag-independence-${variant}>)
+            endforeach()
+            if (Python3_FOUND)
+                add_test(NAME boys-flag-independence
+                    COMMAND ${Python3_EXECUTABLE}
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_flag_independence.py" --check
+                        ${_boys_flag_programs})
+            else()
+                message(STATUS "boys: the flag-independence check is not registered — it reads "
+                    "four programs' output, which needs a Python interpreter this configure did "
+                    "not find")
+            endif()
+
+            # The seam's half, at build time because it is a LINK: the same call, compiled
+            # against a namespace no library was built with, must not link this one, and the
+            # same call compiled against this build's own seam must. A configure-time probe
+            # cannot ask it - the archive it would link does not exist yet.
+            if (Python3_FOUND)
+                if (BOYS_BUILD_DEFAULTS)
+                    set(_boys_own_seam "${BOYS_BUILD_DEFAULTS_SEAM_IDENT}")
+                else()
+                    set(_boys_own_seam "seam_committed")
+                endif()
+                add_test(NAME boys-seam-identity
+                    COMMAND ${Python3_EXECUTABLE}
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_seam_identity.py" --check
+                        --cxx "${CMAKE_CXX_COMPILER}"
+                        "--std=-std=c++20"
+                        --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
+                        --library "$<TARGET_FILE:boys>"
+                        --seam-ident "${_boys_own_seam}")
+            else()
+                message(STATUS "boys: the seam-identity check is not registered — it compiles "
+                    "and links a call, which needs a Python interpreter this configure did not "
+                    "find")
+            endif()
+        endif()
+    endif()
 
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
@@ -1255,7 +1394,8 @@ if (BUILD_CUDA)
         target_include_directories(boys-cuda BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
         target_compile_definitions(boys-cuda PUBLIC
             BOYS_BUILD_DEFAULTS_REPLACED=1
-            BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
+            BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+            BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
     endif()
     target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
     # The multiply-add route is one build fact with two lanes behind it, and

@@ -6,8 +6,9 @@
 /// default accuracy, and the axes a call site selects an evaluation by - the
 /// route its fits come from, the scheme their coefficients are summed in, the
 /// exponential a region-B ladder is seeded with, the cut of the domain those
-/// fits are read from, and the form each of a ladder's divisions is performed
-/// in.
+/// fits are read from, the form each of a ladder's divisions is performed in,
+/// the axis a packed evaluation vectorises over, and the budget a
+/// single-precision engine evaluates at.
 ///
 /// They stand in their own header so that a header naming them need not carry
 /// the kernel: the CUDA lane's option rows are read from a header that has to
@@ -489,5 +490,150 @@ inline constexpr DivisionForm kDefaultDivisionForm = BOYS_BUILD_DEFAULT_DIVISION
 /// the form every figure this repository publishes for that lane was measured at,
 /// which is what a build that names nothing keeps.
 inline constexpr DivisionForm kDefaultDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM;
+
+/// Which axis a packed lane vectorises over.
+///
+/// A packed lane keeps four doubles in a register and a call has to supply four of
+/// something. Which something is a property of the call shape: \c BoysAllOrders is
+/// one argument and every order, so the orders are the only axis with anything in
+/// it, while the batch shapes carry several arguments at one order and can fill a
+/// register with those. The two evaluate the same stored fits by the same
+/// arithmetic and differ in what the vector lanes hold, so they are not rungs of
+/// one design and neither replaces the other.
+///
+/// The axis is one field of an \c EvalPolicy. Naming the orders axis on an entry
+/// that has one order is a combination this library does not carry and is refused
+/// where it is named: a packed lane keeps four orders of one argument and such a
+/// call produces one.
+///
+/// \ingroup boys
+enum class PackAxis : std::uint8_t {
+    /// Four arguments of one order: the packed lanes the fixed-order and plane
+    /// entries reach.
+    kArguments = 0,
+
+    /// Four orders of one argument: the shape \c BoysAllOrders has, and the
+    /// axis its own packed lane packs.
+    kOrders = 1,
+};
+
+/// The axis the entries pack when the caller names none.
+///
+/// The shipped one: a call site that names no axis packs the arguments axis. A
+/// build replaces it through `BOYS_BUILD_DEFAULTS` like the other four
+/// (boys/boys_build_defaults.hpp).
+inline constexpr PackAxis kDefaultPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
+
+/// The computation budget a single-precision engine evaluates at.
+///
+/// The lanes that keep half-precision arguments and compute in single (f16.hpp)
+/// hold a tighter bar than the float lane's, so the engine both lanes call is
+/// told which of the two budgets it runs under rather than assuming one. The
+/// double lanes carry no such choice and read no budget.
+///
+/// \ingroup boys
+enum class BoysBudget : std::uint8_t {
+    /// The float lane's 1.5e-7 budget.
+    kFloat = 0,
+
+    /// The fp16/bf16 engine's 1e-7 region target. The half lanes run the float
+    /// lane's engine with the fits cut for the tighter target, and what they
+    /// publish is that lane's own figure, 1.5e-7, plus the half-ULP term their
+    /// store adds: a budget is what the cuts are placed against, not a bound a
+    /// caller is given.
+    kFp16 = 1,
+};
+
+// Each axis is named here, beside its own enumeration: a caller that prints an axis value
+// inside a report reads the name from this header rather than carrying the kernel for it.
+
+/// The name a report prints a packing axis under, and never null.
+///
+/// \param axis the axis
+///
+/// \returns a string literal naming it: "arguments" or "orders", and "unknown"
+///          for a value outside the enumerators
+///
+/// A value outside the enumerators - cast in from outside the enum, or named by a
+/// newer header - is answered rather than refused, so both arrive here as
+/// "unknown": a caller that has to tell "this build does not carry that axis" from
+/// "that is not an axis at all" tests the value against the enumerators itself.
+const char* PackAxisName(PackAxis axis) noexcept;
+
+
+/// The name a report prints a division form under, and never null.
+///
+/// \param form the form
+///
+/// \returns a string literal naming it: "exact-division", "plain-reciprocal" or
+///          "refined-reciprocal", and "unknown" for a value outside the
+///          enumerators
+///
+/// A value outside the enumerators is answered rather than refused.
+const char* DivisionFormName(DivisionForm form) noexcept;
+
+
+/// The name a report prints a region-B exponential under, and never null.
+///
+/// \param exp the member
+///
+/// \returns a string literal naming it: "accurate" or "fast", and "unknown" for a
+///          value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused.
+const char* RegionBExpName(RegionBExp exp) noexcept;
+
+
+/// The name a report prints a granularity under, and never null.
+///
+/// \param granularity the partition
+///
+/// \returns a string literal naming it: "shipped", "narrow" or "uniform", and
+///          "unknown" for a value outside the enumerators
+///
+/// This names a partition; it does not report whether the build serves one, which
+/// is FitGranularityHasRoute and FitGranularityHasAxis.
+const char* GranularityName(FitGranularity granularity) noexcept;
+
+namespace backend {
+
+/// Which multiply-add a lane's kernels are built from.
+///
+/// The two are different arithmetics, not two spellings of one: the fused step
+/// rounds once and the separate step rounds twice, so the same kernel delivers
+/// a different value under each and a bound certified for one does not carry
+/// to the other.
+///
+/// It stands in this header rather than beside the lanes that run it because the
+/// front door reports each scheme row's route (`EvalSchemeInfo`), and a header
+/// naming that row must not have to carry the kernel for it.
+enum class MulAddRoute : std::uint8_t {
+    /// One rounding: the product is exact and the sum rounds once. An
+    /// instruction where the target has one, a call into the C runtime
+    /// otherwise.
+    kFused,
+
+    /// Two roundings: the product rounds, then the sum rounds. No call on any
+    /// target, and a different value from the fused step.
+    kSeparate,
+};
+
+/// The name a report prints a route under, and never null.
+///
+/// \param route the route
+///
+/// \returns a string literal naming it: "fused" or "separate", and "unknown" for a
+///          value outside the enumerators
+///
+/// This is the route a caller selected, which is not always the one the build runs:
+/// whether the separate route is really two roundings is the build's contraction,
+/// measured per translation unit, and \c RouteInForce<T>() and BoysBackends() are
+/// what report that.
+///
+/// The definition is inline and sits beside the lanes that run the route
+/// (boys/backend.hpp); this declaration is here so that a caller of the name does not have to
+/// carry the kernel for it.
+inline const char* MulAddRouteName(MulAddRoute route) noexcept;
+} // namespace backend
 
 } // namespace boys

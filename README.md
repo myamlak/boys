@@ -73,6 +73,12 @@ overload of each many-argument entry taking a `std::span`, so a container goes s
 nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
 passing a pointer and a count still reaches the pointer entry exactly.
 
+The entries a call site names no policy for are the library's and need nothing beyond the front
+door: the build compiles one definition of each, so the flags a caller compiles with cannot reach
+their arithmetic. A caller that names a policy - `BoysAllOrders<Policy>` rather than
+`BoysAllOrders` - reaches those entries through `boys/kernels.hpp`, which `boys_span.hpp` carries
+already; `boys/boys_all.hpp` is that header with the transform lane and the option probe beside it.
+
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
     cmake --build build --config Release

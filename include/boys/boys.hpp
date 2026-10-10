@@ -10,10 +10,8 @@
 #endif
 
 #include "boys/accuracy.hpp"
-#include "boys/backend.hpp"
 #include "boys/policy.hpp"
 #include "boys/status.hpp"
-#include "boys/boys_transform.hpp"
 #include "boys/version.hpp"
 
 /// \defgroup boys Boys-function kernel
@@ -1128,29 +1126,46 @@ void BoysAllOrdersWithRoute(
 
 
 
+
+/// The seam this build's default entries are compiled under, as the identifier that names
+/// the namespace holding them.
+///
+/// The configure step emits it beside the digest the accessor reports (`boys/version.hpp`,
+/// BuildDefaultsSeamIdentity()): the digest itself, or \c seam_committed for a build that
+/// replaced nothing. Two libraries built under different seams therefore mangle every default
+/// entry differently, so a translation unit compiled against one and linked against the other
+/// fails to link rather than resolving a default nobody chose.
+///
+/// It stays defined past this header because the entries' own definitions (`src/boys_defaults.cpp`)
+/// name the same namespace to define them in.
+#if defined(BOYS_BUILD_DEFAULTS_SEAM_IDENT)
+#define BOYS_DETAIL_SEAM_NAMESPACE BOYS_BUILD_DEFAULTS_SEAM_IDENT
+#else
+#define BOYS_DETAIL_SEAM_NAMESPACE seam_committed
+#endif
+
+/// The entries the library compiles: one plain function per class it serves, each resolved in
+/// the library's own translation unit under the build's seam, so a call site that names no
+/// policy links the arithmetic the library was built with and not the caller's own.
+///
+/// A caller that wants another combination names a policy and includes `boys/kernels.hpp`; a
+/// caller that names one without that header does not compile.
+
+inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// F_n(x) in double precision, |F - F| <= B_region per region (contract table in
 /// the file preamble).
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme its coefficients are summed in, the partition of the fitted
-///         regions, and a single-precision engine's budget, selected together.
-///         The default is this call's own class row - \c DefaultPolicy at the
-///         precision and shape of the entry above - so a call site that names no
-///         axis resolves through the table the build's seam carries, and naming
-///         any axis is how a caller asks for another
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
 double BoysSingle(int n, double x) noexcept;
 
 /// F_n(x) in double precision, refusing an argument outside the contract instead of running with
 /// it - \c BoysSingle with a check in front. The unchecked entry is faster and is what a caller
 /// with a proof of its own arguments should use; this one is for the caller who has none.
 ///
-/// \tparam Policy as \c BoysSingle.
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 and not NaN
 /// \param out   written with F_n(x) on success and left untouched otherwise
@@ -1158,7 +1173,6 @@ double BoysSingle(int n, double x) noexcept;
 ///              broken. Every value is written or none is.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kSingle>>
 BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract - the
@@ -1174,13 +1188,11 @@ BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
 /// [McMurchie1978] and Obara-Saika [ObaraSaika1986] recursions consume all orders
 /// at once) and is considerably cheaper than nmax + 1 single evaluations.
 ///
-/// \tparam Policy see BoysSingle
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double precision;
@@ -1208,12 +1220,6 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// scalar and portable: x and out need no alignment beyond alignof(double), and
 /// the two arrays must not overlap.
 ///
-/// \tparam Policy see BoysSingle. A call naming a route other than the shipped
-///         one, or naming the uniform grid, is answered by the per-argument
-///         single entry once per argument, whose body this entry's own path
-///         already mirrors region for region. Both keep this entry's documented
-///         accuracy - the path costs the shaped body's region dispatch, not a
-///         value.
 ///
 ///         The packing axis is not an axis of this shape: a packed lane keeps
 ///         four doubles in a register, and this entry produces ONE order at
@@ -1229,9 +1235,9 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 void BoysFixedN(
     int n, const double* x, double* out, std::size_t count, std::size_t stride = 1) noexcept;
+} // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
 /// Tag for the many-argument entries' already-grouped overload: the caller
 /// states that the arguments are in non-decreasing order.
@@ -1257,6 +1263,8 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
     return count;
 }
 
+
+inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// F_0(x_i)..F_nmax(x_i) for an array of arguments, double precision - every
 /// order at every argument, with the per-argument dispatch and the grouping done
 /// internally.
@@ -1294,11 +1302,6 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 /// The entry is total: a failed allocation falls back to the per-argument path,
 /// at the same bound and without the grouped-path speed-up.
 ///
-/// \tparam Policy see BoysSingle. The route and the partition are properties of
-///         the fit a value is read from, so a call naming the rational route or
-///         the uniform grid takes the per-argument path, whose body is the
-///         all-orders entry's own; both shapes answer inside this entry's own
-///         bound
 ///
 ///         The orders axis is the shape this entry's layout already has:
 ///         out[k * count + i] is F_k of one argument, so the per-argument path is
@@ -1319,7 +1322,6 @@ constexpr std::size_t BoysAllNWorkspaceSize(std::size_t count) noexcept
 ///      and must not overlap
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(int nmax,
               const double* x,
               double* out,
@@ -1329,8 +1331,6 @@ void BoysAllN(int nmax,
 /// BoysAllN for arguments the caller states are already in non-decreasing order -
 /// the sort is skipped rather than paid for.
 ///
-/// \tparam Policy see BoysAllN: the same entry and the same paths, reached
-///         without the sort
 /// \param nmax   highest order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, non-decreasing, each >= 0
 /// \param out    receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
@@ -1345,7 +1345,6 @@ void BoysAllN(int nmax,
 ///      other error channel.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 void BoysAllN(
     int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
 
@@ -1382,8 +1381,6 @@ void BoysAllN(
 /// Threading: single-threaded and pure like every entry here - divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam Policy see BoysSingle. This entry runs the per-argument all-orders
-///         body, so it takes the same policies that entry takes
 /// \param n     array of count top orders, each 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
@@ -1395,7 +1392,6 @@ void BoysAllN(
 ///      overlap
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t count) noexcept;
 
 /// The checked overloads of the four batch shapes. Each validates the whole call before it
@@ -1410,7 +1406,6 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 /// elements writes nothing, so a null buffer is in contract at \p count zero, and a \p stride the
 /// layout requires to be at least 1 is refused rather than written through.
 ///
-/// \tparam Policy  as the unchecked entry of the same shape.
 /// \param nmax     the highest order, 0..kMaxBoysOrder
 /// \param x        the argument, >= 0 and not NaN
 /// \param out      written on success and left untouched otherwise
@@ -1418,12 +1413,10 @@ void BoysAllNAtOrders(const int* n, const double* x, double* out, std::size_t co
 ///                 is broken.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>
 BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept;
 
 /// The checked \c BoysFixedN. See \c BoysAllOrdersChecked for what "checked" means here.
 ///
-/// \tparam Policy  as \c BoysFixedN.
 /// \param n        the order, 0..kMaxBoysOrder
 /// \param x        the arguments, each >= 0 and not NaN
 /// \param out      written on success and left untouched otherwise
@@ -1435,13 +1428,11 @@ BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept;
 /// \returns        \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t count,
                              std::size_t stride, std::size_t* badIndex = nullptr) noexcept;
 
 /// The checked \c BoysAllN. See \c BoysAllOrdersChecked for what "checked" means here.
 ///
-/// \tparam Policy   as \c BoysAllN.
 /// \param nmax      the highest order, 0..kMaxBoysOrder
 /// \param x         the arguments, each >= 0 and not NaN
 /// \param out       written on success and left untouched otherwise
@@ -1452,14 +1443,12 @@ BoysStatus BoysFixedNChecked(int n, const double* x, double* out, std::size_t co
 /// \returns         \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllN>>
 BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t count,
                            std::size_t* workspace = nullptr,
                            std::size_t* badIndex = nullptr) noexcept;
 
 /// The checked \c BoysAllNAtOrders. See \c BoysAllOrdersChecked for what "checked" means here.
 ///
-/// \tparam Policy   as \c BoysAllNAtOrders.
 /// \param n         the top order of each argument, each 0..kMaxBoysOrder
 /// \param x         the arguments, each >= 0 and not NaN
 /// \param out       written on success and left untouched otherwise
@@ -1469,9 +1458,9 @@ BoysStatus BoysAllNChecked(int nmax, const double* x, double* out, std::size_t c
 /// \returns         \c BoysStatus::kSuccess, or \c BoysStatus::kInvalidArgument.
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>
 BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, std::size_t count,
                                    std::size_t* badIndex = nullptr) noexcept;
+} // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
 /// Whether the packed region-A lane serves a call whose policy names this
 /// scheme.
@@ -1504,47 +1493,27 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
     return scheme == EvalScheme::kSplitClenshaw;
 }
 
+
+inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// F_n(x) in single precision, |F - F| <= 1.5e-7.
 ///
 /// Same piecewise structure as the double lane with per-order float fits. This
 /// is the recommended lane for GPU integral evaluation.
 ///
-/// \tparam Policy see BoysSingle. The lane reads the policy's fit route and its
-///         evaluation scheme: the route selects which family supplies the lane's
-///         own fits - the shipped Chebyshev table or the rational minimax one -
-///         and the scheme selects which of the Chebyshev family's two parallel
-///         tables, the Chebyshev form or the monomial form of the same fits, is
-///         summed. The packing axis is not an axis of this shape and is refused
-///         where it is named: this entry answers one order at one argument, so
-///         the value is a single float and there is no lane to fill
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \returns     F_n(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kSingle>>
 float BoysSingleF32(int n, float x) noexcept;
 
 /// F_0(x)..F_nmax(x) in single precision, |F - F| <= 1.5e-7 per value.
 ///
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits -
-///         the route for this lane's region-B seed and for the double lane's fit
-///         that seeds region A, the scheme for which of the route's tables each
-///         of those reads. Region A's seed is the double lane's fit at the
-///         policy's pair, so its degrees are the double lane's; region B's is
-///         this lane's own. The packing axis is read here too: the orders axis
-///         packs eight orders of the single argument and reads the tables the
-///         policy names, each order's own piece of the partition named, and it
-///         carries either route. Naming the arguments axis names no lane this
-///         shape has to fill: the values are the per-argument body's either way,
-///         and the batch entry is where an array of arguments is answered, one
-///         argument at a time
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>
 void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 
 /// F_0(x_i)..F_nmax(x_i) for an array of arguments, single precision - the float
@@ -1569,11 +1538,6 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// Threading: single-threaded and pure like every entry here - divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits.
-///         The packing axis is read at every argument - the all-orders body this
-///         entry calls packs eight orders of one argument under the orders axis -
-///         and what stays at the caller's loop is the region partitioning of the
-///         arguments axis
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives count * (nmax + 1) floats, out[k * count + i] = F_k(x[i])
@@ -1583,7 +1547,6 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 ///      overlap
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllN>>
 void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 /// F_n(x_i) for an array of arguments, single precision - the float lane's entry
@@ -1610,11 +1573,6 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// Threading: single-threaded and pure like every entry here - divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits.
-///         Naming PackAxis::kOrders is rejected at the call site by the assertion
-///         the single body carries - one order at one argument has no second
-///         order to fill a vector lane with - and the wide dimension this call
-///         does have, count, is the arguments axis the caller's own loop is
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
@@ -1622,7 +1580,6 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// \param stride output stride in floats, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kFixedN>>
 void BoysFixedNF32(
     int n, const float* x, float* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1645,10 +1602,6 @@ void BoysFixedNF32(
 /// Threading: single-threaded and pure like every entry here - divide the array
 /// over your own threads; distinct batches share nothing.
 ///
-/// \tparam Policy see BoysSingleF32: the route and the scheme select the fits.
-///         This entry runs the per-argument all-orders body, so it takes the
-///         same policies that entry takes, the packing axis read at every
-///         argument
 /// \param n     array of count top orders, each 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0
 /// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
@@ -1660,8 +1613,8 @@ void BoysFixedNF32(
 ///      overlap
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp32, Shape::kAllNAtOrders>>
 void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t count) noexcept;
+} // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
 /// F_n(x) in single precision at a run-time-selected fit route - the
 /// single-precision single entry's contract (|F - F| <= 1.5e-7), with the named
@@ -1729,6 +1682,8 @@ bool BoysAvx2Available() noexcept;
 
 
 #if BoysFp16
+
+inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// F_n(x) in IEEE half precision - the fp16 lane of the certified
 /// mixed-precision boundary, not a standalone fp16 API: fp16 I/O around the
 /// certified fp32 engine. The argument is rounded to fp16 before evaluation (the
@@ -1752,9 +1707,6 @@ bool BoysAvx2Available() noexcept;
 /// \c DefaultPolicyFp16 names the lane's five and is not a class's answer
 /// (boys/backend.hpp); the row is.
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
-///         scheme its coefficients are summed in, the partition of the fitted
-///         regions and the packing axis, selected together;
 ///         \c DefaultPolicy<Precision::kFp16, Shape::kSingle> by default, this
 ///         class's own row, which is the combination the lane's own figures are
 ///         stated for
@@ -1763,19 +1715,16 @@ bool BoysAvx2Available() noexcept;
 /// \returns     F_n(x) in fp16
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kSingle>>
 F16 BoysSingleF16(int n, F16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in fp16, same certified-boundary contract as BoysSingleF16
 /// per value.
 ///
-/// \tparam Policy see BoysSingleF16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (fp16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>
 void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 
 /// F_n(x_i) for an array of arguments in fp16 - the fp16 lane's entry of the
@@ -1787,8 +1736,6 @@ void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 /// writes), and the two arrays must not overlap. Each element is the fp16 lane's
 /// single entry at that argument, stored once.
 ///
-/// \tparam Policy see BoysSingleF16: the budget is this lane's, and naming
-///         another is rejected at the call site
 /// \param n      order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, each >= 0 (fp16)
 /// \param out    receives F_n(x[i]) at out[i * stride]
@@ -1796,7 +1743,6 @@ void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept;
 /// \param stride output stride in fp16 values, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kFixedN>>
 void BoysFixedNF16(
     int n, const F16* x, F16* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1808,14 +1754,12 @@ void BoysFixedNF16(
 /// planes, the output holding count * (nmax + 1) fp16 values, count may be 0 (no
 /// writes). Each column is the fp16 lane's all-orders entry at that argument.
 ///
-/// \tparam Policy see BoysSingleF16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0 (fp16)
 /// \param out   receives count * (nmax + 1) values, out[k * count + i] = F_k(x[i])
 /// \param count number of arguments; may be 0 (no writes)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllN>>
 void BoysAllNF16(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
 
 /// F_k(x_i) for k = 0..n[i] over an array of arguments with a per-element top
@@ -1827,7 +1771,6 @@ void BoysAllNF16(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
 /// the cells above it left as the caller left them, and the output holding
 /// count * (1 + max_i n[i]) fp16 values. count may be 0 (no writes).
 ///
-/// \tparam Policy see BoysSingleF16
 /// \param n     array of count top orders, each 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0 (fp16)
 /// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
@@ -1835,33 +1778,25 @@ void BoysAllNF16(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
 /// \param count number of arguments; may be 0 (no writes)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp16, Shape::kAllNAtOrders>>
 void BoysAllNAtOrdersF16(const int* n, const F16* x, F16* out, std::size_t count) noexcept;
 
 /// F_n(x) in bfloat16 - the Bf16 lane of the certified mixed-precision boundary,
 /// same contract as BoysSingleF16 (bf16 representation term, 8-bit mantissa).
 ///
-/// \tparam Policy see BoysSingleF16. The half lane's budget is one budget and its
-///         two formats are two classes of it, so the default here is this class's
-///         own row: \c DefaultPolicy<Precision::kBf16, Shape::kSingle>, which the
-///         table carries beside the fp16 class's and not in place of it
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (bf16)
 /// \returns     F_n(x) in bf16
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kSingle>>
 Bf16 BoysSingleBf16(int n, Bf16 x) noexcept;
 
 /// F_0(x)..F_nmax(x) in bf16, same contract as BoysAllOrdersF16 per value.
 ///
-/// \tparam Policy see BoysSingleBf16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0 (bf16)
 /// \param out   receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllOrders>>
 void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 
 /// F_n(x_i) for an array of arguments in bf16 - the bf16 lane's entry of the shape
@@ -1878,8 +1813,6 @@ void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 /// return can carry since |F_n(x)| <= 1. The fp16 entries carry the same figure
 /// with 2^-11 = 4.8828125e-04 in place of that term.
 ///
-/// \tparam Policy see BoysSingleBf16: the budget is this lane's, and naming
-///         another is rejected at the call site
 /// \param n      order, 0..kMaxBoysOrder
 /// \param x      array of count arguments, each >= 0 (bf16)
 /// \param out    receives F_n(x[i]) at out[i * stride]
@@ -1887,7 +1820,6 @@ void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept;
 /// \param stride output stride in bf16 values, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kFixedN>>
 void BoysFixedNBf16(
     int n, const Bf16* x, Bf16* out, std::size_t count, std::size_t stride = 1) noexcept;
 
@@ -1900,14 +1832,12 @@ void BoysFixedNBf16(
 /// writes). Each column is the bf16 lane's all-orders entry at that argument, so
 /// the figure is the one the bf16 entry declared above states.
 ///
-/// \tparam Policy see BoysSingleBf16
 /// \param nmax  highest order, 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0 (bf16)
 /// \param out   receives count * (nmax + 1) values, out[k * count + i] = F_k(x[i])
 /// \param count number of arguments; may be 0 (no writes)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllN>>
 void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 
 /// F_k(x_i) for k = 0..n[i] over an array of arguments with a per-element top
@@ -1919,7 +1849,6 @@ void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcep
 /// the cells above it left as the caller left them, and the output holding
 /// count * (1 + max_i n[i]) bf16 values. count may be 0 (no writes).
 ///
-/// \tparam Policy see BoysSingleBf16
 /// \param n     array of count top orders, each 0..kMaxBoysOrder
 /// \param x     array of count arguments, each >= 0 (bf16)
 /// \param out   receives the planes: out[k * count + i] = F_k(x[i]) for
@@ -1927,8 +1856,8 @@ void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcep
 /// \param count number of arguments; may be 0 (no writes)
 ///
 /// \ingroup boys
-template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllNAtOrders>>
 void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
+} // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
 
 
@@ -2002,55 +1931,4 @@ void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noex
 
 #endif // BoysFp16
 
-/// \cond
-/// Hidden from the API reference: each of these is an instantiation of the entries
-/// declared above at the default policy, not an entry of its own. They are what
-/// the default call sites link against instead of compiling the kernel again in
-/// their own translation unit; a caller that names another policy compiles the
-/// combination it asks for from the definition below.
-///
-/// Declared only for the table this build carries. A build that supplies its own
-/// through BOYS_BUILD_DEFAULTS has its own policy types - the table is read by
-/// value, so a different row is a different instantiation with a different
-/// mangled name - and the library carries no definition for those. Declaring them
-/// here would promise a definition that does not exist and turn a working consumer
-/// build into an unresolved external.
-#if !defined(BOYS_BUILD_DEFAULTS_REPLACED)
-extern template double BoysSingle<>(int n, double x) noexcept;
-extern template void BoysAllOrders<>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysFixedN<>(
-    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
-extern template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
-extern template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-extern template void BoysAllNAtOrders<>(
-    const int* n, const double* x, double* out, std::size_t count) noexcept;
-// The single-precision entries are not declared extern here: an extern promises a definition
-// elsewhere, and the library's fixed list of them (src/boys_orders_simd.cpp) need not hold the
-// one a call site selects from the table - declaring it anyway left four consumer targets
-// unresolved on gcc. Their definitions are in this header: a consumer instantiates what it names.
-
-#if BoysFp16
-extern template F16 BoysSingleF16<>(int n, F16 x) noexcept;
-extern template void BoysAllOrdersF16<>(
-    int nmax, F16 x, F16* out) noexcept;
-extern template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
-extern template void BoysAllOrdersBf16<>(
-    int nmax, Bf16 x, Bf16* out) noexcept;
-#endif // BoysFp16
-#endif // !BOYS_BUILD_DEFAULTS_REPLACED
-/// \endcond
-
 } // namespace boys
-
-// The kernel behind the entries above, shipped as a header so that every policy a
-// caller names is instantiable at the call site. Included here rather than at the
-// top of this file because its definitions name the declarations above.
-#include "boys/boys_impl.hpp"
-
-// The option probe closes the surface: it measures the entries above on the
-// machine it is called on. Included last, because it is written against every
-// declaration in this file.
-#include "boys/boys_probe.hpp"

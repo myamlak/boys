@@ -20,7 +20,7 @@
 // The file lives alongside boys_test.cpp rather than inside it to keep that file's existing tests
 // untouched (same test binary, same contract).
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 

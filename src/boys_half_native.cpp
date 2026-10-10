@@ -3,12 +3,27 @@
 #include "boys/boys_impl.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 
 // Region C's asymptotic ladder in packed correctly rounded half arithmetic: a square root and a
 // divide for the seed, then a packed multiply and divide per order. The roundings are relative,
 // so the error is about one half ULP carried; the running value is scaled by 2^15 to keep the
 // ladder's values normal down to F_n(x) = 2^-29, and the lane has a precondition (x >= kX1).
+
+namespace boys {
+namespace detail {
+
+// The double square root the packed entry is computed through, defined here rather than in
+// boys/half2.hpp so that a header on the front door's include path carries no `<cmath>`. It is
+// the same double square root either way. Not behind the BoysFp16 seam, because the header that
+// declares it is readable with the seam closed.
+double HalfSqrt(double value) noexcept {
+    return std::sqrt(value);
+}
+
+} // namespace detail
+} // namespace boys
 
 // The lane is behind the BoysFp16 seam like the entries that declare it: both entries, the packed
 // type they take and return, and the scale constant they document leave the public surface

@@ -2,7 +2,7 @@
 //   c++ -std=c++20 -I include examples/07_option_probe.cpp -L build -lboys -o probe && ./probe
 // A property of the machine and the build flags, so it cannot be read off a table - it has to be
 // measured where it will run. This runs a short protocol; boys-option-probe runs the full one.
-#include <boys/boys_span.hpp>
+#include <boys/boys_all.hpp>
 
 #include <cstddef>
 #include <cstdio>

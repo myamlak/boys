@@ -31,12 +31,19 @@
 #include "boys/f16.hpp"
 
 #include <bit>
-#include <cmath>
 #include <cstdint>
 
 namespace boys {
 
 namespace detail {
+
+/// The double square root the packed entry below is computed through.
+///
+/// It is a function rather than a call into `<cmath>` because this header is on the front
+/// door's include path (`boys/boys.hpp` declares the packed entry, so it needs `Half2`), and
+/// `<cmath>` is by itself more of the front door's compile time than everything else in this
+/// header. The arithmetic is the same double square root either way.
+double HalfSqrt(double value) noexcept;
 
 /// The smallest magnitude that rounds to Inf rather than to the half maximum:
 /// the round-to-nearest-even midpoint between 65504 and 65536.
@@ -250,8 +257,8 @@ inline Half2 Half2Div(Half2 a, Half2 b) noexcept {
 /// \ingroup boys
 inline Half2 Half2Sqrt(Half2 a) noexcept {
     return Half2(
-        detail::F16FromDouble(std::sqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.Low())))),
-        detail::F16FromDouble(std::sqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.High())))));
+        detail::F16FromDouble(detail::HalfSqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.Low())))),
+        detail::F16FromDouble(detail::HalfSqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.High())))));
 }
 
 } // namespace boys

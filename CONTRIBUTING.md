@@ -263,7 +263,8 @@ declares, so a second check walks that cross:
 python3 tools/check_class_surface.py --check
 ```
 
-It reads `Precision` and `Shape` from `include/boys/boys.hpp` and requires every cell of the cross to
+It reads `Precision` and `Shape` from `include/boys/boys.hpp` and the entries' own default policies
+from `include/boys/kernels.hpp`, and requires every cell of the cross to
 be served by an entry whose default policy names that class. A cell served at one precision and not
 at another is exactly what the shape-unit check cannot see: the shape is placed, and the class is
 absent. A class may instead be listed in the table's `absent` array with a reason, and the reason must

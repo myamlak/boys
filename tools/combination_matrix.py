@@ -857,6 +857,10 @@ def instantiation(precision: str, shape: str, combination: dict[str, str]) -> st
 def unit_for(precision: str, shape: str, combinations: list[dict[str, str]]) -> str:
     lines = [
         "#include <boys/boys.hpp>",
+        "// The policy-taking entries, where this revision declares them beside the front door.",
+        "#if __has_include(<boys/kernels.hpp>)",
+        "#include <boys/kernels.hpp>",
+        "#endif",
         "void Instantiate() {",
         f"    [[maybe_unused]] {SCALAR[precision]} x = {INIT[precision]};",
         f"    [[maybe_unused]] {SCALAR[precision]} xs[8] = {{}};",

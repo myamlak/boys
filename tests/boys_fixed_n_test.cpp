@@ -3,7 +3,7 @@
 // verbatim, so the bounds 1e-15 / 3e-14 / 5.5e-14 hold over the committed grid and identity matches
 // BoysSingle bitwise; layout pins out[i * stride] = F_n(x[i]) at stride >= 1 (default 1).
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 

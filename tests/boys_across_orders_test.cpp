@@ -25,7 +25,7 @@
 //     so the axis fetches each packed order its own piece, and its values are measured as a difference
 //     from the per-order narrow lane.
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"

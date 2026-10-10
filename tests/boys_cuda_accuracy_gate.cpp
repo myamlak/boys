@@ -3,7 +3,7 @@
 // tools/gen_boys_accuracy_gate_reference.py, in the CPU gate's row shape; the fp64 entries also against
 // tests/data/boys_reference.csv. Exit: 0 all met, 1 over bound or unclaimed, 2 launch failed, 3 unarmed.
 
-#include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys/boys_impl.hpp" // the region boundaries
 #include "boys/f16.hpp"

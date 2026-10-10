@@ -184,6 +184,7 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 # reads them for the same reason and finds no arm of the block's naming one.
 LIBRARY = (
     "include/boys/boys.hpp",
+    "include/boys/kernels.hpp",
     "include/boys/accuracy.hpp",
     "include/boys/backend.hpp",
     "include/boys/boys_build_defaults.hpp",
@@ -191,6 +192,12 @@ LIBRARY = (
     "src/boys.cpp",
     "src/boys_cuda.cpp",
 )
+
+# A revision read by a recorded run predates whatever the tree has grown since, so a path it
+# does not carry is read as empty rather than refused. Only the kernel header is optional, and
+# it is the one file the entries have moved between: a revision that predates it declares them
+# in the front door, which is on the list anyway.
+OPTIONAL = ("include/boys/kernels.hpp",)
 
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
 
@@ -455,11 +462,14 @@ class Library:
             status, out, error = git("show", f"{revision}:{path}")
 
             if status != 0:
+                if path in OPTIONAL:
+                    self.text[path] = ""
+                    continue
                 raise LookupError(f"{revision}:{path} could not be read: {error or 'no reason given'}")
 
             self.text[path] = out
 
-        self.header = self.text["include/boys/boys.hpp"]
+        self.header = self.text["include/boys/boys.hpp"] + self.text["include/boys/kernels.hpp"]
         self.accuracy = self.text["include/boys/accuracy.hpp"]
         self.backend = self.text["include/boys/backend.hpp"]
         self.defaults = self.text["include/boys/boys_build_defaults.hpp"]
@@ -559,7 +569,11 @@ class Library:
         self.devices = list(self.enum_members("Device", self.header))
         self.routes = list(self.enum_members("FitRoute", self.accuracy))
         self.schemes = list(self.enum_members("EvalScheme", self.accuracy))
-        self.axes = list(self.enum_members("PackAxis", self.backend))
+        # The packing axis has stood in one header and then the other, and this reads a
+        # revision rather than the working tree: a run recorded before the move carries it in
+        # backend.hpp. Both are read, and neither being read is the loud case below.
+        self.axes = list(self.enum_members("PackAxis", self.accuracy)) or \
+            list(self.enum_members("PackAxis", self.backend))
         self.partitions = list(self.enum_members("FitGranularity", self.accuracy))
         self.forms = list(self.enum_members("DivisionForm", self.accuracy))
         self.exps = list(self.enum_members("RegionBExp", self.accuracy))
@@ -1417,6 +1431,11 @@ def unit_for(precision: str, shape: str, pack: str, entries: dict[str, str]) -> 
     }[shape]
 
     return ("#include <boys/boys.hpp>\n"
+            "// The policy-taking entries, where this revision declares them beside the front door:\n"
+            "// a revision that predates that header declares them in boys/boys.hpp itself.\n"
+            "#if __has_include(<boys/kernels.hpp>)\n"
+            "#include <boys/kernels.hpp>\n"
+            "#endif\n"
             "void Instantiate() {\n"
             f"    [[maybe_unused]] {scalar} x = {VALUE[precision]};\n"
             f"    [[maybe_unused]] {scalar} xs[8] = {{}};\n"

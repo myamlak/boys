@@ -5,7 +5,7 @@
 
 #include <algorithm>
 #include <array>
-#include <boys/boys.hpp>
+#include <boys/boys_all.hpp>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>

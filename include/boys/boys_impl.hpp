@@ -11,6 +11,7 @@
 
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
+#include "boys/policy.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
 

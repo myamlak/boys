@@ -30,6 +30,7 @@
 /// \ingroup boys
 
 #include "boys/boys.hpp"
+#include "boys/kernels.hpp"
 
 #include <cstddef>
 #include <span>

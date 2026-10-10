@@ -1,5 +1,7 @@
 #include "boys/boys_probe.hpp"
 
+#include "boys/kernels.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>

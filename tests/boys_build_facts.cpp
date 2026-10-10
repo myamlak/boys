@@ -3,7 +3,7 @@
 // fact from the library's object code, or an operating-system report - and never a timing: a duration
 // on a shared build machine is a distribution across ephemeral runners, not a fact.
 
-#include <boys/boys.hpp>
+#include <boys/kernels.hpp>
 
 #include <bit>
 #include <cstddef>
