@@ -584,12 +584,8 @@ TEST(BoysTest, AsymptoticBehavior) {
 }
 
 TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
-    // The far region carries two representations and this holds the entry that
-    // reaches the second one to its contract: the recurrence name is the default
-    // entry's values bit for bit, the table's name is the default's wherever the
-    // table's rows do not reach, and inside the table's span the two agree to the
-    // figure measured below. Neither name moves the default, which is the
-    // recurrence and is what the published figures were measured at.
+    // Neither name moves the default, and each is held to its contract: the recurrence is the
+    // default's bit for bit, the table the default's outside its span, the reference grid's inside.
     using boys::FarRepresentation;
     constexpr int kMax = boys::kMaxBoysOrder;
     std::vector<double> named(kMax + 1);
@@ -623,12 +619,8 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
         }
     }
 
-    // Inside the span the table is held to the committed reference grid - the 45-digit
-    // values the accuracy gate itself reads - and not to the shipped entry: above the
-    // flat grid the shipped entry is the asymptotic form, whose relative error at n = 32
-    // runs to 2.55 just above it (2.5517 at x = 29.001, 1.88 by x = 30, measured at
-    // 29.136, 29.5 and 29.853 too), and below the grid's own top it is the grid's
-    // 8.1e-13. That asymptotic error is the defect the table exists to remove, so
+    // Held to the committed reference grid and not to the shipped entry: above the flat grid the
+    // shipped entry is the asymptotic form, 2.55 of the value at n = 32 and 1.88 by x = 30, so
     // asserting the two agree would be asserting against the reference.
     double worst = 0.0;
     double worst_x = 0.0;
@@ -664,12 +656,8 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
 }
 
 TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
-    // Region C carries a third representation and this holds the entry that reaches it
-    // to its contract. The corrected seed is the same function reached more accurately,
-    // not a second definition: the shipped region C arithmetic with its two errors
-    // repaired - the closed form's erfc(sqrt(x)) seed error, and the exp(-x)/2 term the
-    // shipped step drops - so the shipped arm is measured beside it here rather than
-    // agreed with. Neither name moves the default.
+    // The corrected seed is held to its contract: the same function reached more accurately, not
+    // a second definition, so the shipped arm is measured beside it here rather than agreed with.
     using boys::FarRepresentation;
     constexpr int kMax = boys::kMaxBoysOrder;
     std::vector<double> named(kMax + 1);
@@ -689,11 +677,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
         }
     }
 
-    // Region C against the committed 45-digit reference grid, with the shipped arm
-    // measured over the same cells, so the figure the repair is worth is in the failure
-    // text and not only in a comment. The grid's region C is ten arguments, kX1 through
-    // 100, and this case measures those cells: the arm's span is [kX1, inf), and above
-    // the grid's top nothing here reaches it.
+    // Region C against the committed reference grid, the shipped arm measured over the same
+    // cells so the repair's worth is in the failure text; above the grid's top it reaches nothing.
     double worst = 0.0;
     double worst_x = 0.0;
     double shipped_worst = 0.0;
@@ -741,11 +726,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
                               << ", shipped at n=" << shipped_n << " x=" << shipped_x << " is "
                               << shipped_worst;
 
-    // The join, measured at ONE argument: the seed the branch below would have built
-    // there, against the closed form the branch above uses. That is the step the branch
-    // placement creates on its own - the caller's own step across the join also carries
-    // the function's variation over the double that separates two arguments, which every
-    // branch has and no branch is accountable for.
+    // The join at ONE argument: the seed the branch below would have built, against the closed
+    // form the branch above uses - the step the placement creates, and not the caller's own step.
     const double join = boys::detail::kSeedCorrectionX1;
     const double m = boys::detail::kBoysHalfSqrtPi / std::sqrt(join);
     const double fitted = m * (1.0 + boys::detail::SeedCorrectionAt(join));
