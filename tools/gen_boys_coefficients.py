@@ -282,10 +282,12 @@ def boys_ref(n, x, tail_floor=REF_TAIL_FLOOR, max_terms=REF_TERMS):
         if l > 20 and term < tail_floor:
             break
         term *= x / (n + l + three_halves)
-    raise RuntimeError(
-        f"boys_ref: F_{n}({mp.nstr(x, 20)}) is not converged in {max_terms} terms - the "
-        f"term is still above {mp.nstr(tail_floor, 3)} and the sum is truncated. An "
-        f"argument this far past the series' peak needs a larger max_terms.")
+    else:
+        raise RuntimeError(
+            f"boys_ref: F_{n}({mp.nstr(x, 20)}) is not converged in {max_terms} terms - the "
+            f"term is still above {mp.nstr(tail_floor, 3)} and the sum is truncated. An "
+            f"argument this far past the series' peak needs a larger max_terms.")
+    return e * s
 
 
 def grid(a, b, npts):
