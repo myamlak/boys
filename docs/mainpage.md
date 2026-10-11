@@ -175,26 +175,30 @@ above are the surface.
 
 ## Accuracy contract
 
-The bound is |F̂_n(x) − F_n(x)| ≤ B for every supported n, x and lane. Every figure holds for
-**all** x ≥ 0:
+The bound is **relative**: |F̂_n(x) − F_n(x)| ≤ B · F_n(x), for every supported n, x and lane.
 
-A row's clauses nest, and each names the range it holds over: the first figure is the lane's worst
-anywhere, the second holds for arguments below the value named in it, and the third for arguments
-below a smaller one. The value in the middle clause is where region B begins. *Single* is the entry
-that answers for one order at one argument; *batch* is the entries that answer a whole call at once,
-and the two rows carrying those labels are both the double lane.
+**B is a fraction of the value, so a small value is held to a small error.** B binds above the lane
+format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the float ones — below which
+the return is subnormal or zero, the format's own floor is what answers there, and no accuracy is
+claimed. Every figure below holds for **all** x ≥ 0:
+
+*Single* is the entry that answers for one order at one argument; *batch* is the entries that answer
+a whole call at once, and the two rows carrying those labels are both the double lane. The rows
+state one figure per lane; a lane that is tighter over part of its range is inside its figure there
+rather than stated beside it, and [the per-lane contract](lane-contract.md) carries the per-region
+budgets each lane's fits were cut against.
 
 | Lane | Error bound |
 |---|---|
-| double single | ≤ 5.5e-14 everywhere; ≤ 3e-14 below x = 11.899848152108484; ≤ 1e-15 below about x = 1.0855 |
-| double batch, whether the top order is the batch's or each argument's | ≤ 5.5e-14 |
-| float single / batch | ≤ 1.5e-7, or ≤ 2.5e-7 in the plain-reciprocal form |
-| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form |
-| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
-| CUDA fp64 | ≤ 5.5e-14 — the same budgets as the CPU double lanes, whose loosest cell this is: the CUDA surface's own double entries publish it over the whole of x ≥ 0 |
+| double single | ≤ 1e-13 · F_n(x) — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
+| double batch, whether the top order is the batch's or each argument's | ≤ 1e-13 · F_n(x) |
+| float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32, and the absolute figure it published before the relative one is the floor under it |
+| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is looser than the floor the float lane's figure keeps |
+| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
+| CUDA fp64 | ≤ 1e-13 · F_n(x) — the same contract as the CPU double lanes |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
-| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
-| CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8, the lane's budget plus the corrected seed's contribution |
+| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
+| CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 
 The CUDA fp32 lane's single entry is the one device entry that takes a second, certified axis: which
 region-B exponential it evaluates (see \ref boys::RegionBExp). Both options carry a bound of
@@ -214,11 +218,17 @@ question and returns the fused route there whatever the selection says. Against 
 reference grid, built both ways — the default fused route and the `BOYS_MULADD_SEPARATE=ON` separate
 route — measured on MSVC x64 Release:
 
-| lane | region | fused route | separate route | bound |
+| lane | region | fused route | separate route | figure |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 3e-14 |
-| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
-| float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 1e-13 · F_n(x) |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
+| float, batch | all arguments | 1.08e-07 | 1.08e-07 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
+
+The delivered columns are absolute worst errors — each the worst cell of the sweep the gate's
+recorded run holds — and the figure beside them is the lane's own, the larger of its relative arm
+and its absolute floor, held over the whole argument range the row names. The two are not a ratio of
+one another: what the columns of this table
+show is what moves with the route, and the row's delivered cells are the whole of what does.
 
 The band row and the float single row are the whole of what moves: the double lane's other three
 regions and the float batch lane deliver the same worst cell, to the digit, on both routes. A figure
@@ -241,8 +251,8 @@ The measurement is in this tree. Build it and run it:
     cmake --build <build> --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
-It sweeps the documented entries over the committed reference grid (33 orders × 1718 arguments,
-56,694 points) and prints, lane by lane and region by region, the worst error the lane delivered
+It sweeps the documented entries over the committed reference grid (33 orders × 1796 arguments,
+59,268 points) and prints, lane by lane and region by region, the worst error the lane delivered
 beside the bound it claims. The run ends in `PASS: every documented claim met at this revision`, or
 in the numbers of the claims that did not hold and a non-zero status. `--per-order` extends the
 comparison to every order, and `--probe n x` prints one cell from every lane for one argument.
@@ -261,9 +271,10 @@ argument at which the lane stops reading that order from its own fit and reaches
 seed, and the row states the lowest of those arguments. Below it an order keeps the default route's
 value bit for bit, so the tighter per-order figure the lane documents there is untouched.
 
-The native half lane is the one exception to the region-budget form above. It covers region C only.
-Its results are the scaled values 2^15 F_k(x), and its bound is stated in ULP of the returned value:
-≤ 8 ULP, measured at a worst of 4.3.
+The native half lane is the one lane whose figure is not a fraction of the value: it is stated in
+ULP of the returned value, ≤ 8 ULP, measured at a worst of 4.3. A bound on the returned value's own
+last digit is already what a relative bound is, and this lane has no table and no stored fit to
+move: it covers region C only, and its results are the scaled values 2^15 F_k(x).
 
 Its domain ends at F_k(x) = 2^-29, which is x about 359, 128 and 30 at orders 3, 4 and 8. Past that
 argument the return becomes a subnormal half and then a zero, by design. The lane claims nothing

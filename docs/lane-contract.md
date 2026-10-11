@@ -22,9 +22,14 @@ the figure one row is judged against. A *measured* figure is what a program in t
 against the committed reference; where it belongs to one machine, the machine is named beside it. A
 figure counting instructions or retired slots is what the machine named beside it retired.
 
-Every bound here is stated as an **absolute** error — |computed − true| — except where an entry says
-otherwise. The packed-half lane's bound is relative, and the half lanes' bound is absolute plus a
-term that depends on the size of the result.
+Every bound here is stated in the contract's own form, **relative to the value**: |computed − true|
+≤ B · F_n(x), for every supported order and argument, and it binds above the lane format's smallest
+normal (2^-1022 double, 2^-126 float), below which the return is subnormal or zero and no accuracy
+is claimed. A lane whose figure is a term of the result rather than of the value says so in its own
+entry: the half lanes add half of the returned value's last digit to a base, and the packed-half
+lane's bound is that digit alone, which is why neither of those two moved with this one. The
+per-region budgets and the bars a fit is cut against stay **absolute** figures and are printed as
+the measurements they are.
 
 Every figure on this page is measured by a program in this tree, and the command below prints the
 comparison for the machine you run it on:
@@ -63,8 +68,9 @@ seed, which is slightly less accurate than the fits themselves.
 That single fit is the **extended band**: the part of region A running from the argument at which an
 order stops being read from its own fit — the band's left edge is the lowest of them,
 1.0855252345349333 — up to x = 11.899848152108484, where region B begins. It is its own fit at degree
-24 in both routes, and it is why region A carries two figures rather than one: the per-order fits
-below an order's own end are held to 1e-15, and the band above that end to 3e-14.
+24 in both routes, and it is why this page prints two bars for region A rather than one: the per-order
+fits below an order's own end were cut against a 1e-15 bar, and the band above that end against
+3e-14.
 
 **Two lanes do not hold over the whole range**, and their entries say where they stop: the half
 lanes return nothing usable once the result falls below their bound, and the packed-half lane covers
@@ -72,18 +78,31 @@ only the largest arguments.
 
 ## double
 
-**At most 5.5e-14 everywhere.** At most 3e-14 for x below 11.899848152108484, and at most 1e-15 for
-x below about 1.0855. That last figure belongs to the single-argument entry; the batch entry is at
-most 5.5e-14 throughout, so a caller using the batch form should read 5.5e-14.
+**At most 1e-13 of the value, everywhere.** One figure over the whole of x ≥ 0: the error of a
+returned value is at or below `1e-13 · F_n(x)`, for both the single-argument and the batch form,
+above the smallest normal double. The figure was an absolute 5.5e-14 until this release, and the
+number was too small where F is small and too large where F is large.
+
+The per-region budgets the fits were placed against are measurements, and they are absolute figures
+on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
+the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
+figure the lane published as its absolute bound. The route table below prints them beside what each
+route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
-that shows. `BoysLaneContracts` states 5.5e-14 for this lane over the whole of x >= 0, and it is
-region C that sets it. A batch call answers every order to nmax at once, so no per-order figure
-bounds it: orders at or past their own region-A end are read from the extended band in both lanes,
-and from x = 1.0855252345349333 up every batch call's F_0 is the band's own value — so the band's
-cell, 3e-14, is the tightest figure this tree carries for that part of the column, and the stored
-fits' 1e-15 bounds only the arguments below that edge, where the seed is a per-order fit read at
-1e-15 under a reachable gain of at most 2.171050.
+that shows. A batch call answers every order to nmax at once, so no per-order figure bounds it:
+orders at or past their own region-A end are read from the extended band in both lanes, and from
+x = 1.0855252345349333 up every batch call's F_0 is the band's own value — so the band's own bar,
+3e-14, is the tightest absolute figure this tree carries for that part of the column, and the stored
+fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at
+1e-15 under a reachable gain of at most 2.171050. Both entries carry the one relative figure, which
+is the point of stating it that way.
+
+`BoysLaneContracts()` — the list a program reads through `BoysAccuracyGuaranteed` — still returns
+the absolute figures those rows were published with: 5.5e-14 for this lane, 1.5e-7 for the float
+lane, the half figures unchanged. The list is re-made with the option probe's report rather than
+with this page, and until it is, a caller asking the library for a double figure gets the older
+form. Nothing else in the library answers with a bound.
 
 **This is the most accurate double the library produces.** The stored coefficients are rounded to
 double precision and hold only the sixteen or so significant digits a double can hold, so nothing
@@ -163,9 +182,10 @@ route's rows cover, and naming the default changes nothing.
 **What the carriage delivers.** `BoysAllN` and `BoysFixedN` are swept over the whole committed grid,
 every order, and judged against the named route's own bar for the region the argument falls in —
 113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
-route's, not the entry's, so the row is the stronger of the two statements: the route's region-A row
-promises 3e-14 where the entry promises 5.5e-14, and the entry holds the tighter figure over the
-region, including the arguments below the route's own selector where the shipped lane answers.
+route's, not the entry's: the route's region-A row promises the region's 3e-14 bar, where the lane's
+published figure is 1e-13 · F_n(x) — tighter than that bar wherever F_n(x) is below 0.3, and looser
+above it — and the entry holds the route's bar over the region, including the arguments below the
+route's own selector where the shipped lane answers.
 
 ## Interval granularity: how narrowly the fitted domain is cut
 
@@ -374,7 +394,9 @@ certified against:
 route's own narrow fits, judged against the route's published bars rather than the Chebyshev rows'
 figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2.21663e-14, the
 shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
-entry read through the narrow route lands at 5e-14 against the batch lane's 5.5e-14. The block is
+entry read through the narrow route lands at 5e-14, absolute like the rest of the row, against the
+5.5e-14 bar the region's fits are cut against (the lane's published figure is a fraction of the
+value and not this bar). The block is
 counted apart from the lane book and from the scheme rows, and those read what they read at that run's
 own revision: 39 of 39 claims and 44 of 44 scheme rows, whose combinations book read its own space with
 none refused — **the space carries a third partition, and the book below is the current one**. What
@@ -403,15 +425,23 @@ the same interval, so a call answered from one under the other's name would retu
 numbers as narrow ones.
 ## float
 
-**At most 1.5e-7, absolute and everywhere.**
+**At most 2^-22 of the value everywhere, or 1.5e-7 where that is the larger, plus 1e-7 in the
+plain-reciprocal form.** The value-proportional figure is this lane's own bar — 2^-22, about
+2.38e-7 — and not the double lane's 1e-13 scaled down for the format. The lane's arithmetic is
+binary32 and has an absolute floor, so the figure the lane publishes is the larger of its relative
+arm and that floor: the 1.5e-7 it published as an absolute bound until this release stays as the
+floor under the relative one. A call answered by the plain reciprocal rather than by an exact
+division adds 1e-7 to the error of the returned value, and the two forms are certified separately.
 
 The batch entry computes a starting value in double precision and then
 recurses in single.
 
 **The limit is the number format.** A 32-bit float carries about seven significant digits, which is
-about 6e-8 relative. The bound is 1.5e-7 absolute, so for values of order one the two are within a
-factor of about two and a half of each other. Much smaller values are bounded loosely, because an
-absolute bound says less about a small number than a relative one would.
+about 6e-8 relative. The lane's relative arm is 4.0 times that digit (2^-22 / 6e-8), so the two are
+within a factor of a few of each other: the arm is the format's own size and not a budget with room
+in it. What the floor is for is small values: at F_n(x) = 1e-3 the relative arm is 2.4e-10, far
+below the 1.5e-7 the lane can hold there, and the plain-reciprocal form adds its 1e-7 term to the
+larger of the two.
 
 **The single entry carries two fit routes, and both hold the bound above.** `BoysSingleF32WithRoute`
 is `BoysSingleF32` with the fits that supply the lane's region-A seed and region-B seed selected
@@ -429,20 +459,26 @@ partition's four. The lane's array entries carry the policy into those same two 
 rows are their readings at the same policy too: 294690 comparison cells with no
 row measured over no argument, and no narrow row of them outside its bar in either multiply-add
 route's build. The float lane's Horner reading is 7.68e-08 at its worst cell (order 0, x = 0.553691) over
-region A and 2.22e-08 (order 32, x = 11.8998) over region B, against the lane's 1.5e-07 bar; the
-rational route's and the shipped route's split Clenshaw figures are the table's above, unchanged.
+region A and 2.22e-08 (order 32, x = 11.8998) over region B — absolute readings, like the table's,
+carrying no comparison to the lane's published figure; the rational route's and the shipped route's
+split Clenshaw figures are the table's above, unchanged.
 
 
-| Route | Region | Interval | Stored | Measured | Bar |
+| Route | Region | Interval | Stored | Measured (absolute) | Bar (absolute) |
 |---|---|---|---|---|---|
 | chebyshev (default) | A | 0 | 1067 | 1.24e-07 | 1.5e-07 |
 | rational minimax | A | 0 | 465 | 1.44e-07 | 1.5e-07 |
 | chebyshev (default) | B | 11.899848152108484 | 11 | 3.14e-08 | 1.5e-07 |
 | rational minimax | B | 11.899848152108484 | 6 | 7.50e-08 | 1.5e-07 |
 
+Both columns are absolute figures — what a fit of these coefficients was cut against and what it
+delivered — and neither is the lane's published figure, which is 2^-22 of the value, or 1.5e-7 where that
+is the larger. The two scales
+are not a ratio of one another: a row's measured cell divided by its bar says nothing about what the
+lane guarantees. The gate prints each row's published figure beside the worst it measures itself.
+
 Each measured figure is the worse of the lane's two multiply-add routes: a build runs one of the
-two, so a figure that covers one of them understates the other. The gate prints each row's published
-figure beside the worst it measures itself.
+two, so a figure that covers one of them understates the other.
 
 Region A's rows count the lane's whole per-order table over [0, 11.899848152108484), 97 pieces
 against the rational route's 47, and both routes cover that interval from zero: this lane reads each
@@ -455,7 +491,8 @@ its own fit on that cut. The Chebyshev route stores 1526 coefficients either way
 and 28 over region B, the rational route 1241 over region A and 18 over region B, and the gate's
 single-entry policy rows measure them at 1.02681e-07 and 4.51733e-08 for the Chebyshev pair and
 1.15993e-07 and 2.95023e-08 for the rational pair, over region A and region B respectively,
-against the lane's 1.5e-07 bar. Every narrow row is inside that bar on the build the gate ran,
+against the absolute 1.5e-07 bar those fits were cut against. Every narrow row is inside that bar on
+the build the gate ran,
 whose multiply-add route is the fused one. The figures the generated header publishes for
 those fits are read the same way at each route: 1.19209e-07 over region A and 5.96046e-08 over
 region B for the narrow Chebyshev pieces, both the same under either route, and 1.14376e-07
@@ -489,6 +526,14 @@ The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the produc
 measurable to what the coefficients already cost. The other two deliver 1.92e-07 and 1.95e-07, which
 is their 32-bit accumulator's own floor.
 
+**This lane's bounds stay absolute because the lane never sees a small value.** Over the whole of
+the domain it serves, the smallest F it evaluates is 5.37e-3, so an absolute 1e-15 is at most 1e-15
+/ 5.37e-3 = 1.86e-13 of the value there — looser than the 1e-13 the other lanes state, and therefore
+a conservative way of saying the same thing. The two 32-bit rows are a floor of an accumulator and
+not a fraction of a value, so they have no relative form to move to. This is a property of the
+domain, not a licence for the other lanes: a lane that does see small values states its figure
+relative to the value.
+
 **The limit of the first is the table, and of the other two the accumulator.** Rounding an fp64
 operand to 11-bit parts and summing six of them changes nothing while the total is 32-bit, so no
 amount of operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. That is a
@@ -499,9 +544,14 @@ accurate to far below that floor, so over the whole of region A their
 bound is the floor itself. The 64-bit mode's floor is below the 1e-15 budget, so its bound is the same
 1e-15 as the double lane's.
 
-**The two 32-bit modes exceed the float lane's bound.** Their floor
-is 1.92e-7 against the float lane's 1.5e-7, so 1.28 times as much: that is the trade they offer,
-a float-lane-grade result from a card with no 64-bit arithmetic, at 1.28 times the float lane's bound.
+**The two 32-bit modes trade against the float lane rather than standing above it.** The floor they
+deliver is 1.92e-7 absolute — the rows above state a 2.5e-7 bound, which is that floor with room —
+and it does not follow the value. The float lane's figure is 2^-22 of the value, or 1.5e-7 where
+that is the larger: 2.38e-7 at F = 1, and its floor below F ≈ 0.63. So a 32-bit transform result
+is inside the float lane's figure above F ≈ 0.81 and outside it below — 1.92e-7 against that
+1.5e-7 floor, a factor of 1.28, at the smallest value this lane's domain holds (5.37e-3). That is
+the trade it offers: a float-lane-grade result from a card with no 64-bit arithmetic, whose error
+is a floor rather than a fraction.
 
 **These two bounds are arithmetic on a model, not a measurement of a card.** They were measured
 against the committed reference grid and against a dense sweep of the band, but on a CPU that
@@ -523,8 +573,11 @@ seed at no order at all.
 ## half — storing 16-bit values and computing in 32-bit
 
 **At most `1.5e-7` plus half of the last representable digit of the result.** This is the one bound
-that mixes kinds: the first term is an absolute error and
-the second is proportional to the size of the result.
+that mixes kinds: the second term is proportional to the size of the result — half of one of the
+result's own last digits, which is what a relative bound is — and the first is the fp32 engine's
+arithmetic cost stated absolutely, a floor that involves no value. It is left in that form: it is
+already the value's own digit beside a floor, and the floor is why the lane claims nothing below a
+certain size.
 
 Half precision takes no part in the arithmetic. **The argument is rounded to 16 bits and the
 evaluation runs at that rounded value**, so the bound compares the result against the function at the
@@ -565,7 +618,9 @@ values down to about 1e-38.
 
 **Within 8 of the last representable digits of the returned value**, worst measured 4.243, for
 arguments at or above x = 28.984375. The bound is stated in representable digits rather than as a
-size, because that is the shape of this lane's error.
+size, because that is the shape of this lane's error: a count of the value's own last digits is a
+bound that follows the value down, so this lane already states the relative form and has no table,
+no stored fit and no figure to move.
 
 **It is not a drop-in for the half lane above.** It rounds once per calculation step, where that lane
 rounds once per value, so it spends more of the result's precision than that lane's bound allows: the
@@ -1244,10 +1299,14 @@ there as here.
 **The float lane's plain reciprocal carries its own figure.** The all-orders entries' region-A
 downward ladder divides by the step's constant rather than by the argument, and that step reads the
 form the policy names. The plain reciprocal rounds once more there, which takes the ladder past the
-lane's 1.5e-7 base: the gate's own reference grid reads 1.7514e-07 at n = 0, x = 9.74055, where the
-lane's exact and refined forms deliver 1.08354e-07 at worst. So the lane publishes a term beside its
-base for that form — 1.5e-7 + 1e-7, which is 2.5e-7 — and `BoysAccuracyGuaranteed` answers it when
-the caller names the form.
+lane's base: the gate's own reference grid reads 1.7514e-07 at n = 0, x = 9.74055, where the lane's
+exact and refined forms deliver 1.08354e-07 at worst. So the lane publishes a term beside its base
+for that form — `2^-22 · F_n(x) + 1e-7`, or `1.5e-7 + 1e-7` where the floor is the larger — and
+`BoysAccuracyGuaranteed` answers it when the caller names the form. Those three figures are absolute
+readings of one cell, printed here as measurements; the lane's figure is the one above, and the term
+is that cell's own cost — 6.67e-8, the gap between the two readings — stated in its published form
+as 1e-7. The same term sits on the half
+lanes' base, whose entries run the fp32 engine's bodies.
 
 **Reproduction.** The option probe measures the axis and names the form in every row it prints:
 
@@ -1261,7 +1320,8 @@ report prints each under, are the rows of `BoysDivisionForms()`.
 ## Large arguments, and the boundaries at x = 11.8998 and x = 28.9893
 
 For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result.
-**Nothing relaxes it**, and its bound holds with room to spare.
+**Nothing relaxes it**: region C carries the lane's own figure, 1e-13 of the value, like every other
+region.
 
 Its accuracy is set by where the asymptotic form starts being used. Moving that start point trades
 accuracy against nothing: the evaluation costs the same wherever the boundary sits, so moving it
@@ -1270,10 +1330,11 @@ saves no work.
 Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows
 smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is
 stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and
-x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**. The 5.5e-14 above is an absolute
-figure, so the two are not on one scale and this page offers no ratio between them. What the pair
-says is that inside the sub-16 part of the branch the accuracy is nowhere near the accuracy of the
-fits. A caller evaluating there should expect that, and should not read the 5.5e-14 as covering it.
+x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**. The figure the lane carries is stated
+in that same form — 1e-13 of the value — so the two are on one scale, and this page needs no ratio
+to make the point: inside the sub-16 part of the branch the accuracy is almost eighteen orders of
+magnitude away from the figure. A caller evaluating there should expect that, and should not read
+the figure as covering it.
 
 ## Every combination: its bound, its delivered figure, and its tolerance
 
@@ -1300,12 +1361,12 @@ the bound is here.
 
 | Lane | The bound one value carries | The term that sits beside that bound | Named |
 |---|---|---|---|
-| double | 5.5e-14 | — | `Precision::kFp64` |
-| float | 1.5e-7 | — | `Precision::kFp32` |
+| double | `1e-13 · F_n(x)` | — | `Precision::kFp64` |
+| float | the larger of `2^-22 · F_n(x)` and 1.5e-7 | plus 1e-7 in the plain-reciprocal form | `Precision::kFp32` |
 | half, fp16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; the format's digit is 2^-11 | `Precision::kFp16` |
 | half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-8 = 3.90625e-03, the coarser of the two | `Precision::kBf16` |
-| float on a device | 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
-| double on a device | 5.5e-14 | — | `Precision::kFp64Device` |
+| float on a device | the larger of `2^-22 · F_n(x)` and 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
+| double on a device | `1e-13 · F_n(x)` | — | `Precision::kFp64Device` |
 | half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
 | bfloat16 on a device | 1e-7 | the same base at this store's own digit — 2^-8 = 3.90625e-03, the coarser of the half lane's two — and the plain reciprocal's 1e-7 beside it, which is the fp16-device lane's own measurement of that form on the bodies this store runs | `Precision::kBf16Device` |
 
@@ -1321,14 +1382,20 @@ bf16 entry that names no policy is answered by the bf16 row.
 
 The device's four lanes are four rows and not one: each is its own precision of the CUDA surface
 (`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
-own entries publish — `boys/boys_cuda.hpp` states 5.5e-14 for the double entries and `1e-7 + ½ ULP`
-for the half ones, which is tighter than the host half lane's 1.5e-7 + ½ ULP because the device's
-half lane is not the host's.
+own entries publish — `boys/boys_cuda.hpp` states `1e-13 · F_n(x)` for the double entries,
+the larger of `2^-22 · F_n(x)` and 1.5e-7, plus its fast member's 8e-8, for the float ones, and `1e-7 + ½ ULP` for the half
+ones, which is tighter than the host half lane's base plus ½ ULP because the device's half lane is
+not the host's, and it states its own measured base rather than borrowing the host's.
 
-A combination carries **`base + additive`** — the same arithmetic the README's
-contract table states lane by lane. `BoysLaneContracts()` returns those seven rows, so a program
-reads the figures the tables are written from rather than transcribing them, and the accuracy gate
-reads the same rows to judge a combination against.
+A combination carries **`base + additive`**: the lane's figure and whatever term sits beside it, the
+same arithmetic the specification's contract table states lane by lane. The rows in the table above
+are the contract. `BoysLaneContracts()` is the library's own list of those rows, and it still carries
+the absolute figures the double and float lanes were published with — 5.5e-14 for the two double
+rows and 1.5e-7 for the two float ones — because that list is re-made with the option probe's report
+rather than with this page. So for those two precisions a program asking the library for a guarantee
+today is answered in the older, absolute form. The half rows, on either side of the device seam, are
+the same figures in both places: their base is the fp32 engine's arithmetic stated absolutely beside
+a term of the returned value's own last digit, and neither moves.
 
 **Two figures, two questions, and their names say which is which.**
 `BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form)` answers *is this
@@ -1573,12 +1640,12 @@ choice between two ways of computing one answer: both schemes sum one fit, and b
 one fit, each certified to its own published bound, so neither move costs accuracy. What a caller who
 reads a bound off this page relies on is that bound, and it is the lane's own at either value.
 
-**The bound each name carries is the lane's own**, stated above and not restated here: the double
-single entry at most 1e-15 below x = 1.0855, 3e-14 below x = 11.899848152108484 and 5.5e-14
-everywhere, the double batch entries 5.5e-14 throughout, the float lane 1.5e-7 absolute and
-everywhere, the half lanes `1.5e-7` plus half of the last representable digit of the result. A call
-that names an axis is judged against that axis's section
-rather than against this table.
+**The bound each name carries is the lane's own**, stated above and not restated here: `1e-13 ·
+F_n(x)` for the double single and double batch entries alike, over the whole of x >= 0, and `2^-22 ·
+F_n(x)`, or 1.5e-7 where that is the larger, for the float lane, plus 1e-7 in its plain-reciprocal form; the half lanes carry the fp32
+engine's arithmetic stated absolutely, `1.5e-7`, plus half of the last representable digit of the
+result. A call that names an axis is judged against that axis's section rather than against this
+table.
 
 **Why four names and not one.** The fp16 and bf16 lanes are the float engine under the fp16 budget,
 and the budget is the axis that differs: their region-A and region-B degrees are cut for a 1e-7
@@ -1609,9 +1676,11 @@ packing axis and no partition, so a caller that has chosen a device precision an
 exponential has chosen everything the lane has to choose.
 
 The device lane's bounds are the CPU lane's, precision by precision: CUDA fp64 the double lane's
-figures, CUDA fp32 at `RegionBExp::kAccurate` the float lane's 1.5e-7 in every region, and CUDA fp32
-at `RegionBExp::kFast` that bound plus the corrected seed's own contribution — the region-B
-exponential section above states it, and the device gate measures it.
+figures, CUDA fp32 at `RegionBExp::kAccurate` the float lane's 2^-22 · F_n(x), or its 1.5e-7 floor where
+that is the larger, in every region and at every division form — the device float row states no plain-reciprocal term beside it (the table
+above) — and CUDA fp32 at `RegionBExp::kFast` that bound plus the corrected seed's own
+contribution — the region-B exponential section above states it, and the device gate measures
+it.
 
 **The device lane runs the build's multiply-add route, and reports it.** The multiply-add route is a
 build fact rather than a call-site argument, and one selection serves both lanes: `BOYS_MULADD_SEPARATE`

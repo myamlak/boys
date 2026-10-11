@@ -169,9 +169,9 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 | `tools/host-shapes.json` | a person | edit it when a host entry moves between shapes | `tools/check_host_entry_bijection.py`, which reads it against the headers in both directions |
 | The seam, `include/boys/boys_build_defaults.hpp` | a person — the committed five host names and two device ones | or: `tools/splice_default_rows.py --emitted <file> --seam <seam>` writes the rows a probe run emitted with `--emit-defaults` into it — matched by class and never by position, a class the emission did not place is left as the seam carries it, marker and cells together, and a splice that would leave the file naming a run its rows do not is refused rather than written | `tools/check_seam_macros.py` requires every name it offers to be expanded somewhere in `include/` or `src/`; `tools/splice_default_rows.py --control` holds the refusals the splicer makes; the CI legs that build against `tests/build_defaults_*.hpp` are what compiles a moved axis |
 
-A *recorded* file is a run kept as a file: it is not re-derived, so a check that reads one is
-asking about the revision the run names, and the answer changes only when someone re-makes the
-run. `tests/data/boys_reference.csv` is the opposite — it is generated, and the committed bytes are
+A *recorded* file is a run kept as a file: it is not re-derived, so a check that reads one is asking
+about the version the run names and the content of the files it read, and the answer changes only
+when someone re-makes the run. `tests/data/boys_reference.csv` is the opposite — it is generated, and the committed bytes are
 a claim about what its generator produces.
 
 ## The probes

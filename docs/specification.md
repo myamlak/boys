@@ -8,40 +8,60 @@ defined on the documentation's landing page, together with the full API referenc
 
 ## Accuracy contract
 
-The bound is |F̂_n(x) − F_n(x)| ≤ B, for every supported n, x and lane.
+The bound is **relative**: |F̂_n(x) − F_n(x)| ≤ B · F_n(x), for every supported n, x and lane.
 
-**B is an absolute bound, and it does not bound the relative error.** Where F is small the two part
-company. Measured for `BoysSingle(n, x)` against this repository's own 45-digit reference grid
-(`tests/data/boys_accuracy_gate_reference.csv`, 56,694 cells), the worst relative error per order
-and argument band is:
+**B is a fraction of the value, so a small value is held to a small error.** The form this contract
+had before was absolute — one figure for the whole range, whatever the value — and it judged every
+cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 —
+an error of 4.94e-14, inside the absolute 5.5e-14 and 0.897 of it, so that form passed the cell.
+Read relative to F, the same cell is **2.55 times the true value**. That is what the relative form
+binds and the absolute form did not: a budget spent where the value is tiny is spent where nothing
+needs it.
 
-| n \ x | [0, 2) | [2, 12) | [12, 100) | [100, 500) |
-|---|---|---|---|---|
-| 0 | 1.60e-16 | 2.83e-16 | 2.63e-14 | 1.99e-16 |
-| 8 | 2.06e-16 | 3.53e-13 | 2.24e-06 | 1.07e-15 |
-| 16 | 2.09e-16 | 8.21e-13 | **4.60e-03** | 1.76e-15 |
-| 32 | 2.00e-16 | 1.20e-12 | **2.55e+00** | 3.34e-15 |
-
-The worst cell is `n = 32, x = 29`: F = 1.93e-14, delivered 6.87e-14 — inside the absolute bound
-and **3.5× the true value**. Outside 12 ≤ x < 100 the relative error is at rounding level. A caller
-who recurses in n, forms ratios of F values, or reasons in relative error in that band must not use
-this bound as a relative one. To reproduce: read the grid's `value` column, call the entry at the
-same `(n, x)`, and take the largest `|(delivered − value)/value|` over the rows of a band.
+B binds above the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the
+float ones. Below it the returned value is subnormal or zero, the format's own floor is what
+answers there, and no accuracy is claimed. To reproduce a figure: read the grid's `value` column
+(`tests/data/boys_accuracy_gate_reference.csv`, 59,268 cells), call the entry at the same `(n, x)`,
+and take the largest `|delivered − value| / |value|` over the cells whose `|value|` is above the
+lane's floor. The gate does exactly this and prints the ratio beside every row.
 
 The library evaluates the function differently at different argument sizes, and one lane is tighter
-over part of the range than over the rest. Every figure below holds for **all** x ≥ 0:
+over part of the range than over the rest — but the contract is one figure per lane, and a lane's
+tighter regions are inside its figure rather than written beside it. Every figure below holds for
+**all** x ≥ 0:
 
 | Lane | Error bound |
 |---|---|
-| double single | ≤ 5.5e-14 everywhere; ≤ 3e-14 below x = 11.899848152108484; ≤ 1e-15 below about x = 1.0855 |
-| double batch, whether the top order is the batch's or each argument's | ≤ 5.5e-14 |
-| float single / batch | ≤ 1.5e-7, or ≤ 2.5e-7 in the plain-reciprocal form |
-| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form |
-| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value |
-| CUDA fp64 | ≤ 5.5e-14 — the same budgets as the CPU double lanes, whose loosest cell this is: the CUDA surface's own double entries publish it over the whole of x ≥ 0 |
-| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same budgets as the CPU float lanes, at the lane's own default division form |
-| CUDA fp32, `RegionBExp::kFast` | ≤ 1.5e-7 + 8e-8 — the lane's budget plus the corrected seed's own contribution |
+| double single | ≤ 1e-13 · F_n(x) — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
+| double batch, whether the top order is the batch's or each argument's | ≤ 1e-13 · F_n(x) |
+| float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
+| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is the looser of the two figures wherever the float lane's relative figure falls below it |
+| native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
+| CUDA fp64 | ≤ 1e-13 · F_n(x) — the same contract as the CPU double lanes |
+| CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
+| CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
+
+**Two combinations of the double lane are under the figure, and the bound carries a floor for
+them.** The figure above is the one the lanes' own entries hold, with margin: the double entries'
+worst relative error over the gate's grid is 9.99e-15, a full order below the figure, at n = 32,
+x = 29.0412. Two
+families of cells hold instead the absolute figure the double lane published before it, and that
+figure is what the bound keeps as its floor:
+
+| Family | What it holds | The cell it is worst at |
+|---|---|---|
+| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves | `5.5e-14` absolute | the ladder's cell, n = 32, x = 10.7836: 1.44e-08 · F_n(x) = 6.73e-15 absolute; a fit's cell, n = 8, x = 2.1613: 2.07e-13 · F_n(x) |
+| the rational-minimax route's high-order intervals | `5.5e-14` absolute | n = 32, x = 11.6879: 1.32e-11 · F_n(x) = 2.59e-18 absolute |
+
+So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 5.5e-14**, and it is
+the absolute arm, not the relative one, that binds at the cells above; the float lane's row states
+the same union with its own two figures. What raises each family to the relative figure, one change
+apiece: an order whose value is far below its region's seed is carried up the recurrence by the
+gain [boys_impl.hpp](../include/boys/boys_impl.hpp) states (`2 T(N, x) t / F_N` is 1.598e6 at
+kX0), so serve it from its own fit, as the shipped entries' per-order grid does, or carry the
+recurrence in wider arithmetic; and the rational route's intervals between x = 11.5 and 12.0 store
+a fit that does not reach the bar their neighbours reach.
 
 **One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
 its three members are three arithmetics, not three spellings of one. Exact division rounds once per
@@ -49,16 +69,34 @@ step, the plain reciprocal rounds twice, and the refined reciprocal recovers the
 rounding from the plain product.
 
 On the **double** lane the three deliver one figure. Over the accuracy gate's reference grid,
-56694 cells per form, the plain reciprocal leaves region A, region B and region
-C where exact division has them and moves the extended band's worst from 3.22e-15 to 6.73e-15, inside
-the 3e-14 that region publishes. The refined reciprocal is bit-identical to exact division in every
-cell. So the double rows are figures under all three forms.
+59268 cells per form, the plain reciprocal leaves region A, region B and region
+C where exact division has them and moves the extended band's worst absolute error from 3.22e-15 to
+6.73e-15 — a factor of 2.1 (6.73e-15 / 3.22e-15), at the one region where the axis costs the double
+lane anything, and
+nothing anywhere else. The refined reciprocal is bit-identical to exact division in every cell. So
+the double rows are figures under all three forms, with no term beside them.
 
 On the **single-precision** lanes the plain reciprocal costs accuracy, so those lanes publish a
-figure for it beside their base: **1.5e-7 + 1e-7 = 2.5e-7**. Its measured worst is 1.7514e-07, at
-n = 0, x = 9.74055, where the lane's exact and refined forms deliver 1.08354e-07 at worst. The fp16
+term for it beside their base: **the larger of 2^-22 · F_n(x) and 1.5e-7, plus 1e-7**. The term's
+measured worst is 1.7514e-07 absolute, at n = 0, x = 9.74055, where the lane's exact and refined
+forms deliver 1.08354e-07 at worst — the same absolute pair the lane carried when its figure was
+stated absolutely, which is why the extra rounding is stated beside the figure rather than folded
+into it: it is a term of the form and not of the value, so a relative figure does not absorb it.
+
+The lane's 1.5e-7 arm is there for the same reason the term is. The relative figure alone does not
+bind where the value is small, because this lane's error does not fall with the value: binary32
+arithmetic leaves an absolute error of order 1e-7 behind on the way to a result of any size, and at
+the cell above the lane's own exact form delivers 1.08354e-07 against a relative figure of
+2^-22 · 0.283955 = 6.77e-08 — half again over it. So the figure the lane states is the larger of
+the two, and the relative one binds above the value where it overtakes the absolute one, at
+1.5e-7 / 2^-22 = 0.63. What raises the arm to the relative figure alone: the region-A seed and the
+ladder evaluated in binary64 and rounded once. That is the double lane's arithmetic, and the floor
+is what this lane's binary32 arithmetic costs.
+
+The fp16
 and bf16 lanes run that arithmetic and round at the boundary, so the same term stands beside their
-base, before the half digit above is added.
+base — which is the fp32 engine's arithmetic stated absolutely, 1.5e-7, rather than the relative
+base the float lane now states — before the half digit above is added.
 
 `BoysAccuracyGuaranteed` takes the form as an argument and answers the figure for the form you name.
 A device lane's row is read at the form the caller names, as a host lane's is: the CUDA surface's
@@ -91,11 +129,17 @@ route there whatever the selection says. Against the committed reference grid, b
 default fused route and the `BOYS_MULADD_SEPARATE=ON` separate route — on MSVC x64 Release at this
 revision:
 
-| lane | region | fused route | separate route | bound |
+| lane | region | fused route | separate route | figure |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 3e-14 |
-| float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
-| float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 1e-13 · F_n(x) |
+| float, single | all arguments | 6.36e-08 | 7.49e-08 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
+| float, batch | all arguments | 1.08e-07 | 1.08e-07 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
+
+The delivered columns are absolute worst errors — each the worst cell of the sweep the gate's
+recorded run holds — and the figure beside them is the lane's own: the relative one, or the larger
+of it and the lane's absolute figure, held over the whole argument range the row names. The two are
+not a ratio of one another: what the columns of this table
+show is what moves with the route, and the row's delivered cells are the whole of what does.
 
 The band row and the float single row are the whole of what moves: the double lane's other three
 regions and the float batch lane deliver the same worst cell, to the digit, on both routes. A figure
@@ -111,12 +155,17 @@ may fuse at one call site and not at another, so the entry's report prints how m
 comparisons were bit-for-bit equal, and [lane-contract.md](lane-contract.md) carries the
 counts.
 
-The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's.
+The fp16 and bf16 rows are fp16 *I/O* around the fp32 engine, so their error is the engine's. Their
+figures stay as they were, and the move to a relative contract is what leaves them alone: a bound
+carried as a figure of the value's own last digit beside a term of the arithmetic is already the
+shape the move is for, and both of their terms are looser than the float lane's base.
 
 The native half lane (`BoysAllOrdersHalf2`, `BoysAllNF16Native`) is a different thing. It evaluates
 region C's ladder in packed binary16, one correctly rounded operation per step. That buys two
 arguments to a register. It costs the accuracy its own bound names: ≤ 8 ULP of the returned value,
-measured at a worst of 4.3 ULP.
+measured at a worst of 4.3 ULP. That is a bound on the returned value's own last digit and not a
+figure of its own, so the move to a relative contract leaves this lane exactly where it was: it
+carries no table and no constant, and there is no figure to re-derive.
 
 Its output is 2^15 F_k(x). That exact scale keeps the ladder in the format's normal range down to
 F_k(x) = 2^-29, which is x up to 359, 128 and 30 at orders 3, 4 and 8. **Past those arguments the
@@ -136,7 +185,10 @@ orders at once, for a batch of arguments — in an arithmetic mode the caller na
 `kTf32x3` or `kBf16x6`. It changes none of the lanes above. At fp64 it adds nothing measurable to the
 coefficients' own truncation, 1.11e-16 over the band. The two split modes deliver 1.92e-07 and
 1.95e-07, which is their 32-bit accumulator's floor rather than the operand split's: no amount of
-operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. **Those two bounds are
+operand precision reaches 64-bit-grade accuracy on a 32-bit accumulator. These are absolute figures
+beside a relative contract and they stay absolute: the transform's domain is region A, where the
+smallest value any band of any order holds is 5.37e-3, so there is no range of small values for an
+absolute figure to hide a relative gap in. **Those two bounds are
 arithmetic on a model of a 32-bit tensor-core accumulator, not a measurement of a card** — a tensor
 core's fused sum is less accurate than the model, never more, and **no speed is claimed for any mode**.
 A caller who seeds the downward recursion rather than reading values is held to a tighter
@@ -166,7 +218,8 @@ element outside the order loop; what separates the two options is the bound, not
 
 The GPU and CPU float lanes agree to within 3.5e-7. That is a cross-lane statement about
 |GPU − CPU| and not a bound on either lane's distance from F_n(x): the default CUDA fp32 entry is
-held to 1.5e-7 above, and the fast option's looser bound is not covered by the 3.5e-7 figure.
+held to the larger of 2^-22 · F_n(x) and 1.5e-7 above, and the fast option's looser bound is not
+covered by the 3.5e-7 figure.
 
 ### Choosing a combination
 
@@ -228,8 +281,8 @@ Every figure above is measured, and the measurement is in this tree. Build the g
     cmake --build build --target boys-accuracy-gate
     ./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
-It sweeps the documented entries over the committed reference grid — 33 orders × 1718 arguments,
-56,694 points — and prints, lane by lane and region by region, the worst error the lane delivered
+It sweeps the documented entries over the committed reference grid — 33 orders × 1796 arguments,
+59,268 points — and prints, lane by lane and region by region, the worst error the lane delivered
 beside the bound it claims. `--per-order` adds the same comparison order by order, naming the cells
 the bound actually binds on; `--probe n x` prints one cell from every lane for one argument.
 
@@ -237,22 +290,25 @@ The run ends with a verdict line and an exit status: `PASS: every documented cla
 revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
 binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
 in this binary's own output. CI runs this gate on every platform below and fails the build if a claim
-does not hold. Of the two figure columns above, that holds the `Bound claimed` one: its figures are
-the gate's own constants, and `tools/check_bound_transcripts.py`, which CI runs as well, reads this
-table against them, so a bound that moves on one side and not the other is a red run. The two half
-lanes are that column's one exception, and the checker names it: their figure is the half-quantum
-the gate composes at run time from the format of the value it returned, so no constant states it.
+does not hold. The contract table above is held against the gate: `tools/check_bound_transcripts.py`,
+which CI runs as well, reads its rows against the gate's own constants, so a bound that moves on one
+side and not the other is a red run. The two half lanes are that table's one exception, and the
+checker names it: their figure is the half-quantum the gate composes at run time from the format of
+the value it returned, so no constant states it.
 The `Worst delivered` column is a run's own output, and it is held to one. `tests/data/` carries a run
-of the gate kept as a file; `tools/check_bound_transcripts.py` reads this table against that run's
-rows, and `tools/check_recorded_run.py` asks the repository what has moved since the revision the run
-names. Both run in CI. So a change that moves a lane inside its bound leaves the gate green - the
+of the gate kept as a file; `tools/check_bound_transcripts.py` reads the table below against that
+run's rows, and `tools/check_recorded_run.py` reads the version and the content the run's own stamp
+carries and recomputes the content from this tree. Both run in CI. So a change that moves a lane inside its bound leaves the gate green - the
 bound still holds - and leaves the recorded run describing an older tree, which the second check
 reports rather than passing over. The fix is a new run and a new transcription of it, never an edit to
 the figure. A figure is one host's: your own run is the answer for your platform, your compiler and
 your arithmetic, and the rows are compared cell by cell rather than as one number.
 
-Run on the committed tree, it printed this (an excerpt; the full run carries one row per lane and
-region):
+Run on the tree the run's file names, it printed this (an excerpt; the full run carries one row per
+lane and region). **Both columns are that run's own output, the `Bound claimed` one included**: the
+figures in it are the bounds the gate was judged against at the revision the run names, which is
+older than the contract above — read the column as that run's record and not as this page's
+contract, and read the delivered column beside it the same way:
 
 | Lane | Region | Worst delivered | Bound claimed |
 |---|---|---|---|
@@ -267,8 +323,11 @@ region):
 and ended `PASS: every documented claim met at this revision`.
 
 The gate's region labels are the ones above: `A` is the part of the double lane's range below
-x = 1.0855252345349333, where it claims ≤ 1e-15; `band` is the rest of the range below
-x = 11.899848152108484, where it claims ≤ 3e-14; and `B` and `C` are the two regions beyond that.
+x = 1.0855252345349333, `band` is the rest of the range below x = 11.899848152108484, and `B` and
+`C` are the two regions beyond that. The per-region figures that column carries (`≤ 1e-15` on `A`,
+`≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are the absolute budgets the lane's fits were cut
+against, kept in [lane-contract.md](lane-contract.md) as the measurements they are; the contract
+above states the one relative figure the lane holds to over all four.
 
 ### Arguments outside the documented domain
 
@@ -565,11 +624,19 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 3.0.0**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 4.0.0**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite fails if anything else disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).
+
+**The accuracy promise is why this release is a major one.** A lane's bound is stated as a multiple
+of the value the call returns - `1e-13 · F_n(x)`, in `lane-contract.md` - where the lane published
+an absolute figure, 5.5e-14, before it. The change is what one promise means in another currency:
+the two figures agree where the value is about half, the new form is the stricter of the two below
+that and the looser above it, and near the top of the range, where the value is close to 1, it
+permits about twice the absolute error the figure did. A published guarantee that a consumer pinned
+on changed, which is a break, and the version carries it.
 
 The version badge at the top of this file shows the latest *release tag*. It names the same version
 when a release is cut, and can be older than the tree you are reading.

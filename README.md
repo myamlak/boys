@@ -140,16 +140,32 @@ The complete list, with every overload, is the entry-point table in the
 device call looks like, what you must allocate and pass, what the library refuses and why that is a
 feature, and how to read the bound you got.
 
-**What the bound is, and what it is not.** In double precision the guarantee is **absolute**:
-`|F_n(x) − F_n(x)| <= 5.5e-14` for every `n <= 32` and every `x >= 0`. It does not bound the
-*relative* error, and where F is small the two part company — at `n = 32, x = 29` the relative error
-is **2.55**, with F about 1.9e-14 and the returned value 6.9e-14. **And no entry checks its
-arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is undefined, and a release build
-faults on `x < 0` or on a `NaN` anywhere in a batch, while `n > 32` answers a wrong number with no
-diagnostic. Every entry has a `*Checked` twin — `BoysAllOrdersChecked` and its four siblings — that
-refuses with a status instead of faulting. The
-[accuracy contract](docs/specification.md#accuracy-contract) carries the relative-error table and
-the command that measures the bound on your machine.
+**What the bound is, and what it is not.** The guarantee is **relative**: the error of a returned
+value is at or below **1e-13 · F_n(x)**, for every `n <= 32` and every `x >= 0`. It binds above
+the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
+subnormal or zero and no accuracy is claimed. The figure was an absolute `5.5e-14` until this
+release, and where F is small the two part company: at `n = 32, x = 29`, F is 1.93e-14 and the lane
+returned 6.87e-14 — an error of 4.94e-14, which the absolute figure of the day passed, and **2.55
+times the true value** read relative to F.
+
+**The figure has a floor, and two combinations are under it.** The relative figure is the one the
+shipped entries hold, with an order of margin: the double entries deliver at worst `9.99e-15 ·
+F_n(x)`, a tenth of it, and the worst cell is `n = 32, x = 29.04`. Two combinations the option
+space offers do not hold the relative figure alone yet, and hold the absolute figure these lanes
+published before it: a lean partition's extended-band ladder (`FitGranularity::kCoarsest`,
+`kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax route's high-order intervals.
+The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
+values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger
+of `2^-22 · F_n(x)` and the `1.5e-7` it already published. So the bound is **the larger of
+`1e-13 · F_n(x)` and the lane's absolute figure** — `5.5e-14` in double, `1.5e-7` in float. The
+[accuracy contract](docs/specification.md#accuracy-contract) names the two combinations, the figure
+each holds at its worst cell, and what raises them to the relative one.
+**And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
+undefined, and a release build faults on `x < 0` or on a `NaN` anywhere in a batch, while `n > 32`
+answers a wrong number with no diagnostic. Every entry has a `*Checked` twin — `BoysAllOrdersChecked`
+and its four siblings — that refuses with a status instead of faulting. The
+[accuracy contract](docs/specification.md#accuracy-contract) carries the per-lane figures and the
+command that measures the bound on your machine.
 
 **How much accuracy do you need?** [docs/consumer-perspective.md](docs/consumer-perspective.md) —
 what integral calculations actually require, and which of the library's evaluation paths that leaves
