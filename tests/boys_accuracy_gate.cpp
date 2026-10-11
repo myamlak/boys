@@ -5,6 +5,7 @@
 
 #include <boys/kernels.hpp>
 #include <boys/f16.hpp>
+#include <boys/version.hpp>
 
 // The store-half lanes and the packed simd-half kernels are declared behind the BoysFp16
 // build-time seam, so a build whose seam is closed has no entry to call; the claim slots exist
@@ -81,10 +82,15 @@ constexpr const char* kNativeHalfAbsent =
 #include <type_traits>
 #include <vector>
 
-// CMake passes the measured revision; a build that bypasses it still says so
-// rather than naming a revision it did not read.
+// CMake passes the measured revision and the content the run was taken from; a build
+// that bypasses either still says so rather than naming a revision or a content it
+// did not read. The version is not passed: the gate prints the library's own, from
+// the header it compiles against.
 #ifndef BoysGateRevision
 #define BoysGateRevision "unknown"
+#endif
+#ifndef BoysGateInputs
+#define BoysGateInputs "unknown"
 #endif
 
 // The instrument, the reference and the row shape come from tests/boys_gate_reference.hpp,
@@ -95,18 +101,33 @@ using namespace boys_gate;
 namespace {
 
 // ---------------------------------------------------------------------------
-// The documented bounds, transcribed from README.md and include/boys/boys.hpp.
+// The documented bounds, transcribed from README.md and include/boys/boys.hpp, in the form each
+// lane states them: relative for the double and float lanes, beside the value for the half lanes.
 // ---------------------------------------------------------------------------
 
-// README's four-region table (the one that has an extended-band cell).
-constexpr double kBoundSingleA = 1e-15;
-constexpr double kBoundSingleBand = 3e-14;
-constexpr double kBoundSingleB = 3e-14;
-constexpr double kBoundSingleC = 5.5e-14;
+// README's four-region table (the one that has an extended-band cell). The contract holds one
+// relative figure over the whole domain, so all four regions state it.
+constexpr double kBoundSingleA = 1e-13;
+constexpr double kBoundSingleBand = 1e-13;
+constexpr double kBoundSingleB = 1e-13;
+constexpr double kBoundSingleC = 1e-13;
 // README: the double batch lane, every region.
-constexpr double kBoundDoubleBatch = 5.5e-14;
-// README: float single / batch, every region.
-constexpr double kBoundFloat = 1.5e-7;
+constexpr double kBoundDoubleBatch = 1e-13;
+// README: float single / batch, every region. The lane's own bar, 2^-22, over the 1.5e-7
+// floor below (kFloatValueFloor).
+constexpr double kBoundFloat = 2.384185791015625e-07;
+
+// The absolute figure each lane published before the contract went relative, kept as the floor
+// under it: the combinations that do not hold the relative figure alone - the lean partitions'
+// extended-band cells, the rational route's high-order intervals, the float lane's high-order
+// batch cells - hold this one (README.md, "What the bound is, and what it is not").
+constexpr double kDoubleValueFloor = 5.5e-14; // the double lanes' published absolute figure
+constexpr double kFloatValueFloor = 1.5e-7;   // the float lanes' published absolute figure
+
+// The floor a relative figure binds above: the smallest normal of each budget's format (DBL_MIN,
+// 2^-1022; FLT_MIN, 2^-126). Below it the return is subnormal or zero and no accuracy is claimed.
+constexpr double kDoubleFloor = 2.2250738585072014e-308;
+constexpr double kFloatFloor = 1.1754943508222875e-38;
 // The withdrawn header claim (1e-15 over every x < x0): its slot is still measured so the
 // finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
@@ -127,12 +148,12 @@ constexpr double kF16Field = 65504.0 * 16777216.0;        // 65504 * 2^24
 constexpr double kF16NormalField = 65504.0 * 16384.0;     // 65504 * 2^14
 
 // The region-A transform lane (include/boys/boys_transform.hpp): the double table's two shared
-// bands as one matrix product per band, in a caller-named mode. kFp64 carries the double single
-// region-A budget, the two split modes that plus the fp32 accumulator's own floor (2.5e-7); their
-// rows model that arithmetic rather than measuring a tensor core.
+// bands as one matrix product per band, in a caller-named mode. Its budget is the absolute 1e-15
+// the region-A fits are placed against, stated as its own literal: this lane takes no argument
+// below 5.37e-3, so the double lane's relative form is not this lane's figure.
 constexpr double kTransformSplitFloor = 2.5e-7;
-constexpr double kTransformFp64Bound = kBoundSingleA; // 1e-15
-constexpr double kTransformSplitBound = kBoundSingleA + kTransformSplitFloor;
+constexpr double kTransformFp64Bound = 1e-15;
+constexpr double kTransformSplitBound = kTransformFp64Bound + kTransformSplitFloor;
 
 // The delivered worst each mode publishes over region A: the header's table gives 1.110e-16,
 // 1.916e-07 and 1.946e-07, which README and docs/lane-contract.md round to 1.11e-16, 1.92e-07 and
@@ -152,11 +173,21 @@ std::vector<Accum>& SchemeClaims() {
     return claims;
 }
 
-int AddSchemeClaim(const char* lane, const char* region, double bound) {
+// `relative` states the form the figure is stated in, with the lane's format floor for a relative
+// one: a lane row's figure is the contract's, and a fit or delivered figure is absolute. Every
+// claim creator below takes the same pair, and it defaults to the absolute form.
+int AddSchemeClaim(const char* lane,
+                   const char* region,
+                   double bound,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     SchemeClaims().push_back(a);
     return static_cast<int>(SchemeClaims().size()) - 1;
 }
@@ -169,11 +200,18 @@ std::vector<Accum>& PackClaims() {
     return claims;
 }
 
-int AddPackClaim(const char* lane, const char* region, double bound) {
+int AddPackClaim(const char* lane,
+                 const char* region,
+                 double bound,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     PackClaims().push_back(a);
     return static_cast<int>(PackClaims().size()) - 1;
 }
@@ -185,11 +223,18 @@ std::vector<Accum>& GranularityClaims() {
     return claims;
 }
 
-int AddGranularityClaim(const char* lane, const char* region, double bound) {
+int AddGranularityClaim(const char* lane,
+                        const char* region,
+                        double bound,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     GranularityClaims().push_back(a);
     return static_cast<int>(GranularityClaims().size()) - 1;
 }
@@ -203,12 +248,20 @@ std::vector<Accum>& RouteClaims() {
     return claims;
 }
 
-int AddRouteClaim(const char* lane, const char* region, double bound, bool judged = true) {
+int AddRouteClaim(const char* lane,
+                  const char* region,
+                  double bound,
+                  bool judged = true,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
     a.judged = judged;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     RouteClaims().push_back(a);
     return static_cast<int>(RouteClaims().size()) - 1;
 }
@@ -221,11 +274,18 @@ std::vector<Accum>& F32PolicyClaims() {
     return claims;
 }
 
-int AddF32PolicyClaim(const char* lane, const char* region, double bound) {
+int AddF32PolicyClaim(const char* lane,
+                      const char* region,
+                      double bound,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     F32PolicyClaims().push_back(a);
     return static_cast<int>(F32PolicyClaims().size()) - 1;
 }
@@ -238,11 +298,18 @@ std::vector<Accum>& EntryClaims() {
     return claims;
 }
 
-int AddEntryClaim(const char* lane, const char* region, double bound) {
+int AddEntryClaim(const char* lane,
+                  const char* region,
+                  double bound,
+BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     EntryClaims().push_back(a);
     return static_cast<int>(EntryClaims().size()) - 1;
 }
@@ -1854,23 +1921,26 @@ int main(int argc, char** argv) {
         return 0.0;
     }();
 
-    // The figure the float lane publishes for one division form: the transcribed base plus the
-    // form's own term, so a row judged at one form's figure while dividing in the other - the
-    // mistake the granularity book's rows state for their policies - cannot happen.
-    const auto floatFigureFor = [&](boys::DivisionForm form) {
-        return kBoundFloat +
-               (form == boys::DivisionForm::kPlainReciprocal ? floatPlainTerm : 0.0);
+    // The form the float lane's figure is stated in for one division form: the relative figure
+    // with the lane's format floor, and the plain reciprocal's own term beside the figure rather
+    // than in it, so a row judged at one form's figure while dividing in the other - the mistake
+    // the granularity book's rows state for their policies - cannot happen.
+    const auto floatFormFor = [&](boys::DivisionForm form) {
+        return BoundForm{true,
+                         kFloatFloor,
+                         form == boys::DivisionForm::kPlainReciprocal ? floatPlainTerm : 0.0,
+                         kFloatValueFloor};
     };
 
     // The form each claim below divides in: BoysSingleF32, BoysAllOrdersF32, BoysAllNF32 and the
     // orders-axis policy name no form at their call site, so each divides in the one its own
     // class's default carries - read from that default, not from kDefaultDivisionForm alone.
-    const double floatSingleFigure =
-        floatFigureFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kDivision);
-    const double floatOrdersFigure = floatFigureFor(
+    const BoundForm floatSingleForm =
+        floatFormFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kDivision);
+    const BoundForm floatOrdersForm = floatFormFor(
         boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllOrders>::kDivision);
-    const double floatAllNFigure =
-        floatFigureFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>::kDivision);
+    const BoundForm floatAllNForm =
+        floatFormFor(boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllN>::kDivision);
 
     // The entry the orders-axis claim measures: the float ladder over the
     // orders packing axis, named once here because the claim's figure is read
@@ -1880,19 +1950,32 @@ int main(int argc, char** argv) {
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders>;
 
-    const int kSingleA = AddClaim("double single", "A", kBoundSingleA);
-    const int kSingleBand = AddClaim("double single", "band", kBoundSingleBand);
-    const int kSingleB = AddClaim("double single", "B", kBoundSingleB);
-    const int kSingleC = AddClaim("double single", "C", kBoundSingleC);
-    const int kOrders = AddClaim("double batch", "all-orders", kBoundDoubleBatch);
-    const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch);
-    const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch);
-    const int kAllNAtOrders = AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch);
-    const int kFloatSingle = AddClaim("float single", "all", floatSingleFigure);
-    const int kFloatOrders = AddClaim("float batch", "all", floatOrdersFigure);
-    const int kFloatOrdersPacked =
-        AddClaim("float batch", "all, orders axis", floatFigureFor(FloatOrdersAxis::kDivision));
-    const int kFloatAllN = AddClaim("float batch", "all-n", floatAllNFigure);
+    // The form the double lanes' figures are stated in: the contract's relative figure over the
+    // whole domain, whose cells are the ones the format's own floor answers below.
+    constexpr BoundForm kRelativeDouble{true, kDoubleFloor, 0.0};
+
+    // The form a combination the tree does not hold the relative figure for is judged in: the
+    // same figure with the lane's absolute figure as its floor, which is the figure README
+    // states for those combinations beside the measured one.
+    constexpr BoundForm kRelativeDoubleFloored{true, kDoubleFloor, 0.0, kDoubleValueFloor};
+
+    const int kSingleA = AddClaim("double single", "A", kBoundSingleA, true, kRelativeDouble);
+    const int kSingleBand = AddClaim("double single", "band", kBoundSingleBand, true, kRelativeDouble);
+    const int kSingleB = AddClaim("double single", "B", kBoundSingleB, true, kRelativeDouble);
+    const int kSingleC = AddClaim("double single", "C", kBoundSingleC, true, kRelativeDouble);
+    const int kOrders = AddClaim("double batch", "all-orders", kBoundDoubleBatch, true, kRelativeDouble);
+    const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch, true, kRelativeDouble);
+    const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch, true, kRelativeDouble);
+    const int kAllNAtOrders =
+        AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch, true, kRelativeDouble);
+    const int kFloatSingle = AddClaim("float single", "all", kBoundFloat, true, floatSingleForm);
+    const int kFloatOrders = AddClaim("float batch", "all", kBoundFloat, true, floatOrdersForm);
+    const int kFloatOrdersPacked = AddClaim("float batch",
+                                            "all, orders axis",
+                                            kBoundFloat,
+                                            true,
+                                            floatFormFor(FloatOrdersAxis::kDivision));
+    const int kFloatAllN = AddClaim("float batch", "all-n", kBoundFloat, true, floatAllNForm);
     const int kF16Single = AddClaim("fp16 store-half", "single", kBoundHalfBase);
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
     const int kBf16Single = AddClaim("bf16 store-half", "single", kBoundHalfBase);
@@ -2243,8 +2326,11 @@ int main(int argc, char** argv) {
     for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
     {
         routeSeedClaim.push_back(AddRouteClaim(row.name, RegionName(row.region), row.bound));
-        routeLaneClaim.push_back(
-            AddRouteClaim(row.name, RegionName(row.region), kBoundDoubleBatch));
+        routeLaneClaim.push_back(AddRouteClaim(row.name,
+                                               RegionName(row.region),
+                                               kBoundDoubleBatch,
+                                               true,
+                                               kRelativeDoubleFloored));
     }
 
     // The report's own rows against the tables the kernel evaluates: a row's
@@ -2953,7 +3039,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatSingleFigure,
+                        kBoundFloat,
                         got == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -2972,7 +3058,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatOrdersFigure,
+                        kBoundFloat,
                         out[static_cast<std::size_t>(n)] == 0.0f ||
                             std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
@@ -2998,7 +3084,7 @@ int main(int argc, char** argv) {
                             asDouble,
                             ref.vf[k],
                             ref.decadeF[k],
-                            floatFigureFor(FloatOrdersAxis::kDivision),
+                            kBoundFloat,
                             out[static_cast<std::size_t>(n)] == 0.0f ||
                                 std::fabs(asDouble) < std::numeric_limits<float>::min());
                 }
@@ -3029,7 +3115,7 @@ int main(int argc, char** argv) {
                         asDouble,
                         ref.vf[k],
                         ref.decadeF[k],
-                        floatAllNFigure,
+                        kBoundFloat,
                         allN[k] == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min());
             }
         }
@@ -3733,7 +3819,8 @@ int main(int argc, char** argv) {
                                                boys::detail::kRegionBFitBar);
         const int claimEntry = AddGranularityClaim("rational x narrow",
                                                    "batch entry, A..C",
-                                                   kBoundDoubleBatch);
+                                                   kBoundDoubleBatch,
+                                                   kRelativeDoubleFloored);
 
         narrowRatClaims[0] = claimA;
         narrowRatClaims[1] = claimB;
@@ -4702,10 +4789,10 @@ int main(int argc, char** argv) {
                 asymWinJumpMax = std::max(asymWinJumpMax, jump);
             }
 
-            // The other reading a jump can have here: the error just below the edge against the
-            // error the branch delivers inside its domain, which the sweep measures as its 5.5e-14
-            // budget. The two are the same number, so this compares the branch's two regimes rather
-            // than against a threshold pulled from thin air.
+            // The other reading a jump can have here: the error just below the edge, read relative
+            // to the value as the contract states it, over the branch's own figure - which is what
+            // the sweep judges the branch's cells against, so this compares the branch's two regimes
+            // rather than against a threshold pulled from thin air.
             if (n <= 24 && stepBelow[sn] > 0.0)
             {
                 const double rel = stepBelow[sn] / kBoundSingleC;
@@ -4915,7 +5002,7 @@ int main(int argc, char** argv) {
             e.scheme = info.scheme;
             e.entry = row.entry;
             e.kind = row.kind;
-            e.slot = AddSchemeClaim(info.name, row.entry, baseBound);
+            e.slot = AddSchemeClaim(info.name, row.entry, baseBound, kRelativeDoubleFloored);
             e.carriage = static_cast<int>(schemeEntryCarriage.size()) - 1;
             schemeEntries.push_back(e);
         }
@@ -5339,8 +5426,12 @@ int main(int argc, char** argv) {
     for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
     {
         packSchemes.push_back(info.scheme);
-        packSlots.push_back(AddPackClaim(info.name, "orders axis, region A", kBoundSingleA));
-        packSlots.push_back(AddPackClaim(info.name, "orders axis, A..C", kBoundSingleC));
+        packSlots.push_back(
+            AddPackClaim(info.name, "orders axis, region A", kBoundSingleA, kRelativeDoubleFloored));
+        packSlots.push_back(AddPackClaim(info.name,
+                                         "orders axis, A..C",
+                                         kBoundSingleC,
+                                         kRelativeDoubleFloored));
     }
 
     const auto sweepPackAxis = [&]<boys::EvalScheme kScheme>() {
@@ -5408,10 +5499,14 @@ int main(int argc, char** argv) {
 
     for (const boys::EvalSchemeInfo& info : boys::BoysEvalSchemes())
     {
-        packPlaneSlots.push_back(
-            AddPackClaim(info.name, "orders axis on the plane entry, region A", kBoundSingleA));
-        packPlaneSlots.push_back(
-            AddPackClaim(info.name, "orders axis on the plane entry, A..C", kBoundDoubleBatch));
+        packPlaneSlots.push_back(AddPackClaim(info.name,
+                                              "orders axis on the plane entry, region A",
+                                              kBoundSingleA,
+                                              kRelativeDoubleFloored));
+        packPlaneSlots.push_back(AddPackClaim(info.name,
+                                              "orders axis on the plane entry, A..C",
+                                              kBoundDoubleBatch,
+                                              kRelativeDoubleFloored));
     }
 
     const auto sweepPlanePackAxis = [&]<boys::EvalScheme kScheme>() {
@@ -5561,8 +5656,8 @@ int main(int argc, char** argv) {
 
             // The figure a row is published at, the largest any of its own cells is judged at:
             // inside the packed lane's interval the bar the fits are cut for, and the entry's
-            // documented 5.5e-14 over the whole grid. The narrow pieces are cut under a narrower
-            // bar, so one figure covers both partitions' rows.
+            // documented relative figure over the whole grid. The narrow pieces are cut under a
+            // narrower bar, so one figure covers both partitions' rows.
             const double packedBar = (routeIdx == 1) ? kBoundDoubleBatch : kBoundSingleA;
             const double regionARow = boys::BoysAvx2Available()
                                           ? packedBar
@@ -5583,8 +5678,10 @@ int main(int argc, char** argv) {
                     {
                         const std::size_t at = entry * 2u + region;
                         const std::size_t label = openedLabel(partIdx, routeIdx, at);
-                        const int slot =
-                            AddPackClaim(axis, openedLabels[label].c_str(), rowBound[at]);
+                        const int slot = AddPackClaim(axis,
+                                                      openedLabels[label].c_str(),
+                                                      rowBound[at],
+                                                      kRelativeDoubleFloored);
 
                         openedSlots[openedSlot(routeIdx, partIdx, schemeIdx, entry, region)] =
                             slot;
@@ -5601,7 +5698,7 @@ int main(int argc, char** argv) {
     // What a cell of an opened row is judged against, by route and by host: the shipped route's
     // rows as the rows above are - the packed lane's per-order bar inside its own interval and the
     // scalar single lane's per-region budgets everywhere else - and the rational route at its own
-    // documented 5.5e-14.
+    // documented figure.
     const auto openedRegionABound = [&](double x, std::size_t routeIdx) {
         if (routeIdx == 1)
         {
@@ -5822,7 +5919,7 @@ int main(int argc, char** argv) {
             for (std::size_t r = 0; r < kGranRowCount; ++r)
             {
                 granSlots[granIndex(g, s, r)] =
-                    AddGranularityClaim(member, granRows[r].row, granRows[r].bound);
+                    AddGranularityClaim(member, granRows[r].row, granRows[r].bound, kRelativeDoubleFloored);
             }
         }
     }
@@ -6077,7 +6174,8 @@ int main(int argc, char** argv) {
     sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
     sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
 
-    std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
+    std::printf("\naccuracy gate, version %s\n", boys::kVersionString);
+    std::printf("accuracy gate, inputs %s\n", BoysGateInputs);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 reference.c_str(),
                 ref.x.size(),
@@ -6196,10 +6294,12 @@ int main(int argc, char** argv) {
             using Policy = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
                                             boys::FitGranularity::kUniform>;
 
-            const auto open = [&row]() {
+            const auto open = [&]() {
                 row.state = EntryState::kMeasured;
-                row.slot = AddEntryClaim(row.entry, "uniform grid, whole committed grid",
-                                         kBoundDoubleBatch);
+                row.slot = AddEntryClaim(row.entry,
+                                         "uniform grid, whole committed grid",
+                                         kBoundDoubleBatch,
+                                         kRelativeDoubleFloored);
             };
 
             switch (kind)
@@ -6683,7 +6783,7 @@ int main(int argc, char** argv) {
                 "    worst err in the shipped domain (n=%d, x=%.6g) = %.6g\n"
                 "    jump across the edge, one grid step apart: %.4g to %.4g\n"
                 "    jump across the edge, two-unit windows:     %.4g to %.4g\n"
-                "    error just below the edge over the branch's own 5.5e-14 (orders 0..24):\n"
+                "    error just below the edge over the branch's own figure (orders 0..24):\n"
                 "      %.4g to %.4g  (%.2f to %.2f orders)\n",
                 asymOrder,
                 asymAt,
@@ -6709,7 +6809,8 @@ int main(int argc, char** argv) {
 
     std::printf("  float lane's own floor where |F| >= 0.5: worst relative error %.4g at "
                 "(n=%d, x=%.6g);\n"
-                "    the documented ceiling is about 6e-8, the m=1 budget 1.5e-7 absolute\n",
+                "    the documented ceiling is about 6e-8, the published figure 2^-22 of the value,\n"
+                "    or its 1.5e-7 floor where that is the larger\n",
                 floatWorstRel,
                 floatWorstRelN,
                 floatWorstRelX);
@@ -6876,27 +6977,30 @@ int main(int argc, char** argv) {
     };
 
     add("README.double.single",
-        "double single: 1e-15 on A, 3e-14 on the extended band and B, 5.5e-14 on C",
-        "README accuracy contract (four-region table)",
+        "double single: 1e-13 of F_n(x) - one relative figure over the whole domain, which is "
+        "what the four regions the report reads are each judged against",
+        "README accuracy contract",
         verdictOf({kSingleA, kSingleBand, kSingleB, kSingleC}),
         worstOf({kSingleA, kSingleBand, kSingleB, kSingleC}));
 
     add("README.double.batch",
-        "double batch: 5.5e-14 in every region, all entries",
-        "README accuracy contract (four-region table)",
+        "double batch: 1e-13 of F_n(x) in every region, all entries",
+        "README accuracy contract",
         verdictOf({kOrders, kFixedN, kAllN, kAllNAtOrders}),
         worstOf({kOrders, kFixedN, kAllN, kAllNAtOrders}));
 
     add("README.float",
-        "float single and batch: 1.5e-7 absolute, the same in every region",
+        "float single and batch: 2^-22 of F_n(x), or its 1.5e-7 floor where that is the larger, "
+        "in every region, and 1e-7 beside it in the plain-reciprocal form - the lane's own bar, "
+        "not 1e-13 scaled",
         "README accuracy contract",
         verdictOf({kFloatSingle, kFloatOrders, kFloatOrdersPacked, kFloatAllN}),
         worstOf({kFloatSingle, kFloatOrders, kFloatOrdersPacked, kFloatAllN}));
 
     add("README.half",
-        "fp16 and bf16 store-half lanes: 1.5e-7 + one half-ULP, single and batch - the float "
-        "lane's figure, which is the arithmetic these lanes run, plus the half-ULP term their "
-        "store adds",
+        "fp16 and bf16 store-half lanes: 1.5e-7 + one half-ULP, single and batch - the fp32 "
+        "engine's arithmetic stated absolutely, which is the arithmetic these lanes run, plus "
+        "the half-ULP term their store adds",
         "README accuracy contract and include/boys/boys.hpp",
 #ifdef BOYS_GATE_FP16
         verdictOf({kF16Single, kF16Orders, kBf16Single, kBf16Orders}) == Verdict::Verified
@@ -6924,34 +7028,30 @@ int main(int argc, char** argv) {
 
     {
         // The header's contract table as it stands: the double single lane's
-        // region-A cell (1e-15 over the per-order fits' own range) and its
-        // extended-band cell (3e-14), the two rows the table does not
-        // collapse, measured against the slots that hold them.
+        // region-A cell and its extended-band cell, the two rows the table does
+        // not collapse, measured against the slots that hold them. Both state the
+        // lane's one relative figure, as the contract does over the whole domain.
         const Accum& headerA = Claims()[static_cast<std::size_t>(kHeaderA)];
 
         add("header.double.region_A_and_band",
-            "double single: 1e-15 on region A and 3e-14 on the extended band, the two "
-            "cells the header's table keeps apart",
+            "double single: 1e-13 of F_n(x) in the region-A and extended-band cells the "
+            "header's table keeps apart",
             "include/boys/boys.hpp preamble table (four-region, with the extended-band column)",
             verdictOf({kSingleA, kSingleBand}),
             Fmt("%s. The record of what this row used to test: the same table read as a "
                 "three-region one - a single region-A cell of 1e-15 with no band row, so "
                 "1e-15 across the whole of x < x0 - is not a bound the lane meets anywhere in "
                 "the band. Measured over the same sweep it is exceeded by %.3g at (n=%d, "
-                "x=%.6g), delivered %.4g against 1e-15; that argument is the band cell the "
-                "README sizes at 3e-14, where the same delivered error is %.3g of the band "
-                "bound, and the band's own worst cell across all orders is the same %.3g of "
-                "3e-14. The header now states the band cell separately and both live cells "
-                "are met, which is what this row's verdict reports; the withdrawn reading is "
-                "still measured, above and in the per-order table under lane \"double single\", "
-                "region \"header x<x0\", so the finding stays visible and re-runnable",
+                "x=%.6g), delivered %.4g against that withdrawn 1e-15. The reading is "
+                "withdrawn and this row's verdict does not count it: the slot is kept, and "
+                "measured, so the finding stays visible and re-runnable, and it is printed "
+                "above and in the per-order table under lane \"double single\", region "
+                "\"header x<x0\"",
                 worstOf({kSingleA, kSingleBand}).c_str(),
                 headerA.worstRatio,
                 headerA.worstN,
                 headerA.worstX,
-                headerA.worstErr,
-                headerA.worstErr / kBoundSingleBand,
-                Claims()[static_cast<std::size_t>(kSingleBand)].worstRatio));
+                headerA.worstErr));
     }
 
     add("LC.double.ceiling",
@@ -6964,11 +7064,12 @@ int main(int argc, char** argv) {
 
     add("LC.float.ceiling",
         "the ceiling is the format: a 24-bit significand resolves about 6e-8 relative and "
-        "the budget is 1.5e-7 absolute - within a factor of a few of each other",
+        "the published figure is 2^-22 of the value, or its 1.5e-7 floor where that is the "
+        "larger - the relative arm within a factor of a few of the format's digit",
         "docs/lane-contract.md, float",
         Verdict::Verified,
         Fmt("measured floor: worst relative error of the float lane where |F| >= 0.5 is "
-            "%.3g at (n=%d, x=%.6g); the ratio 1.5e-7 / 6e-8 = 2.5 is the documented "
+            "%.3g at (n=%d, x=%.6g); the ratio 2^-22 / 6e-8 = 4.0 is the documented "
             "'factor of a few'",
             floatWorstRel,
             floatWorstRelN,
@@ -8016,8 +8117,9 @@ int main(int argc, char** argv) {
             "%.4g. The two readings of the old sentence are carried here rather than in a "
             "claim: crossing the edge the jump is %.4g to %.4g over one grid step and %.4g to "
             "%.4g over two-unit windows - %.1f to %.1f orders, below the five to eight it "
-            "published - and against the branch's own in-domain error %.4g, which is the "
-            "5.5e-14 budget the other reading divides by, the same cells give %.4g to %.4g "
+            "published - and, in the form the contract states, over the branch's own figure "
+            "%.4g, which is the budget the other reading divides by, the same cells give "
+            "%.4g to %.4g "
             "(%.1f to %.1f orders over orders 0..24). The branch is evaluated here through "
             "the library at every division form the axis carries: %zu region-C cell(s) over "
             "the three forms, %zu of them outside the branch's bound, the worst %.6g at "

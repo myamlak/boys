@@ -1,5 +1,5 @@
 // The CUDA device gate: every documented device bound measured against the committed grid
-// (tests/data/boys_accuracy_gate_reference.csv, 33 orders x 1718 arguments, re-derivable with
+// (tests/data/boys_accuracy_gate_reference.csv, 33 orders x 1796 arguments, re-derivable with
 // tools/gen_boys_accuracy_gate_reference.py, in the CPU gate's row shape; the fp64 entries also against
 // tests/data/boys_reference.csv. Exit: 0 all met, 1 over bound or unclaimed, 2 launch failed, 3 unarmed.
 
@@ -376,7 +376,7 @@ const char* RouteName(boys::FitRoute route) {
 
 // The committed 45-digit grid (tests/data/boys_reference.csv), the reference the CPU tests call
 // definitive: F_n at the double its x column states, to 45 digits. Its arguments are the region
-// boundaries and a logarithmic sweep, not the gate grid's 1718; one argument column means only an
+// boundaries and a logarithmic sweep, not the gate grid's 1796; one argument column means only an
 // fp64 entry is measurable on it - a float or fp16 row needs the rounded argument that grid has not.
 struct DigitGrid {
     std::vector<int> n;
