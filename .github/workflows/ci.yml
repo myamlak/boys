@@ -415,13 +415,15 @@ jobs:
   linux-x86:
     name: linux-x86 ${{ matrix.compiler }} ${{ matrix.build_type }}
     runs-on: ubuntu-latest
-    # One leg of this job carries the generator, which re-derives the committed
-    # tables at full precision and is by far the longest step anywhere in the
-    # matrix, and that same leg carries the step that reads every combination's
-    # figure, which compiles a driver against the revision's own sources; the rest
-    # of this leg is about seventy seconds. A ceiling that truncates either of the
-    # two would report a real check as a failure, so this job's limit is set above
-    # what they cost rather than at the round number the other jobs share.
+    # One leg of this job carries the generator, which is by far the longest step
+    # anywhere in the matrix on the round that re-derives the committed tables at
+    # full precision; the round that does not reads the record of the derivation
+    # and the header's own read-back rules instead. That same leg carries the step
+    # that reads every combination's figure, which compiles a driver against the
+    # revision's own sources; the rest of this leg is about seventy seconds. A
+    # ceiling that truncates either of the two would report a real check as a
+    # failure, so this job's limit is set above what they cost rather than at the
+    # round number the other jobs share.
     timeout-minutes: 180
     strategy:
       fail-fast: false
@@ -598,9 +600,9 @@ jobs:
       # seam a person wrote; this is the one step that puts the emitter's own output through a
       # compiler, and a seam no build accepts is a default no consumer can be handed. It runs on
       # this leg and not the gcc one because it configures and builds a whole tree of its own, and
-      # the gcc Release leg already carries the generator - the longest step in the matrix - by
-      # about forty minutes of a three-hour limit. Its tool needs nothing but the standard library,
-      # so this leg needs no virtual environment to run it.
+      # the gcc Release leg already carries the generator - the longest step in the matrix on a
+      # round that re-derives it - by about forty minutes of a three-hour limit. Its tool needs
+      # nothing but the standard library, so this leg needs no virtual environment to run it.
       - name: Build defaults (a seam emitted from the report, built and tested)
         if: ${{ always() && matrix.compiler == 'clang' && matrix.build_type == 'Release' }}
         run: python3 tools/check_defaults_round_trip.py --check --work build-defaults-round-trip
