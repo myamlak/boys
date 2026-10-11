@@ -3410,24 +3410,35 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             }
         }
 
-        float f = FloatRouteFit<Policy::kRoute, Policy::kScheme, Policy::kGranularity>::RegionBSeed(x, 0);
-        out[0] = f;
         const float invx = StepReciprocal<Policy::kDivision>(x);
 
         if (x < x1)
         {
             const float expx = RegionBHalfExpF32<Policy::kRegionBExp>(x);
 
+            // The region's own seed, and the only arm that reads it: the far arm's seed below is
+            // the closed form, so a seed formed above the join would be formed for a value the far
+            // arm overwrites - and paid for at every far argument.
+            float f =
+                FloatRouteFit<Policy::kRoute, Policy::kScheme, Policy::kGranularity>::RegionBSeed(x, 0);
+            out[0] = f;
+
             for (int l = 1; l <= nmax; ++l)
             {
-                f = DivideStep<Policy::kDivision>((static_cast<float>(l) - 0.5f) * f - expx, x, invx);
+                // The step is the backend's two-rounding multiply-subtract, the single-order
+                // body's own spelling: a bare product and difference is one arithmetic where the
+                // calling unit contracts and another where it does not, which would make this
+                // body's value at an (n, x) a property of the caller's flags - and the single
+                // body's value at the same (n, x) a different one.
+                f = DivideStep<Policy::kDivision>(
+                    backend::ScalarFp32::MulSub(static_cast<float>(l) - 0.5f, f, expx), x, invx);
                 out[l] = f;
             }
 
             return;
         }
 
-        f = kBoysHalfSqrtPiF32 / std::sqrt(x);
+        float f = kBoysHalfSqrtPiF32 / std::sqrt(x);
         out[0] = f;
 
         // The far step carries the exp(-x)/2 term the bare asymptotic step drops.
