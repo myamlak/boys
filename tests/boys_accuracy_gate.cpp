@@ -14395,6 +14395,11 @@ int main(int argc, char** argv) {
              HUGE_VAL},
         };
 
+        // The floor under the read: the reference arrives from the CSV as a double, so no cell is
+        // judged finer than 2^-53 of the value - 0.39% of this arm's 2^-45. The cell that failed
+        // under 2^-48 reads 0.9866 of the figure against the reference as written and 1.0058
+        // against it as a double: the read's own rounding there is 3.3x the 0.58% exceedance.
+
         // The cell's bound in the figure's own form. A relative figure is a fraction of the value
         // and not a number, so a cell's bound is the product; a cell whose value falls below
         // binary64's smallest normal returns a subnormal or a zero, no accuracy is claimed there,
