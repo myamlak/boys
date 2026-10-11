@@ -2093,9 +2093,9 @@ def scaled_far_delivered(cs, n, a, b, npts):
             x = math.nextafter(bf, 0.0)
         h_ref = float(scaled_far_ref(n, x))
         # F's own reference at the same argument, which the call above has
-        # already made: boys_ref is memoised, so this is a lookup and not a
-        # second walk of its series.
-        f_ref = float(boys_ref(n, x))
+        # already made: boys_ref is memoised on its whole argument list, so this
+        # is a lookup only while it is spelled with the table's own cap.
+        f_ref = float(boys_ref(n, x, REF_TAIL_FLOOR, SCALED_FAR_REF_TERMS))
         ladder, direct = scaled_far_ladder(n, x)
         for route, fused in ((0, True), (1, False)):
             h_fit = clenshaw_route(cs, x, af, bf, fused)
