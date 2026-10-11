@@ -549,12 +549,31 @@ int main() {
     }
 
     // --- the negative controls ------------------------------------------------
-    // The identity assertions above fold only for one instantiation, so they prove nothing on the
-    // pair that must compare unequal: the half lane's class and the half shortcut name, which
-    // carries the default axes at the fp16 engine budget.
+
+    // The identity assertions above compare a class's call with itself, so every one of them holds
+    // in a build whose row for that class IS one of the four shortcut names - a table putting the
+    // double lane's single-order entry on the fp16 engine budget. This pair is the one that must
+    // compare unequal: the entry's own defaulted call, and it asked for the fp16 shortcut.
+
+    // The addresses and not the values: the double lane reads no budget, so a row differing from
+    // the shortcut in that cell alone answers every value bit for bit alike (0 of 16896 cells,
+    // measured), and under that defect the two spellings are one function. So both are cast to
+    // the function type they already share - a policy is a template parameter, not a signature.
+
+    // The cast is also what makes the comparison portable: the front door declares each entry
+    // twice, as a template with a default argument (boys/kernels.hpp) and as a plain function
+    // (boys/boys.hpp, in the seam namespace), and MSVC resolves the `<>` against both, refusing
+    // the file (C2563, C2568), where gcc 15 and clang 21 drop the non-template.
     {
-        const bool singleIsHalf = &boys::BoysSingle<> == &boys::BoysSingle<Fp16Default>;
-        const bool singleF32IsHalf = &boys::BoysSingleF32<> == &boys::BoysSingleF32<Fp16Default>;
+        using DoubleEntry = double (*)(int, double) noexcept;
+        using FloatEntry = float (*)(int, float) noexcept;
+
+        const bool singleIsHalf =
+            static_cast<DoubleEntry>(&boys::BoysSingle<>) ==
+            static_cast<DoubleEntry>(&boys::BoysSingle<Fp16Default>);
+        const bool singleF32IsHalf =
+            static_cast<FloatEntry>(&boys::BoysSingleF32<>) ==
+            static_cast<FloatEntry>(&boys::BoysSingleF32<Fp16Default>);
 
         std::printf("  negative control: the fp16 shortcut name and the double and float "
                     "classes are %s on "
