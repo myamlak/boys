@@ -276,8 +276,9 @@ def boys_ref(n, x, tail_floor=REF_TAIL_FLOOR, max_terms=REF_TERMS):
         return mpf(1) / (2 * n + 1)
     # The series is summed at the raw libmp level: the same operations, in the same order, at
     # the same precision, so the rounding is the one committed, at four tuple calls per term
-    # against six object-level operations. Measured 1.60x to 2.15x on this table's own cell
-    # arguments. A per-term mpf("<decimal>") parse was the function's whole cost once (3293 us
+    # against six object-level operations. Measured 1.35x to 2.09x against the committed
+    # loop on this table's own cell arguments at 30 dps. A per-term mpf("<decimal>") parse
+    # was the function's whole cost once (3293 us
     # per call against 1336 with the constants hoisted, on identical values), and this loop
     # runs once per fit-grid node, millions of times per generation.
     prec = mp.prec
@@ -690,8 +691,9 @@ def boys_entire(order, z):
     with mp.workdps(mp.dps + extra):
         # The same series at the raw libmp level, with the threshold parsed once per call
         # instead of once per term and the denominator stepped by two: the same operations at
-        # the same precision, so the same rounding. Measured 2.6x to 3.6x; z is real at both
-        # call sites (the ellipse's leftmost point, and the series identity beside it).
+        # the same precision, so the same rounding. Measured 1.90x to 3.11x against the
+        # committed loop, over z from -87.5 to +11.9. z is real at both call sites (the
+        # ellipse's leftmost point, and the series identity beside it).
         prec = mp.prec
         rnd = mp.rounding
         thresh = mpf("1e-40")._mpf_
