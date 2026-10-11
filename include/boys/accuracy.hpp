@@ -189,10 +189,10 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///    device gate's sweep confirms (5.0e-8 measured at m = 1). On the host it is
 ///    the reduced-argument polynomial this library fits for itself
 ///    (`kRegionBExpReduced` and the reduction around it, `boys/boys_impl.hpp`):
-///    degree 12 on |r| <= ln 2/2, 5.864e-19 relative, reduced by the textbook
+///    degree 10 on |r| <= ln 2/2, 4.458e-16 relative, reduced by the textbook
 ///    x = k ln 2 + r with k out of a magic constant. It is read where the ladder's
 ///    own requirement admits it - the polynomial stands inside that requirement
-///    ten times over from kRegionBExpCheapFrom = 10.797904988647187 upward - and
+///    ten times over from kRegionBExpCheapFrom = 11.202305053129882 upward - and
 ///    below that argument the requirement is tighter than the polynomial's error
 ///    and the member reads the library routine instead. **That arm is part of the
 ///    member and not a fallback**, for the reason stated below: a member whose
@@ -244,8 +244,8 @@ enum class RegionBExp : int {
 /// double arithmetic rounded once to single at the lane's own type. Below the
 /// member's cut those are one evaluation bit for bit, because the narrowed member
 /// reads the same library routine there; above the cut the member adds the
-/// polynomial's 5.864e-19 relative to the half ulp the narrowing contributes,
-/// which is 5.864e-19 read beside 5.96e-8 - the narrowing's rounding and nothing
+/// polynomial's 4.458e-16 relative to the half ulp the narrowing contributes,
+/// which is 4.458e-16 read beside 5.96e-8 - the narrowing's rounding and nothing
 /// else. So no published figure moves on that lane either - what moved is a
 /// fraction of a rounding whose share of the ladder the figure was measured with
 /// room for - and the values a caller gets there move by at most that one

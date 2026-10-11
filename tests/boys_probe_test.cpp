@@ -1904,8 +1904,8 @@ TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
 
     // The two members are two arithmetics and not two spellings of one. Below the cut both call
     // the same library routine, so the stretch where they can part is [kRegionBExpCheapFrom, kX1]
-    // - SWEPT rather than sampled at one argument, because the polynomial is fitted far inside a
-    // double ulp and coincides with the library routine exactly at many of them.
+    // - SWEPT rather than sampled at one named argument, because the degree-10 polynomial is
+    // fitted to 4.458e-16 relative and at any one argument the two may still coincide.
     constexpr std::size_t kSweep = 40000;
     std::size_t differing = 0;
 

@@ -409,29 +409,27 @@ inline T DivideDownwardStep(int l, T a) noexcept {
 inline constexpr double kRegionBExpBar = 1.0e-14;
 
 // The smallest x whose requirement reaches ten times the fast member's own error, solved from
-// bar / (2 T(32, x) t) at 60 digits against the member's measured 1.654e-16 over region B: no x
+// bar / (2 T(32, x) t) at 60 digits against the member's measured 5.465e-16 over region B: no x
 // below it satisfies the rule. A narrower ladder asks less, so what it buys at N = 32 it buys at
 // every N <= 32, and sitting below kX0 is what lets the polynomial arm serve all of region B.
-inline constexpr double kRegionBExpCheapFrom = 10.797904988647187;
+inline constexpr double kRegionBExpCheapFrom = 11.202305053129882;
 
-// e^{-r} on |r| <= ln 2/2, degree 12, Chebyshev fit: 5.864e-19 relative with its coefficients
-// rounded to double, which is the floor they carry - degrees 13 and 14 measure 4.3e-19 and
-// 4.7e-19, so the degree buys nothing the evaluation's own rounding, 1.65e-16, does not dominate.
-// The old degree-7 array carried 8.336e-11, which the gate read at 2.44e-07 against a 1e-13 bar.
-inline constexpr double kRegionBExpReduced[13] = {
+// e^{-r} on |r| <= ln 2/2, degree 10, Chebyshev fit: 4.458e-16 relative with its coefficients
+// rounded to double, the floor they carry; degree 9 delivers 2.819e-14 and misses the cut's
+// target, degree 11 and up read the evaluation's own rounding, and the member delivers 5.465e-16
+// over region B. The old degree-7 array carried 8.336e-11, 2.44e-07 at the gate's 1e-13 bar.
+inline constexpr double kRegionBExpReduced[11] = {
     1.0,
-    -1.0,
-    0.5,
-    -0.16666666666666702,
-    0.04166666666666669,
-    -0.008333333333309528,
-    0.001388888888887189,
-    -0.000198412699092171,
-    2.4801587350110797e-05,
-    -2.7557224958392624e-06,
-    2.7557251904174915e-07,
-    -2.5114869528657765e-08,
-    2.09215799649503e-09,
+    -1.0000000000000122,
+    0.500000000000001,
+    -0.16666666666493138,
+    0.041666666666522106,
+    -0.008333333404031027,
+    0.0013888888947785523,
+    -0.00019841149885492404,
+    2.4801487366025675e-05,
+    -2.764772381929414e-06,
+    2.7632640675430235e-07,
 };
 
 inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
@@ -439,7 +437,7 @@ inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
 // ln 2 in two pieces, the head being the double ln 2 with its lowest 25 significand bits cleared
 // and the tail the rest: head + tail is ln 2 to 4.0e-26, and kd * head is exact for every kd a
 // region-B or a region-C argument reaches. The reduction's first subtraction is exact with it,
-// so only the second rounds: the member reads 2.57e-15 with one constant, 1.65e-16 with the split.
+// so only the second rounds: the member reads 2.927e-15 with one constant, 5.465e-16 with the split.
 inline constexpr double kRegionBExpLn2Head = 0.6931471787393093;
 inline constexpr double kRegionBExpLn2Tail = 1.8206359985041462e-09;
 inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
@@ -457,11 +455,11 @@ inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^5
 /// (kRegionBExpBar, above) is tighter than the member's error and this member
 /// reads the library routine there: that arm is part of the member, because a
 /// polynomial alone would fail a bound over a band interior to region B. It
-/// delivers 1.654e-16 relative at worst over region B, the only domain a policy
-/// reads it in, and 2.57e-15 at the same arithmetic with one ln 2 constant in
+/// delivers 5.465e-16 relative at worst over region B, the only domain a policy
+/// reads it in, and 2.927e-15 at the same arithmetic with one ln 2 constant in
 /// place of the split below - which is what the constant above is solved against,
-/// the split being what keeps the member 235 times inside the requirement at kX0
-/// rather than 15.
+/// the split being what keeps the member 71 times inside the requirement at kX0
+/// rather than 13.
 template <RegionBExp kExp>
 inline double RegionBHalfExp(double x) noexcept {
     if constexpr (kExp == RegionBExp::kAccurate)
@@ -479,9 +477,9 @@ inline double RegionBHalfExp(double x) noexcept {
         const double kd = biased - kRegionBExpRoundMagic;
         const double r = (x - kd * kRegionBExpLn2Head) - kd * kRegionBExpLn2Tail;
 
-        double p = kRegionBExpReduced[12];
+        double p = kRegionBExpReduced[10];
 
-        for (int k = 11; k >= 0; --k)
+        for (int k = 9; k >= 0; --k)
         {
             p = p * r + kRegionBExpReduced[k];
         }

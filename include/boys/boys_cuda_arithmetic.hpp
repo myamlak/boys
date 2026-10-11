@@ -414,15 +414,15 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // accuracy for speed on. kFastExp corrects the hardware exponential's argument-scaling residual
 // back to its own few ulp, flat in the argument; the other member is the library routine.
 
-// The double lane's two members are the host's own (boys_impl.hpp, RegionBHalfExp), ported
-// rather than re-derived so that a name has one bound and not two. The port is measured and
-// not asserted: at the separate route the two spellings agree bit for bit over 200001 values
-// of [10.9, 60], and the fused route is the same polynomial at one rounding per step.
+// The double lane's two members are the same arithmetic at two arrays: this lane's is below, the
+// host's is the shorter fit boys_impl.hpp carries. The separate route is the host's spelling
+// operation for operation, which is what the port was measured at over 200001 values of
+// [10.9, 60]; the fused route is the same polynomial at one rounding per step.
 
-// The host's constants at the device's own names: kDeviceRegionBExpReduced is e^{-r} on
+// The device's own constants at the device's own names: kDeviceRegionBExpReduced is e^{-r} on
 // |r| <= ln 2/2, degree 12 Chebyshev, and kDeviceRegionBExpCheapFrom the smallest x whose
-// ladder requirement reaches ten times the member's error - both derived in boys_impl.hpp.
-// The array is a device object: the sum indexes it at a loop variable, which the compiler copies.
+// ladder requirement reaches ten times this lane's error (boys_impl.hpp's derivation, at this
+// lane's array). The array is a device object: a loop index makes the compiler copy it.
 inline constexpr double kDeviceRegionBExpCheapFrom = 10.797904988647187;
 __device__ constexpr double kDeviceRegionBExpReduced[13] = {
     1.0,
@@ -454,10 +454,10 @@ inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5
 // ladder's requirement (kRegionBExpBar / (2 T(N, x)), boys_impl.hpp) is tighter than the
 // member's error, so this arm reads the library routine: the polynomial fails a bound inside it.
 
-// The steps run at the build's multiply-add route. The threshold is the host's, re-derived
-// against this lane's arithmetic rather than copied: the separate spelling measures 1.654e-16
-// and solves to 10.798, the fused one 1.349e-16 and 10.730, so the host's constant covers both.
-// At kX0 the requirement is 3.892e-14, 235 times the larger error, so the member serves region B.
+// The steps run at the build's multiply-add route. The threshold is this lane's own: the separate
+// spelling measures 1.654e-16 and solves to 10.798, the fused one 1.349e-16 and 10.730, so the
+// larger of the two covers both. At kX0 the requirement is 3.892e-14, 235 times the larger error,
+// so the member serves region B.
 template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
 __device__ __forceinline__ T DeviceRegionBExp(T xx) {
     if constexpr (std::is_same_v<T, float>)

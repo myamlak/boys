@@ -2804,9 +2804,9 @@ constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (Boy
 // fits are cut against (5.5e-14 over the double lanes, 1.5e-7 over the float lane's two).
 constexpr const char* kFormF64 = "1e-13 * F_n(x)";
 // The double lane reads the fast member at the lane's own figure: the device's double fast member
-// is the host's arithmetic ported rather than re-derived (boys_cuda_arithmetic.hpp,
-// DeviceRegionBExp), and the host's documentation of it is that the polynomial's 8.336e-11 relative
-// sits inside the ladder's requirement below its cut, so no published figure moves on that lane.
+// carries its own fit and cut (boys_cuda_arithmetic.hpp, DeviceRegionBExp) and its error, measured
+// at this lane's own routes - 1.654e-16 separate, 1.349e-16 fused - sits inside the ladder's
+// requirement (3.892e-14 at kX0), so no published figure moves on that lane.
 constexpr const char* kFormF64Fast = "1e-13 * F_n(x)";
 constexpr const char* kFormF32 =
     "2^-22 * F_n(x), or 1.5e-7 where that is the larger";
