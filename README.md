@@ -140,8 +140,9 @@ The complete list, with every overload, is the entry-point table in the
 device call looks like, what you must allocate and pass, what the library refuses and why that is a
 feature, and how to read the bound you got.
 
-**What the bound is, and what it is not.** The guarantee is **relative**: the error of a returned
-value is at or below **1e-13 · F_n(x)**, for every `n <= 32` and every `x >= 0`. It binds above
+**What the bound is, and what it is not.** For the shipped build the guarantee is **relative**: the
+error of a returned value is at or below **1e-13 · F_n(x)**, for every `n <= 32` and every
+`x >= 0`. It binds above
 the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
 subnormal or zero and no accuracy is claimed. The figure was an absolute `5.5e-14` until this
 release, and where F is small the two part company: at `n = 32, x = 29`, F is 1.93e-14 and the lane

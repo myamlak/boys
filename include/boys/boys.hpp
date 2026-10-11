@@ -69,6 +69,14 @@
 /// one figure over the whole domain; they stay because a report and a sweep
 /// read a lane region by region.
 ///
+/// The figures are the shipped build's: a build whose default rows are
+/// replaced (-DBOYS_BUILD_DEFAULTS) delivers what its own rows were measured
+/// to deliver, and its figures are the option probe's report. Two
+/// combinations the option space offers hold the absolute figure these lanes
+/// published before the relative one rather than the relative figure alone -
+/// the lean partition's extended-band ladder and the rational-minimax route's
+/// high-order intervals - and docs/specification.md names both.
+///
 /// Region C has no stored fit and its rows carry that arithmetic's own figure.
 /// A lane whose figure is not one number carries the difference as an additive
 /// term beside the base, and the bound is the base plus that term.
