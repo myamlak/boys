@@ -1031,6 +1031,36 @@ static_assert(ScaledFarDegreesCarried(),
               "coefficient the split Clenshaw summation seeds from, and a degree above the "
               "cap is beyond the coefficients the interval carries");
 
+/// Which leg of the library a far ladder is instantiated in.
+///
+/// Not an arithmetic choice: the two instantiations are one body, and the tag says
+/// where that body is compiled. It is a tag rather than a second name because a
+/// shared definition cannot serve both legs. The far ladders' arithmetic contains
+/// `std::fma` - the refined form's exact product, and ClenshawSplit's multiply-add
+/// at every form - which is the fused instruction in a unit licensed for it and a
+/// call into the C runtime in one that is not. One definition of a body that is
+/// reached from both a licensed and an unlicensed unit is one weak symbol, the
+/// link resolves it to whichever unit it meets first, and the leg that asked for
+/// the instruction runs the runtime call instead. That is not a hypothetical: it
+/// is what a single shared definition measured, over the whole far ladder, at
+/// 28.84 instructions per order against a fused step's 6.09.
+///
+/// So the body carries the leg, each leg's instantiations are named once and
+/// defined in the unit that leg belongs to, and the linker has nothing to choose.
+/// The two legs deliver the same bits - a fused step and the library's `fma` are
+/// the same correctly rounded operation, which the bit comparison against the
+/// pre-change build is what establishes - so what the tag decides is where the
+/// instruction comes from, never what arithmetic runs.
+enum class LadderLeg {
+    /// The leg that asks: the body compiled where the entry was called, at that
+    /// unit's own flags. The tier check's fallback arm, and the arm a host without
+    /// the fused instruction set reaches.
+    kAskingLeg,
+    /// The leg of boys_orders_simd.cpp, which carries the fused instruction set.
+    /// The tier check's other arm, defined in that unit alone.
+    kFusedLeg,
+};
+
 /// Where an argument sits on the far partition: the interval it falls in, that
 /// interval's first coefficient, and the argument mapped into it.
 ///
@@ -1083,19 +1113,25 @@ inline double ScaledFarOrderAt(const FarPoint& at, int l) noexcept {
     return ClenshawSplit<backend::ScalarFp64>(c, deg, at.t);
 }
 
-/// One argument's whole ladder off the scaled far table, with the recovery the
-/// stored function needs: H_n is what the table holds and F_n is what a caller
-/// receives, and the two differ by m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
+/// One argument's whole ladder off the scaled far table, as the portable arm of
+/// the entry below writes it, with the recovery the stored function needs: H_n is
+/// what the table holds and F_n is what a caller receives, and the two differ by
+/// m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
 ///
 /// The running form of m is the region's own (BoysAllNBodyRegionC's ladder step
 /// for step), so the recovery costs the far call the arithmetic it already paid
 /// rather than a second one: one multiply-add per order here, and the division
 /// form is the policy's, as every other ladder's is.
 ///
+/// The table is read by ClenshawSplit over the scalar arithmetic, whose
+/// multiply-add is `std::fma` at every division form - so this ladder's cost is
+/// the asking unit's for the same reason the corrected seed's is.
+///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, kScaledFarX0 <= x < kScaledFarX1
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
-template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double* out) noexcept {
+template <DivisionForm kForm, LadderLeg kLeg>
+void ScaledFarLadder(int nmax, double x, double* out) noexcept {
     const FarPoint at = FarLocate(x);
     double m = kBoysHalfSqrtPi / std::sqrt(x);
     const double invx = StepReciprocal<kForm>(x);
@@ -1106,6 +1142,40 @@ template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double
         m = DivideStep<kForm>((l - 0.5) * m, x, invx);
         out[l] = ScaledFarOrderAt(at, l) * m;
     }
+}
+
+extern template void ScaledFarLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+extern template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+
+extern template void ScaledFarLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+extern template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+
+/// One argument's whole ladder off the scaled far table, with the recovery the
+/// stored function needs: H_n is what the table holds and F_n is what a caller
+/// receives, and the two differ by m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
+///
+/// Two bodies of one arithmetic, chosen as CorrectedSeedAllOrders' are: the fused
+/// leg where the fused instruction set is present, the asking leg everywhere else.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, kScaledFarX0 <= x < kScaledFarX1
+/// \param out  receives nmax + 1 values, out[k] = F_k(x)
+template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double* out) noexcept {
+    if (BoysAvx2Available())
+    {
+        ScaledFarLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
+        return;
+    }
+
+    ScaledFarLadder<kForm, LadderLeg::kAskingLeg>(nmax, x, out);
 }
 
 // The far region's third representation: the default seed and ladder with their two errors
@@ -1158,16 +1228,20 @@ inline double FarSeedAt(double x) noexcept {
     return f;
 }
 
-/// One argument's whole ladder from the corrected seed.
+/// One argument's whole ladder from the corrected seed, in the leg named.
 ///
 /// The exp is the accurate member of region B's axis, which is the library
 /// routine; the fast member is region B's bound's business and is not measured
 /// over this region. The division form is the policy's, as every ladder's is.
 ///
+/// The leg is what the body's `std::fma` - the refined form's exact product, and
+/// the seed correction's ClenshawSplit - is compiled as: see LadderLeg.
+///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, kX1 <= x
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
-template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
+template <DivisionForm kForm, LadderLeg kLeg>
+void CorrectedSeedLadder(int nmax, double x, double* out) noexcept {
     double f = FarSeedAt(x);
 
     const double invx = StepReciprocal<kForm>(x);
@@ -1179,6 +1253,51 @@ template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, do
         f = UpwardStep<kForm>(l, f, x, invx, expx);
         out[l] = f;
     }
+}
+
+// Both legs' instantiations are declared and never written here, and each leg is
+// defined in exactly one unit: the fused leg in boys_orders_simd.cpp, which is
+// licensed for the fused instruction set, and the asking leg in boys.cpp, which is
+// not. The declarations are what keep every other unit - this library's and a
+// consumer's - from emitting a second definition for the link to choose between,
+// and that matters in both directions: a fused arm resolved to an unlicensed
+// definition pays a call per exact product, and an asking arm resolved to a
+// licensed one executes an instruction on a host that may not have it.
+extern template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+extern template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kFusedLeg>(
+    int, double, double*) noexcept;
+
+extern template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+extern template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+
+/// One argument's whole ladder from the corrected seed.
+///
+/// Two legs of one arithmetic, chosen by the tier the caller's host carries: the
+/// fused leg where the fused instruction set is present, which is where the
+/// refined form's exact product costs one instruction, and the asking leg
+/// everywhere else, which is where it costs a call. The predicate is the vector
+/// tier's own - the fused leg's unit is compiled for AVX2, so entering it is its
+/// licence - and a host without it takes the asking leg, which is the certified
+/// lane and is present on every target.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, kX1 <= x
+/// \param out  receives nmax + 1 values, out[k] = F_k(x)
+template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
+    if (BoysAvx2Available())
+    {
+        CorrectedSeedLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
+        return;
+    }
+
+    CorrectedSeedLadder<kForm, LadderLeg::kAskingLeg>(nmax, x, out);
 }
 
 // The rational minimax route: a numerator/denominator pair per piece, read by Horner

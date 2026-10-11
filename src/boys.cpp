@@ -47,6 +47,28 @@ template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
 template void BoysAllOrdersBf16<>(int nmax, Bf16 x, Bf16* out) noexcept;
 #endif // BoysFp16
 
+// The far ladders' asking leg: the arm a host without the fused instruction set
+// reaches, defined here so that it is defined in a unit that unit does not license
+// - this one carries no fused flag - and defined once, which the declarations in
+// boys_impl.hpp make hold for every other unit that would otherwise emit a copy.
+// The fused leg's own instantiations are boys_orders_simd.cpp's, for the mirror
+// reason. See LadderLeg.
+template void detail::CorrectedSeedLadder<DivisionForm::kExactDivision, detail::LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+template void detail::CorrectedSeedLadder<DivisionForm::kPlainReciprocal,
+                                          detail::LadderLeg::kAskingLeg>(int, double,
+                                                                         double*) noexcept;
+template void detail::CorrectedSeedLadder<DivisionForm::kRefinedReciprocal,
+                                          detail::LadderLeg::kAskingLeg>(int, double,
+                                                                         double*) noexcept;
+
+template void detail::ScaledFarLadder<DivisionForm::kExactDivision, detail::LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+template void detail::ScaledFarLadder<DivisionForm::kPlainReciprocal,
+                                      detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
+template void detail::ScaledFarLadder<DivisionForm::kRefinedReciprocal,
+                                      detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
+
 namespace {
 
 // The class the run-time selectors stand in for: BoysAllOrders, the double lane's
