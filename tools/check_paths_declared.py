@@ -1009,7 +1009,7 @@ def check(root: pathlib.Path, table_path: pathlib.Path, verbose: bool
 # seed and ladder with the two things wrong with them repaired". The control declares THIS body and no
 # other, which is the state the thirteen-site omission was - a correction that arrived with its own
 # promise, and the copies it was corrected from left carrying none.
-REPAIRED = "include/boys/boys_impl.hpp::CorrectedSeedAllOrders"
+REPAIRED = "include/boys/boys_impl.hpp::CorrectedSeedLadder"
 
 # A bar and a site for the control's one declared body. Both are the tree's and both resolve, so a failure
 # of the control's run cannot be a row that is malformed: what it reports is the omission and nothing else.
