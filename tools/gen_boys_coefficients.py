@@ -1989,7 +1989,7 @@ HALF_SQRT_PI = 0.886226925452758014
 
 # This table's reference needs its own term cap: its span runs to FAR_X1 = 117,
 # where the fit path's 300 truncates the series before the tail falls under
-# REF_TAIL_FLOOR - 300 holds to x = 92 at order 0. Measured over the span, the
+# REF_TAIL_FLOOR - 300 holds only to x = 91.9 at order 0. Measured over the span,
 # worst cell is 368 terms (n = 0, x = 116.75); the cap is 512.
 SCALED_FAR_REF_TERMS = 512
 
