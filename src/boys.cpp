@@ -305,22 +305,30 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // runs: an arm naming its own fit family would answer from another partition's tables.
     using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
 
-    using RowCells = EvalPolicy<FitRoute::kChebyshev, SingleOrderClass::kScheme,
-                                SingleOrderClass::kBudget, SingleOrderClass::kPack,
-                                SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
-                                SingleOrderClass::kRegionBExp>;
+    // Every route this build does not serve is the default entry outright, the fallback the
+    // double lane's selector takes; the default is read from the row and not pinned to
+    // kChebyshev, because a seam may default this class to either route - measured 2026-10-12 on
+    // an emitted seam, whose float single class names kRationalMinimax - and a pinned arm then
+    // answers the other route's tables for a value outside the enumeration.
+    const bool served = route == FitRoute::kChebyshev || route == FitRoute::kRationalMinimax;
+    const FitRoute selected = served ? route : SingleOrderClass::kRoute;
 
-    if (route == FitRoute::kRationalMinimax)
+    using RationalClass = EvalPolicy<FitRoute::kRationalMinimax, SingleOrderClass::kScheme,
+                                     SingleOrderClass::kBudget, SingleOrderClass::kPack,
+                                     SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
+                                     SingleOrderClass::kRegionBExp>;
+
+    if (selected == FitRoute::kRationalMinimax)
     {
-        using RationalClass = EvalPolicy<FitRoute::kRationalMinimax, SingleOrderClass::kScheme,
-                                         SingleOrderClass::kBudget, SingleOrderClass::kPack,
-                                         SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
-                                         SingleOrderClass::kRegionBExp>;
-
         return BoysSingleF32<RationalClass>(n, x);
     }
 
-    return BoysSingleF32<RowCells>(n, x);
+    using ChebyshevClass = EvalPolicy<FitRoute::kChebyshev, SingleOrderClass::kScheme,
+                                      SingleOrderClass::kBudget, SingleOrderClass::kPack,
+                                      SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
+                                      SingleOrderClass::kRegionBExp>;
+
+    return BoysSingleF32<ChebyshevClass>(n, x);
 }
 
 std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {
