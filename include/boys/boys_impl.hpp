@@ -14,6 +14,8 @@
 #include "boys/policy.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
+#include "boys/dependent_false.hpp"
+#include "boys/status.hpp"
 
 #if BoysFp16
 #include "boys/f16.hpp"
@@ -108,15 +110,6 @@ constexpr bool FitAnswersPartition(FitGranularity kGranularity) noexcept
 /// false below can be instantiated on it at the arm that refuses.
 template <FitGranularity kGranularity>
 struct GranularityTag {};
-
-/// A false that depends on what it is instantiated with.
-///
-/// An assertion on this is evaluated where the arm it stands in is instantiated
-/// and nowhere else, so a fourth partition added to FitGranularity fails the build
-/// at every switch that does not name it. A bare `false` would be rejected where
-/// the arm is written, which is what the parameter is for.
-template <typename>
-inline constexpr bool kAlwaysFalse = false;
 
 // Piece containing x for this order; the pieces partition [0, kX0).
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (order, x) reads naturally.

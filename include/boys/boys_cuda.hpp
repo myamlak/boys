@@ -1,6 +1,7 @@
 #pragma once
 
 #include "boys/boys.hpp"
+#include "boys/dependent_false.hpp"
 #include "boys/status.hpp"
 // The policy arms below refuse an unnamed enumeration member with boys::detail::kAlwaysFalse,
 // which the kernels' header declares; this header is reached without it by boys_cuda.cpp.

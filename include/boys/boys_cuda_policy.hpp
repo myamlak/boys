@@ -6,6 +6,7 @@
 // continuation boys_impl.hpp is to boys.hpp, and either order a caller writes compiles.
 
 #include "boys/boys_cuda.hpp"
+#include "boys/dependent_false.hpp"
 
 #include <cstddef>
 
