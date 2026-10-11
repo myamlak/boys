@@ -1140,6 +1140,17 @@ int main() {
                 else()
                     set(_boys_variant_flags -O2 -mavx2 -mfma)
                 endif()
+                # The two -march=native variants can trip a clang diagnostic about the HOST
+                # CPU's own feature set - measured 2026-10-11 on CI's ubuntu-24.04 runner,
+                # "invalid feature combination: +avx10.1-256; will be promoted to
+                # avx10.1-512", an error under -Werror. What that says is a property of the
+                # runner's processor and of clang's feature table, never of this translation
+                # unit, which is what the variant exists to read; the suppression is scoped to
+                # the two native variants for that reason.
+                if (CMAKE_CXX_COMPILER_ID MATCHES "Clang"
+                        AND (variant STREQUAL "fast" OR variant STREQUAL "nofast"))
+                    list(APPEND _boys_variant_flags -Wno-invalid-feature-combination)
+                endif()
                 target_compile_options(boys-flag-independence-${variant}
                     PRIVATE ${_boys_variant_flags})
                 list(APPEND _boys_flag_programs $<TARGET_FILE:boys-flag-independence-${variant}>)
