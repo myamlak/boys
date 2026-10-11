@@ -1253,6 +1253,32 @@ one machine's microarchitecture, and the counters are re-read with
 command. The entry's own row is `--variant=orders-f32-orders-axis`, which calls the public
 `BoysAllOrdersF32` on the orders policy and so measures the fetch the entry actually selects.
 
+### The far region's own lane, and the three arithmetics behind that region
+
+Regions A and B are reached through the entries a caller names. Region C — `kX1` and every argument
+above it — is not: it is decided by three arithmetics, and a call reaches one of them through the
+lane's own default entry. The first is the asymptotic seed and its upward recurrence, which drops
+the `exp(-x)/2` term the recurrence otherwise carries, so its error is a fraction of the value
+rather than of the bound. The second is the same recurrence seeded and stepped correctly, carrying
+the seed's own `erfc(sqrt(x))` error. The third is a stored scaled table, read rather than recursed,
+and its figure is the one the library publishes in its own row. A gate that measures the first
+through the default entry measures one of the three and speaks for all of them.
+
+**The across-arguments lane belongs to this region.** Above the fits the recurrence is a ladder, so
+the orders axis has no lane to trade away there, and the far region is where an argument-packing
+lane is free. The batch entries hold four arguments — the width of the tier's own double register —
+and hand them to the lane; a run too short to fill the register takes the ungrouped body one
+argument at a time. The lane is the per-argument body's arithmetic operation for operation, so its
+acceptance is equality and not a bound, and the half-exponential it needs — a library call — is
+formed by the caller, per argument, through the same `RegionBHalfExp` the per-argument body reads.
+
+**The lane is built in two legs of one arithmetic**, and the leg is a template argument rather than
+a build flag: the *fused leg* (`LadderLeg::kFusedLeg`, instantiated in `src/boys_orders_simd.cpp`)
+and the *asking leg* (`LadderLeg::kAskingLeg`, in `src/boys.cpp`). Each leg is defined in exactly
+one translation unit — the one that does or does not license the fused instruction set — with the
+declarations in `include/boys/boys_impl.hpp` keeping every other unit from emitting a second
+definition for the link to choose between.
+
 ## The division form: how each recursive step divides
 
 Every lane that reaches one order from another ends each step in a division. The division form says
