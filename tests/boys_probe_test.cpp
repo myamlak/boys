@@ -1902,20 +1902,37 @@ TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
         << "the class the default is chosen from ranks fewer region-B exponentials than the "
            "library reports, so the axis is carried and not compared";
 
-    // The two members are two arithmetics and not two spellings of one. The argument is
-    // inside region B and above the cut the fast member's reduced-argument polynomial takes
-    // over at, which is the one stretch of the domain where the two must part: below the cut
-    // the fast member calls the same library routine the accurate member does.
-    const double x = 0.5 * (boys::detail::kRegionBExpCheapFrom + boys::detail::kX1);
-    const std::uint64_t fast =
-        std::bit_cast<std::uint64_t>(boys::detail::RegionBHalfExp<boys::RegionBExp::kFast>(x));
-    const std::uint64_t accurate =
-        std::bit_cast<std::uint64_t>(boys::detail::RegionBHalfExp<boys::RegionBExp::kAccurate>(x));
+    // The two members are two arithmetics and not two spellings of one. Below the cut the fast
+    // member calls the same library routine the accurate member does, so the two agree there by
+    // construction and the stretch where they can part is [kRegionBExpCheapFrom, kX1]. It is
+    // SWEPT rather than sampled at one named argument: the reduced-argument polynomial is fitted
+    // to 5.864e-19 relative - far inside a double ulp - so it returns the correctly rounded value
+    // at most arguments and coincides with the library routine exactly at many of them. One named
+    // argument is a coin toss there, and this axis was once read as carried and never varied on
+    // the strength of one such toss.
+    constexpr std::size_t kSweep = 40000;
+    std::size_t differing = 0;
 
-    EXPECT_NE(fast, accurate)
-        << "the two members of the axis return one value at x = " << x
-        << ": one instantiation would satisfy both rows, and the axis would be carried and "
-           "never varied";
+    for (std::size_t i = 0; i <= kSweep; ++i)
+    {
+        const double x = boys::detail::kRegionBExpCheapFrom +
+                         (boys::detail::kX1 - boys::detail::kRegionBExpCheapFrom) *
+                             (static_cast<double>(i) / static_cast<double>(kSweep));
+        const std::uint64_t fast =
+            std::bit_cast<std::uint64_t>(boys::detail::RegionBHalfExp<boys::RegionBExp::kFast>(x));
+        const std::uint64_t accurate = std::bit_cast<std::uint64_t>(
+            boys::detail::RegionBHalfExp<boys::RegionBExp::kAccurate>(x));
+
+        if (fast != accurate)
+        {
+            ++differing;
+        }
+    }
+
+    EXPECT_GT(differing, 0u)
+        << "the two members of the axis return one value at every one of the " << kSweep + 1
+        << " argument(s) swept over [kRegionBExpCheapFrom, kX1]: one instantiation would satisfy "
+           "both rows, and the axis would be carried and never varied";
 }
 
 // A partition the library serves is a cell of the space this probe enumerates, measured and reported under its
