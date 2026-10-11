@@ -679,6 +679,23 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_orders_packed_cells.py --check
+      # The inventory of evaluation paths. One arithmetic - a seed and an upward
+      # recurrence in a named division form - is written out once per lane, per
+      # shape and per fit route, and nothing enforced that the copies stay a
+      # family, so they drifted: one body was corrected while thirteen siblings
+      # kept the arithmetic it was corrected from. No value test could see it,
+      # because the bound they are held to is absolute and at a small value is
+      # tens of orders larger than the value - a bound that large cannot
+      # separate two arithmetics. What went unseen is that those bodies were
+      # never LISTED, so this step requires every body the source carries to
+      # declare the bar it is held to and the site that holds it there, and
+      # fails on a body the table does not name. It is the only gate here that
+      # reads the set of paths rather than the value any one of them returns.
+      - name: Evaluation paths (every body declared, against the source)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/check_paths_declared.py --control
+          .venv/bin/python tools/check_paths_declared.py --check
       - name: Boundary standalone check
         if: ${{ always() }}
         run: |
