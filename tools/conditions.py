@@ -13,10 +13,10 @@ exit code:
 
 A condition this table holds no command for is printed as NOT IN THIS TABLE, and its own `why` names
 where it is decided instead. The distinction is not pedantry: two rows here cost a configure, a build
-and a suite, or hours of re-derivation when the record beside them no longer matches the tree, so they
-are armed where that cost is already paid - on a CI leg - and a reader told they have no evaluator is
-told something false about two conditions CI checks every round. What is not claimed is that they
-passed here: nothing in this table ran them.
+and a suite, or a re-derivation that runs to hours whenever the committed record does not match the
+tree, so they are armed where that cost is already paid - on a CI leg - and a reader told they have
+no evaluator is told something false about two conditions CI checks every round. What is not claimed
+is that they passed here: nothing in this table ran them.
 
 **What this tool cannot do, stated here because the limit is the point.** It evaluates conditions that
 reduce to a query over what the tree declares. A defect in the DECLARATION - a class that should exist
