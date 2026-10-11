@@ -56,9 +56,9 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
     F_6(3.5)   = 0.0040954447623731674
     F_2(0.25)  = 0.16753319090735061
     F_2(4)     = 0.017525782161993072
-    F_2(30)    = 0.00013483513281636802
-    F_0(30)    = 0.1618021593796416
-    F_6(30)    = 3.6049670926598394e-08
+    F_2(30)    = 0.00013483513281472914
+    F_0(30)    = 0.16180215937964007
+    F_6(30)    = 3.6049669032736188e-08
 
 All four are `noexcept`. The requirements on the values are `n` in `[0, 32]` and `x >= 0`, and both
 hold for anything a basis set produces. **Outside them the behaviour is undefined, and it is not
@@ -139,8 +139,8 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
     x = 0.25    out[ 0] = 0.16753319090735061
     x = 1       out[ 2] = 0.10026879814501737
     x = 4       out[ 4] = 0.017525782161993072
-    x = 12.5    out[ 6] = 0.0012030139279729909
-    x = 30      out[ 8] = 0.00013483513281636802
+    x = 12.5    out[ 6] = 0.0012030139279729935
+    x = 30      out[ 8] = 0.00013483513281472914
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
 The stride is why the entry exists: the answer can go straight into a column of a larger structure,
@@ -165,7 +165,7 @@ boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top 
       F_6(2) = 0.014008835839082766
       F_2(7.5) = 0.004270013619430555
       F_8(0.125) = 0.05260285043488188
-      F_4(20) = 8.1278555493588296e-06
+      F_4(20) = 8.127855549358838e-06
     values the per-argument call produces: 28
     values the padded call produces:        45
     produced for nothing:                   17
