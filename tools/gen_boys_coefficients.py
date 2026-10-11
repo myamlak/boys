@@ -210,7 +210,16 @@ def run_jobs(fn, jobs):
 def _fit_order_job(spec):
     """One order's fits, in a worker process."""
     n, f32, region_b = spec
-    return fit_order(n, f32=f32, region_b=region_b)
+    # The float lane's pieces answer to two figures and the walk reads both: the
+    # absolute 1e-7 class these fits are placed at, and 2^-22 |F_n|, the relative
+    # one the lane publishes in every region beside it (FLAT_REL_BAR). They cross
+    # at |F_n| = 0.42, and below that argument - which is every band of an order
+    # whose argument is under it - the relative figure is the tighter, so a walk
+    # that reads the absolute one alone places a fit at the bar by luck. The
+    # double lane passes None: its region-A pieces publish 1e-15 and 3e-14, and
+    # both are absolute.
+    return fit_order(n, f32=f32, region_b=region_b,
+                     rel=FLAT_REL_BAR["float"] if f32 else None)
 
 
 def _fit_delivered_job(spec):
@@ -494,12 +503,24 @@ def seed_weight(n, x):
     return max(mpf(1), p)
 
 
-def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
+def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None, rel=None):
     """Returns (deg, [float coeffs], [float monomial coeffs]) or None;
     weighted=True fits region-A seeds. The monomial form is carried alongside
     every accepted fit so the two evaluation schemes share one degree, one
     interval and one set of pieces. degs overrides the degree ladder (the
-    extended band's fit walks its own)."""
+    extended band's fit walks its own).
+
+    rel names a second bar the lane publishes RELATIVE to |F_n|, and the budget
+    becomes the tighter of the two at every sampled argument. tol alone is an
+    absolute figure, so on its own it says nothing about a cell whose |F_n| is
+    small: where seed_weight is 1 - every band of a lane whose argument is below
+    its order - the budget is tol/2 flat, while a lane publishing 2^-22 F_n(x)
+    answers to 2^-22 |F_n| there, which at |F_n| = 0.02 is eleven times tighter.
+    A walk that does not read that figure places a fit at the bar by luck and
+    never learns which cells it left over. rel is None where the lane's own
+    figures are absolute: the double lane's region-A pieces publish 1e-15 and
+    3e-14 and have no relative statement to be judged by.
+    """
     fmax = max(abs(boys_ref(n, x)) for x in grid(a, b, 8))
     if weighted:
         if max(fmax * seed_weight(n, x) for x in grid(a, b, 8)) < tol:
@@ -515,6 +536,8 @@ def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
         for x in grid(a, b, 8):
             err = abs(clenshaw_double(cd, x, a, b) - float(boys_ref(n, x)))
             budget = tol / seed_weight(n, x) * mpf("0.5") if weighted else tol
+            if rel is not None:
+                budget = min(budget, rel * abs(boys_ref(n, x)) * mpf("0.5"))
             if err > budget:
                 ok = False
                 break
@@ -523,12 +546,12 @@ def fit_interval(n, a, b, tol, maxdeg, weighted, degs=None):
     return None
 
 
-def fit_order(n, region_b=False, f32=False, maxdeg=None):
+def fit_order(n, region_b=False, f32=False, maxdeg=None, rel=None):
     tol = TOL_FLOAT if f32 else TOL_DOUBLE
     if maxdeg is None:
         maxdeg = MAX_DEG_FLOAT if f32 else MAX_DEG_DOUBLE
     if region_b:
-        return fit_interval(0, X0, X1, tol, maxdeg, weighted=False)
+        return fit_interval(0, X0, X1, tol, maxdeg, weighted=False, rel=rel)
     pieces = []
     stack = [(mpf(0), X0, 0)]
     while stack:
@@ -539,7 +562,7 @@ def fit_order(n, region_b=False, f32=False, maxdeg=None):
         # unsplit region on the default ladder: at 20 an order can pass there
         # without splitting, which would merge the two bands into one.
         degs = (FIRST_BAND_DEG,) if (not f32 and a == 0 and b < X0) else None
-        r = fit_interval(n, a, b, tol, maxdeg, weighted=True, degs=degs)
+        r = fit_interval(n, a, b, tol, maxdeg, weighted=True, degs=degs, rel=rel)
         if r is None:
             if depth > 40:
                 raise RuntimeError(f"F{n}: fit never converged on [{a},{b}]")
@@ -1672,14 +1695,10 @@ def flat_block_lines(flat):
     lines.append(f"static_assert(kFlatOffsets[kFlatIntervals] == {stored},\n"
                  "              \"the offsets must reach the end of the uniform table\");")
     lines.append("")
-    lines.append("// The uniform table's certification rows, in the derived partitions' form:")
-    lines.append("// the figure each scheme delivers in each multiply-add route, worst over the")
-    lines.append("// whole table, rounded up to a power of two so it bounds a sweep. It is a")
-    lines.append("// RELATIVE figure - the error divided by |F_n| at the argument it was reached")
-    lines.append(f"// at - against the {mp.nstr(grid['bar'], 6)} relative bar this table is placed and")
-    lines.append("// certified under, so a row is the bound its own cells are held to and not an")
-    lines.append("// absolute one. No recurrence is read, so no seeding gain. deg is the cap;")
-    lines.append("// stored sums the degrees.")
+    lines.append("// The uniform table's certification rows: the worst relative error each scheme")
+    lines.append("// delivers in each multiply-add route, over the whole table, rounded up to a")
+    lines.append(f"// power of two, against the {mp.nstr(grid['bar'], 6)} relative bar the cells are placed")
+    lines.append("// and certified under. deg is the cap; stored sums the degrees. No seeding gain.")
     lines.append("struct FlatRow { int scheme, deg, intervals, stored;")
     lines.append("                 double fused, separate; };")
     lines.append("inline constexpr auto kFlatRows = std::to_array<FlatRow>({")
@@ -1927,13 +1946,11 @@ def flat_relative_findings(path, lane, npts=8):
 # 29 would pay the same coefficient budget for and leave to the flat grid.
 FAR_X0 = X1
 
-# PROVISIONAL, and the one number here that is not derived from the tree. The
-# region the table covers is [kX1, inf) and the right edge is where the table
-# stops paying for itself against the asymptotic lane above it; that crossover
-# is being located by measurement elsewhere and is not decided here. Until it
-# lands this is the placeholder's own edge, the block takes X0 and X1 from the
-# partition's edges rather than from these two names, and a derived partition
-# replaces both by carrying its own.
+# The right edge of the table's span, [kX1, FAR_X1), where it stops paying for
+# itself against the asymptotic lane above it. The crossover was located by
+# measurement rather than derived here: the band in which the default far
+# representation needs the table's help ends at 93.5, so 117 is on the safe side
+# of it and every argument the table is read at lies inside.
 FAR_X1 = mpf(117)
 
 # The scheme the stored form is read at, named rather than numbered: the far
@@ -1973,31 +1990,27 @@ def scaled_far_ref(n, x):
     return 2 * boys_ref(n, x) * x ** (n + mpf("0.5")) / gamma(n + mpf("0.5"))
 
 
-# THE PARTITION IS DATA, AND THIS IS A PLACEHOLDER.
+# THE PARTITION IS A PLACEHOLDER, AND IT IS KEPT ON PURPOSE.
 #
-# The partition that meets the far region's target relative bar - its interval
-# edges and its one degree per interval - is derived elsewhere and is spliced in
-# here when it lands. What is below is a placeholder: equal width at one degree
-# throughout, which is the shape a partition has when nobody has derived it. It
-# is not a decision this file makes, no figure its rows carry is a claim about
-# the far region, and the derived partition is expected to cut the band
-# immediately above FAR_X0 much more finely than this and to widen as x grows:
-# H_32 is still 0.281 at the left edge and reaches 1 well before the right one.
-# The count rather than the width, so the placeholder's intervals are equal in
-# the way a partition nobody has derived is equal: a width would leave the last
-# interval a sliver of whatever the region's length left over, which is a shape
-# no derivation produces and a reader could mistake for one.
+# Equal width at one degree throughout is the shape a partition has when nobody
+# has derived it, and a derivation was the plan. It is dropped, and the reason is
+# the arm it feeds: the scaled table is strictly dominated by the corrected seed
+# as the far representation - the same measured relative accuracy for a fraction
+# of the instructions, over a wider span, [kX1, inf) against [kX1, FAR_X1) - so
+# it is an arm no caller should take and a derived partition would be budget spent
+# on the losing one. No default reads these rows, and what a row does deliver is
+# what it measures.
 FAR_PLACEHOLDER_INTERVALS = 22
 FAR_PLACEHOLDER_DEG = 16
 FAR_PLACEHOLDER_WIDTH = (FAR_X1 - FAR_X0) / FAR_PLACEHOLDER_INTERVALS
 
 
 def far_placeholder_partition():
-    """The placeholder partition as (edges, degrees): what a derived one replaces.
+    """The placeholder partition as (edges, degrees).
 
-    Equal width and one degree, so the placeholder is recognisable as one
-    wherever it appears. A derived partition enters this file's machinery
-    through the same pair and nothing else about the far table changes.
+    Equal width and one degree, so the placeholder stays recognisable as one
+    wherever it appears. A derived partition would enter this file's machinery
+    through the same pair, and nothing else about the far table would change.
     """
     width = (FAR_X1 - FAR_X0) / FAR_PLACEHOLDER_INTERVALS
     edges = [FAR_X0 + i * width for i in range(FAR_PLACEHOLDER_INTERVALS)]
@@ -2121,9 +2134,10 @@ def scaled_far_table(partition, workers=NARROW_WORKERS):
 
     The partition enters as (edges, degrees) and is the only thing about this
     table that is a choice: the fits, the stored form, the offsets and the rows
-    are all read off it. No bar is imposed here - the far region's target is
-    derived elsewhere and this table is not certified against one - so the rows
-    carry the measured figure and the block writer says what it measured.
+    are all read off it. No bar is imposed here, and none is derived for it: the
+    scaled table is strictly dominated by the corrected seed as the far
+    representation, so the partition stays a placeholder and the rows carry the
+    measured figure, with the block writer saying what it measured.
     """
     edges, degs = partition
     jobs = [(n, edges, degs) for n in range(MAX_ORDER + 1)]
@@ -2193,21 +2207,17 @@ def scaled_far_block_lines(far):
     x1 = edges[-1]
     lines = [
         f"// The scaled far table: H_n = gamma(n + 1/2, x) / Gamma(n + 1/2) over",
-        f"// [kScaledFarX0, kScaledFarX1) = [{fmt(x0)}, {fmt(x1)}), one Chebyshev fit per",
-        f"// (interval, order) at the interval's own degree (kScaledFarDegs), cap",
-        f"// kScaledFarReadCap = {cap}. F_n is recovered from a stored H_n by one multiply per",
-        "// order: F_n = H_n * m_n, the running m_n = m_(n-1) * (n - 1/2) / x from",
-        "// m_0 = sqrt(pi) / (2 * sqrt(x)).",
-        "// Read at kScaledFarCoeffs[kScaledFarOffsets[iv] + order * (kScaledFarDegs[iv] + 1) + k]",
-        "// for k <= kScaledFarDegs[iv].",
+        f"// [kScaledFarX0, kScaledFarX1), one Chebyshev fit per (interval, order) at the",
+        f"// interval's own degree (kScaledFarDegs), cap kScaledFarReadCap = {cap}. F_n = H_n * m_n,",
+        "// m_n = m_(n-1) * (n - 1/2) / x from m_0 = sqrt(pi)/(2 sqrt(x)).",
         f"inline constexpr double kScaledFarX0 = {fmt(x0)};",
         f"inline constexpr double kScaledFarX1 = {fmt(x1)};",
         f"inline constexpr int kScaledFarReadCap = {cap};",
         deg_assert("kScaledFarReadCap"),
         f"inline constexpr int kScaledFarIntervals = {intervals};",
-        "// One degree per interval, and the placeholder partition's own: this table's",
-        "// partition is derived elsewhere and spliced in here (see the generator's",
-        "// FAR_PLACEHOLDER_WIDTH).",
+        "// One degree per interval, and the placeholder partition's own: equal width at",
+        "// one degree throughout, kept because the corrected seed strictly dominates this",
+        "// table as the far representation. See FAR_PLACEHOLDER_INTERVALS in the generator.",
         "inline constexpr auto kScaledFarDegs = std::to_array<int>({",
     ]
     for i in range(0, len(degs), 12):
@@ -2246,29 +2256,17 @@ def scaled_far_block_lines(far):
                  f"                  kScaledFarEdges[kScaledFarIntervals] == kScaledFarX1,\n"
                  "              \"the far partition's edges must tile the region the table \"\n"
                  "              \"serves\");")
-    lines.append("// The degrees are held to the split Clenshaw's contract where the reader is,")
-    lines.append("// as the uniform table's are (ScaledFarDegreesCarried in boys_impl.hpp): an")
-    lines.append("// odd degree is summed into a different polynomial there, and the read cap is")
-    lines.append("// the widest row the table carries.")
-    lines.append("// The join: the far table opens where region B ends, so the two tile the")
-    lines.append("// argument line with no gap and no overlap. Written as an identity rather")
-    lines.append("// than as two copies of one number, because a table that opened above kX1")
-    lines.append("// would leave the arguments between them to the asymptotic lane and a table")
-    lines.append("// that opened below it would answer arguments region B already owns.")
+    lines.append("// The join: the table opens where region B ends, so the two tile the argument")
+    lines.append("// line with no gap and no overlap, written as an identity rather than as a copy.")
+    lines.append("// The degrees are held to the split Clenshaw's contract where the reader is")
+    lines.append("// (ScaledFarDegreesCarried in boys_impl.hpp), and the cap is the widest row.")
     lines.append("static_assert(kScaledFarX0 == kX1,")
     lines.append("              \"the scaled far table must open at kX1, the end of region B\");")
     lines.append("")
-    lines.append("// The far table's certification rows, in the uniform table's form: the worst")
-    lines.append("// relative error the table delivers in each multiply-add route, measured over")
-    lines.append("// every interval of every order and rounded up to a power of two. One row,")
-    lines.append("// because the table stores one form; the scheme it names is the one that")
-    lines.append("// reads it. Three figures, because a caller receives F and the table stores")
-    lines.append("// H: the fit's own relative error, the recovery's - the running m_n ladder")
-    lines.append("// against the direct form of the same quantity - and the delivered error of")
-    lines.append("// their product against the reference F, which is the only one of the three")
-    lines.append("// that is a claim about a value a caller gets. It is a measurement of the")
-    lines.append("// partition named beside it: this table's partition is being derived")
-    lines.append("// elsewhere and the row is not a certification against the far target.")
+    lines.append("// The far table's certification rows: the worst relative error delivered in each")
+    lines.append("// multiply-add route, over every interval of every order, rounded up to a power of")
+    lines.append("// two. Three figures, because a caller receives F and the table stores H: the fit's,")
+    lines.append("// the recovery's ladder, and the delivered product, which is the claim.")
     lines.append("struct ScaledFarRow { int scheme, deg, intervals, stored;")
     lines.append("                       double fit_fused, fit_separate;")
     lines.append("                       double rec_fused, rec_separate;")
@@ -2483,14 +2481,10 @@ def seed_correction_block_lines(x1, deg, cs):
     """The corrected seed as the header stores it: the span, the degree, and the
     one polynomial that fills the span."""
     lines = [
-        "// The corrected seed over region C. The closed form the library already has,",
-        "// sqrt(pi) / (2 sqrt(x)), is F_0 * H_0 with H_0 = erf(sqrt(x)) held at 1, so its",
-        "// relative error is erfc(sqrt(x)) - 2.65e-14 at kX1. That error falls to the",
-        "// unit roundoff 2^-53 at kSeedCorrectionX1, where the closed form is already the",
-        "// correctly rounded H_0 and a correction has nothing left to remove; this",
-        "// polynomial carries H_0 - 1 over [kX1, kSeedCorrectionX1) and the closed form",
-        "// answers at and above it. Read as 1.0 + q(t) by the split Clenshaw, in the",
-        "// mapped argument.",
+        "// The corrected seed over region C: sqrt(pi) / (2 sqrt(x)) is F_0 * H_0 with H_0 =",
+        "// erf(sqrt(x)) held at 1, so its relative error is erfc(sqrt(x)), 2.65e-14 at kX1 and",
+        "// falling to the unit roundoff at kSeedCorrectionX1. This polynomial carries H_0 - 1",
+        "// over [kX1, kSeedCorrectionX1), read as 1.0 + q(t) by the split Clenshaw.",
         "inline constexpr double kSeedCorrectionX0 = kX1;",
         f"inline constexpr double kSeedCorrectionX1 = {fmt(x1)};",
         f"inline constexpr int kSeedCorrectionDeg = {deg};",
@@ -2626,6 +2620,17 @@ def seed_correction_findings(path):
 # held to. The cell law leaves the bound's other half to the lane's rounding, and
 # the acceptance is deliberately below the figure the rows publish, so a pair
 # accepted here and certified on the other grid view cannot measure above it.
+#
+# It is an ABSOLUTE figure and it is one of two bars a cell answers to, so it is
+# not the criterion on its own: the grid's own bar is FLAT_REL_BAR relative to
+# |F_n|, which is what the Chebyshev cells beside this member are placed and
+# certified against, and the two cross at |F_n| = 1e-15 / 1e-13 = 1e-2. Below
+# that argument the relative bar is the tighter of the two and the absolute one
+# says nothing about the cell - at the far intervals' high orders it is looser by
+# two orders, which is what a pair chosen on order 0 alone then reads at every
+# order. The acceptance and the certification therefore read flat_rat_bar below:
+# the tighter of this figure and the grid's own, at each argument, because |F_n|
+# falls across a cell and the two cross inside one.
 FLAT_RAT_ACCEPT = FLAT_CELL_BOUND["double"] / 2
 # The cell's fitting grid and the certification grid, as two views of the same
 # interval: the fits are made at the first and the delivered figure is measured
@@ -2685,6 +2690,47 @@ def flat_rat_arguments(n, iv, grid, half, precise):
     return ts, xs, fs
 
 
+def flat_rat_bar(bound, f):
+    """The bar one argument of a cell answers to, in the units it is written in.
+
+    Two figures bind a cell of this table and the tighter of them governs: the
+    absolute one this member publishes, which `bound` is (FLAT_RAT_ACCEPT for an
+    acceptance and FLAT_CELL_BOUND for the certification), and the grid's own
+    relative one at the argument's |F_n|. |F_n| falls with the argument, so the
+    two cross inside a cell and the bar is read per argument rather than once for
+    the cell - the left end answering to the absolute figure and the right end to
+    the relative one wherever the cell spans the crossing.
+    """
+    return min(bound, FLAT_REL_BAR["double"] * abs(f))
+
+
+def flat_rat_ratio(p, q, ts, fs, bound):
+    """The pair's delivered worst as a fraction of the bar it answers to.
+
+    The reading the acceptance and the certification are in: 1.0 is the bar
+    itself, so a caller compares against 1.0 rather than against a figure in
+    absolute units that is the wrong figure wherever the relative term binds.
+    Both multiply-add routes, because the kernel's step is std::fma in a default
+    build and a bare a * b + c in a BOYS_MULADD_SEPARATE one, and a pair accepted
+    on one reading alone would be a pair whose bound was never measured against
+    the arithmetic the other build runs (see rat_eval_double). Returns
+    [fused, separate].
+    """
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = [0.0, 0.0]
+    for t, f in zip(ts, fs):
+        td = float(t)
+        bar = flat_rat_bar(bound, f)
+        if bar <= 0.0:
+            continue
+        for route, fused in ((0, True), (1, False)):
+            e = abs(mpf(rat_eval_double(pd, qd, td, fused)) - f) / bar
+            if e > worst[route]:
+                worst[route] = e
+    return worst
+
+
 def flat_rat_delivered(p, q, ts, fs):
     """The pair's delivered worst |F_n - fit|, in the kernel's arithmetic.
 
@@ -2692,7 +2738,9 @@ def flat_rat_delivered(p, q, ts, fs):
     build and a bare a * b + c in a BOYS_MULADD_SEPARATE one, and a pair accepted
     on one reading alone would be a pair whose bound was never measured against
     the arithmetic the other build runs (see rat_eval_double). Returns
-    [fused, separate].
+    [fused, separate]. Absolute, because this is the figure the block publishes;
+    the acceptance is read by flat_rat_ratio, which is the same measurement
+    against the bar the cell answers to.
     """
     pd = [float(c) for c in p]
     qd = [float(c) for c in q]
@@ -2773,12 +2821,22 @@ def flat_rat_pick(n, iv, grid, start):
             break
         ts, _xs, fs = flat_rat_arguments(n, iv, grid, half=False, precise=True)
         r = flat_rat_exchange(m, k, ts, fs)
-        if r is None or max(r[2]) > FLAT_RAT_ACCEPT:
+        if r is None:
+            continue
+        # The acceptance is the bar the cell answers to and not the member's
+        # absolute figure alone: flat_rat_ratio reads both terms at every
+        # argument, so an entry that holds the absolute figure while the grid's
+        # relative one is over it does not hold. At order 0 the two agree - the
+        # crossing is at |F_n| = 1e-2 and F_0 is above it on this grid - so which
+        # entry the pick settles on is still decided there; what moves is whether
+        # an entry is called a hold at all.
+        ratio = flat_rat_ratio(r[0], r[1], ts, fs, FLAT_RAT_ACCEPT)
+        if max(ratio) > 1.0:
             continue
         if entered is None:
             entered = m + 1 + k
-        if best is None or max(r[2]) < max(best[1][2]):
-            best = (index, r)
+        if best is None or max(ratio) < max(best[1][2]):
+            best = (index, (r[0], r[1], ratio))
     return best
 
 
@@ -2823,6 +2881,8 @@ def flat_rat_interval(iv, grid):
         pairs = []
         worst = [0.0, 0.0]
         at = [None, None]
+        worst_ratio = [0.0, 0.0]
+        ratio_at = [None, None]
         failed = None
         for n in range(MAX_ORDER + 1):
             if n == 0:
@@ -2830,22 +2890,39 @@ def flat_rat_interval(iv, grid):
             else:
                 ts, _xs, fs = flat_rat_arguments(n, iv, grid, half=False, precise=True)
                 r = flat_rat_exchange(m, k, ts, fs)
-                if r is None or max(r[2]) > FLAT_RAT_ACCEPT:
+                if r is None:
+                    failed = n
+                    break
+                if max(flat_rat_ratio(r[0], r[1], ts, fs, FLAT_RAT_ACCEPT)) > 1.0:
                     failed = n
                     break
                 p, q = r[0], r[1]
             ts, _xs, fs = flat_rat_arguments(n, iv, grid, half=True, precise=False)
+            # The certification reads the same two bars the acceptance did, on the
+            # other grid view: the absolute figure the block publishes, and the
+            # grid's own relative one. The first is what kFlatRatBar states and is
+            # kept as its own test so a figure published in absolute units is
+            # still checked in them; the second is what the cells beside this
+            # member are certified against, and it is the tighter of the two at
+            # the far intervals' high orders, where the absolute figure alone
+            # certifies a cell the grid's bar is over by two orders.
             w, w_at = flat_rat_worst(p, q, ts, fs)
             if max(w) > FLAT_CELL_BOUND["double"]:
+                failed = n
+                break
+            ratio = flat_rat_ratio(p, q, ts, fs, FLAT_CELL_BOUND["double"])
+            if max(ratio) > 1.0:
                 failed = n
                 break
             for route in (0, 1):
                 if w[route] > worst[route]:
                     worst[route], at[route] = w[route], (n, w_at[route])
+                if ratio[route] > worst_ratio[route]:
+                    worst_ratio[route], ratio_at[route] = ratio[route], (n, w_at[route])
             pairs.append((n, p, q))
         if failed is None:
             return {"interval": iv, "m": m, "k": k, "pairs": pairs, "worst": worst,
-                    "at": at}
+                    "at": at, "worst_ratio": worst_ratio, "ratio_at": ratio_at}
         index += 1
 
 
@@ -2862,10 +2939,13 @@ def flat_rat_table(lane="double"):
     with multiprocessing.get_context("spawn").Pool(min(len(jobs), NARROW_WORKERS)) as pool:
         out = pool.map(_flat_rat_interval_job, jobs)
     worst = [0.0, 0.0]
+    worst_ratio = [0.0, 0.0]
     for row in out:
         for route in (0, 1):
             if row["worst"][route] > worst[route]:
                 worst[route] = row["worst"][route]
+            if row["worst_ratio"][route] > worst_ratio[route]:
+                worst_ratio[route] = row["worst_ratio"][route]
     for route in (0, 1):
         if worst[route] > FLAT_CELL_BOUND["double"]:
             raise RuntimeError(
@@ -2873,7 +2953,17 @@ def flat_rat_table(lane="double"):
                 f"{worst[route]:.6e} in "
                 f"{'fused' if route == 0 else 'separate'} multiply-adds, above the "
                 f"{mp.nstr(FLAT_CELL_BOUND['double'], 3)} its grid is held to")
+        if worst_ratio[route] > 1.0:
+            raise RuntimeError(
+                f"the {lane} lane's rational member over the uniform grid reads "
+                f"{worst_ratio[route]:.6e} of the bar it answers to in "
+                f"{'fused' if route == 0 else 'separate'} multiply-adds: the bar is "
+                f"the tighter of the {mp.nstr(FLAT_CELL_BOUND['double'], 3)} its block "
+                f"publishes and the grid's own "
+                f"{mp.nstr(FLAT_REL_BAR['double'], 3)} relative, and a cell over it is "
+                f"one no pair on the ladder answers for")
     return {"grid": grid, "intervals": out, "worst": worst,
+            "worst_ratio": worst_ratio,
             "stored": sum((MAX_ORDER + 1) * (r["m"] + 1 + r["k"]) for r in out)}
 
 
@@ -5295,6 +5385,49 @@ def f32_rat_cheb_delivered(float_orders):
     return worst
 
 
+def f32_rat_cheb_relative(float_orders):
+    """The shipped float lane's worst delivered error over 2^-22 |F_n|.
+
+    The reading the lane publishes in every region beside its absolute class, and
+    the one the accuracy gate's relative row judges these entries by:
+    f32_rat_cheb_delivered above reads the same values against the absolute figure
+    alone, so a cell it calls comfortable can be over this one by two orders
+    wherever |F_n| is small. Returns the worst ratio and where it was reached.
+
+    The figure separates two causes and they are different work. Where the ratio
+    is led by the FIT - the band ends, whose |F_n| is the smallest of the cell and
+    whose fit error is the largest - the walk places against this bar
+    (fit_interval's rel) and the ratio falls with it. Where it is led by the
+    LANE'S ARITHMETIC - an eight-term split Clenshaw or Horner rounds a few times,
+    and the bar is 2^-22 relative, two to four units in the last place of the
+    returned value - no placement reaches it and the remainder is the format's,
+    not this file's. Printed rather than raised for that reason: a raise would
+    stop the regeneration on cells no fit can answer.
+    """
+    rel = float(FLAT_REL_BAR["float"])
+    worst = (0.0, None)
+    over = 0
+    points = 0
+    for n in range(MAX_ORDER + 1):
+        for (a, b, _deg, cs, _ms) in float_orders[n]:
+            for (x, t, r, _w) in f32_rat_read_points(n, a, b):
+                rf = float(r)
+                if rf == 0.0:
+                    continue
+                bar = rel * abs(rf)
+                points += 1
+                for fused in (True, False):
+                    e = abs(clenshaw_split_float(cs, float(t), fused) - rf) / bar
+                    if e > 1.0:
+                        over += 1
+                    if e > worst[0]:
+                        worst = (e, (n, float(x)))
+    print(f"  the float lane's bands against 2^-22 |F_n|: worst {worst[0]:.4f} at "
+          f"(n={worst[1][0]}, x={worst[1][1]!r}) over {points} argument(s), "
+          f"{over} read(s) over the bar")
+    return worst
+
+
 def f32_rat_cheb_delivered_horner(float_orders):
     """The same lane, the same points, the same reference, read by Horner.
 
@@ -5367,11 +5500,13 @@ def fit_region_a_rational_f32(float_orders):
     print(f"  region A: Chebyshev {cheb_stored} stored in {cheb_pieces} pieces, delivered "
           f"{mp.nstr(cheb_delivered, 6)} (split Clenshaw), "
           f"{mp.nstr(cheb_delivered_horner, 6)} (Horner)")
+    cheb_relative = f32_rat_cheb_relative(float_orders)
     return {"orders": orders, "stored": stored, "pieces": pieces,
             "delivered": delivered, "at": at, "residual": residual,
             "cheb_stored": cheb_stored, "cheb_pieces": cheb_pieces,
             "cheb_delivered": cheb_delivered,
             "cheb_delivered_horner": cheb_delivered_horner,
+            "cheb_relative": cheb_relative,
             "bound": F32_RAT_BOUND, "lo": mpf(0), "hi": X0}
 
 
