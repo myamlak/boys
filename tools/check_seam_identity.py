@@ -13,6 +13,12 @@ call against two seam identities and links each against the library:
     python tools/check_seam_identity.py --check --cxx g++ --include include \\
         --library build/libboys.a --seam-ident seam_committed
 
+The caller hands the build's own flags through `--flag=ARG`, one per argument (the `=` form, so a
+flag beginning with `-` is a value and not an option): the probe links the archive the
+configuration built, so it must link it the way that configuration does. A library compiled with
+the sanitizers does not link a probe without them, and the control would then read as a refusal
+this check is not about - the CI sanitizer leg failed exactly that way.
+
 Exit status: 0 when the control links and the other seam does not, and when --check was not asked
 for; 1 otherwise, and 1 when the two conditions are not both read.
 """
@@ -37,7 +43,8 @@ int main() {
 OTHER_SEAM = "seam_other_than_this_build"
 
 
-def link(cxx: str, std: str, include: Path, library: Path, work: Path, define: str | None):
+def link(cxx: str, std: str, include: Path, library: Path, work: Path, define: str | None,
+         flags: list[str]):
     """Compile and link the call, with or without a seam identity of its own."""
     source = work / "seam_probe.cpp"
     source.write_text(SOURCE, encoding="utf-8")
@@ -45,7 +52,7 @@ def link(cxx: str, std: str, include: Path, library: Path, work: Path, define: s
     command = [cxx, std, f"-I{include}"]
     if define:
         command.append(f"-DBOYS_BUILD_DEFAULTS_SEAM_IDENT={define}")
-    command += [str(source), str(library), "-o", str(binary)]
+    command += [*flags, str(source), str(library), "-o", str(binary)]
     completed = subprocess.run(command, capture_output=True, text=True)
     return completed.returncode, (completed.stderr or completed.stdout).strip()
 
@@ -60,14 +67,18 @@ def main() -> int:
     parser.add_argument("--library", required=True, type=Path)
     parser.add_argument("--seam-ident", default="seam_committed",
                         help="the identity this build's own seam is named by")
+    parser.add_argument("--flag", action="append", default=[], metavar="ARG",
+                        help="one argument of the build's own flags, repeated; applied to the "
+                             "probe's compile and link, so the probe links the archive the way "
+                             "the configuration that built it does")
     arguments = parser.parse_args()
 
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
         own_status, own_error = link(arguments.cxx, arguments.std, arguments.include,
-                                     arguments.library, work, arguments.seam_ident)
+                                     arguments.library, work, arguments.seam_ident, arguments.flag)
         other_status, other_error = link(arguments.cxx, arguments.std, arguments.include,
-                                         arguments.library, work, OTHER_SEAM)
+                                         arguments.library, work, OTHER_SEAM, arguments.flag)
 
     print(f"own seam ({arguments.seam_ident}): {'linked' if own_status == 0 else 'did not link'}")
     print(f"another seam ({OTHER_SEAM}): {'linked' if other_status == 0 else 'did not link'}")

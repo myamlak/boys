@@ -1165,6 +1165,18 @@ int main() {
                 else()
                     set(_boys_own_seam "seam_committed")
                 endif()
+                # The tool compiles and links its probe itself, so it is handed this
+                # configuration's own flags: a library built with the sanitizers does not link a
+                # probe without them, and the control would read as a refusal this check is not
+                # about - measured on the CI sanitizer leg, which failed exactly that way.
+                set(_boys_seam_flags "")
+                foreach(_boys_seam_flag_var CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
+                    separate_arguments(_boys_seam_flag_words UNIX_COMMAND
+                        "${${_boys_seam_flag_var}}")
+                    foreach(_boys_seam_flag_word IN LISTS _boys_seam_flag_words)
+                        list(APPEND _boys_seam_flags "--flag=${_boys_seam_flag_word}")
+                    endforeach()
+                endforeach()
                 add_test(NAME boys-seam-identity
                     COMMAND ${Python3_EXECUTABLE}
                         "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_seam_identity.py" --check
@@ -1172,7 +1184,8 @@ int main() {
                         "--std=-std=c++20"
                         --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
                         --library "$<TARGET_FILE:boys>"
-                        --seam-ident "${_boys_own_seam}")
+                        --seam-ident "${_boys_own_seam}"
+                        ${_boys_seam_flags})
             else()
                 message(STATUS "boys: the seam-identity check is not registered — it compiles "
                     "and links a call, which needs a Python interpreter this configure did not "
