@@ -330,11 +330,11 @@ contract, and read the delivered column beside it the same way:
 
 | Lane | Region | Worst delivered | Bound claimed |
 |---|---|---|---|
-| double single | A | 1.11e-16 | 1e-15 |
-| double single | band | 1.11e-16 | 3e-14 |
-| double single | B | 5.55e-17 | 3e-14 |
-| double single | C | 4.94e-14 | 5.5e-14 |
-| float single | all | 5.2e-08 | 1.5e-07 |
+| double single | A | 2.45e-16 | 1e-13 |
+| double single | band | 2.34e-16 | 1e-13 |
+| double single | B | 2.39e-16 | 1e-13 |
+| double single | C | 9.99e-15 | 1e-13 |
+| float single | all | 8.3e-08 | 2.38e-07 |
 | fp16 store-half | single | 0.000122 | 0.000122 |
 | bf16 store-half | single | 0.000976 | 0.000977 |
 
@@ -342,10 +342,13 @@ and ended `PASS: every documented claim met at this revision`.
 
 The gate's region labels are the ones above: `A` is the part of the double lane's range below
 x = 1.0855252345349333, `band` is the rest of the range below x = 11.899848152108484, and `B` and
-`C` are the two regions beyond that. The per-region figures that column carries (`≤ 1e-15` on `A`,
-`≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are the absolute budgets the lane's fits were cut
-against, kept in [lane-contract.md](lane-contract.md) as the measurements they are; the contract
-above states the one relative figure the lane holds to over all four.
+`C` are the two regions beyond that. The `Bound claimed` column carries the figure the gate judged
+each row against at that revision: the double lane's published relative figure, `1e-13 · F_n(x)`,
+the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, and the half lanes' `1.5e-7` plus one
+half-ULP. The per-region absolute budgets the lane's fits were placed against (`≤ 1e-15` on `A`,
+`≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
+[lane-contract.md](lane-contract.md); the contract above states the one relative figure the lane
+holds to over all four.
 
 ### Arguments outside the documented domain
 
