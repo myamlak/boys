@@ -2356,15 +2356,10 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
             "naming the partition the class row does not carry changes region B's values "
             "against the default call: the member is a partition and not the class row's seed "
             "under another name");
-    // The two ends differ, so the band between them is where the two rows' tables meet and the
-    // reading must be the grid's own rather than a fall-through to the path above it. NOT every
-    // cell in the band changes, and the reason is arithmetic rather than the axis: the default
-    // reads the asymptotic path there and the grid reads its last intervals, and two readings of
-    // one function that are each correctly rounded agree to the last bit at about a tenth of
-    // arguments - measured over this band, 5982 of 66000 identical, scattered rather than a run.
-    // A require of "every argument changes" is therefore a claim about rounding and not about the
-    // axis. What it must be is the falsifier: were the grid to stop answering between the ends,
-    // both readings would be one path and not a single cell would differ.
+    // Where the two ends differ, the band between them is where the grid must answer for itself:
+    // two readings of one function that are each correctly rounded agree to the last bit at about
+    // a tenth of arguments - measured here, 5982 of 66000, scattered - so the require is the
+    // falsifier: were the grid to stop answering there, not one cell would differ.
     Require(report,
             !endsApart || (inBand > 0 && changedInBand > 0),
             "naming the partition whose own tables reach between the two published ends changes "

@@ -1902,14 +1902,10 @@ TEST(ProbeTest, TheRegionBExpAxisIsEnumeratedAndRanked) {
         << "the class the default is chosen from ranks fewer region-B exponentials than the "
            "library reports, so the axis is carried and not compared";
 
-    // The two members are two arithmetics and not two spellings of one. Below the cut the fast
-    // member calls the same library routine the accurate member does, so the two agree there by
-    // construction and the stretch where they can part is [kRegionBExpCheapFrom, kX1]. It is
-    // SWEPT rather than sampled at one named argument: the reduced-argument polynomial is fitted
-    // to 5.864e-19 relative - far inside a double ulp - so it returns the correctly rounded value
-    // at most arguments and coincides with the library routine exactly at many of them. One named
-    // argument is a coin toss there, and this axis was once read as carried and never varied on
-    // the strength of one such toss.
+    // The two members are two arithmetics and not two spellings of one. Below the cut both call
+    // the same library routine, so the stretch where they can part is [kRegionBExpCheapFrom, kX1]
+    // - SWEPT rather than sampled at one argument, because the polynomial is fitted far inside a
+    // double ulp and coincides with the library routine exactly at many of them.
     constexpr std::size_t kSweep = 40000;
     std::size_t differing = 0;
 
