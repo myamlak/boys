@@ -80,6 +80,7 @@ constexpr const char* kNativeHalfAbsent =
 #include <cuda_runtime.h>
 #endif
 #include <fstream>
+#include <initializer_list>
 #include <iterator>
 #include <limits>
 #include <span>
@@ -1928,6 +1929,187 @@ void GateClassLadder(int nmax, double x, double* out) noexcept
     }
 }
 
+// One book's floor-rescue reading, printed beside the book's own count: how many of the cells it
+// judges pass only because of the value floor a row states beside its relative figure, which rows
+// they sit in, and which is the worst. Zero is printed as zero, because a figure judging every cell
+// it is quoted against is a result; a book's cells may sit in more than one accumulation.
+void PrintFloorRescue(const char* book, std::initializer_list<const std::vector<Accum>*> books)
+{
+    std::size_t discriminating = 0;
+    std::size_t rescued = 0;
+    std::vector<const Accum*> rescuing;
+    const Accum* worst = nullptr;
+
+    for (const std::vector<Accum>* rows : books)
+    {
+        for (const Accum& a : *rows)
+        {
+            discriminating += a.points - a.vacuous;
+            rescued += a.floorRescued;
+
+            if (a.floorRescued > 0)
+            {
+                rescuing.push_back(&a);
+            }
+
+            if (a.floorRescuedWorstN >= 0
+                && (worst == nullptr || a.floorRescuedWorstErrAbs > worst->floorRescuedWorstErrAbs))
+            {
+                worst = &a;
+            }
+        }
+    }
+
+    if (discriminating == 0)
+    {
+        return;
+    }
+
+    if (worst == nullptr)
+    {
+        std::printf("  the floor's share of %s: 0 of the %zu discriminating cell(s) this book "
+                    "counts pass only because of the value floor a row states beside its relative "
+                    "figure - every cell it carries meets the figure it is judged against - so no "
+                    "part of this book rests on the floor\n",
+                    book,
+                    discriminating);
+        return;
+    }
+
+    std::printf("  the floor's share of %s: %zu of the %zu discriminating cell(s) this book "
+                "counts pass only because of the value floor a row states beside its relative "
+                "figure - the reading is over the arm the figure alone gives and inside the floor "
+                "- so the figure alone would have failed them and no row shows it; the other %zu "
+                "meet the figure itself\n",
+                book,
+                rescued,
+                discriminating,
+                discriminating - rescued);
+
+    // The rows, worst first, because the count alone does not say whether a floor carries one
+    // combination or a class of them; the rows below the cap are the ones the two numbers above
+    // are made of, and the biggest of them is where a reader's question is answered.
+    std::stable_sort(rescuing.begin(),
+                     rescuing.end(),
+                     [](const Accum* a, const Accum* b) {
+                         return a->floorRescued > b->floorRescued;
+                     });
+
+    std::printf("  carried by the floor, by row (%zu row(s), %zu worst shown):",
+                rescuing.size(),
+                rescuing.size() < kMaxReportedExceeded ? rescuing.size() : kMaxReportedExceeded);
+
+    const std::size_t show = rescuing.size() < kMaxReportedExceeded
+                                 ? rescuing.size()
+                                 : kMaxReportedExceeded;
+
+    for (std::size_t i = 0; i < show; ++i)
+    {
+        std::printf("  %s / %s (%zu)",
+                    rescuing[i]->lane.c_str(),
+                    rescuing[i]->region.c_str(),
+                    rescuing[i]->floorRescued);
+    }
+
+    if (rescuing.size() > show)
+    {
+        std::printf("  and %zu more row(s)", rescuing.size() - show);
+    }
+
+    std::printf("\n  worst of them: %s / %s  n=%d  x=%.17g  err=%.6g (%.3g of the value)  "
+                "arm=%.6g  floor=%.6g  err/arm=%.3g  err/floor=%.3g\n",
+                worst->lane.c_str(),
+                worst->region.c_str(),
+                worst->floorRescuedWorstN,
+                worst->floorRescuedWorstX,
+                worst->floorRescuedWorstErrAbs,
+                worst->floorRescuedWorstErr,
+                worst->floorRescuedWorstArm,
+                worst->floorRescuedWorstCeiling,
+                worst->floorRescuedWorstErrAbs / worst->floorRescuedWorstArm,
+                worst->floorRescuedWorstErrAbs / worst->floorRescuedWorstCeiling);
+}
+
+// The floor-rescue counter's control: three fabricated readings through the instrument the books
+// are measured by, so the counter is seen to count the cell that passes only by the floor, to
+// leave the cell that meets the figure's own arm alone, and to leave the cell over even the floor
+// to the failure count. A counter that cannot be made to count is not evidence.
+int RunFloorControl()
+{
+    // One accumulator per reading, each with its own name, so what the counter prints says which
+    // cell it counted rather than a total that could have come from anywhere.
+    std::vector<Accum> control(3);
+
+    for (Accum& a : control)
+    {
+        a.lane = "control";
+        a.baseBound = kBoundSingleA;
+        a.relative = true;
+        a.floorValue = kDoubleFloor;
+        a.valueFloor = kDoubleValueFloor;
+    }
+
+    control[0].region = "over the arm, inside the floor";
+    control[1].region = "inside the arm";
+    control[2].region = "over the arm and over the floor";
+
+    // The value the three cells are read at, and the arm the figure alone gives there: the double
+    // lanes' relative 1e-13 over the 5.5e-14 figure stated beside it, at a value of 1e-6, where
+    // the arm is 1e-19 - so a 1e-15 error is far over the arm and far inside the floor.
+    constexpr int kControlN = 5;
+    constexpr double kControlX = 1.0;
+    constexpr double kControlValue = 1e-6;
+    const double arm = kBoundSingleA * kControlValue;
+
+    std::printf("\nthe floor-rescue counter's control: three readings put through the instrument "
+                "the books are\nmeasured by, at the double lanes' own pair of figures - the "
+                "relative 1e-13 and the 5.5e-14\nfigure stated beside it - and read at a value of "
+                "1e-6, where the arm is 1e-19. The first\nis over the arm and inside the floor, "
+                "the second is inside the arm, and the third is over both\n");
+
+    MeasureAt(control[0], kControlN, kControlX, kControlValue + 1e-15, kControlValue, -6,
+              kBoundSingleA, false);
+    MeasureAt(control[1], kControlN, kControlX, kControlValue + 1e-20, kControlValue, -6,
+              kBoundSingleA, false);
+    MeasureAt(control[2], kControlN, kControlX, kControlValue + 1e-13, kControlValue, -6,
+              kBoundSingleA, false);
+
+    std::printf("  the counter reads them as:\n");
+    PrintFloorRescue("the control's own readings", {&control});
+
+    const bool counted = control[0].floorRescued == 1;
+    const bool othersLeftAlone = control[1].floorRescued == 0 && control[2].floorRescued == 0;
+    const bool named = control[0].floorRescuedWorstN == kControlN
+                       && control[0].floorRescuedWorstX == kControlX;
+    const bool armNamed = std::abs(control[0].floorRescuedWorstArm - arm) <= 1e-6 * arm;
+    const bool floorNamed = control[0].floorRescuedWorstCeiling == kDoubleValueFloor;
+    const bool overFailed = control[2].failures == 1 && control[0].failures == 0;
+
+    std::printf("  CONTROL: the cell over the arm and inside the floor counted %zu time(s), 1 "
+                "expected; the cell\n           inside the arm %zu time(s), 0 expected; the cell "
+                "over both %zu time(s), 0\n           expected, and it is over the bound %zu "
+                "time(s) there; the cell named is n=%d x=%.17g\n           with arm=%.6g, floor=%.6g\n",
+                control[0].floorRescued,
+                control[1].floorRescued,
+                control[2].floorRescued,
+                control[2].failures,
+                control[0].floorRescuedWorstN,
+                control[0].floorRescuedWorstX,
+                control[0].floorRescuedWorstArm,
+                control[0].floorRescuedWorstCeiling);
+
+    if (counted && othersLeftAlone && named && armNamed && floorNamed && overFailed)
+    {
+        std::printf("  CONTROL PASS: the counter counted the floor-rescued cell it was handed, "
+                    "named it, and\n                left the other two alone\n");
+        return 0;
+    }
+
+    std::printf("  CONTROL FAIL: the counter did not read its own three cells as a counter of "
+                "floor rescues\n                must\n");
+    return 1;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -1935,6 +2117,7 @@ int main(int argc, char** argv) {
     bool perOrder = false;
     bool strict = false;
     bool driftDump = false;
+    bool floorControl = false;
     int probeN = -1;
     double probeX = 0.0;
 
@@ -1951,6 +2134,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--half-drift-dump")
         {
             driftDump = true;
+        } else if (arg == "--floor-control")
+        {
+            floorControl = true;
         } else if (arg == "--probe" && i + 2 < argc)
         {
             probeN = std::atoi(argv[++i]);
@@ -1959,6 +2145,11 @@ int main(int argc, char** argv) {
         {
             reference = arg;
         }
+    }
+
+    if (floorControl)
+    {
+        return RunFloorControl();
     }
 
     const Reference ref = LoadReference(reference);
@@ -3848,6 +4039,12 @@ int main(int argc, char** argv) {
                     f32PolicyShortOver,
                     f32PolicyShortWorst);
     }
+
+    // The policy rows' own reading, printed where the rows are: these cells are the route book's
+    // too (its count adds them), and the route book's line below counts them again rather than
+    // leaving a reader of this table to find the number under another heading.
+    PrintFloorRescue("the float lane's policy rows (the route book's own cells)",
+                     {&F32PolicyClaims()});
 
     // ---- the narrow partition's rational route -----------------------------
     // A table of its own: one numerator/denominator pair per narrow piece in each region, read at
@@ -8427,6 +8624,8 @@ int main(int argc, char** argv) {
                     gateNonDiscriminating);
     }
 
+    PrintFloorRescue("the claim book", {&Claims()});
+
     // ---- the route verdict table --------------------------------------------
     // The routes get their own rows and their own count: the lane count is quoted by documents
     // outside this file, so a route measured apart is counted apart. A book that is not met does
@@ -8954,6 +9153,10 @@ int main(int argc, char** argv) {
                     rAbsent,
                     rNotCarried);
 
+        // The book's own cells are the route rows' and the float policy rows' together (the count
+        // above adds both), so the floor reading is taken over both rather than over one of them.
+        PrintFloorRescue("the route book", {&RouteClaims(), &F32PolicyClaims()});
+
         if (rVerified + rMetOverDomain + rNotCarried < static_cast<int>(routeBook.size()))
         {
             std::printf("  NOT MET at this revision (routes):");
@@ -9355,6 +9558,8 @@ int main(int argc, char** argv) {
                         / static_cast<double>(schemeCells),
                     schemeNonDiscriminating);
     }
+
+    PrintFloorRescue("the scheme book", {&SchemeClaims()});
 
     if (!schemeNotMet.empty())
     {
@@ -13158,6 +13363,8 @@ int main(int argc, char** argv) {
                     packNonDiscriminating);
     }
 
+    PrintFloorRescue("the packing book", {&PackClaims()});
+
     if (!packNotMet.empty())
     {
         std::printf("  NOT MET at this revision:");
@@ -13363,6 +13570,8 @@ int main(int argc, char** argv) {
                     granNonDiscriminating);
     }
 
+    PrintFloorRescue("the granularity book", {&GranularityClaims()});
+
     if (!granNotMet.empty())
     {
         std::printf("  NOT MET at this revision:");
@@ -13465,6 +13674,8 @@ int main(int argc, char** argv) {
                 entryBookRefused,
                 entryBookShapeLimit,
                 entryBookRows);
+
+    PrintFloorRescue("the entry book", {&EntryClaims()});
 
     if (entryArmsUnnamed == 0 && entryTableUncovered == 0)
     {

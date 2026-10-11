@@ -79,6 +79,17 @@ struct Accum {
     double worstBound = 0.0;
     int worstN = -1;
     double worstX = 0.0;
+    // The cells a judged row passes only because of the value floor it states beside its relative
+    // figure: over the arm the figure alone gives and inside the floor. The worst of them is the
+    // largest error the floor absorbed, and the fields beside it state that cell's delivered
+    // reading, its error in the arm's units, the arm, and the floored bound that rescued it.
+    std::size_t floorRescued = 0;
+    double floorRescuedWorstErr = 0.0;
+    double floorRescuedWorstErrAbs = 0.0;
+    double floorRescuedWorstArm = 0.0;
+    double floorRescuedWorstCeiling = 0.0;
+    int floorRescuedWorstN = -1;
+    double floorRescuedWorstX = 0.0;
     // The largest function magnitude a zero/subnormal return discarded.
     double lostSignal = 0.0;
     int lostSignalN = -1;
@@ -209,6 +220,30 @@ inline void MeasureAt(Accum& a,
     // itself in the absolute form, and the error the value carries in the relative one. The figure
     // it is printed beside is the claim's own, so the pair divides to the ratio beside them.
     const double delivered = (a.relative && magnitude > 0.0) ? err / magnitude : err;
+
+    // A judged cell this reading carries only because of the value floor: over the arm the figure
+    // alone gives and inside the floored bound that arm was raised to. A cell the floor lifts
+    // above the value is outside the claim, and a cell over even the floored bound fails, so what
+    // this counts is a pass the stated figure did not make - the pass no row shows.
+    if (a.judged && a.relative && !boundAboveValue)
+    {
+        const double arm = relativeBase + a.additive;
+
+        if (err > arm && err <= cellBound)
+        {
+            ++a.floorRescued;
+
+            if (err > a.floorRescuedWorstErrAbs)
+            {
+                a.floorRescuedWorstErr = delivered;
+                a.floorRescuedWorstErrAbs = err;
+                a.floorRescuedWorstArm = arm;
+                a.floorRescuedWorstCeiling = cellBound;
+                a.floorRescuedWorstN = n;
+                a.floorRescuedWorstX = x;
+            }
+        }
+    }
 
     if (ratio > o.worstRatio)
     {
