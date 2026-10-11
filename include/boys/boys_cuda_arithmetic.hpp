@@ -420,10 +420,9 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // of [10.9, 60], and the fused route is the same polynomial at one rounding per step.
 
 // The host's constants at the device's own names: kDeviceRegionBExpReduced is e^{-r} on
-// |r| <= ln 2/2, degree 12, Chebyshev fit, 5.864e-19 relative with its coefficients rounded to
-// double, and kDeviceRegionBExpCheapFrom the smallest x whose ladder requirement reaches ten
-// times the member's error. A device object because the sum indexes it at a loop variable, an
-// odr-use the device compiler needs a copy for.
+// |r| <= ln 2/2, degree 12 Chebyshev, and kDeviceRegionBExpCheapFrom the smallest x whose
+// ladder requirement reaches ten times the member's error - both derived in boys_impl.hpp.
+// The array is a device object: the sum indexes it at a loop variable, which the compiler copies.
 inline constexpr double kDeviceRegionBExpCheapFrom = 10.797904988647187;
 __device__ constexpr double kDeviceRegionBExpReduced[13] = {
     1.0,
@@ -444,10 +443,8 @@ inline constexpr double kDeviceRegionBExpLog2e = 1.44269504088896340735992468100
 
 // ln 2 in two pieces, the host's own split (boys_impl.hpp): head + tail is ln 2 to 4.0e-26 and
 // kd * head is exact for every kd a region-B or a region-C argument reaches, so the reduction's
-// first subtraction is exact at either route and only the second rounds. The single constant
-// this replaced rounded in the product instead - half an ulp of kd ln 2, 1.78e-15 at region B's
-// k = 42 - and holds region B at 1.08e-15 (fused) and 2.57e-15 (separate) where the split holds
-// 1.35e-16 and 1.65e-16.
+// first subtraction is exact at either route and only the second rounds. One constant in its
+// place rounds in the product instead: region B reads 1.08e-15 fused and 2.57e-15 separate.
 inline constexpr double kDeviceRegionBExpLn2Head = 0.6931471787393093;
 inline constexpr double kDeviceRegionBExpLn2Tail = 1.8206359985041462e-09;
 inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
@@ -455,15 +452,12 @@ inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5
 // The reduction is x = k ln 2 + r, |r| <= ln 2/2, so e^{-x} = 2^{-k} e^{-r}; over region B
 // k in [17, 42] keeps the exponent-field scale exact. Below kDeviceRegionBExpCheapFrom the
 // ladder's requirement (kRegionBExpBar / (2 T(N, x)), boys_impl.hpp) is tighter than the
-// member's error, so this arm reads the library routine there - the polynomial alone fails a
-// bound interior to it.
+// member's error, so this arm reads the library routine: the polynomial fails a bound inside it.
 
 // The steps run at the build's multiply-add route. The threshold is the host's, re-derived
-// against this lane's arithmetic rather than copied: the separate spelling is the host's own
-// and measures 1.654e-16 over region B, solving to 10.798, and the fused one measures
-// 1.349e-16 and solves to 10.730, so the host's constant covers both. It sits below kX0, where
-// the requirement is 3.892e-14 - 235 times the larger of those errors - so the member serves
-// the whole of region B and the rule's ten-times margin binds nowhere the member is read.
+// against this lane's arithmetic rather than copied: the separate spelling measures 1.654e-16
+// and solves to 10.798, the fused one 1.349e-16 and 10.730, so the host's constant covers both.
+// At kX0 the requirement is 3.892e-14, 235 times the larger error, so the member serves region B.
 template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
 __device__ __forceinline__ T DeviceRegionBExp(T xx) {
     if constexpr (std::is_same_v<T, float>)
@@ -667,11 +661,8 @@ __device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
 
 // The closed form the region-C bodies seed from, (1/2)sqrt(pi/x), is F_0 times H_0 with
 // H_0 = erf(sqrt(x)) held at 1, so its relative error is erfc(sqrt(x)): 2.65e-14 at kX1,
-// falling to the unit roundoff at kDeviceSeedCorrectionX1, above which the closed form is
-// the correctly rounded H_0 and a correction has nothing left to remove. The coefficients,
-// the span and the summation are the host's own (boys_impl.hpp, FarSeedAt and
-// SeedCorrectionAt, over boys_coefficients.hpp kSeedCorrectionCoeffs): the device does not
-// re-derive a fit the host gate certifies.
+// falling to the unit roundoff at kDeviceSeedCorrectionX1, above which there is nothing left
+// to remove. Its coefficients, span and summation are the host's own (boys_impl.hpp, FarSeedAt).
 inline constexpr double kDeviceSeedCorrectionX1 = 3.43816261058342079e+01;
 __device__ constexpr double kDeviceSeedCorrection[9] = {
     -6.78314550125780223e-15,

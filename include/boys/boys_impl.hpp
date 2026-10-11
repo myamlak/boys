@@ -401,31 +401,23 @@ inline T DivideDownwardStep(int l, T a) noexcept {
 // The region-B body seeds F_0 and steps to the top order with F_{l+1} = ((l + 1/2) F_l - t)/x,
 // t = e^{-x}/2, so an error d in t reaches F_N multiplied by the products of the steps after it:
 //   T(N, x) = (1/(2x)) * sum_{l=0}^{N-1} prod_{j=l+1}^{N-1} (2j+1)/(2x),  read at N = 32.
-// The recurrence's own sensitivity is exactly twice that, dF_N/dt = -2 T(N, x) - checked in
-// rational arithmetic at N = 1..7, and measured on the compiled ladder, whose response at x = 29
-// is 2.552530 where 2 T t / F_32 is 2.552531 - and the constants below are solved from the
-// doubled form.
+// The ladder's sensitivity is exactly twice that, dF_N/dt = -2 T(N, x), checked symbolically.
 
 // The promise admits the term while |delta| <= kRegionBExpBar / (2 T(N, x)): near kX0 the ladder's
 // gain, 2 T(N, x) t / F_N, is 1.598e6 and only the library routine is admissible, while above
 // kRegionBExpCheapFrom the polynomial stands ten times inside.
 inline constexpr double kRegionBExpBar = 1.0e-14;
 
-// The smallest x whose requirement reaches ten times the fast member's own
-// error, solved from bar / (2 T(32, x) t) at 60 digits against the member's
-// measured 1.654e-16 over region B: no x below it satisfies the rule. At a
-// narrower ladder the requirement is slacker, so what this buys at N = 32 it
-// buys at every N <= 32 as well. It sits below kX0, which is what makes the
-// polynomial arm serve the whole of region B rather than a band interior to it.
+// The smallest x whose requirement reaches ten times the fast member's own error, solved from
+// bar / (2 T(32, x) t) at 60 digits against the member's measured 1.654e-16 over region B: no x
+// below it satisfies the rule. A narrower ladder asks less, so what it buys at N = 32 it buys at
+// every N <= 32, and sitting below kX0 is what lets the polynomial arm serve all of region B.
 inline constexpr double kRegionBExpCheapFrom = 10.797904988647187;
 
-// e^{-r} on |r| <= ln 2/2, degree 12, Chebyshev fit: 5.864e-19 relative with
-// its coefficients rounded to double, which is the floor they carry - degree 13
-// and 14 measure 4.3e-19 and 4.7e-19, so the degree buys nothing the
-// evaluation's own rounding, 1.65e-16, does not already dominate. The degree-7
-// array this replaced carried 8.336e-11, which the ladder's gain at x = 16.19,
-// 4261, carries to 3.6e-07 on F_32: the accuracy gate's row there delivered
-// 2.44e-07 against a 1e-13 bar.
+// e^{-r} on |r| <= ln 2/2, degree 12, Chebyshev fit: 5.864e-19 relative with its coefficients
+// rounded to double, which is the floor they carry - degrees 13 and 14 measure 4.3e-19 and
+// 4.7e-19, so the degree buys nothing the evaluation's own rounding, 1.65e-16, does not dominate.
+// The old degree-7 array carried 8.336e-11, which the gate read at 2.44e-07 against a 1e-13 bar.
 inline constexpr double kRegionBExpReduced[13] = {
     1.0,
     -1.0,
@@ -444,15 +436,10 @@ inline constexpr double kRegionBExpReduced[13] = {
 
 inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
 
-// ln 2 in two pieces, the head being the double ln 2 with its lowest 25 significand
-// bits cleared and the tail the rest: head + tail is ln 2 to 4.0e-26, and kd * head
-// is exact for every kd a region-B or a region-C argument reaches (28 significand
-// bits, kd < 2^25). The reduction's first subtraction is exact with it - x and
-// kd * head sit within a factor of two - so only the second one rounds, at half an
-// ulp of r = 2.8e-17. A single ln 2 constant in place of the split rounds in the
-// product instead - half an ulp of kd ln 2, 1.78e-15 at region B's k = 42, with the
-// constant's own 3.3e-17 relative riding along at 9.7e-16 - and the member measures
-// 2.57e-15 over region B with it against the 1.65e-16 the split holds.
+// ln 2 in two pieces, the head being the double ln 2 with its lowest 25 significand bits cleared
+// and the tail the rest: head + tail is ln 2 to 4.0e-26, and kd * head is exact for every kd a
+// region-B or a region-C argument reaches. The reduction's first subtraction is exact with it,
+// so only the second rounds: the member reads 2.57e-15 with one constant, 1.65e-16 with the split.
 inline constexpr double kRegionBExpLn2Head = 0.6931471787393093;
 inline constexpr double kRegionBExpLn2Tail = 1.8206359985041462e-09;
 inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52

@@ -293,12 +293,10 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy
-// and forms 1/x once, the plain reciprocal. The body runs the shipped far tail's own three pieces -
-// the closed-form seed times the correction that restores H_0 over the span the correction is
-// certified on, then the step that carries the exp(-x)/2 term the bare asymptotic step drops. The
-// term's exp is the library routine rather than region B's table, which is a fit on [0, 30] while
-// the term stays above this lane's bound out to arguments near 60 at the top order.
+// No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy,
+// forms 1/x once as the plain reciprocal, and runs the shipped far tail's three pieces - the
+// corrected closed-form seed, then the step carrying the exp(-x)/2 term the bare asymptotic step
+// drops. That exp is the library routine: region B's table stops at 30, the term reaches near 60.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
