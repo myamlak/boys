@@ -5,7 +5,7 @@
 # the tables themselves only when this record's generator, pins or env cell
 # does not match the tree.
 version 4.0.0
-generator c93e09d6c0263d66
+generator a7fc7b7268aeddfb
 pins 3972594217ee8daa
 env mpmath=1.4.1,backend=python,clang-format=18.1.3
 header c332813463b0bc91
