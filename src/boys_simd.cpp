@@ -356,11 +356,8 @@ namespace {
 
 // Whether this build's scalar arithmetic contracts a bare product-minus-add. The step below is
 // written that way in the scalar body (UpwardStep's `(l - 1/2) * f - expx`), and
-// BOYS_SCALAR_CONTRACTS is the answer this build measured at its own flags - the same answer the
-// CMake pins onto this TU's -ffp-contract, because the lane and the body it reproduces have to
-// round alike. An intrinsic pair never contracts, so the lane has to spell the answer rather than
-// inherit it. A cross-compiling configure states no answer, and the separate route is then the
-// lane's: it is what the build's own flags give the scalar body there.
+// BOYS_SCALAR_CONTRACTS is what the build measured at its own flags - what CMake pins onto this
+// TU's -ffp-contract. An intrinsic pair never contracts, so the lane spells it, not inherits it.
 #if defined(BOYS_SCALAR_CONTRACTS) && BOYS_SCALAR_CONTRACTS
 constexpr bool kFarStepContracts = true;
 #else
@@ -409,11 +406,10 @@ inline __m256d FarLadderSeed(__m256d xv) noexcept {
     return _mm256_blendv_pd(f, corrected, inside);
 }
 
-// DivideStep at each form, four-wide. A quotient and a square root are correctly rounded in
-// either width, so the exact form is the scalar spelling read four-wide and the plain form is the
-// product through the reciprocal. The refined form's infinite divisor is the scalar body's own
-// branch: the product, which for an infinite divisor is the signed zero the plain quotient gives,
-// and a blend rather than the two fmas the recovery needs - those form a NaN there.
+// DivideStep at each form, four-wide. A quotient and a square root are correctly rounded in either
+// width, so the exact form is the scalar spelling read four-wide and the plain form is the product
+// through the reciprocal. The refined form's infinite divisor takes the scalar body's own branch -
+// the plain quotient's signed zero, by a blend, not the two fmas, which form a NaN there.
 __m256d DivideRefinedLanes(__m256d a, __m256d x, __m256d invx) noexcept {
     const __m256d quotient = _mm256_mul_pd(a, invx);
     const __m256d negated = _mm256_xor_pd(quotient, _mm256_set1_pd(-0.0));

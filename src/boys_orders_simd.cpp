@@ -2694,21 +2694,10 @@ template double FlatFitSum<EvalScheme::kHorner>(const double*, const double*, in
 template double FlatFitSum<EvalScheme::kSplitClenshaw>(const double*, const double*, int,
                                                        double) noexcept;
 
-// The far region's two ladders at the fused leg, instantiated here for FlatFitSum's
-// reason and by the same mechanism: this unit is licensed for the fused instruction
-// set, so the refined form's exact product and ClenshawSplit's multiply-add are the
-// instruction here and a call into the C runtime in a unit that is not licensed.
-//
-// The leg is in the instantiation's name (LadderLeg, boys_impl.hpp), which is what
-// makes these definitions the only ones the link can reach: a shared definition
-// would be one weak symbol emitted in both a licensed and an unlicensed unit, and
-// the link would hand the fused arm whichever it met first. That is measured, not
-// supposed - a single shared definition left this ladder at 28.84 instructions per
-// order where the fused step costs 6.09.
-//
-// All three forms are instantiated, not only the refined one: the corrected seed's
-// fit over [kX1, kSeedCorrectionX1) and the scaled table's every read go through
-// ClenshawSplit, whose multiply-add is the fused one at every form.
+// The far region's two ladders at the fused leg: this unit is licensed for the fused instruction
+// set. All three forms are built, ClenshawSplit's multiply-add being the fused one at every form,
+// and the leg is in the name (LadderLeg) so the link can only reach these. Measured, one shared
+// definition left the ladder at 28.84 instructions per order against the fused step's 6.09.
 template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
     int, double, double*) noexcept;
 template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(

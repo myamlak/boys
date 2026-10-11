@@ -1,14 +1,7 @@
 // The accuracy gate: every documented per-lane, per-region bound measured against the committed
-// mpmath grid (tests/data/boys_accuracy_gate_reference.csv, re-derived by
-// tools/gen_boys_accuracy_gate_reference.py, whose routes agree to 1e-81 - 65 to 81 orders below
-// the tightest bound here). Any claim not verified at this revision exits non-zero.
-//
-// The far-representation book at the end reads a second grid of its own
-// (tests/data/boys_far_gate_reference.csv, tools/gen_boys_far_gate_reference.py) over the same
-// function at the same precision: the far region's three arms dispatch on boundaries the grid
-// above does not resolve, and read against it alone an arm passes with a delivered error several
-// times its own figure. Each row there prints its reading on the grid above beside its reading on
-// its own, so the two are comparable rather than one being quoted.
+// mpmath grid tests/data/boys_accuracy_gate_reference.csv; its routes agree to 1e-81. A claim not
+// verified at this revision exits non-zero. The far-representation book at the end reads a second
+// grid of its own, because the far arms dispatch on boundaries the first cannot resolve.
 
 #include <boys/kernels.hpp>
 #include <boys/f16.hpp>
@@ -140,16 +133,10 @@ constexpr double kFloatFloor = 1.1754943508222875e-38;
 // finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
 
-// The far-representation axis's figures. The recurrence's is region C's own and it is absolute:
-// its step leaves out the exp(-x)/2 term the region's recurrence carries, so at kX1 the error is
-// 5.0e-14 at n=32 against a value of 1.95e-14, its worst relative error is 2.56, and no relative
-// figure at or below 1e-13 is true of it. The corrected seed's figure is relative - the same
-// arithmetic with that term restored and the seed's erfc(sqrt(x)) error carried - and it is a
-// measurement at this tree's arithmetic rather than a certified bound. The figure it is judged at
-// is 2^-48, the measured worst case rounded up to the enclosing power of two: the worst relative
-// error the arm delivers over the far region is 3.264e-15 at n=32, x=29.000000000000053, against
-// the 2^-48 this row states. The earlier 2.05e-15 was 2^-49 and the arm exceeded it by 1.592x.
-// The scaled table's figure is not here: it is the row the library publishes it in, read below.
+// The far-representation axis's figures. The recurrence's is region C's own and absolute: its step
+// drops exp(-x)/2, so at kX1 the error is 5.0e-14 at n=32 and no relative figure at or below 1e-13
+// is true of it. The corrected seed's is relative, a measurement - 2^-48, its worst case 3.264e-15
+// rounded up, since the 2.05e-15 of 2^-49 was exceeded by 1.592x; the scaled table's is below.
 constexpr double kFarCorrectedSeedFigure = 3.5527136788005009e-15; // 2^-48
 
 // The native packed half lane (include/boys/half2.hpp): region C only, the ladder in binary16
@@ -334,17 +321,10 @@ BoundForm form = {}) {
     return static_cast<int>(EntryClaims().size()) - 1;
 }
 
-// The far-representation axis's own book, apart from the six above and for the reason each of
-// them gives: the axis is a name a caller passes to one entry, so its cells belong to a call no
-// other book makes.
-//
-// The book is here because the gate had no row for the axis at all. The far region is decided by
-// three arithmetics - the seed and its upward recurrence, the same recurrence seeded and stepped
-// correctly, and a stored scaled table - and every other book reaches the region through the
-// lane's own default entry, which names one of the three. Two of them were reached by
-// tests/boys_test.cpp's selectability rows and by nothing here, so an instrument whose whole job
-// is measuring documented claims was silent about the arithmetic the far region returns, and
-// green said nothing about it.
+// The far-representation axis's own book: the axis is a name a caller passes to one entry, so its
+// cells belong to a call no other book makes. It is here because the gate had no row for it -
+// every other book reaches the region through the lane's default entry, which names one of the
+// three arithmetics, so two were green by silence until tests/boys_test.cpp reached them.
 std::vector<Accum>& FarClaims() {
     static std::vector<Accum> claims;
     return claims;
@@ -14298,19 +14278,9 @@ int main(int argc, char** argv) {
     }
 
     // ---- the far-representation book ----------------------------------------
-    // The axis decides the whole far region - kX1 and every argument above it - and no book above
-    // has a row for it. Each arm is measured twice: once through the entry a caller names it by,
-    // which is what a caller receives, and once against the arm's own body, which is the
-    // arithmetic behind the entry. An arm that agrees with itself bit for bit below the entry's
-    // own dispatch is a second finding, and the two rows are what tell it from one arm reached
-    // two ways.
-    //
-    // Each row is judged against its OWN figure and in that figure's own form. The arms do not
-    // publish the same kind of number: the recurrence's is absolute - its step drops the
-    // exp(-x)/2 term the region's recurrence carries, so at kX1 the error is 5.0e-14 against a
-    // value of 1.95e-14 and its worst relative error is 2.56, and no relative figure is true of
-    // it - while the two seeded arms' are relative, errors on the value. A row judged at the
-    // other form is a false finding in one direction and a false pass in the other.
+    // The axis decides the whole far region and no book above has a row for it. Each arm is
+    // measured twice - through the entry a caller names it, and against its own body - and each
+    // row is judged in its own figure's own form: the recurrence's absolute, the seeded relative.
     {
         const Reference farref = LoadReference(std::string(BoysDataDir) +
                                                "/boys_far_gate_reference.csv");
@@ -14569,11 +14539,10 @@ int main(int argc, char** argv) {
             const Verdict v = FromAccum(a);
             char where[64] = "-";
             char delivered[48] = "-";
-            // The row's worst cell read in the figure's own form: `ratio x figure`. For a
-            // relative figure that IS the relative error the cell delivers, which is the
-            // figure an arm's own row would state if the one above it moved; for an absolute
-            // one it is the delivered error itself. A row over its figure prints both, so
-            // the reader is given the honest figure and not only the verdict.
+            // The row's worst cell read in the figure's own form, `ratio x figure`: for a relative
+            // figure that is the relative error the cell delivers - the figure an arm's own row
+            // would state if the one above it moved - and for an absolute one the delivered error
+            // itself. A row over its figure prints both, so the reader gets the honest figure too.
             char implied[48] = "-";
 
             if (a.worstN >= 0)

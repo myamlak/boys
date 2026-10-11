@@ -682,12 +682,10 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
     }
 }
 
-// The far region's ladder runs four arguments of ONE ladder in a register - the arguments axis, the
-// only axis a recurrence in the order can be run on - and the lane is the per-argument body's own
-// arithmetic rather than a second one. So every far cell is the per-argument entry's value at that
-// argument, bit for bit, in both overloads, at every top order the library serves, and at the
-// lengths either side of the lane's width: a run shorter than four never reaches the lane, and a
-// longer run's tail does not.
+// The far region's ladder runs four arguments of ONE ladder in a register - the arguments axis,
+// the only axis a recurrence in the order can run on - and it is the per-argument body's own
+// arithmetic, not a second one. So every far cell is that entry's value bit for bit, in both
+// overloads, at every top order, and at the lengths either side of the lane's width.
 TEST(BoysAllNTest, FarLaneIsThePerArgumentBodyBitForBit) {
     using FarLane = boys::EvalPolicy<boys::FitRoute::kChebyshev,
                                      boys::EvalScheme::kHorner,

@@ -1242,14 +1242,10 @@ void CorrectedSeedLadder(int nmax, double x, double* out) noexcept {
     }
 }
 
-// Both legs' instantiations are declared and never written here, and each leg is
-// defined in exactly one unit: the fused leg in boys_orders_simd.cpp, which is
-// licensed for the fused instruction set, and the asking leg in boys.cpp, which is
-// not. The declarations are what keep every other unit - this library's and a
-// consumer's - from emitting a second definition for the link to choose between,
-// and that matters in both directions: a fused arm resolved to an unlicensed
-// definition pays a call per exact product, and an asking arm resolved to a
-// licensed one executes an instruction on a host that may not have it.
+// Both legs are declared here and each is defined in exactly one unit: the fused leg in
+// boys_orders_simd.cpp, licensed for the fused instruction set, and the asking leg in boys.cpp,
+// which is not. The declarations keep every other unit from emitting a second definition the link
+// could choose: the wrong choice costs a call per exact product, or an unlicensed instruction.
 extern template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
     int, double, double*) noexcept;
 extern template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(
@@ -3557,10 +3553,9 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
             for (int l = 1; l <= nmax; ++l)
             {
                 // The step is the backend's two-rounding multiply-subtract, the single-order
-                // body's own spelling: a bare product and difference is one arithmetic where the
-                // calling unit contracts and another where it does not, which would make this
-                // body's value at an (n, x) a property of the caller's flags - and the single
-                // body's value at the same (n, x) a different one.
+                // body's own spelling. A bare product and difference is one arithmetic where the
+                // calling unit contracts and another where it does not, so this body's value at
+                // an (n, x) would move with the caller's flags, and part from the single body's.
                 f = DivideStep<Policy::kDivision>(
                     backend::ScalarFp32::MulSub(static_cast<float>(l) - 0.5f, f, expx), x, invx);
                 out[l] = f;
@@ -3572,11 +3567,9 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         float f = kBoysHalfSqrtPiF32 / std::sqrt(x);
         out[0] = f;
 
-        // The far step carries the exp(-x)/2 term the bare asymptotic step drops, and it is the
-        // arm where that term matters most: the same spelling as the region's own arm above, for
-        // the same reason - a bare product and difference is one arithmetic where the calling unit
-        // contracts and another where it does not, so the body's value at an (n, x) would be a
-        // property of the caller's flags.
+        // The far step carries the exp(-x)/2 term the bare asymptotic step drops, the arm where
+        // that term matters most: the same spelled multiply-subtract as the region's arm above,
+        // for the same reason.
         const float expx = RegionBHalfExpF32<RegionBExp::kAccurate>(x);
 
         for (int l = 1; l <= nmax; ++l)
@@ -4181,14 +4174,9 @@ inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double*
 }
 
 // The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
-// ARGUMENTS at once - the arguments axis, not the orders axis: the ladder is a recurrence in the
-// order, so four arguments are what a register can hold in parallel and four orders are not.
-//
-// The lane is the scalar body's arithmetic operation for operation, so the acceptance test is
-// equality and not a bound. The half-exponential is the one step it does not carry - a library
-// call - and the caller forms it per argument through the same RegionBHalfExp the scalar body
-// reads. Declared here; defined in src/boys_simd.cpp with the vector tier's flags, and against the
-// certified scalar lane on a target without them, where BoysAvx2Available() is false.
+// ARGUMENTS at once - the arguments axis, not the orders axis, since a ladder recurs in the order.
+// Arithmetic for arithmetic with the scalar body, so its test is equality and not a bound, and the
+// half-exponential it does not carry the caller forms per argument. Defined in src/boys_simd.cpp.
 void BoysFarLadderLanes(int nmax,
                         const double* x,
                         const double* halfExp,
@@ -4444,17 +4432,10 @@ constexpr bool FarLadderIsThePerArgumentBody(double x, bool vectorTier) noexcept
     }
 }
 
-// The per-argument path, in the caller's planes - the shape the C entry point's batch loop already has,
-// and the batch entry's total fallback. It writes its columns straight into those planes, like the
-// at-orders entry above and for the same reason: a column here is short where the shape needing this
-// path is the orders axis's, and staging short columns through a tile costs more than the stores save.
-//
-// The far region is the one exception, and it costs the region's own axis nothing: the ladder above
-// the fits is a recurrence, so the orders axis has no lane there to trade away, and the arguments
-// the path meets are held four at a time and handed to the lane the region does have. The predicate
-// is what makes that a lane of this body rather than a second arithmetic - see
-// FarLadderIsThePerArgumentBody - and a call whose arguments hold fewer than four of them pays a
-// comparison per argument and nothing else.
+// The per-argument path, in the caller's planes: the C entry point's batch loop shape and the
+// batch entry's total fallback. The far region is the one exception - its ladder is a recurrence,
+// so the orders axis has no lane there to trade away, and the arguments go four at a time to the
+// arguments lane it does have, by FarLadderIsThePerArgumentBody rather than a second arithmetic.
 template <EvalPolicyLike Policy>
 void BoysAllNRunPerArgument(int nmax,
                             const double* x,
@@ -4675,17 +4656,10 @@ void BoysAllNPartitionedImpl(int nmax,
 
         if (from != to)
         {
-            // The far region's ladder takes the arguments lane - one ladder per lane, four
-            // arguments of the run at a time - at every policy: its body is one recurrence whose
-            // seed, its correction, the reciprocal and the division form are policy reads the
-            // lane makes the same way, and it reads no fit and no partition, so there is nothing
-            // for a route, a scheme or a granularity to trade away. A run that cannot fill the
-            // register is not sent to it at all - three arguments or fewer are the ungrouped
-            // kernel's, one argument at a time, at the price the entry pays for them without a
-            // lane - and the test is here rather than inside BoysAllNRun because of what the
-            // entry costs when the lane is not taken: a branch added to the shared run kernel
-            // moves the paths that never take it (measured, a one-argument far run came out 5.7%
-            // over the same run without a lane; the same branch at the caller costs 1%).
+            // The far region's ladder takes the arguments lane at every policy: one recurrence
+            // whose every policy read the lane makes the same way, and no fit and no partition
+            // to trade away. The test is at the caller, not in BoysAllNRun, which the non-taking
+            // paths share: a branch inside cost a one-argument far run 5.7%, at the caller 1%.
             if (vectorTier && static_cast<BoysPath>(p) == BoysPath::kAsymptotic &&
                 to - from >= kBoysFarLaneWidth)
             {

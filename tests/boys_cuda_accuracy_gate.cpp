@@ -5261,11 +5261,9 @@ const LaunchedArm kLaunchedArms[] = {
     {.entry = boys::DeviceEntry::kSingleF16, .range16 = &boys::BoysCuda::SingleF16},
     {.entry = boys::DeviceEntry::kSingleF16Fast, .range16 = &boys::BoysCuda::SingleF16Fast, .exp = boys::RegionBExp::kFast},
     // bf16 ------------------------
-    // The half lane's other store, one arm per row the report carries and in the report's own row
-    // order. The entry is the enumerator the report names and the kernel is the function of that
-    // enumerator's own name; the lane's arithmetic is the float engine with this format's I/O
-    // around it (boys_cuda.cu), so these rows are launched by the same drivers as the fp16 ones
-    // with the bf16 element type in place of the fp16 one.
+    // One arm per row the report carries and in the report's own row order: the entry is the
+    // enumerator the report names, the kernel is the function of that enumerator's own name, and
+    // the lane is the float engine with bf16 I/O around it (boys_cuda.cu).
     {.entry = boys::DeviceEntry::kSingleBf16, .rangeBf16 = &boys::BoysCuda::SingleBf16},
     {.entry = boys::DeviceEntry::kAllOrdersBf16, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16},
     {.entry = boys::DeviceEntry::kAllOrdersBf16Narrow, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Narrow},
