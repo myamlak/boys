@@ -3441,12 +3441,17 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         float f = kBoysHalfSqrtPiF32 / std::sqrt(x);
         out[0] = f;
 
-        // The far step carries the exp(-x)/2 term the bare asymptotic step drops.
+        // The far step carries the exp(-x)/2 term the bare asymptotic step drops, and it is the
+        // arm where that term matters most: the same spelling as the region's own arm above, for
+        // the same reason - a bare product and difference is one arithmetic where the calling unit
+        // contracts and another where it does not, so the body's value at an (n, x) would be a
+        // property of the caller's flags.
         const float expx = RegionBHalfExpF32<RegionBExp::kAccurate>(x);
 
         for (int l = 1; l <= nmax; ++l)
         {
-            f = DivideStep<Policy::kDivision>((static_cast<float>(l) - 0.5f) * f - expx, x, invx);
+            f = DivideStep<Policy::kDivision>(
+                backend::ScalarFp32::MulSub(static_cast<float>(l) - 0.5f, f, expx), x, invx);
             out[l] = f;
         }
     }
