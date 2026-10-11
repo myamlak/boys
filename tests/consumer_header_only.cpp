@@ -294,20 +294,6 @@ template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme>
 using MovedFrom = boys::EvalPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
                                    Row::kGranularity, Row::kDivision, Row::kRegionBExp>;
 
-/// The first moves the fit route off the double lane's row; the second moves the scheme as well.
-///
-/// The scheme is moved beside the route because the scheme alone is not a cell a policy can be held
-/// off the rows by: a build whose own row for a class already names the other scheme puts the
-/// scheme-flipped combination on that row, and a policy that is a row is the vacuity these
-/// assertions exist to catch. The two together are off a table whose rows all name one route, which
-/// is what the assertion below states for this build rather than assumes.
-using First = MovedFrom<DoubleClass, OtherRoute<DoubleClass::kRoute>, DoubleClass::kScheme>;
-using Second =
-    MovedFrom<DoubleClass, OtherRoute<DoubleClass::kRoute>, OtherScheme<DoubleClass::kScheme>>;
-// The half lanes run the fp16 engine budget, so their policies are cells of the fp16 class's row.
-using FirstHalf = MovedFrom<HalfClass, OtherRoute<HalfClass::kRoute>, HalfClass::kScheme>;
-using SecondHalf = MovedFrom<HalfClass, OtherRoute<HalfClass::kRoute>, OtherScheme<HalfClass::kScheme>>;
-
 /// Whether a policy is off every class row the calls below reach.
 ///
 /// The rows are named one class at a time, and the classes are exactly the ones the calls reach: the
@@ -326,18 +312,65 @@ constexpr bool OffEveryClassRowThisFileReaches =
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>> &&
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>;
 
-static_assert(OffEveryClassRowThisFileReaches<First>,
-              "the first named policy is a class row this build carries, at a class one of this "
-              "file's calls reaches: that call would fold onto the library's own instantiation");
-static_assert(OffEveryClassRowThisFileReaches<Second>,
-              "the second named policy is a class row this build carries, at a class one of this "
-              "file's calls reaches: that call would fold onto the library's own instantiation");
-static_assert(OffEveryClassRowThisFileReaches<FirstHalf>,
-              "the first named half policy is a class row this build carries, at a class this "
-              "file's calls reach: that call would fold onto the library's own instantiation");
-static_assert(OffEveryClassRowThisFileReaches<SecondHalf>,
-              "the second named half policy is a class row this build carries, at a class this "
-              "file's calls reach: that call would fold onto the library's own instantiation");
+/// The candidate policies for a row, in the order they are tried: the fit route moved, the route
+/// and the scheme moved, the scheme moved. None moves the division form - the one axis that moves a
+/// lane's guaranteed figure - and each keeps the row's own budget, granularity and region-B
+/// exponential, and names the packing axis for the reason \c MovedFrom states.
+template <class Row, int kCandidate>
+struct CandidatePolicy;
+template <class Row>
+struct CandidatePolicy<Row, 0> {
+    using type = MovedFrom<Row, OtherRoute<Row::kRoute>, Row::kScheme>;
+};
+template <class Row>
+struct CandidatePolicy<Row, 1> {
+    using type = MovedFrom<Row, OtherRoute<Row::kRoute>, OtherScheme<Row::kScheme>>;
+};
+template <class Row>
+struct CandidatePolicy<Row, 2> {
+    using type = MovedFrom<Row, Row::kRoute, OtherScheme<Row::kScheme>>;
+};
+
+/// Whether a candidate is off every row the calls reach.
+template <class Row, int kCandidate>
+constexpr bool CandidateIsOffTheReachedRows =
+    OffEveryClassRowThisFileReaches<typename CandidatePolicy<Row, kCandidate>::type>;
+
+/// The index of the kOrdinal-th candidate that is off, or three when there is none.
+template <class Row, int kOrdinal>
+consteval int OffRowCandidateIndex() {
+    int seen = 0;
+    for (int candidate = 0; candidate < 3; ++candidate)
+    {
+        const bool off = candidate == 0   ? CandidateIsOffTheReachedRows<Row, 0>
+                         : candidate == 1 ? CandidateIsOffTheReachedRows<Row, 1>
+                                          : CandidateIsOffTheReachedRows<Row, 2>;
+        if (off && seen++ == kOrdinal)
+        {
+            return candidate;
+        }
+    }
+    return 3;
+}
+
+/// A named policy for a row: the kOrdinal-th candidate that is off the rows this build carries.
+/// WHICH candidate that is is read from the table rather than fixed, because an emitted seam names
+/// rows of more than one route and more than one scheme - the option probe's vote does - and a
+/// fixed pair lands on another class's row under it, which is the vacuity the assertions below
+/// exist to catch. A build whose table leaves fewer than two candidates off extends the list above
+/// rather than passing with a check that proves nothing.
+template <class Row, int kOrdinal>
+using NthOffRowPolicy = typename CandidatePolicy<Row, OffRowCandidateIndex<Row, kOrdinal>()>::type;
+
+static_assert(OffRowCandidateIndex<DoubleClass, 1>() < 3 && OffRowCandidateIndex<HalfClass, 1>() < 3,
+              "fewer than two of the candidate policies are off the class rows this build carries, "
+              "at the classes this file's calls reach: extend the candidate list above");
+
+using First = NthOffRowPolicy<DoubleClass, 0>;
+using Second = NthOffRowPolicy<DoubleClass, 1>;
+// The half lanes run the fp16 engine budget, so their policies are cells of the fp16 class's row.
+using FirstHalf = NthOffRowPolicy<HalfClass, 0>;
+using SecondHalf = NthOffRowPolicy<HalfClass, 1>;
 
 /// The label a rule carries for a named policy: the axes that policy moves away from the class row
 /// it was built from, which is what makes it an instantiation the library does not pre-instantiate.
