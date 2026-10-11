@@ -42,6 +42,20 @@ tighter regions are inside its figure rather than written beside it. Every figur
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
 
+**Every figure in that table is the shipped build's.** Each row is a claim about the choices
+[boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries, and they are the figures
+the accuracy gate below judges a default-configure build against. A configure that points
+`BOYS_BUILD_DEFAULTS` at another header builds a library whose unnamed calls resolve to that
+header's seven names instead — the header the option probe's `--emit-defaults` writes, or any
+header satisfying the contract that file states — and no row above is a statement about such a
+build: this page certifies nothing about a replaced build's delivered error. A replaced build's
+figures are the ones its own measurement produced, and the option probe is the measurement that
+tree carries: it measures the build it is compiled in, and its report prints each option's own
+numbers beside the reference it compared them to. The accuracy gate marks the rows a replaced build
+cannot be judged against — the double lane's published figure and the far-representation arms'
+figures — and prints their readings rather than a verdict, and `boys-tests` takes the same reading
+of its far-representation bars.
+
 **Two combinations of the double lane are under the figure, and the bound carries a floor for
 them.** The figure above is the one the lanes' own entries hold, with margin: the double entries'
 worst relative error over the gate's grid is 9.99e-15, a full order below the figure, at n = 32,
@@ -137,7 +151,11 @@ revision:
 
 The delivered columns are absolute worst errors — each the worst cell of the sweep the gate's
 recorded run holds — and the figure beside them is the lane's own: the relative one, or the larger
-of it and the lane's absolute figure, held over the whole argument range the row names. The two are
+of it and the lane's absolute figure, held over the whole argument range the row names. The sweep is
+a default-configure build's, as every figure on this page is, and the scope
+[the contract states](#accuracy-contract) is theirs: a build whose default rows are a replacement's
+moved the arithmetic under every cell here, and what it delivers is what its own option probe
+measured. The two are
 not a ratio of one another: what the columns of this table
 show is what moves with the route, and the row's delivered cells are the whole of what does.
 

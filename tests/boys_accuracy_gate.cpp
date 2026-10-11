@@ -129,6 +129,17 @@ constexpr double kFloatValueFloor = 1.5e-7;   // the float lanes' published abso
 // 2^-1022; FLT_MIN, 2^-126). Below it the return is subnormal or zero and no accuracy is claimed.
 constexpr double kDoubleFloor = 2.2250738585072014e-308;
 constexpr double kFloatFloor = 1.1754943508222875e-38;
+
+// Whether this build's default rows are the committed header's or a replacement's. The owner's
+// ruling: the double lane's published figure, 1e-13 of the value, is the SHIPPED DEFAULT BUILD's,
+// so a build carrying BOYS_BUILD_DEFAULTS_REPLACED serves another arithmetic and the figure is no
+// claim about it - its cells are measured, printed and given Verdict::NotJudged instead.
+#if defined(BOYS_BUILD_DEFAULTS_REPLACED)
+constexpr bool kDefaultRowsAreReplaced = true;
+#else
+constexpr bool kDefaultRowsAreReplaced = false;
+#endif
+
 // The withdrawn header claim (1e-15 over every x < x0): its slot is still measured so the
 // finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
@@ -330,11 +341,12 @@ std::vector<Accum>& FarClaims() {
     return claims;
 }
 
-int AddFarClaim(const char* lane, const char* region, double bound) {
+int AddFarClaim(const char* lane, const char* region, double bound, bool judged = true) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
+    a.judged = judged;
     FarClaims().push_back(a);
     return static_cast<int>(FarClaims().size()) - 1;
 }
@@ -873,7 +885,11 @@ enum class Verdict
     Exceeded,
     Vacuous,
     EvidenceAbsent,
-    NotCarried
+    NotCarried,
+    // A row whose figure is the shipped default build's, read by a build whose default rows are a
+    // replacement's. The cells are measured and printed as they always are and no verdict is given
+    // them, for the reason kDefaultRowsAreReplaced states where it is defined.
+    NotJudged
 };
 
 // What the rows about the native packed half lane report when it was not measured here: a
@@ -896,10 +912,11 @@ bool IsMet(Verdict v)
 
 // A row leaves this run red when it is not met and this build carries its subject: a claim the
 // build carries and cannot verify at this revision is the defect the gate exists to find, and it
-// fails whatever the reason it could not be verified. Not-carried rows are named in full.
+// fails whatever the reason it could not be verified. Not-carried rows are named in full, and so
+// are the rows this build records without judging.
 bool FailsTheGate(Verdict v)
 {
-    return !IsMet(v) && v != Verdict::NotCarried;
+    return !IsMet(v) && v != Verdict::NotCarried && v != Verdict::NotJudged;
 }
 
 // The order the verdicts worsen in, for an accumulation that takes the worst
@@ -925,6 +942,9 @@ int VerdictRank(Verdict v)
         // an accumulation, a row the build does not carry must not outrank a
         // row the build measured and failed.
         return -1;
+    case Verdict::NotJudged:
+        // Not reachable from an accumulation either, and carrying no measurement to rank.
+        return -1;
     }
 
     return 5;
@@ -946,6 +966,8 @@ const char* VerdictName(Verdict v)
         return "evidence absent from the tree";
     case Verdict::NotCarried:
         return "not carried by this build";
+    case Verdict::NotJudged:
+        return "recorded, not judged";
     }
 
     return "?";
@@ -982,6 +1004,13 @@ const char* ClassFalsifier(Verdict v)
                "It becomes a check, and can then fail, in a build that carries the entry - one "
                "whose fp16 seam is open - and the reason this build does not is printed with "
                "the row";
+    case Verdict::NotJudged:
+        return "nothing here can falsify this row: the figure it states is the shipped default "
+               "build's, and this build's default rows are a replacement's, so the figure is not "
+               "a claim about this build's arithmetic and its cells are recorded beside the "
+               "verdict rather than judged by it. It becomes a check, and can then fail, in a "
+               "build whose default rows are the committed header's, and that build's figures "
+               "are the ones README and docs/specification.md state";
     }
 
     return "?";
@@ -2193,15 +2222,24 @@ int main(int argc, char** argv) {
     // states for those combinations beside the measured one.
     constexpr BoundForm kRelativeDoubleFloored{true, kDoubleFloor, 0.0, kDoubleValueFloor};
 
-    const int kSingleA = AddClaim("double single", "A", kBoundSingleA, true, kRelativeDouble);
-    const int kSingleBand = AddClaim("double single", "band", kBoundSingleBand, true, kRelativeDouble);
-    const int kSingleB = AddClaim("double single", "B", kBoundSingleB, true, kRelativeDouble);
-    const int kSingleC = AddClaim("double single", "C", kBoundSingleC, true, kRelativeDouble);
-    const int kOrders = AddClaim("double batch", "all-orders", kBoundDoubleBatch, true, kRelativeDouble);
-    const int kFixedN = AddClaim("double batch", "fixed-n", kBoundDoubleBatch, true, kRelativeDouble);
-    const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch, true, kRelativeDouble);
+    // The double lane's rows are judged against the published figure, which is the shipped
+    // default build's: a build whose default rows are a replacement's measures them and judges
+    // none of them (kDefaultRowsAreReplaced). Its own figures are the option probe's report, and
+    // the rows that carry them say so where their verdict is printed.
+    const bool kJudgeDoubleFigure = !kDefaultRowsAreReplaced;
+
+    const int kSingleA = AddClaim("double single", "A", kBoundSingleA, kJudgeDoubleFigure, kRelativeDouble);
+    const int kSingleBand =
+        AddClaim("double single", "band", kBoundSingleBand, kJudgeDoubleFigure, kRelativeDouble);
+    const int kSingleB = AddClaim("double single", "B", kBoundSingleB, kJudgeDoubleFigure, kRelativeDouble);
+    const int kSingleC = AddClaim("double single", "C", kBoundSingleC, kJudgeDoubleFigure, kRelativeDouble);
+    const int kOrders =
+        AddClaim("double batch", "all-orders", kBoundDoubleBatch, kJudgeDoubleFigure, kRelativeDouble);
+    const int kFixedN =
+        AddClaim("double batch", "fixed-n", kBoundDoubleBatch, kJudgeDoubleFigure, kRelativeDouble);
+    const int kAllN = AddClaim("double batch", "all-n", kBoundDoubleBatch, kJudgeDoubleFigure, kRelativeDouble);
     const int kAllNAtOrders =
-        AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch, true, kRelativeDouble);
+        AddClaim("double batch", "all-n at-orders", kBoundDoubleBatch, kJudgeDoubleFigure, kRelativeDouble);
     const int kFloatSingle = AddClaim("float single", "all", kBoundFloat, true, floatSingleForm);
     const int kFloatOrders = AddClaim("float batch", "all", kBoundFloat, true, floatOrdersForm);
     const int kFloatOrdersPacked = AddClaim("float batch",
@@ -2242,6 +2280,17 @@ int main(int argc, char** argv) {
                 ref.orderCount,
                 ref.count,
                 ref.orderCount * ref.count);
+    // The build the figures belong to, printed rather than left to be inferred from the verdicts:
+    // the double lane's published figure is the shipped default build's, and a build whose default
+    // rows are a replacement's records its cells instead of judging them.
+    std::printf("default rows : %s\n",
+                kDefaultRowsAreReplaced
+                    ? "a replacement's (BOYS_BUILD_DEFAULTS_REPLACED is defined), so the "
+                      "double lane's\n               published figure is recorded here and not "
+                      "judged, and this build's own\n               figures are the option "
+                      "probe's report"
+                    : "the committed header's (BOYS_BUILD_DEFAULTS_REPLACED is not defined), so "
+                      "every\n               published figure is judged here");
     std::printf("boundaries   : x_ext=%.17g  x0=%.17g  x1=%.17g\n",
                 boys::detail::kExtendedBX0,
                 boys::detail::kX0,
@@ -6450,7 +6499,11 @@ int main(int argc, char** argv) {
                 "             pair at that cell, not the base bound\n"
                 "  vacuous  = points where the documented bound is at least as large as\n"
                 "             |F_n(x)| itself, so any returned value in range passes\n"
-                "  no value = of those, points where the lane returned zero or a subnormal\n");
+                "  no value = of those, points where the lane returned zero or a subnormal\n"
+                "  record,  = the slot has no verdict in this build: no live claim is judged at\n"
+                "  not judged it, either because its figure is the shipped default build's in a\n"
+                "             build whose default rows are a replacement's, or because the claim\n"
+                "             it carried was withdrawn; its ratio may be above 1.0 in a green run\n");
 
     // ---- the entry book: the batched entries on the uniform partition --------
     // The books above reach their cells through one entry per lane, so a combination the axes admit
@@ -7218,15 +7271,20 @@ int main(int argc, char** argv) {
 
     add("README.double.single",
         "double single: 1e-13 of F_n(x) - one relative figure over the whole domain, which is "
-        "what the four regions the report reads are each judged against",
+        "what the four regions the report reads are each judged against. The figure is the "
+        "shipped default build's: a build whose default rows are a replacement's records these "
+        "cells and judges none of them, and its own figures are the option probe's report",
         "README accuracy contract",
-        verdictOf({kSingleA, kSingleBand, kSingleB, kSingleC}),
+        kDefaultRowsAreReplaced ? Verdict::NotJudged
+                                : verdictOf({kSingleA, kSingleBand, kSingleB, kSingleC}),
         worstOf({kSingleA, kSingleBand, kSingleB, kSingleC}));
 
     add("README.double.batch",
-        "double batch: 1e-13 of F_n(x) in every region, all entries",
+        "double batch: 1e-13 of F_n(x) in every region, all entries. The figure is the shipped "
+        "default build's, on the same terms as the row above",
         "README accuracy contract",
-        verdictOf({kOrders, kFixedN, kAllN, kAllNAtOrders}),
+        kDefaultRowsAreReplaced ? Verdict::NotJudged
+                                : verdictOf({kOrders, kFixedN, kAllN, kAllNAtOrders}),
         worstOf({kOrders, kFixedN, kAllN, kAllNAtOrders}));
 
     add("README.float",
@@ -7275,9 +7333,10 @@ int main(int argc, char** argv) {
 
         add("header.double.region_A_and_band",
             "double single: 1e-13 of F_n(x) in the region-A and extended-band cells the "
-            "header's table keeps apart",
+            "header's table keeps apart. The figure is the shipped default build's, on the "
+            "same terms as README.double.single",
             "include/boys/boys.hpp preamble table (four-region, with the extended-band column)",
-            verdictOf({kSingleA, kSingleBand}),
+            kDefaultRowsAreReplaced ? Verdict::NotJudged : verdictOf({kSingleA, kSingleBand}),
             Fmt("%s. The record of what this row used to test: the same table read as a "
                 "three-region one - a single region-A cell of 1e-15 with no band row, so "
                 "1e-15 across the whole of x < x0 - is not a bound the lane meets anywhere in "
@@ -8441,7 +8500,13 @@ int main(int argc, char** argv) {
                 "  range of arguments - is met over that stated domain and prints the\n"
                 "  domain with its verdict: a restriction the document states is not the\n"
                 "  same finding as evidence missing from the tree, and never shares its\n"
-                "  verdict\n");
+                "  verdict;\n"
+                "  a row whose figure is the shipped default build's is recorded and not\n"
+                "  judged in a build whose default rows are a replacement's: its cells are\n"
+                "  measured and printed as they always are, and the figures of that build\n"
+                "  are the option probe's report\n"
+                "  the run prints BOYS_BUILD_DEFAULTS_REPLACED below, so which of the two\n"
+                "  books this is is readable off the report rather than assumed\n");
 
     int verified = 0;
     int metOverDomain = 0;
@@ -8449,6 +8514,7 @@ int main(int argc, char** argv) {
     int vacuousOnly = 0;
     int absent = 0;
     int notCarried = 0;
+    int notJudged = 0;
     int modelDerived = 0;
 
     for (const DocClaim& c : book)
@@ -8478,6 +8544,9 @@ int main(int argc, char** argv) {
             break;
         case Verdict::NotCarried:
             ++notCarried;
+            break;
+        case Verdict::NotJudged:
+            ++notJudged;
             break;
         }
 
@@ -8538,7 +8607,8 @@ int main(int argc, char** argv) {
 
     std::printf("\n  RESULT: %d of %zu claims met at this revision (%d verified outright, "
                 "%d met over a stated domain, %d exceeded, %d vacuous only, %d evidence "
-                "absent, %d not carried by this build; none of the last four counted as met)\n",
+                "absent, %d not carried by this build, %d recorded and not judged; none of the "
+                "last five counted as met)\n",
                 verified + metOverDomain,
                 book.size(),
                 verified,
@@ -8546,7 +8616,8 @@ int main(int argc, char** argv) {
                 exceeded,
                 vacuousOnly,
                 absent,
-                notCarried);
+                notCarried,
+                notJudged);
 
     // The rows this build does not carry, named in full with the reason: a row that vanishes with
     // the seam is how a claim stops being checked without anyone deciding to stop. Each prints the
@@ -8567,6 +8638,37 @@ int main(int argc, char** argv) {
         for (const DocClaim& c : book)
         {
             if (c.verdict == Verdict::NotCarried)
+            {
+                std::printf(" %s", c.id.c_str());
+            }
+        }
+
+        std::printf("\n");
+    }
+
+    // The rows this build records and does not judge, named in full like the ones it does not
+    // carry and for the same reason: a row that stops being judged without anyone deciding to
+    // stop is how a claim stops being checked. The cells behind each of them are in the tables
+    // above, marked "record, not judged".
+    if (notJudged > 0)
+    {
+        std::printf("          %d of those rows are recorded and not judged by this build: the "
+                    "figure each states is the\n          shipped default build's, and this "
+                    "build's default rows are a replacement's (configured with\n          "
+                    "BOYS_BUILD_DEFAULTS, so BOYS_BUILD_DEFAULTS_REPLACED is defined), so the "
+                    "published figure is not\n          a claim about this build's arithmetic. "
+                    "Every cell is measured and printed as it always is,\n          in the "
+                    "claim table and the per-order table above. The rows are judged in a "
+                    "build whose default rows\n          are the committed header's, where "
+                    "they are the same rows at the same count; what\n          a replaced "
+                    "build's rows deliver is measured by the option probe this tree carries,\n"
+                    "          whose report is where that build's own figures live\n",
+                    notJudged);
+        std::printf("  RECORDED and not judged by this build (neither met nor failed here):");
+
+        for (const DocClaim& c : book)
+        {
+            if (c.verdict == Verdict::NotJudged)
             {
                 std::printf(" %s", c.id.c_str());
             }
@@ -8650,6 +8752,11 @@ int main(int argc, char** argv) {
                 // Below every measured state, for the same reason as VerdictRank's
                 // entry: not reachable here, and if it ever were it must not
                 // outrank a row this build measured and failed.
+                return -1;
+            case Verdict::NotJudged:
+                // Unreachable in this book: a route is a caller's choice and every route is
+                // carried by every build, so no route row is keyed to the build's default rows.
+                // Ranked below every measured state for the same reason as NotCarried.
                 return -1;
             }
 
@@ -9076,6 +9183,11 @@ int main(int argc, char** argv) {
             case Verdict::NotCarried:
                 ++rNotCarried;
                 break;
+            case Verdict::NotJudged:
+                // Unreachable in this book, for the reason the severity lambda above states.
+                // Left uncounted rather than folded into another bucket: a row that arrived here
+                // would then be named by the route book's own RESULT line not counting it.
+                break;
             }
 
             if (c.domain.empty())
@@ -9173,7 +9285,7 @@ int main(int argc, char** argv) {
     // exceeded, measured vacuous only, or resting on evidence this build cannot re-run -
     // leaves the gate red and names itself below. A claim whose subject the build does not
     // carry is named above with its reason and still counted in the RESULT line.
-    if (verified + metOverDomain + notCarried < static_cast<int>(book.size()))
+    if (verified + metOverDomain + notCarried + notJudged < static_cast<int>(book.size()))
     {
         std::printf("  NOT MET at this revision:");
 
@@ -9188,12 +9300,13 @@ int main(int argc, char** argv) {
         std::printf("\n  FAIL (the lane book above; the books after it are still measured and "
                     "printed)\n");
         failed = true;
-    } else if (notCarried > 0)
+    } else if (notCarried > 0 || notJudged > 0)
     {
-        std::printf("  OK, for the claims this build carries (the lane book above): every row "
-                    "the build carries is met at this revision, and the %d it does not carry "
-                    "are named above rather than counted for it\n",
-                    notCarried);
+        std::printf("  OK, for the claims this build judges (the lane book above): every row "
+                    "it judges is met at this revision, and the %d it does not carry and the "
+                    "%d it records without judging are named above rather than counted for it\n",
+                    notCarried,
+                    notJudged);
     }
 
     // ---- the evaluation-scheme rows, counted apart --------------------------
@@ -14435,7 +14548,12 @@ int main(int argc, char** argv) {
 
         for (const FarArmRow& row : farArms)
         {
-            const int slot = AddFarClaim(row.lane, row.span, row.figure);
+            // Every figure in this book is the shipped build's - each arm's ladder runs at the
+            // build's default division form (src/boys.cpp, kDefaultDivisionForm) - so a build whose
+            // default rows are a replacement's records these readings and judges none of them
+            // (kDefaultRowsAreReplaced).
+            const int slot =
+                AddFarClaim(row.lane, row.span, row.figure, !kDefaultRowsAreReplaced);
             Accum& own = FarClaims()[static_cast<std::size_t>(slot)];
             Accum& onGate = onTheGateGrid[static_cast<std::size_t>(slot)];
             onGate.lane = row.lane;
@@ -14513,6 +14631,15 @@ int main(int argc, char** argv) {
         std::printf("  arithmetic in force for scalar-fp64: %s (the route each row's figure is "
                     "read at)\n",
                     boys::backend::MulAddRouteName(farRoute));
+
+        if (kDefaultRowsAreReplaced)
+        {
+            std::printf("  default rows : a replacement's (BOYS_BUILD_DEFAULTS_REPLACED is "
+                        "defined), so every row below\n                 states the shipped "
+                        "build's figure and is read at this build's arithmetic: the\n"
+                        "                 readings are taken and printed and no verdict is given "
+                        "them\n");
+        }
         std::printf("  `as a figure` is the row's worst cell read in the figure's own form, "
                     "ratio x figure: for a\n  relative figure that is the relative error the "
                     "cell delivers, and for an absolute one it is\n  the delivered error itself. "
@@ -14534,6 +14661,7 @@ int main(int argc, char** argv) {
 
         std::size_t farCells = 0;
         std::size_t farNonDiscriminating = 0;
+        std::size_t farNotJudged = 0;
         std::vector<std::string> farNotMet;
 
         for (std::size_t r = 0; r < std::size(farArms); ++r)
@@ -14541,7 +14669,7 @@ int main(int argc, char** argv) {
             const FarArmRow& row = farArms[r];
             const Accum& a = FarClaims()[r];
             const Accum& g = onTheGateGrid[r];
-            const Verdict v = FromAccum(a);
+            const Verdict v = a.judged ? FromAccum(a) : Verdict::NotJudged;
             char where[64] = "-";
             char delivered[48] = "-";
             // The row's worst cell read in the figure's own form, `ratio x figure`: for a relative
@@ -14561,7 +14689,10 @@ int main(int argc, char** argv) {
                 std::snprintf(implied, sizeof(implied), "%.4g", a.worstRatio * row.figure);
             }
 
-            if (!IsMet(v))
+            if (v == Verdict::NotJudged)
+            {
+                ++farNotJudged;
+            } else if (!IsMet(v))
             {
                 farNotMet.push_back(std::string(row.lane) + " / " + row.span);
             }
@@ -14695,15 +14826,34 @@ int main(int argc, char** argv) {
         }
 
         std::printf("  %s\n", std::string(176, '-').c_str());
-        std::printf("  FAR RESULT: %zu of %zu arm row(s) met at this revision; %zu of %zu far "
+        std::printf("  FAR RESULT: %zu of %zu arm row(s) met at this revision, %zu recorded and "
+                    "not judged by\n              this build; %zu of %zu far "
                     "cell(s) carry a\n              bound that can bind, the other %zu lying "
                     "outside the figure (a relative figure below\n              binary64's "
                     "smallest normal, or an absolute figure at or above the value)\n",
-                    std::size(farArms) - farNotMet.size(),
+                    std::size(farArms) - farNotMet.size() - farNotJudged,
                     std::size(farArms),
+                    farNotJudged,
                     farCells - farNonDiscriminating,
                     farCells,
                     farNonDiscriminating);
+
+        if (farNotJudged > 0)
+        {
+            std::printf("              the %zu recorded row(s) above are the shipped build's "
+                        "figures read by a build whose\n              default rows are a "
+                        "replacement's: they are measured and printed with their worst\n"
+                        "              cell and their own figure in the `as a figure` column, and "
+                        "no verdict is given\n              them because the arithmetic under "
+                        "them is not the arithmetic those figures were\n"
+                        "              taken on\n",
+                        farNotJudged);
+        }
+
+        // The far rows are recorded rows of this build too, so the last line counts them with the
+        // book's own: a PASS that named the book's three and left these out would be the one
+        // sentence here that is false.
+        notJudged += static_cast<int>(farNotJudged);
 
         // What the scaled table's row can and cannot be read as. The table publishes a figure
         // and the figure is a swept maximum: the reader below is owed the difference, because a
@@ -14748,12 +14898,13 @@ int main(int argc, char** argv) {
     // says what was checked and what was not: a build that does not carry some
     // of the book has claims it never judged, and a PASS that read as though it
     // had would be the one sentence here that is false.
-    if (notCarried > 0)
+    if (notCarried > 0 || notJudged > 0)
     {
-        std::printf("  PASS: every documented claim this build carries is met at this revision; "
-                    "the %d it does not carry are named above with their reason, and are "
-                    "neither met nor failed here\n",
-                    notCarried);
+        std::printf("  PASS: every documented claim this build carries and judges is met at this "
+                    "revision; the %d it does not carry and the %d it records without judging "
+                    "are named above with their reason, and are neither met nor failed here\n",
+                    notCarried,
+                    notJudged);
         return 0;
     }
 

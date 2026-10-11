@@ -44,3 +44,13 @@
 // only reading there is for them: the `Build defaults` step in `.github/workflows/ci.yml` points
 // BOYS_BUILD_DEFAULTS at this file on one leg, so "the library reads BOYS_BUILD_DEFAULT_DIVISION_FORM
 // and BOYS_BUILD_DEFAULT_FIT_GRANULARITY" is established by that configure building and passing.
+//
+// What that configure is not is a build the published figures are about: they are claims about the
+// committed header's rows (docs/lane-contract.md, "double"; docs/specification.md). The axes this
+// file moves are live in the double lane's arithmetic - the far entries' ladders divide at the
+// build's default division form (src/boys.cpp), and the fitted regions are summed and partitioned
+// by the scheme and the granularity - so a build pointed here delivers other numbers than the
+// committed rows do. The suite and the gate therefore take that build's readings and print them:
+// the gate records the rows that state the double lane's published figure and the far-representation
+// arms' figures, the suite takes the same reading of its far-representation bars, and the figures of
+// a build whose defaults are a replacement's are the ones its own option probe run measured.

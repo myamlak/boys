@@ -206,6 +206,13 @@ budgets each lane's fits were cut against.
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 
+**Every figure in that table is the shipped build's.** Each row is a claim about the choices
+[boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries. A configure that points
+`BOYS_BUILD_DEFAULTS` at another header builds a library whose unnamed calls resolve to that
+header's names instead, and no row above is a statement about such a build: its figures are the ones
+its own option probe measured, and [the accuracy contract](specification.md#accuracy-contract)
+states the scope in full.
+
 The CUDA fp32 lane's single entry is the one device entry that takes a second, certified axis: which
 region-B exponential it evaluates (see \ref boys::RegionBExp). Both options carry a bound of
 their own, derived from the condition number of the region-B recurrence and confirmed by the device

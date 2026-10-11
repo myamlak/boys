@@ -83,6 +83,19 @@ returned value is at or below `1e-13 · F_n(x)`, for both the single-argument an
 above the smallest normal double. The figure was an absolute 5.5e-14 until this release, and the
 number was too small where F is small and too large where F is large.
 
+**That figure is the shipped build's.** It is a claim about the choices
+[boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries, and the accuracy gate is
+what judges a default-configure build against it. A configure that points `BOYS_BUILD_DEFAULTS` at
+another header builds a library whose unnamed calls resolve to that header's seven names instead —
+the header the option probe's `--emit-defaults` writes, or any header satisfying the contract that
+file states — and no figure on this page is a statement about such a build: nothing here certifies a
+replaced build's delivered error. A replaced build's figures are the ones its own measurement
+produced, and the option probe is the measurement this tree carries: it measures the build it is
+compiled in, and its report prints each option's own numbers beside the reference it compared them
+to. The accuracy gate marks the rows a replaced build cannot be judged against — the double lane's
+published figure and the far-representation arms' figures — and prints their readings rather than a
+verdict, and `boys-tests` takes the same reading of its far-representation bars.
+
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
 the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
