@@ -27,12 +27,13 @@ missing input rather than a failure to fix here, because the tool that needs
 them refuses on its own terms and would refuse after its expensive work
 rather than before it:
 
-  * the formatter. ``tools/gen_boys_coefficients.py --check`` compares the
-    committed header byte for byte against a freshly formatted one, and CI
+  * the formatter. ``tools/gen_boys_coefficients.py --check`` needs it on every
+    round - to format the header when the derivation runs, and to read the
+    formatter's version, which the record's env cell is gated on - and CI
     installs clang-format 18.1.3 into ``.venv`` for it. The same three
     candidates that tool's own ``find_clang_format`` reads are read here, in
     the same order, so that a machine which has none is told so in a second
-    rather than after the derivation the comparison is made of.
+    rather than after the derivation that round pays for.
   * mpmath, for the generators that import it. The interpreter is the
     checkout's ``.venv`` where there is one and the running interpreter
     otherwise, which is the substitution ``.venv/bin/python`` needs on a
@@ -41,8 +42,9 @@ rather than before it:
 ``--fast`` runs the checks that read the tree and skips the ones that pay for
 a derivation or a compile, each named in the output with the reason it was
 skipped. The slow set is not a guess about cost: every member of it either
-re-derives the committed tables at full precision or compiles a driver against
-the revision's own sources, and the reason printed for each says which.
+re-derives the committed tables at full precision - on the round the record in
+front of it decides - or compiles a driver against the revision's own sources,
+and the reason printed for each says which.
 
 Usage:
   python tools/check_all.py                 # every check this leg arms

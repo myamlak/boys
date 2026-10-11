@@ -13,9 +13,10 @@ exit code:
 
 A condition this table holds no command for is printed as NOT IN THIS TABLE, and its own `why` names
 where it is decided instead. The distinction is not pedantry: two rows here cost a configure, a build
-and a suite, or hours of re-derivation, so they are armed where that cost is already paid - on a CI
-leg - and a reader told they have no evaluator is told something false about two conditions CI checks
-every round. What is not claimed is that they passed here: nothing in this table ran them.
+and a suite, or hours of re-derivation when the record beside them no longer matches the tree, so they
+are armed where that cost is already paid - on a CI leg - and a reader told they have no evaluator is
+told something false about two conditions CI checks every round. What is not claimed is that they
+passed here: nothing in this table ran them.
 
 **What this tool cannot do, stated here because the limit is the point.** It evaluates conditions that
 reduce to a query over what the tree declares. A defect in the DECLARATION - a class that should exist
@@ -118,11 +119,12 @@ CONDITIONS = [
         "n": 4,
         "title": "Verified regeneration",
         "cmd": None,
-        "why": "the check re-derives every coefficient and costs hours rather than seconds: 8082 s "
-               "measured on a twelve-core host, 3602 s to 7223 s on the runners, so no run of it "
-               "belongs in this table. It is armed elsewhere: CI runs it on every round, as the "
-               "'Generator consistency' step of the gcc Release leg, which is what makes this row "
-               "a check carried rather than a check owed. The regeneration is verified on the "
+        "why": "the check re-derives every coefficient whenever the record committed beside the "
+               "tables does not match the tree, and that round costs hours rather than seconds: "
+               "8082 s measured on a twelve-core host, 3602 s to 7223 s on the runners, so no run "
+               "of it belongs in this table. It is armed elsewhere: CI runs it on every round, as "
+               "the 'Generator consistency' step of the gcc Release leg, which is what makes this "
+               "row a check carried rather than a check owed. The regeneration is verified on the "
                "rounds it can differ - a change to the generator, to requirements-boys.txt or to "
                "the environment those pins name makes the derivation run - and on every other "
                "round the committed record is what certifies that none of them moved. The hours "

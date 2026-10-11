@@ -113,7 +113,8 @@ python3 tools/gen_boys_coefficients.py --check
 It re-derives both artefacts at full precision and compares them byte for byte, which is hours -
 unless the record committed beside them (`tests/data/boys_coefficients_provenance.txt`) still names
 the generator, the pins and the environment in front of it, in which case it verifies that record's
-digests and the header's own read-back rules instead, which is seconds. A change to
+digests and the header's own read-back rules instead, which is minutes rather than hours - the
+read-back rules walk the committed header rather than paying for the fit that wrote it. A change to
 `tools/gen_boys_coefficients.py` or to `requirements-boys.txt` makes the record stale and brings the
 hours back, because that is when they can find something: regenerate, commit the tables and the
 record together, and the next round is cheap again. `--check --rederive` forces the byte-for-byte
