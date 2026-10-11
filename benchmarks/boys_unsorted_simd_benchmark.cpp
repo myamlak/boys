@@ -26,6 +26,10 @@
 #define BoysRegionCSimd BoysRegionCSimdFromShippedUnit
 #define BoysRegionCSimdF16 BoysRegionCSimdF16FromShippedUnit
 #define BoysRegionCSimdBf16 BoysRegionCSimdBf16FromShippedUnit
+// The far ladder's two entry points, added to that unit after this list was written; the
+// duplicate-symbol error asked, which is the treatment the note above asks for.
+#define BoysFarLadderLanes BoysFarLadderLanesFromShippedUnit
+#define BoysFarLadderRun BoysFarLadderRunFromShippedUnit
 #include "boys_simd.cpp"
 #undef BoysRegionASimdF16
 #undef BoysRegionASimdBf16
@@ -36,6 +40,8 @@
 #undef BoysRegionCSimdF16
 #undef BoysRegionCSimdBf16
 #undef BoysRegionCSimd
+#undef BoysFarLadderRun
+#undef BoysFarLadderLanes
 #undef F16cAvailable
 #undef DetectF16c
 #undef AppendPackedBackends
