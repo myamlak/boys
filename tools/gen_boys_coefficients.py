@@ -261,9 +261,11 @@ def boys_ref(n, x, tail_floor=REF_TAIL_FLOOR, max_terms=REF_TERMS):
 
     tail_floor is the term magnitude the series breaks at (after l > 20) and
     max_terms its hard cap; the defaults are the fit path's, the grid passes
-    its own (GRID_TAIL_FLOOR/GRID_TERMS). x must carry at least as many digits
-    as the caller wants back: the grid's argument is an exact double (see
-    write_reference), so nothing of x is lost at GRID_DPS.
+    its own (GRID_TAIL_FLOOR/GRID_TERMS) and the scaled far table its own
+    (SCALED_FAR_REF_TERMS). An argument the cap cannot carry is refused, not
+    truncated: a sum the series did not converge to is not F_n. x must carry
+    at least as many digits as the caller wants back: the grid's argument is
+    an exact double (see write_reference), so nothing of x is lost at GRID_DPS.
     """
     if x == 0:
         return mpf(1) / (2 * n + 1)
@@ -280,7 +282,10 @@ def boys_ref(n, x, tail_floor=REF_TAIL_FLOOR, max_terms=REF_TERMS):
         if l > 20 and term < tail_floor:
             break
         term *= x / (n + l + three_halves)
-    return e * s
+    raise RuntimeError(
+        f"boys_ref: F_{n}({mp.nstr(x, 20)}) is not converged in {max_terms} terms - the "
+        f"term is still above {mp.nstr(tail_floor, 3)} and the sum is truncated. An "
+        f"argument this far past the series' peak needs a larger max_terms.")
 
 
 def grid(a, b, npts):
@@ -1982,6 +1987,12 @@ FAR_MEASURE_POINTS = 32
 # instruments agreeing on a value neither lane computes.
 HALF_SQRT_PI = 0.886226925452758014
 
+# This table's reference needs its own term cap: its span runs to FAR_X1 = 117,
+# where the fit path's 300 truncates the series before the tail falls under
+# REF_TAIL_FLOOR - 300 holds to x = 92 at order 0. Measured over the span, the
+# worst cell is 368 terms (n = 0, x = 116.75); the cap is 512.
+SCALED_FAR_REF_TERMS = 512
+
 
 def scaled_far_ref(n, x):
     """H_n(x), read from the same reference F the rest of this file is validated
@@ -1992,7 +2003,8 @@ def scaled_far_ref(n, x):
     lanes by construction and not by a second opinion about the special
     function. At 30 digits the two agree to between 2e-27 and 2e-31.
     """
-    return 2 * boys_ref(n, x) * x ** (n + mpf("0.5")) / gamma(n + mpf("0.5"))
+    f = boys_ref(n, x, REF_TAIL_FLOOR, SCALED_FAR_REF_TERMS)
+    return 2 * f * x ** (n + mpf("0.5")) / gamma(n + mpf("0.5"))
 
 
 # THE PARTITION IS A PLACEHOLDER, AND IT IS KEPT ON PURPOSE.
