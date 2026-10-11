@@ -466,15 +466,15 @@ void StoreLanes(int order, std::size_t stride, double* const* cols, __m256d f) n
     if constexpr (kContiguous)
     {
         _mm256_storeu_pd(cols[0] + at, f);
-        return;
-    }
-
-    alignas(32) double lane[4];
-    _mm256_store_pd(lane, f);
-
-    for (std::size_t j = 0; j < 4; ++j)
+    } else
     {
-        cols[j][at] = lane[j];
+        alignas(32) double lane[4];
+        _mm256_store_pd(lane, f);
+
+        for (std::size_t j = 0; j < 4; ++j)
+        {
+            cols[j][at] = lane[j];
+        }
     }
 }
 
