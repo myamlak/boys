@@ -130,10 +130,10 @@ constexpr double kFloatValueFloor = 1.5e-7;   // the float lanes' published abso
 constexpr double kDoubleFloor = 2.2250738585072014e-308;
 constexpr double kFloatFloor = 1.1754943508222875e-38;
 
-// Whether this build's default rows are the committed header's or a replacement's. The owner's
-// ruling: the double lane's published figure, 1e-13 of the value, is the SHIPPED DEFAULT BUILD's,
-// so a build carrying BOYS_BUILD_DEFAULTS_REPLACED serves another arithmetic and the figure is no
-// claim about it - its cells are measured, printed and given Verdict::NotJudged instead.
+// Whether this build's default rows are the committed header's or a replacement's. The double
+// lane's published figure, 1e-13 of the value, is the SHIPPED DEFAULT BUILD's: a build carrying
+// BOYS_BUILD_DEFAULTS_REPLACED serves another arithmetic, so its cells are measured, printed and
+// given Verdict::NotJudged instead.
 #if defined(BOYS_BUILD_DEFAULTS_REPLACED)
 constexpr bool kDefaultRowsAreReplaced = true;
 #else

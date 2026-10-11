@@ -790,11 +790,9 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             EXPECT_EQ(report.recommended, leader->name);
             EXPECT_TRUE(doubles->ordered);
 
-            // No rival measured faster than the leader, not a strict margin over every one:
-            // the figure is a median of within-round ratios, and two cells of one class
-            // whose medians land on the same grid point tie to the last bit - measured on
-            // this host, two distinct cells of one class tied bit-exactly in 6 of 24 probe
-            // runs. A rival measured faster than the leader still fails here.
+            // No rival measured faster than the leader, not a strict margin: the figure is a
+            // median of within-round ratios, so two cells can tie to the last bit - 6 of 24
+            // runs on this host. A rival measured faster than the leader still fails here.
             for (const OptionProbeMeasurement* member : ReferenceMembers(report)) {
                 if (member->name != leader->name) {
                     EXPECT_LE(leader->nsPerArgument, member->nsPerArgument) << member->name;
@@ -1470,17 +1468,10 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneShapeAndRanksOnlyItsOwn) {
             EXPECT_EQ(member->shape, entry.shape)
                 << name << " is ranked in " << entry.name << " but answers another question";
 
-            // Behind, not strictly behind. The class's leader is the first row of the
-            // class's own figure sort, so no member can be measured faster than it, and the
-            // strict form can fire only on a tie - a member whose figure is the leader's to
-            // the last bit. Such a tie is a property of the run and not a defect: the figure
-            // is a median of within-round ratios, each a quotient of whole timer ticks, so
-            // two cells whose medians land on the same grid point coincide exactly.
-            // Measured: two distinct cells of one class tied bit-exactly in 6 of 24 probe
-            // runs on this host, and the windows-msvc separate option-matrix cell of
-            // 2026-10-11 failed on one of them - member "fixed-n-bf16", 106.03279903017241
-            // ns, equal to its leader's figure. A report naming a member measured faster
-            // than its leader still fails here.
+            // Behind, not strictly behind: the leader is the first row of the class's own
+            // figure sort, so only a bit-exact tie can trip the strict form - and a tie is a
+            // property of the run, not a defect (two cells tied in 6 of 24 runs on this host;
+            // the 2026-10-11 windows-msvc separate cell failed on one). Faster still fails.
             if (entry.ordered && name != entry.leader) {
                 EXPECT_GE(member->nsPerArgument, leader->nsPerArgument)
                     << entry.name << " says it is ordered, yet " << name
