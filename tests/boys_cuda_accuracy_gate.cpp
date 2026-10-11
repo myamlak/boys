@@ -102,6 +102,14 @@ const double kFastExpContribution =
 // HalfBoundAt computes; its constant part is the report's fp16 row, checked at the end against
 // kBoundHalfBase, the shared reference book's figure - two books, one number.
 const double kBoundHalfRow = DeviceRow(boys::DeviceEntry::kDeviceSingleF16).bound;
+// The bf16 entries' bound is the same form in the lane's other store, and its constant part is
+// read from the report's bf16 row for the same reason: the header publishes 1e-7 for both stores
+// and the two rows carry it, so the figure a cell measures is the row's rather than this file's.
+const double kBoundBf16Row = DeviceRow(boys::DeviceEntry::kDeviceSingleBf16).bound;
+// IEEE-754 bfloat16: 7 stored mantissa bits and the binary32 exponent field, so its smallest
+// normal is 2^-126. The header's own statement of that store's half-digit is 2^-8.
+constexpr int kBf16MantissaBits = 7;
+constexpr int kBf16MinNormalExp = -126;
 
 // The smallest positive normal float: below it a returned value is the
 // format's floor rather than arithmetic, which is what the relative-error side
@@ -480,6 +488,12 @@ DigitGrid LoadDigitGrid(const std::string& path) {
 // returned rather than of the value it should have.
 double HalfBoundAt(double got) {
     return kBoundHalfRow + 0.5 * UlpOf(got, kF16MantissaBits, kF16MinNormalExp);
+}
+
+// The bf16 bound: the same form in the half lane's other store, whose half-digit
+// is 2^-8 rather than 2^-11.
+double Bf16BoundAt(double got) {
+    return kBoundBf16Row + 0.5 * UlpOf(got, kBf16MantissaBits, kBf16MinNormalExp);
 }
 
 // A float lane's return, widened for the comparison against a double reference,
@@ -5056,6 +5070,12 @@ using AllN16Fn = boys::BoysStatus (*)(int, const boys::F16*, boys::F16*, std::si
 using Each64Fn = boys::BoysStatus (*)(const int*, const double*, const int*, double*, std::size_t, void*, boys::DivisionForm);
 using Each32Fn = boys::BoysStatus (*)(const int*, const double*, const int*, float*, std::size_t, void*, boys::DivisionForm);
 using Each16Fn = boys::BoysStatus (*)(const int*, const boys::F16*, const int*, boys::F16*, std::size_t, void*, boys::DivisionForm);
+// The half lane's other store reads the same three shapes at its own element type. The lane is
+// one lane and the store is two, so a bf16 arm is a signature of its own and never an F16 one:
+// the two are distinct types and a call through the wrong pointer would not compile.
+using RangeBf16Fn = boys::BoysStatus (*)(const int*, const boys::Bf16*, boys::Bf16*, std::size_t, void*, boys::DivisionForm);
+using AllNBf16Fn = boys::BoysStatus (*)(int, const boys::Bf16*, boys::Bf16*, std::size_t, void*, boys::DivisionForm);
+using EachBf16Fn = boys::BoysStatus (*)(const int*, const boys::Bf16*, const int*, boys::Bf16*, std::size_t, void*, boys::DivisionForm);
 
 /// One launched entry, and the kernel that serves it.
 ///
@@ -5074,6 +5094,9 @@ struct LaunchedArm {
     Each64Fn each64 = nullptr;
     Each32Fn each32 = nullptr;
     Each16Fn each16 = nullptr;
+    RangeBf16Fn rangeBf16 = nullptr;
+    AllNBf16Fn allNBf16 = nullptr;
+    EachBf16Fn eachBf16 = nullptr;
     /// The row this arm is, where an entry carries two: the certified region-B
     /// exponential is an axis of its own and its two members are two rows of one
     /// entry, each with its own bound.
@@ -5191,14 +5214,8 @@ const LaunchedArm kLaunchedArms[] = {
     {.entry = boys::DeviceEntry::kSingleF32Fast, .range32 = &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
     // fp16 ------------------------
 #if BOYS_CUDA_GATE_FP16
-    // all-n-bfloat16 and all-n-bfloat16-fast: the report carries the rows and boys_cuda.hpp declares
-    // no function for AllNBf16 or AllNBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kAllNF16, .allN16 = &boys::BoysCuda::AllNF16},
     {.entry = boys::DeviceEntry::kAllNF16Fast, .allN16 = &boys::BoysCuda::AllNF16Fast, .exp = boys::RegionBExp::kFast},
-    // The bf16 rows the report carries - all-orders, each-order and single, with their -fast, -mono,
-    // -narrow, -orders, -rat, -horner and -uniform members - carry no arm here: boys_cuda.hpp declares
-    // no function behind any of them, so arming one would name an unresolved external at link time. The
-    // survey counts them as rows no arm reaches.
     {.entry = boys::DeviceEntry::kAllOrdersF16, .range16 = &boys::BoysCuda::AllOrdersF16},
     {.entry = boys::DeviceEntry::kAllOrdersF16Fast, .range16 = &boys::BoysCuda::AllOrdersF16Fast, .exp = boys::RegionBExp::kFast},
     {.entry = boys::DeviceEntry::kAllOrdersF16Mono, .range16 = &boys::BoysCuda::AllOrdersF16Mono},
@@ -5239,14 +5256,62 @@ const LaunchedArm kLaunchedArms[] = {
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformHorner},
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformRat, .range16 = &boys::BoysCuda::AllOrdersF16UniformRat},
     {.entry = boys::DeviceEntry::kAllOrdersF16UniformRatHorner, .range16 = &boys::BoysCuda::AllOrdersF16UniformRatHorner},
-    // each-order-bfloat16 and each-order-bfloat16-fast: the report carries the rows and boys_cuda.hpp
-    // declares no function for EachOrderBf16 or EachOrderBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kEachOrderF16, .each16 = &boys::BoysCuda::EachOrderF16},
     {.entry = boys::DeviceEntry::kEachOrderF16Fast, .each16 = &boys::BoysCuda::EachOrderF16<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
-    // single-bfloat16 and single-bfloat16-fast: the report carries the rows and boys_cuda.hpp declares
-    // no function for SingleBf16 or SingleBf16Fast, so there is nothing to arm.
     {.entry = boys::DeviceEntry::kSingleF16, .range16 = &boys::BoysCuda::SingleF16},
     {.entry = boys::DeviceEntry::kSingleF16Fast, .range16 = &boys::BoysCuda::SingleF16Fast, .exp = boys::RegionBExp::kFast},
+    // bf16 ------------------------
+    // The half lane's other store, one arm per row the report carries and in the report's own row
+    // order. The entry is the enumerator the report names and the kernel is the function of that
+    // enumerator's own name; the lane's arithmetic is the float engine with this format's I/O
+    // around it (boys_cuda.cu), so these rows are launched by the same drivers as the fp16 ones
+    // with the bf16 element type in place of the fp16 one.
+    {.entry = boys::DeviceEntry::kSingleBf16, .rangeBf16 = &boys::BoysCuda::SingleBf16},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Narrow, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Narrow},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMono, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowMono},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Uniform, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Uniform},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16UniformHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16UniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Rat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Rat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16RatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16RatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowRat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16UniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16UniformRatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16UniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Orders, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Orders},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrders, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrders},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMono, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersMono},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersRat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersRatHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniform, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersUniform},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersUniformHorner},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRat, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersUniformRat},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersUniformRatHorner, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersUniformRatHorner},
+    {.entry = boys::DeviceEntry::kAllNBf16, .allNBf16 = &boys::BoysCuda::AllNBf16},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Mono, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Mono},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMono, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersMono},
+    {.entry = boys::DeviceEntry::kSingleBf16Fast, .rangeBf16 = &boys::BoysCuda::SingleBf16Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kEachOrderBf16, .eachBf16 = &boys::BoysCuda::EachOrderBf16},
+    {.entry = boys::DeviceEntry::kEachOrderBf16Fast, .eachBf16 = &boys::BoysCuda::EachOrderBf16<boys::RegionBExp::kFast>, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16Fast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16Fast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16MonoFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16MonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersMonoFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowMonoFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersMonoFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersMonoFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16RatFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16RatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16RatHornerFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16RatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16OrdersRatHornerFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16OrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowRatHornerFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersRatFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllOrdersBf16NarrowOrdersRatHornerFast, .rangeBf16 = &boys::BoysCuda::AllOrdersBf16NarrowOrdersRatHornerFast, .exp = boys::RegionBExp::kFast},
+    {.entry = boys::DeviceEntry::kAllNBf16Fast, .allNBf16 = &boys::BoysCuda::AllNBf16Fast, .exp = boys::RegionBExp::kFast},
 #endif // BOYS_CUDA_GATE_FP16
 };
 
@@ -5357,12 +5422,22 @@ template <> struct ArmArg<boys::F16> {
     using type = boys::F16;
 };
 
+template <> struct ArmArg<boys::Bf16> {
+    using type = boys::Bf16;
+};
+
 template <typename In> In ConvertArmArg(double x) {
     return static_cast<In>(x);
 }
 
 template <> inline boys::F16 ConvertArmArg<boys::F16>(double x) {
     return boys::F16(static_cast<float>(x));
+}
+
+// The bf16 column is built the way the reference's own bf16 column is: the double rounded to
+// float and then to bf16, so the argument the entry evaluates is the one the reference states.
+template <> inline boys::Bf16 ConvertArmArg<boys::Bf16>(double x) {
+    return boys::Bf16(static_cast<float>(x));
 }
 
 /// One lane's column of the committed reference: the argument the entry actually
@@ -5430,6 +5505,26 @@ template <> struct ArmLane<boys::F16> {
     }
 };
 
+template <> struct ArmLane<boys::Bf16> {
+    static const std::vector<double>& arg(const Reference& ref) {
+        return ref.xb;
+    }
+
+    static const std::vector<double>& value(const Reference& ref) {
+        return ref.vb;
+    }
+
+    static const std::vector<int>& decade(const Reference& ref) {
+        return ref.decadeB;
+    }
+
+    static double widen(boys::Bf16 got, bool& unrepresentable) {
+        const double widened = static_cast<double>(got);
+        unrepresentable = Unrepresentable(widened, kBf16MinNormalExp);
+        return widened;
+    }
+};
+
 /// The argument column one lane's kernels are handed, at one of two sizes: the
 /// reference's own argument count for a batch entry, and the grid's cell count
 /// for a single-shape entry, which is handed one element per cell. Both are the
@@ -5457,6 +5552,11 @@ double ArmBound(const boys::DeviceOptionInfo& row, double got) {
     if (row.precision == boys::DeviceOptionPrecision::kFp16)
     {
         return HalfBoundAt(got);
+    }
+
+    if (row.precision == boys::DeviceOptionPrecision::kBf16)
+    {
+        return Bf16BoundAt(got);
     }
 
     return row.bound;
@@ -5687,9 +5787,12 @@ void RunLaunchedArm(const Reference& ref,
     const bool lane64 = arm.range64 != nullptr || arm.allN64 != nullptr || arm.each64 != nullptr;
     const bool lane32 = arm.range32 != nullptr || arm.allN32 != nullptr || arm.each32 != nullptr;
     const bool lane16 = arm.range16 != nullptr || arm.allN16 != nullptr || arm.each16 != nullptr;
+    const bool laneBf16 =
+        arm.rangeBf16 != nullptr || arm.allNBf16 != nullptr || arm.eachBf16 != nullptr;
     const bool laneMatches = (row.precision == boys::DeviceOptionPrecision::kFp64 && lane64) ||
                              (row.precision == boys::DeviceOptionPrecision::kFp32 && lane32) ||
-                             (row.precision == boys::DeviceOptionPrecision::kFp16 && lane16);
+                             (row.precision == boys::DeviceOptionPrecision::kFp16 && lane16) ||
+                             (row.precision == boys::DeviceOptionPrecision::kBf16 && laneBf16);
 
     if (!laneMatches)
     {
@@ -5716,9 +5819,13 @@ void RunLaunchedArm(const Reference& ref,
         {
             SweepArmRange<float>(ref, grid, row, arm.range32);
         }
-        else
+        else if (arm.range16 != nullptr)
         {
             SweepArmRange<boys::F16>(ref, grid, row, arm.range16);
+        }
+        else
+        {
+            SweepArmRange<boys::Bf16>(ref, grid, row, arm.rangeBf16);
         }
 
         break;
@@ -5732,9 +5839,13 @@ void RunLaunchedArm(const Reference& ref,
         {
             SweepArmAllN<float>(ref, grid, sorted, row, arm.allN32);
         }
-        else
+        else if (arm.allN16 != nullptr)
         {
             SweepArmAllN<boys::F16>(ref, grid, sorted, row, arm.allN16);
+        }
+        else
+        {
+            SweepArmAllN<boys::Bf16>(ref, grid, sorted, row, arm.allNBf16);
         }
 
         break;
@@ -5748,9 +5859,13 @@ void RunLaunchedArm(const Reference& ref,
         {
             SweepArmEach<float>(ref, grid, row, arm.each32);
         }
-        else
+        else if (arm.each16 != nullptr)
         {
             SweepArmEach<boys::F16>(ref, grid, row, arm.each16);
+        }
+        else
+        {
+            SweepArmEach<boys::Bf16>(ref, grid, row, arm.eachBf16);
         }
 
         break;
