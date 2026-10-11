@@ -133,11 +133,11 @@ constexpr double kFloatFloor = 1.1754943508222875e-38;
 // finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
 
-// The far-representation axis's figures. The recurrence's is region C's own and absolute: its step
-// drops exp(-x)/2, so at kX1 the error is 5.0e-14 at n=32 and no relative figure at or below 1e-13
-// is true of it. The corrected seed's is relative, a measurement - 2^-48, its worst case 3.264e-15
-// rounded up, since the 2.05e-15 of 2^-49 was exceeded by 1.592x; the scaled table's is below.
-constexpr double kFarCorrectedSeedFigure = 3.5527136788005009e-15; // 2^-48
+// The far axis's figures: the recurrence's is absolute, the corrected seed's relative. 2^-45 is
+// its aligned worst case rounded up: 32 steps each off by one ulp of its own value, signs
+// agreeing, 95.76 ulp of F_32 = 1.555e-14 - against samples of 3.573e-15 on the gate's grid and
+// 6.499e-15 over 40000 band arguments. Its correction's fit error is 0.4 ulp: no refit owed.
+constexpr double kFarCorrectedSeedFigure = 2.842170943040401e-14; // 2^-45
 
 // The native packed half lane (include/boys/half2.hpp): region C only, the ladder in binary16
 // scaled by 2^15 so it stays normal down to F_k(x) = 2^-29, and its published bound is in ULP of
