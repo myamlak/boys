@@ -1116,7 +1116,13 @@ int main() {
                 "on either host; what is unmeasured on this one is the fourth reading of it.")
         else()
             find_package(Python3 COMPONENTS Interpreter QUIET)
-            set(_boys_flag_variants o2 fast nofast avx2)
+            set(_boys_flag_variants o2 fast nofast)
+            if (BOYS_ARCH_X86_64)
+                # The fourth reading is the SIMD flag set, and -mavx2 -mfma are x86 spells: a
+                # non-x86 host has no such variant to build rather than a broken one to skip.
+                # The checker compares whatever it is given, so three readings are a check.
+                list(APPEND _boys_flag_variants avx2)
+            endif()
             set(_boys_flag_programs "")
             foreach (variant IN LISTS _boys_flag_variants)
                 add_executable(boys-flag-independence-${variant}
