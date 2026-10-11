@@ -1769,8 +1769,9 @@ std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 /// against the certified scalar lanes rather than being unavailable.
 ///
 /// \returns true when this build carries the AVX2/FMA tier and the processor exposes it with
-/// OSXSAVE; false on every non-x86_64 target, on a processor that does not expose it, and for a
-/// caller that does not link the library - which does not reach the tier and cannot call this entry
+/// OSXSAVE; false on every non-x86_64 target and on a processor that does not expose it. A caller
+/// that does not link the library is not a case this entry answers for: its definition is the
+/// shipped unit's, so such a caller cannot call it.
 ///
 /// \ingroup boys
 bool BoysAvx2Available() noexcept;

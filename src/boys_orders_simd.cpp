@@ -1091,14 +1091,14 @@ void NarrowRationalOrdersBody(int nmax,
 // interval, on a machine whose tier is present, against a table that carries
 // the lane's premise.
 bool OrdersLaneApplies(double x) noexcept {
-    return !(x >= kX0) && BoysAvx2Available() && UniformPieces();
+    return !(x >= kX0) && Avx2Available() && UniformPieces();
 }
 
 // The same question for the narrow partition's lane: the premise above's weaker
 // form - the pieces need not share their edges, only their stored degree - and
 // the same interval, the narrow partition tiling the same region A to kX0.
 bool NarrowOrdersLaneApplies(double x) noexcept {
-    return !(x >= kX0) && BoysAvx2Available() && NarrowPiecesUniform();
+    return !(x >= kX0) && Avx2Available() && NarrowPiecesUniform();
 }
 
 // The certified scalar single lane at the policy the axis names: what the entry is outside the
@@ -1730,7 +1730,7 @@ void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcep
 // condition - a table whose pieces share their shape - is the premise this lane
 // does not need.
 bool F32OrdersLaneApplies(float x) noexcept {
-    return !(x >= static_cast<float>(kX0)) && BoysAvx2Available();
+    return !(x >= static_cast<float>(kX0)) && Avx2Available();
 }
 
 // The certified scalar single lane at the reference multiplier and the default
@@ -2029,7 +2029,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
         // single lane at the policy the caller named.
         const bool laneApplies = (kGranularity == FitGranularity::kCoarsest)
                                      ? F32OrdersLaneApplies(x)
-                                     : (!(x >= static_cast<float>(kX0)) && BoysAvx2Available() &&
+                                     : (!(x >= static_cast<float>(kX0)) && Avx2Available() &&
                                         NarrowPiecesUniformF32());
 
         if (!laneApplies)
@@ -2246,7 +2246,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             // lane at the policy the caller named, one order at a time. The grid's last interval
             // closes on kFlatHi itself - the locator maps it to that interval's right end - so
             // only an argument past kFlatHi is past the grid.
-            if (x > detail::kFlatHi || !BoysAvx2Available())
+            if (x > detail::kFlatHi || !Avx2Available())
             {
                 ScalarOrders<kScheme, kRoute, kGranularity, kForm>(nmax, x,
                                                                                        out, 1);

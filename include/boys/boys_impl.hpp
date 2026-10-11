@@ -38,17 +38,17 @@ namespace detail {
 // defined in the shipped unit; not an entry point, not in the public header.
 bool DetectAvx2() noexcept;
 
-} // namespace detail
-
-// boys/boys.hpp declares this entry and carries its contract. The definition is inline here so a
-// caller on the argument path pays a load of the cached answer rather than a call and a feature
-// test, and the function-local static is one object across every TU. The test it reads is the
-// shipped unit's, so this definition links only for a caller that links the library.
-inline bool BoysAvx2Available() noexcept
+// The cached answer, for the library's own callers: inline, so an entry that
+// answers one argument at a time pays a load rather than a call. One
+// function-local static, so it is one object across every TU. boys/boys.hpp
+// declares the entry of this name that a consumer calls; src/boys.cpp defines it.
+inline bool Avx2Available() noexcept
 {
-    static const bool available = detail::DetectAvx2();
+    static const bool available = DetectAvx2();
     return available;
 }
+
+} // namespace detail
 
 namespace detail {
 
@@ -978,7 +978,7 @@ template <typename Policy>
 double FlatSingleOrder(int n, double x) noexcept {
     if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
-        if (BoysAvx2Available())
+        if (Avx2Available())
         {
             const FlatPoint at = FlatLocate(x);
             const std::size_t base =
@@ -1154,7 +1154,7 @@ extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg
 /// \param x    argument, kScaledFarX0 <= x < kScaledFarX1
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
 template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double* out) noexcept {
-    if (BoysAvx2Available())
+    if (Avx2Available())
     {
         ScaledFarLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
         return;
@@ -1272,7 +1272,7 @@ extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, Ladde
 /// \param x    argument, kX1 <= x
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
 template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
-    if (BoysAvx2Available())
+    if (Avx2Available())
     {
         CorrectedSeedLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
         return;
@@ -4448,7 +4448,7 @@ void BoysAllNRunPerArgument(int nmax,
     double farHalfExp[kBoysFarLaneWidth];
     double* farCol[kBoysFarLaneWidth];
     std::size_t held = 0;
-    const bool vectorTier = BoysAvx2Available();
+    const bool vectorTier = Avx2Available();
 #endif
 
     for (std::size_t i = 0; i < count; ++i)
@@ -4613,7 +4613,7 @@ void BoysAllNPartitionedImpl(int nmax,
     // which calls the packed lane BoysRegionASimd, so a unit that instantiates this body reaches
     // the library already. The tier answers for that lane as well as the far ladder, and a guard
     // would make a linking caller run different arithmetic.
-    const bool vectorTier = BoysAvx2Available();
+    const bool vectorTier = Avx2Available();
     const double tierSplit = kTierThresholds[0];
 
     std::size_t* owned = nullptr;
@@ -4757,7 +4757,7 @@ void BoysAllNSortedPartitionedImpl(int nmax,
     }
 
     // Unguarded as in BoysAllNPartitionedImpl, whose reason is stated there.
-    const bool vectorTier = BoysAvx2Available();
+    const bool vectorTier = Avx2Available();
     const double tierSplit = kTierThresholds[0];
 
     assert(x[0] >= 0.0);

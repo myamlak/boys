@@ -24,6 +24,14 @@ const char* BuildDefaultsSeamIdentity() noexcept {
 #endif
 }
 
+// The tier predicate. Defined here, out of line, because the entry is the library's: a consumer
+// that includes the front door alone and links the library - tests/consumer_umbrella.cpp and
+// tests/boys_avx2_probe.cpp are both written that way - reaches this copy. The library's own
+// callers read detail::Avx2Available(), which is inline, so the argument path pays no call.
+bool BoysAvx2Available() noexcept {
+    return detail::Avx2Available();
+}
+
 template double BoysSingle<>(int n, double x) noexcept;
 template void BoysAllOrders<>(int nmax, double x, double* out) noexcept;
 template void BoysFixedN<>(
