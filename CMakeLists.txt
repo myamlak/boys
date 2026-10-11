@@ -1802,15 +1802,18 @@ elseif (NOT BOYS_TOP_LEVEL)
     message(STATUS "boys: examples are not built (BUILD_EXAMPLES is OFF)")
 endif()
 
-# --- Generator byte-identity gate (top-level convenience targets) -----------
-# --check regenerates the Chebyshev tables and the reference grid into a temp
-# and byte-compares against the committed files (default paths: include/boys/
+# --- Generator consistency gate (top-level convenience targets) -------------
+# --check holds the committed tables to the record of the derivation that wrote
+# them (tests/data/boys_coefficients_provenance.txt) and to their own read-back
+# rules, and re-derives both artefacts into a temp and byte-compares them
+# against the committed files whenever that record's generator, pins or
+# environment does not match the tree (default paths: include/boys/
 # boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
 # in CI). The generator is deterministic (mpmath pinned in
-# requirements-boys.txt), so --check over the committed files is the
-# identity proof. A regeneration writes the committed files and is local-only,
-# which CONTRIBUTING.md states as a rule; CI runs the checks and never the
-# writes.
+# requirements-boys.txt), so the byte comparison over the committed files is the
+# identity proof and the record is what says when it still applies. A
+# regeneration writes the committed files and is local-only, which CONTRIBUTING.md
+# states as a rule; CI runs the checks and never the writes.
 if (BOYS_TOP_LEVEL)
     find_package(Python3 COMPONENTS Interpreter)
     if (Python3_FOUND)
@@ -1819,7 +1822,7 @@ if (BOYS_TOP_LEVEL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_boys_coefficients.py --check
                 --header ${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_coefficients.hpp
                 --reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv
-            COMMENT "Boys table/reference byte-identity check (needs mpmath)"
+            COMMENT "Boys table/reference consistency check (needs mpmath)"
             VERBATIM)
     endif()
 endif()

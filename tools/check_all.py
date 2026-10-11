@@ -97,8 +97,10 @@ GH_EXPRESSION = re.compile(r"\$\{\{\s*([A-Za-z0-9_.]+)\s*\}\}")
 # or one it would skip for a reason nobody can read.
 SLOW = {
     "gen_boys_coefficients.py": (
-        "re-derives the coefficient header and the reference grid at full precision before it "
-        "compares anything; ci.yml calls it \"the longest step anywhere in this matrix\""
+        "re-derives the coefficient header and the reference grid at full precision whenever the "
+        "record committed beside them does not name the generator, the pins or the environment "
+        "in front of it, which is the round where those hours have anything to find; ci.yml calls "
+        "the re-derivation \"the longest step anywhere in this matrix\""
     ),
     "gen_boys_accuracy_gate_reference.py": (
         "a full render is 59268 mpmath evaluations at 80 dps, measured in ci.yml at "

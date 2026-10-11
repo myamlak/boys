@@ -52,6 +52,7 @@ configuration.
 """
 import argparse
 import concurrent.futures
+import importlib.util
 import math
 import multiprocessing
 import os
@@ -59,10 +60,12 @@ import shutil
 import struct
 import subprocess
 import sys
+import time
 from fractions import Fraction
 from functools import lru_cache
 
 try:
+    import mpmath
     from mpmath import erf, erfc, mp, mpf, cos, exp, gamma, pi, sqrt
 except ImportError:
     if "--check" in sys.argv:
@@ -7046,6 +7049,259 @@ def print_flat_table_report(lane, flat):
                   f"{flat['worst'][scheme][route]:.6e} at F{order}, published "
                   f"{flat['bounds'][scheme][route]:.6e}")
 
+# ---------------------------------------------------------------------------
+# The record of the derivation
+# ---------------------------------------------------------------------------
+#
+# The two artefacts are a function of this file, of the pins beside it and of the
+# environment those pins name, and re-deriving them costs hours. What the
+# derivation produced is recorded beside them in cells that cost a second to
+# recompute, and --check reads that record; it re-derives only when the record
+# says one of those three has moved, because that is the only news a
+# re-derivation can bring. The two verdicts are different claims and every
+# message below says which one it is making.
+
+# The record, beside the artefacts it is a record of. A sidecar rather than a
+# comment in the header: the header cannot carry a digest of its own bytes, and
+# the reference CSV is a second artefact the same derivation produces.
+PROVENANCE = "tests/data/boys_coefficients_provenance.txt"
+
+# The files whose content decides the output, as (cell, group). A change to
+# either is a trigger: it is what makes the record stale, it is what --check
+# names when it is, and it is the one thing the committed header digest cannot
+# see.
+PROVENANCE_GROUPS = (
+    ("generator", ("tools/gen_boys_coefficients.py",)),
+    ("pins", ("requirements-boys.txt",)),
+)
+
+# The env cell's keys a finding is raised for. The backend is recorded and not
+# gated: it is an accelerator mpmath picks from what is installed, CI installs
+# none and a developer's host may carry gmpy2, and refusing a record over which
+# one was present would refuse a record that is nonetheless this derivation's.
+GATED_ENVIRONMENT = ("mpmath", "clang-format")
+
+
+def repository_root():
+    """The tree the record's paths are relative to: this file's own repository."""
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def repository_relative(path):
+    """Where a path sits in the tree, or None when it sits outside it.
+
+    A run pointed at a scratch file elsewhere writes no record: every digest in
+    one is relative to the tree, and a reader of the record has no way to reach
+    a file that is not in it.
+    """
+    relative = os.path.relpath(os.path.abspath(path), repository_root())
+    if relative.split(os.sep)[0] == "..":
+        return None
+    return relative.replace(os.sep, "/")
+
+
+def stamp_module():
+    """tools/record_stamp.py, loaded from its path.
+
+    One digest convention in the tree rather than two: the accuracy gate's
+    record and the option probe's report carry cells in the same convention, and
+    a second implementation here would be a second thing to keep in step.
+    """
+    path = os.path.join(repository_root(), "tools", "record_stamp.py")
+    spec = importlib.util.spec_from_file_location("_record_stamp", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def formatter_version():
+    """The formatter the committed header's bytes are a function of."""
+    words = subprocess.run([find_clang_format(), "--version"], check=True,
+                           capture_output=True, text=True).stdout.split()
+    return words[words.index("version") + 1] if "version" in words else "unknown"
+
+
+def environment_cell():
+    """What produced the bytes and is not a file: the interpreter's own stack.
+
+    The mpmath version and the formatter version both move the output and both
+    are named in requirements-boys.txt, so a derivation on a host carrying other
+    ones is visible here rather than only in a diff nobody reads.
+    """
+    return stamp_module().cell({
+        "mpmath": mpmath.__version__,
+        "backend": str(getattr(mpmath.libmp, "BACKEND", "unknown")),
+        "clang-format": formatter_version(),
+    })
+
+
+def provenance_text(header, reference):
+    """The record, rendered. The same bytes every time for the same tree.
+
+    None when either artefact sits outside the repository: a record is a set of
+    tree-relative digests and there is nothing honest to write for a file no
+    reader of the record can reach.
+    """
+    stamp = stamp_module()
+    root = stamp.pathlib.Path(repository_root())
+    artefacts = []
+    for name, path in (("header", header), ("reference", reference)):
+        relative = repository_relative(path)
+        if relative is None:
+            return None
+        artefacts.append(f"{name} {stamp.digest(root, (relative,))}")
+    lines = [
+        "# The record of the derivation whose two output files this names:",
+        "# tools/gen_boys_coefficients.py rendered them under the pins in",
+        "# requirements-boys.txt and the environment below. Every digest here is",
+        "# relative to the repository root. `--check` recomputes them; it re-derives",
+        "# the tables themselves only when this record's generator, pins or env cell",
+        "# does not match the tree.",
+        f"version {stamp.version(root)}",
+    ]
+    lines += [f"{name} {stamp.digest(root, group)}" for name, group in PROVENANCE_GROUPS]
+    lines.append(f"env {environment_cell()}")
+    lines += artefacts
+    return "\n".join(lines) + "\n"
+
+
+def read_record(path=PROVENANCE):
+    """A record's cells, as text. A `#` line is prose and a blank line is a gap."""
+    cells = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.startswith("#") or not line.strip():
+                continue
+            name, _, value = line.partition(" ")
+            cells[name] = value.strip()
+    return cells
+
+
+def artefact_findings(header, reference, cells):
+    """The two artefacts against the digests the record names for them."""
+    stamp = stamp_module()
+    root = stamp.pathlib.Path(repository_root())
+    findings = []
+    for name, path in (("header", header), ("reference", reference)):
+        relative = repository_relative(path)
+        if relative is None:
+            findings.append(f"{path} sits outside the repository, and the record's "
+                            f"digests are relative to it")
+            continue
+        want = stamp.digest(root, (relative,))
+        have = cells.get(name)
+        if have is None:
+            findings.append(f"{PROVENANCE} records no digest for {relative}")
+        elif have != want:
+            findings.append(
+                f"{relative} is not the file the recorded derivation wrote (the record "
+                f"names {have}, this file hashes to {want}): the tables and the record "
+                f"are committed together, so run the generator and commit both")
+    return findings
+
+
+def derivation_trigger(header, reference, record=PROVENANCE):
+    """Whether a re-derivation could tell this check anything, and why.
+
+    A missing or unreadable record, a generator or pins cell the tree does not
+    match, or an environment the pins do not describe: each of those is a way
+    the committed bytes may since have stopped being what this generator
+    produces, and none of them is visible in the artefacts themselves. The
+    artefacts' own digests are deliberately not a trigger: a header that is not
+    the recorded one is a finding under either method, and spending the hours to
+    reach the same verdict is not a stronger answer.
+    """
+    try:
+        cells = read_record(record)
+    except OSError as error:
+        return [f"{record} could not be read ({error.strerror}), so nothing in the "
+                f"tree records what produced the committed tables"]
+    stamp = stamp_module()
+    root = stamp.pathlib.Path(repository_root())
+    reasons = []
+    for name, group in PROVENANCE_GROUPS:
+        want = stamp.digest(root, group)
+        have = cells.get(name)
+        if have is None:
+            reasons.append(f"{record} records no {name} digest")
+        elif have != want:
+            reasons.append(f"{group[0]} has changed since the committed tables were "
+                           f"derived (the record names {have}, this tree hashes to "
+                           f"{want})")
+    have_env = stamp.parse_cell(cells.get("env", ""))
+    want_env = stamp.parse_cell(environment_cell())
+    for name in GATED_ENVIRONMENT:
+        if name not in have_env:
+            reasons.append(f"{record} records no {name} version")
+        elif have_env[name] != want_env[name]:
+            reasons.append(f"the committed tables were derived under {name} "
+                           f"{have_env[name]} and this environment carries "
+                           f"{want_env[name]}")
+    return reasons
+
+
+def committed_record_findings(header, reference, record=PROVENANCE):
+    """The record's own bytes against what this tree and environment write now."""
+    text = provenance_text(header, reference)
+    if text is None:
+        return []
+    try:
+        with open(record, "rb") as f:
+            have = f.read()
+    except OSError:
+        return [f"{record} is not in the tree"]
+    if have.replace(b"\r\n", b"\n") != text.encode("utf-8"):
+        return [f"{record} is not the record this tree and this environment write: the "
+                f"derivation it describes is not the one the tables are checked against"]
+    return []
+
+
+def readback_findings(path):
+    """The four read-back rules, on a header the caller has not derived.
+
+    None of them needs a fit: each reads the grid, the arrays and the published
+    bars back out of the written text and walks the reader's own index rule over
+    them, which is what makes them available when the derivation is not.
+    """
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    findings = flat_transposed_findings(
+        path, {"degs": [int(v) for v in header_int_array(text, "kFlatDegs")]})
+    for lane in ("double", "float"):
+        findings += flat_relative_findings(path, lane)
+    findings += scaled_far_findings(path, far_placeholder_partition())
+    findings += seed_correction_findings(path)
+    return findings
+
+
+def record_check(args):
+    """--check against the record: the cheap verdict, and what it is a verdict on.
+
+    It is two statements and neither is a re-derivation. The committed artefacts
+    are the ones the recorded derivation wrote - a coefficient edited by hand,
+    a record left behind by a regeneration, both leave a digest unmatched - and
+    the committed header holds its own published bars under the reader's own
+    index rule. What it cannot decide is whether this generator still produces
+    these bytes; that is what re-deriving answers, and this says so rather than
+    implying it.
+    """
+    started = time.time()
+    print(f"the record's generator, pins and env cells match this tree, so the "
+          f"committed tables cannot have moved since the derivation: checking "
+          f"{args.provenance} and the read-back rules of {args.header} ...")
+    findings = artefact_findings(args.header, args.reference,
+                                 read_record(args.provenance))
+    findings += readback_findings(args.header)
+    for finding in findings:
+        print(f"DRIFT: {finding}")
+    if findings:
+        print(f"{len(findings)} finding(s) in {time.time() - started:.1f}s")
+        return 1
+    print(f"the committed tables are the ones the recorded derivation wrote and they "
+          f"hold their own read-back rules ({time.time() - started:.1f}s); this is not "
+          f"a re-derivation and the record is what says so")
+    return 0
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -7054,8 +7310,19 @@ def main():
     parser.add_argument("--reference-only", action="store_true",
                         help="regenerate only the reference CSV (skip the fitting)")
     parser.add_argument("--check", action="store_true",
-                        help="verify the committed header/CSV are byte-identical to a "
-                             "fresh generation (exits nonzero on drift)")
+                        help="verify the committed header/CSV against the record of "
+                             "the derivation that wrote them and against their own "
+                             "read-back rules (exits nonzero on drift); re-derives "
+                             "them when that record does not match the tree")
+    parser.add_argument("--rederive", action="store_true",
+                        help="with --check, re-derive both artefacts at full "
+                             "precision and compare them byte for byte however the "
+                             "record reads: the strongest claim, at the cost of the "
+                             "hours the record exists to save")
+    parser.add_argument("--provenance", default=PROVENANCE,
+                        help="the record of the derivation --check reads and a "
+                             "generation run rewrites (default the committed record "
+                             "beside the artefacts)")
     parser.add_argument("--jobs", type=int, default=None,
                         help="worker processes for the independent fits (default: one "
                              "per CPU; 1 keeps the whole run in one process, which is "
@@ -7363,6 +7630,17 @@ def main():
             print(f"wrote {args.f32_flat_rat_out}")
         return 0
 
+    # --check's method, decided before the hours rather than after them: the
+    # record is what says whether a re-derivation can tell this run anything.
+    if args.check:
+        reasons = derivation_trigger(args.header, args.reference, args.provenance)
+        if args.rederive:
+            reasons = reasons or ["--rederive was given"]
+        for reason in reasons:
+            print(f"re-deriving both artefacts: {reason}")
+        if not reasons:
+            return record_check(args)
+
     print("fitting double lane (weighted region-A seeds, tol 5e-14, deg<=18) ...")
     double_orders = run_jobs(_fit_order_job,
                              [(n, False, False) for n in range(MAX_ORDER + 1)])
@@ -7586,6 +7864,10 @@ def main():
             for finding in seed_correction_findings(tmp_header):
                 ok = False
                 print(f"DRIFT: {finding}")
+            for finding in committed_record_findings(args.header, args.reference,
+                                                     args.provenance):
+                ok = False
+                print(f"DRIFT: {finding}")
             for generated, committed in ((tmp_header, args.header),
                                          (tmp_reference, args.reference)):
                 with open(generated, "rb") as fg, open(committed, "rb") as fc:
@@ -7624,6 +7906,19 @@ def main():
 
     os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
     write_reference(args.reference)
+
+    # The record of what just ran, written beside the two artefacts rather than
+    # left for a second command to write: a record a step of its own produces is
+    # a record that can describe a derivation other than the one that ran.
+    record = provenance_text(args.header, args.reference)
+    if record is None:
+        print(f"no record written: --header or --reference is outside "
+              f"{repository_root()}, and every digest in one is relative to the tree")
+    else:
+        os.makedirs(os.path.dirname(args.provenance) or ".", exist_ok=True)
+        with open(args.provenance, "w", newline="\n", encoding="utf-8") as f:
+            f.write(record)
+        print(f"wrote {args.provenance}")
 
     # Documentation: per-kmax boundaries (the validated configuration uses the
     # fixed kmax = 32 values; the smaller values are the formula (V&S-style)

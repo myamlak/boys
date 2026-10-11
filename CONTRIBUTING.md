@@ -103,11 +103,21 @@ each claim it could not confirm. Run it before changing a bound, a threshold, or
 `ctest` runs it as one of its tests, but a passing `ctest` prints only how long the test took. The
 figures are in this binary's own output.
 
-The regeneration check, which is what CI runs - the mode that writes the tables is the local one:
+The regeneration check, which is what CI runs - the mode that writes the tables is the local
+one:
 
 ```bash
 python3 tools/gen_boys_coefficients.py --check
 ```
+
+It re-derives both artefacts at full precision and compares them byte for byte, which is hours -
+unless the record committed beside them (`tests/data/boys_coefficients_provenance.txt`) still names
+the generator, the pins and the environment in front of it, in which case it verifies that record's
+digests and the header's own read-back rules instead, which is seconds. A change to
+`tools/gen_boys_coefficients.py` or to `requirements-boys.txt` makes the record stale and brings the
+hours back, because that is when they can find something: regenerate, commit the tables and the
+record together, and the next round is cheap again. `--check --rederive` forces the byte-for-byte
+comparison whatever the record says.
 
 The packed orders lane is a template instantiated once per cell. Its cells are written out twice: as
 `extern template` declarations in `include/boys/boys_impl.hpp`, and as definitions in

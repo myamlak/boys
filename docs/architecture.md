@@ -157,7 +157,8 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 
 | Artifact | Written by | Refresh with | The check that holds it |
 |---|---|---|---|
-| `include/boys/boys_coefficients.hpp`, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites both | its own `--check`, re-deriving both and comparing byte for byte |
+| `include/boys/boys_coefficients.hpp`, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites both and the record beside them | its own `--check`: the record's digests when the generator, the pins and the environment are unchanged, and a byte-for-byte re-derivation of both when any of them has moved |
+| `tests/data/boys_coefficients_provenance.txt` | the same run that writes the tables, from what the tree carries as it runs | the same run | its own `--check`, which is what reads it |
 | `tests/data/boys_accuracy_gate_reference.csv` | `tools/gen_boys_accuracy_gate_reference.py` | run it with no flag | its own `--check` |
 | `tests/data/boys_far_gate_reference.csv` | `tools/gen_boys_far_gate_reference.py` | run it with no flag | its own `--check` |
 | The platform table inside `docs/specification.md` | `tools/gen_platform_table.py`, from the workflow and `.github/required-checks.txt` | run it with no flag | its own `--check` |

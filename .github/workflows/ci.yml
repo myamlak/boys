@@ -518,30 +518,34 @@ jobs:
       # binaries, same exit statuses as the ctest step above.
       - name: Verdicts (accuracy gate and consumer checks)
         run: ctest --test-dir build -V -R 'boys-accuracy-gate|boys-consumer-'
-      # The generator re-derives the committed tables at full precision, and it
-      # is the longest step anywhere in this matrix. Its inputs are the
-      # generator itself and the two artefacts it produces: it reads no other
-      # file, and the region boundaries it works to are its own constants rather
-      # than anything it is given. So a revision touching none of those three
-      # cannot have changed its answer, and re-deriving it would be proving
-      # something that could not have moved.
+      # The step asks whether the committed tables are consistent with the
+      # generator, and the generator answers it by one of two methods. It can
+      # re-derive both artefacts at full precision and compare them byte for
+      # byte - the longest step anywhere in this matrix, and the only thing that
+      # answers "does this generator still produce these bytes". Or it can read
+      # the record the derivation committed beside them,
+      # tests/data/boys_coefficients_provenance.txt, which names the generator,
+      # the pins and the environment those bytes came from, and verify that this
+      # tree carries the same three: seconds.
       #
-      # The default is to RUN. The skip happens only when the comparison against
-      # the base revision succeeded AND the changed files it named are none of
-      # the three - so an unknown base, a shallow clone or a failed fetch all
-      # fall back to running the check rather than to skipping it.
-      # The check asks whether the committed tables are consistent with the
-      # generator. It is this command either way; what the command has to DO to
-      # answer is the generator's business, and it currently re-derives the
-      # tables and compares them byte for byte.
+      # The hours are spent exactly where they can find something. The record's
+      # generator digest, its pins digest and its env cell (mpmath's version and
+      # the formatter's) are compared against the tree first, and a mismatch on
+      # any of them means the committed bytes may since have stopped being what
+      # this generator produces - so the derivation runs. A missing or
+      # unreadable record is one of those mismatches, so a checkout nobody
+      # recorded falls back to RUNNING, never to passing. A revision touching
+      # none of the three cannot have changed the generator's answer, and the
+      # record is what makes that a statement about this tree rather than a
+      # guess about the diff.
       #
-      # The intended shape, which the generator does not carry yet, is that the
-      # generated header records a digest of its own output and a digest of the
-      # generator that produced it, so this step recomputes two hashes instead
-      # of spending hours. Both halves would then be caught and they are
-      # different halves: editing a coefficient by hand leaves the output digest
-      # unmatched, and changing the generator without regenerating leaves the
-      # generator digest unmatched.
+      # Both halves are caught and they are different halves: editing a
+      # coefficient by hand leaves the header's digest unmatched, and changing
+      # the generator without regenerating leaves the generator's digest
+      # unmatched. The record's method also walks the four read-back rules over
+      # the committed header - the transposed twin, the near region's bar, the
+      # far table's index rule and the corrected seed - so the tables are held
+      # to their own published bounds and not only to their provenance.
       #
       # Either way the accuracy gate is what holds the tables themselves to their
       # measured bounds against the 45-digit reference - a wrong table is caught

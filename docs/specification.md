@@ -503,8 +503,11 @@ entries that carry the axis, and names the worst cell of each.
 and run `./build/Release/boys-accuracy-gate --strict` first — it prints the delivered error beside
 the bound for every lane and region and ends in a verdict, so an issue can quote the line that
 failed rather than describe it. If you suspect the generated tables,
-`python3 tools/gen_boys_coefficients.py --check` re-derives them and the reference grid and reports
-any drift, and `ctest --test-dir build --output-on-failure` runs the whole suite.
+`python3 tools/gen_boys_coefficients.py --check` reports any drift: it re-derives them and the
+reference grid and compares them byte for byte when the record committed beside them
+(`tests/data/boys_coefficients_provenance.txt`) does not name the generator, the pins and the
+environment in front of it, and otherwise verifies that record and the header's own read-back rules.
+`ctest --test-dir build --output-on-failure` runs the whole suite.
 
 ### Interval granularity
 
@@ -962,10 +965,14 @@ mistyped name cannot block every pull request.
 
 - `tests/data/boys_reference.csv` — the committed 45-digit reference grid.
 - `tools/gen_boys_coefficients.py` — regenerates the Chebyshev tables and the grid from the cited
-  formulas, using a pinned public `mpmath`. Its `--check` flag is the byte-identity proof, and one CI
-  leg runs it: the linux-x86 gcc Release leg, in the workflow's Generator consistency step, which
-  re-derives both artefacts into scratch copies and compares them byte for byte without writing
-  either committed file. The other legs build and test without it. The emitted header is
+  formulas, using a pinned public `mpmath`, and writes beside them a record of what produced them,
+  `tests/data/boys_coefficients_provenance.txt`: a digest of its own source, one of
+  `requirements-boys.txt`, the versions those pins name, and a digest of each artefact. One CI leg
+  runs its `--check`: the linux-x86 gcc Release leg, in the workflow's Generator consistency step,
+  which re-derives both artefacts into scratch copies and compares them byte for byte without
+  writing either committed file whenever that record's generator, pins or environment does not
+  match the tree, and otherwise verifies the record's digests and the committed header's read-back
+  rules. The other legs build and test without it. The emitted header is
   clang-format output, so
   `requirements-boys.txt` pins the formatter as well. The script reads `$CLANG_FORMAT` before
   searching `PATH`. Without a formatter it fails, rather than writing bytes the gate would report as

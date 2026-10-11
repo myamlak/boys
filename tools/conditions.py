@@ -122,7 +122,12 @@ CONDITIONS = [
                "measured on a twelve-core host, 3602 s to 7223 s on the runners, so no run of it "
                "belongs in this table. It is armed elsewhere: CI runs it on every round, as the "
                "'Generator consistency' step of the gcc Release leg, which is what makes this row "
-               "a check carried rather than a check owed",
+               "a check carried rather than a check owed. The regeneration is verified on the "
+               "rounds it can differ - a change to the generator, to requirements-boys.txt or to "
+               "the environment those pins name makes the derivation run - and on every other "
+               "round the committed record is what certifies that none of them moved. The hours "
+               "are therefore in CI, on exactly the rounds where they can find something; "
+               "--rederive forces them on any other",
         "how_to_run": "python3 tools/gen_boys_coefficients.py --check",
     },
     {
