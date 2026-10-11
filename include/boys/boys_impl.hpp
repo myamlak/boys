@@ -40,10 +40,10 @@ bool DetectAvx2() noexcept;
 
 } // namespace detail
 
-// boys/boys.hpp declares this entry and carries its contract; the definition is
-// inline here so a caller on the argument path pays a load of the cached answer
-// rather than a call and a feature test. The function-local static is one object
-// across every TU, so the answer is still read once per process.
+// boys/boys.hpp declares this entry and carries its contract. The definition is inline here so a
+// caller on the argument path pays a load of the cached answer rather than a call and a feature
+// test, and the function-local static is one object across every TU. The test it reads is the
+// shipped unit's, so this definition links only for a caller that links the library.
 inline bool BoysAvx2Available() noexcept
 {
     static const bool available = detail::DetectAvx2();
@@ -4442,15 +4442,20 @@ void BoysAllNRunPerArgument(int nmax,
                             double* out,
                             std::size_t count) noexcept {
     // One register's worth of the far region, held until it fills or the path ends: the arguments,
-    // the half-exponential the body forms per argument, and where each one's column is.
+    // the half-exponential the body forms per argument, and where each one's column is. The tier and
+    // the lane it answers for are the library's own compiled bodies, so this arm is BOYS_SIMD_X86's:
+    // a caller that instantiates this body answers the far region one argument at a time.
+#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
     double farX[kBoysFarLaneWidth];
     double farHalfExp[kBoysFarLaneWidth];
     double* farCol[kBoysFarLaneWidth];
     std::size_t held = 0;
     const bool vectorTier = BoysAvx2Available();
+#endif
 
     for (std::size_t i = 0; i < count; ++i)
     {
+#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
         if (FarLadderIsThePerArgumentBody<Policy>(x[i], vectorTier))
         {
             farX[held] = x[i];
@@ -4465,6 +4470,7 @@ void BoysAllNRunPerArgument(int nmax,
 
             continue;
         }
+#endif
 
         double row[kMaxBoysOrder + 1];
         BoysAllOrdersImpl<Policy>(nmax, x[i], row);
@@ -4475,6 +4481,7 @@ void BoysAllNRunPerArgument(int nmax,
         }
     }
 
+#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
     // What the register did not fill is this path's own, one argument at a time: three arguments
     // are not a lane, and the same body answers them.
     for (std::size_t t = 0; t < held; ++t)
@@ -4487,6 +4494,7 @@ void BoysAllNRunPerArgument(int nmax,
             farCol[t][static_cast<std::size_t>(l) * count] = row[static_cast<std::size_t>(l)];
         }
     }
+#endif
 }
 
 // The plane entry's arguments-axis shape: the dispatch read off the argument
@@ -4603,6 +4611,10 @@ void BoysAllNPartitionedImpl(int nmax,
         return;
     }
 
+    // Unguarded, unlike BoysAllNRunPerArgument: the region-A group here is BoysAllNRunGrouped,
+    // which calls the packed lane BoysRegionASimd, so a unit that instantiates this body reaches
+    // the library already. The tier answers for that lane as well as the far ladder, and a guard
+    // would make a linking caller run different arithmetic.
     const bool vectorTier = BoysAvx2Available();
     const double tierSplit = kTierThresholds[0];
 
@@ -4746,6 +4758,7 @@ void BoysAllNSortedPartitionedImpl(int nmax,
         return;
     }
 
+    // Unguarded as in BoysAllNPartitionedImpl, whose reason is stated there.
     const bool vectorTier = BoysAvx2Available();
     const double tierSplit = kTierThresholds[0];
 

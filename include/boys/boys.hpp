@@ -1750,8 +1750,15 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept;
 /// \ingroup boys
 std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 
-/// True if the CPU executes AVX2 with FMA; the SIMD entry points below require
-/// it.
+/// True when the AVX2 vector tier is available to the caller; the SIMD entry
+/// points below require it.
+///
+/// Availability is a fact about the caller's build and the caller's machine
+/// together, not about the processor alone. The tier's kernels are compiled into
+/// the shipped unit with the tier's own flags, so a caller that does not link the
+/// library never reaches the tier: the batch entries it can call take the
+/// per-argument path, whose arithmetic is the certified scalar body's. This entry's
+/// own definition is the shipped unit's as well, so such a caller cannot call it.
 ///
 /// The SIMD kernels are FMA chains, so AVX2 is gated together with the FMA
 /// extension: a processor with AVX2 but without FMA reports false and stays on the
@@ -1761,8 +1768,9 @@ std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 /// reports false unconditionally - the region entry points below are then defined
 /// against the certified scalar lanes rather than being unavailable.
 ///
-/// \returns true when AVX2 and FMA are available on the processor and exposed by the OS (OSXSAVE);
-/// false on every non-x86_64 target
+/// \returns true when this build carries the AVX2/FMA tier and the processor exposes it with
+/// OSXSAVE; false on every non-x86_64 target, on a processor that does not expose it, and for a
+/// caller that does not link the library - which does not reach the tier and cannot call this entry
 ///
 /// \ingroup boys
 bool BoysAvx2Available() noexcept;

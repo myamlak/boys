@@ -97,10 +97,14 @@ function(boys_strict_warnings target)
 endfunction()
 
 # The header-only consumer check proves that the entries' template definitions
-# are reachable from the public headers, and it proves it by NOT linking the
-# library: with a library on its link line it would still compile, still run,
-# and prove nothing. Assert the absence here, so a later edit that links it
-# fails the configure on every leg instead of quietly retiring the check.
+# are reachable from the public headers for a policy the library does not
+# pre-instantiate, and it proves it by NOT linking the library: with a library on
+# its link line it would still compile, still run, and prove nothing. The reach it
+# proves is the per-argument path's - the vector tier's kernels are compiled into
+# the library with the tier's own flags, so a consumer that does not link the
+# library does not reach them (boys/boys.hpp, BoysAvx2Available). Assert the
+# absence here, so a later edit that links it fails the configure on every leg
+# instead of quietly retiring the check.
 function(boys_assert_no_linked_library target)
     get_target_property(linked ${target} LINK_LIBRARIES)
     if (linked)
@@ -966,9 +970,9 @@ int main() {
     #     entry states, with the committed 45-digit grid as the reference.
     #
     #   boys-consumer-header-only  proves the definitions really are reachable
-    #     from the headers: it links NOTHING. Its meaning is the empty link
-    #     line, so the target's link libraries are asserted empty below rather
-    #     than trusted.
+    #     from the headers on the paths that stay off the vector tier: it links
+    #     NOTHING. Its meaning is the empty link line, so the target's link
+    #     libraries are asserted empty below rather than trusted.
     #
     #   boys-consumer-defaults  is the shortcut's own check: the per-precision
     #     default each entry takes when the call site names no policy, written

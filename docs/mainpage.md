@@ -163,6 +163,12 @@ scalar tails the x86 kernels already ran for their last `count % 4` elements.
 tier is absent on this target" from "the vector tier is silently dead on this target". The CI matrix
 therefore asserts it per architecture rather than trusting a green build.
 
+Its answer is scoped to the caller as well as to the target. The tier's kernels live in the shipped
+unit, compiled with the tier's own flags, so a translation unit that does not link the library is
+never on the tier: the batch entries it can call take the per-argument path, whose arithmetic is the
+certified scalar body's, and the predicate's own definition is the shipped unit's, so that unit
+cannot call it.
+
 The region kernels themselves are internal. A caller that reached them directly would have to
 partition its arguments by region first, the work \ref boys::BoysAllN exists to do. The entries
 above are the surface.

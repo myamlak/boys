@@ -26,11 +26,13 @@
 #define BoysRegionCSimd BoysRegionCSimdFromShippedUnit
 #define BoysRegionCSimdF16 BoysRegionCSimdF16FromShippedUnit
 #define BoysRegionCSimdBf16 BoysRegionCSimdBf16FromShippedUnit
-// The far ladder's two entry points, added to that unit after this list was written; the
-// duplicate-symbol error asked, which is the treatment the note above asks for.
+// The far ladder's two kernels are definitions of the library's own name for the same reason, and
+// are renamed the same way - added to that unit after this list was written, and the error asks.
 #define BoysFarLadderLanes BoysFarLadderLanesFromShippedUnit
 #define BoysFarLadderRun BoysFarLadderRunFromShippedUnit
 #include "boys_simd.cpp"
+#undef BoysFarLadderRun
+#undef BoysFarLadderLanes
 #undef BoysRegionASimdF16
 #undef BoysRegionASimdBf16
 #undef BoysRegionASimd

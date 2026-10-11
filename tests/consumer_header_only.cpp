@@ -1,7 +1,7 @@
 // Consumer check: are the lane templates' definitions reachable from the public headers alone, with
-// no library on the link line? The library pre-instantiates the default policy's entries, so only a
-// policy outside that set proves anything: this target links nothing (CMakeLists.txt asserts the
-// empty link line) and names two it does not export.
+// no library on the link line, on the paths that stay off the vector tier? The library pre-
+// instantiates the default policy's entries, so only a policy outside that set proves anything: this
+// target links nothing (CMakeLists.txt asserts it) and names two it does not export.
 
 // The two policies flip one structural axis away from the build's own default and name no division
 // form, so each combination named here is one the lane carries and runs the form the build's own
