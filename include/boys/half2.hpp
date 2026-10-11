@@ -43,6 +43,9 @@ namespace detail {
 /// door's include path (`boys/boys.hpp` declares the packed entry, so it needs `Half2`), and
 /// `<cmath>` is by itself more of the front door's compile time than everything else in this
 /// header. The arithmetic is the same double square root either way.
+///
+/// \param value The value whose square root is taken.
+/// \returns The double square root of \p value, as \c std::sqrt returns it.
 double HalfSqrt(double value) noexcept;
 
 /// The smallest magnitude that rounds to Inf rather than to the half maximum:

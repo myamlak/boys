@@ -717,15 +717,19 @@ struct OptionProbeFarArm {
     /// regions and is reported as that rather than as a clean arm.
     std::size_t farArguments = 0;
 
-    /// Values compared, and how many of them were bit-identical to the certified
-    /// lane. Counted over the far arguments only.
+    /// Values compared, counted over the far arguments only.
     std::size_t compared = 0;
+
+    /// Of those, the ones that were bit-identical to the certified lane.
     std::size_t bitIdentical = 0;
 
-    /// The worst relative difference from the certified lane, and the argument and
-    /// order it was at.
+    /// The worst relative difference from the certified lane.
     double maxRelativeError = 0.0;
+
+    /// The argument the worst relative difference was at.
     double errorAtX = 0.0;
+
+    /// The order the worst relative difference was at.
     int errorAtOrder = 0;
 };
 
