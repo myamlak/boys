@@ -4267,23 +4267,96 @@ void BoysAllNRun(int nmax,
     }
 }
 
+/// Whether the far region's ladder is the body this path answers an argument with.
+///
+/// The ladder is a recurrence in the order, so no orders-axis lane can hold it - a register holds
+/// four values of one formula, and the region's formula is the step that produces the next order of
+/// the previous one. Four ARGUMENTS is what a register can hold of it, and that is the arguments
+/// axis's lane: this path reaches it here or not at all. Nothing about the arithmetic changes,
+/// because the body the lane reproduces (boys_simd.cpp, BoysFarLadderLanes) is the body this
+/// predicate selects: at the orders axis the packed body hands an argument past its fits to the
+/// certified scalar orders lane (boys_orders_simd.cpp, BoysAllOrdersPacked), and that lane's arm
+/// above its fits is BoysAllNBodyRegionC - one argument at a time, this ladder.
+///
+/// The join and the axis are that lane's own predicate, ScalarOrders' `aboveFits`: the grid ends at
+/// kFlatHi and the derived partitions at kX1, and the route, the scheme and the form do not enter
+/// it, because the arm above the fits reads no fit. A policy this predicate does not name keeps the
+/// per-argument body: the lane is BoysAllNBodyRegionC's operations and nothing else, and a body
+/// that reached the ladder another way would be a second arithmetic taken on no comparison.
+template <EvalPolicyLike Policy>
+constexpr bool FarLadderIsThePerArgumentBody(double x, bool vectorTier) noexcept {
+    if constexpr (Policy::kPack != PackAxis::kOrders)
+    {
+        return false;
+    }
+    else
+    {
+        return vectorTier && (Policy::kGranularity == FitGranularity::kUniform
+                                  ? x > detail::kFlatHi
+                                  : x >= kX1);
+    }
+}
+
 // The per-argument path, in the caller's planes - the shape the C entry point's batch loop already has,
 // and the batch entry's total fallback. It writes its columns straight into those planes, like the
 // at-orders entry above and for the same reason: a column here is short where the shape needing this
 // path is the orders axis's, and staging short columns through a tile costs more than the stores save.
+//
+// The far region is the one exception, and it costs the region's own axis nothing: the ladder above
+// the fits is a recurrence, so the orders axis has no lane there to trade away, and the arguments
+// the path meets are held four at a time and handed to the lane the region does have. The predicate
+// is what makes that a lane of this body rather than a second arithmetic - see
+// FarLadderIsThePerArgumentBody - and a call whose arguments hold fewer than four of them pays a
+// comparison per argument and nothing else.
 template <EvalPolicyLike Policy>
 void BoysAllNRunPerArgument(int nmax,
                             const double* x,
                             double* out,
                             std::size_t count) noexcept {
+    // One register's worth of the far region, held until it fills or the path ends: the arguments,
+    // the half-exponential the body forms per argument, and where each one's column is.
+    double farX[kBoysFarLaneWidth];
+    double farHalfExp[kBoysFarLaneWidth];
+    double* farCol[kBoysFarLaneWidth];
+    std::size_t held = 0;
+    const bool vectorTier = BoysAvx2Available();
+
     for (std::size_t i = 0; i < count; ++i)
     {
+        if (FarLadderIsThePerArgumentBody<Policy>(x[i], vectorTier))
+        {
+            farX[held] = x[i];
+            farHalfExp[held] = RegionBHalfExp<RegionBExp::kAccurate>(x[i]);
+            farCol[held] = out + i;
+
+            if (++held == kBoysFarLaneWidth)
+            {
+                BoysFarLadderLanes(nmax, farX, farHalfExp, count, farCol, Policy::kDivision);
+                held = 0;
+            }
+
+            continue;
+        }
+
         double row[kMaxBoysOrder + 1];
         BoysAllOrdersImpl<Policy>(nmax, x[i], row);
 
         for (int l = 0; l <= nmax; ++l)
         {
             out[static_cast<std::size_t>(l) * count + i] = row[static_cast<std::size_t>(l)];
+        }
+    }
+
+    // What the register did not fill is this path's own, one argument at a time: three arguments
+    // are not a lane, and the same body answers them.
+    for (std::size_t t = 0; t < held; ++t)
+    {
+        double row[kMaxBoysOrder + 1];
+        BoysAllOrdersImpl<Policy>(nmax, farX[t], row);
+
+        for (int l = 0; l <= nmax; ++l)
+        {
+            farCol[t][static_cast<std::size_t>(l) * count] = row[static_cast<std::size_t>(l)];
         }
     }
 }
