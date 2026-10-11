@@ -4,7 +4,7 @@
   "paths": [
     {
       "id": "host.double.far.scaled-table",
-      "body": "include/boys/boys_impl.hpp::ScaledFarAllOrders",
+      "body": "include/boys/boys_impl.hpp::ScaledFarLadder",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
         "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
@@ -15,13 +15,24 @@
     },
     {
       "id": "host.double.far.corrected-seed",
-      "body": "include/boys/boys_impl.hpp::CorrectedSeedAllOrders",
+      "body": "include/boys/boys_impl.hpp::CorrectedSeedLadder",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
         "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
       ],
       "verified_by": [
         "tests/boys_test.cpp :: BoysTest.CorrectedSeedIsSelectableAndNotSelected"
+      ]
+    },
+    {
+      "id": "host.double.far.asymptotic-recurrence",
+      "body": "include/boys/boys_impl.hpp::AsymptoticRecurrenceAllOrders",
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
+        "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
+      ],
+      "verified_by": [
+        "tests/boys_test.cpp :: BoysTest.FarRepresentationArmsAreNotSubstituted"
       ]
     },
     {
