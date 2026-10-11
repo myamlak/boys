@@ -136,7 +136,7 @@ constexpr double kWithdrawnHeaderABound = 1e-15;
 // The far axis's figures: the recurrence's is absolute, the corrected seed's relative. 2^-45 is
 // its aligned worst case rounded up: 32 steps each off by one ulp of its own value, signs
 // agreeing, 95.76 ulp of F_32 = 1.555e-14 - against samples of 3.573e-15 on the gate's grid and
-// 6.499e-15 over 40000 band arguments. Its correction's fit error is 0.4 ulp: no refit owed.
+// 6.499e-15 over 40000 band arguments. The correction fits to 0.0013 ulp: no regeneration owed.
 constexpr double kFarCorrectedSeedFigure = 2.842170943040401e-14; // 2^-45
 
 // The native packed half lane (include/boys/half2.hpp): region C only, the ladder in binary16
