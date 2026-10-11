@@ -3,10 +3,12 @@
 // instantiates the default policy's entries, so only a policy outside that set proves anything: this
 // target links nothing (CMakeLists.txt asserts it) and names two it does not export.
 
-// The two policies flip one structural axis away from the build's own default and name no division
-// form, so each combination named here is one the lane carries and runs the form the build's own
-// seam chose. The division form is the one axis that moves a lane's guaranteed figure, so the
-// figure a rule is judged against is the build's and not the shipped revision's.
+// The two policies are off the build's own default rows by construction - the static assertions
+// below hold that, and a build whose rows leave no candidate off fails the build here - sit at the
+// one fit route whose path stays off the vector tier, and name no division form, so each combination
+// named here is one the lane carries and runs the form the build's own seam chose. The division form
+// is the one axis that moves a lane's guaranteed figure, so the figure a rule is judged against is
+// the build's and not the shipped revision's.
 
 // Values are judged against the committed 45-digit grid, with the double lane at the policy this
 // file names as the oracle, so a composed bound includes the oracle's own figure.
@@ -265,10 +267,6 @@ double Bf16IoBound(double returned) {
 // tests/build_defaults_rows.hpp is such a build. The assertions under the policies hold every call
 // below off the rows this file reaches, so a build whose rows put one of these policies on a
 // class fails the build here instead of passing with a check that proves nothing.
-template <boys::FitRoute kRoute>
-constexpr boys::FitRoute OtherRoute = kRoute == boys::FitRoute::kChebyshev
-                                          ? boys::FitRoute::kRationalMinimax
-                                          : boys::FitRoute::kChebyshev;
 template <boys::EvalScheme kScheme>
 constexpr boys::EvalScheme OtherScheme = kScheme == boys::EvalScheme::kHorner
                                              ? boys::EvalScheme::kSplitClenshaw
@@ -279,8 +277,8 @@ constexpr boys::EvalScheme OtherScheme = kScheme == boys::EvalScheme::kHorner
 using DoubleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 using HalfClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>;
 
-/// A named policy: the row's own cells with the two axes named here moved, so the route and the
-/// scheme are the caller's and every other cell is the class's - and neither policy moves the
+/// A named policy: the row's own cells with the axes named here moved, so the route, the scheme and
+/// the granularity are the caller's and every other cell is the class's - and no policy moves the
 /// division form, the one axis that moves a lane's guaranteed figure.
 ///
 /// The packing axis is named rather than read from the row, and it is the one axis that is: the
@@ -290,9 +288,10 @@ using HalfClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllO
 /// not a cell of the row: the arguments axis is one the row may itself name, and at a seam whose row
 /// for a packed class names the orders axis the policy below is that row's other cells at the axis
 /// the call below can take.
-template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme>
+template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme,
+          boys::FitGranularity kGranularity = Row::kGranularity>
 using MovedFrom = boys::EvalPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
-                                   Row::kGranularity, Row::kDivision, Row::kRegionBExp>;
+                                   kGranularity, Row::kDivision, Row::kRegionBExp>;
 
 /// Whether a policy is off every class row the calls below reach.
 ///
@@ -312,23 +311,48 @@ constexpr bool OffEveryClassRowThisFileReaches =
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>> &&
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>;
 
-/// The candidate policies for a row, in the order they are tried: the fit route moved, the route
-/// and the scheme moved, the scheme moved. None moves the division form - the one axis that moves a
-/// lane's guaranteed figure - and each keeps the row's own budget, granularity and region-B
+/// The route whose path stays off the vector tier.
+///
+/// The two fit routes are not interchangeable for this target: FlatSingleOrder's Chebyshev arm is
+/// guarded by the tier query and returns the flat fit, and both of those are the shipped unit's
+/// definitions (boys/boys_impl.hpp: DetectAvx2 and the FlatFitSum instantiations), so a policy at
+/// the Chebyshev route fails this target's link - measured 2026-10-12, at a seam whose rows name
+/// that route. A policy a header-only caller can name is therefore one at the rational-minimax
+/// route, which is what architecture.md's row for this check states: "links nothing while it stays
+/// off the vector tier". That route is a property of the library and not of a table, so it is
+/// named here; the scheme and the granularity below are read from the row and moved only as far as
+/// staying off the rows a build carries requires, because an emitted seam names rows of more than
+/// one route and more than one scheme and a fixed cell lands on another class's row under it.
+constexpr boys::FitRoute kHeaderOnlyRoute = boys::FitRoute::kRationalMinimax;
+
+template <boys::FitGranularity kGranularity>
+constexpr boys::FitGranularity OtherGranularity =
+    kGranularity == boys::FitGranularity::kCoarsest ? boys::FitGranularity::kUniform
+                                                    : boys::FitGranularity::kCoarsest;
+
+/// The candidate policies for a row, in the order they are tried: the row's own scheme and
+/// granularity, each moved alone and then together. None moves the division form - the one axis
+/// that moves a lane's guaranteed figure - and each keeps the row's own budget and region-B
 /// exponential, and names the packing axis for the reason \c MovedFrom states.
 template <class Row, int kCandidate>
 struct CandidatePolicy;
 template <class Row>
 struct CandidatePolicy<Row, 0> {
-    using type = MovedFrom<Row, OtherRoute<Row::kRoute>, Row::kScheme>;
+    using type = MovedFrom<Row, kHeaderOnlyRoute, Row::kScheme>;
 };
 template <class Row>
 struct CandidatePolicy<Row, 1> {
-    using type = MovedFrom<Row, OtherRoute<Row::kRoute>, OtherScheme<Row::kScheme>>;
+    using type = MovedFrom<Row, kHeaderOnlyRoute, OtherScheme<Row::kScheme>>;
 };
 template <class Row>
 struct CandidatePolicy<Row, 2> {
-    using type = MovedFrom<Row, Row::kRoute, OtherScheme<Row::kScheme>>;
+    using type = MovedFrom<Row, kHeaderOnlyRoute, Row::kScheme,
+                           OtherGranularity<Row::kGranularity>>;
+};
+template <class Row>
+struct CandidatePolicy<Row, 3> {
+    using type = MovedFrom<Row, kHeaderOnlyRoute, OtherScheme<Row::kScheme>,
+                           OtherGranularity<Row::kGranularity>>;
 };
 
 /// Whether a candidate is off every row the calls reach.
@@ -336,21 +360,22 @@ template <class Row, int kCandidate>
 constexpr bool CandidateIsOffTheReachedRows =
     OffEveryClassRowThisFileReaches<typename CandidatePolicy<Row, kCandidate>::type>;
 
-/// The index of the kOrdinal-th candidate that is off, or three when there is none.
+/// The index of the kOrdinal-th candidate that is off, or four when there is none.
 template <class Row, int kOrdinal>
 consteval int OffRowCandidateIndex() {
     int seen = 0;
-    for (int candidate = 0; candidate < 3; ++candidate)
+    for (int candidate = 0; candidate < 4; ++candidate)
     {
         const bool off = candidate == 0   ? CandidateIsOffTheReachedRows<Row, 0>
                          : candidate == 1 ? CandidateIsOffTheReachedRows<Row, 1>
-                                          : CandidateIsOffTheReachedRows<Row, 2>;
+                         : candidate == 2 ? CandidateIsOffTheReachedRows<Row, 2>
+                                          : CandidateIsOffTheReachedRows<Row, 3>;
         if (off && seen++ == kOrdinal)
         {
             return candidate;
         }
     }
-    return 3;
+    return 4;
 }
 
 /// A named policy for a row: the kOrdinal-th candidate that is off the rows this build carries.
@@ -362,7 +387,7 @@ consteval int OffRowCandidateIndex() {
 template <class Row, int kOrdinal>
 using NthOffRowPolicy = typename CandidatePolicy<Row, OffRowCandidateIndex<Row, kOrdinal>()>::type;
 
-static_assert(OffRowCandidateIndex<DoubleClass, 1>() < 3 && OffRowCandidateIndex<HalfClass, 1>() < 3,
+static_assert(OffRowCandidateIndex<DoubleClass, 1>() < 4 && OffRowCandidateIndex<HalfClass, 1>() < 4,
               "fewer than two of the candidate policies are off the class rows this build carries, "
               "at the classes this file's calls reach: extend the candidate list above");
 

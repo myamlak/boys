@@ -1216,6 +1216,12 @@ TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
     const std::size_t count = args.size();
     const std::size_t stride = 3;
 
+    // The comparison is the single-order body at THIS entry's own class row: a seam may give the
+    // two classes rows that differ in a value-moving axis - measured 2026-10-12, an emitted seam
+    // whose fp32 single and fixed-N rows name different division forms - and at the same row the
+    // equality below is the loop property itself, bit for bit.
+    using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kFixedN>;
+
     std::vector<float> floats(count);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -1231,7 +1237,7 @@ TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            EXPECT_EQ(out32[i * stride], boys::BoysSingleF32(n, floats[i]))
+            EXPECT_EQ(out32[i * stride], boys::BoysSingleF32<FixedNClass>(n, floats[i]))
                 << "n=" << n << " x=" << args[i];
         }
 
@@ -1247,6 +1253,8 @@ TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
     }
 
 #if BoysFp16
+    using HalfFixedNClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kFixedN>;
+
     std::vector<boys::F16> halves(count);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -1264,7 +1272,7 @@ TEST(BoysHostClassesTest, TheNewFixedNEntriesAreTheirPerArgumentLoop) {
         {
             // The same fp32 body the float entry runs, stored to half once.
             EXPECT_EQ(static_cast<float>(out16[i * stride]),
-                      static_cast<float>(boys::BoysSingleF16(n, halves[i])))
+                      static_cast<float>(boys::BoysSingleF16<HalfFixedNClass>(n, halves[i])))
                 << "n=" << n << " x=" << args[i];
         }
     }

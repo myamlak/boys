@@ -3431,6 +3431,15 @@ int main(int argc, char** argv) {
     std::size_t f32RouteShortOver = 0;
     double f32RouteShortWorst = 0.0;
 
+    // The route this build's own seam gives the float lane's single class, and the other one:
+    // read from the build because an emitted seam may default either route, the same reason the
+    // loop below reads it rather than naming one.
+    constexpr boys::FitRoute kShippedRouteF32 =
+        boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>::kRoute;
+    constexpr boys::FitRoute kNonDefaultRouteF32 =
+        kShippedRouteF32 == boys::FitRoute::kChebyshev ? boys::FitRoute::kRationalMinimax
+                                                       : boys::FitRoute::kChebyshev;
+
     {
         const std::span<const boys::FitRouteInfo> rows = boys::BoysFitRoutesF32();
 
@@ -3509,10 +3518,14 @@ int main(int argc, char** argv) {
             }
         }
 
-        // What naming a route changes, cell by cell: the default route, a value outside the
-        // enumeration and the Chebyshev route must all be the default entry's value bit for bit,
-        // and the rational route may differ only where a row of BoysFitRoutesF32 says its selector
-        // takes over.
+        // What naming a route changes, cell by cell: the route this build's own seam defaults
+        // to, and a value outside the enumeration, must both be the default entry's value bit
+        // for bit, and the route this build does NOT default to may differ only where a row of
+        // BoysFitRoutesF32 says its selector takes over. The default route is read from the
+        // build and not named here: an emitted seam may default this lane to either route
+        // (measured 2026-10-12: the option probe's vote names kRationalMinimax for the float
+        // single class), and a named constant would then read the default's own substitution as
+        // a difference.
         for (int n = 0; n <= nmax; ++n)
         {
             for (std::size_t i = 0; i < count; ++i)
@@ -3520,31 +3533,31 @@ int main(int argc, char** argv) {
                 const float xf = static_cast<float>(ref.xf[i]);
                 const float plain = boys::BoysSingleF32(n, xf);
                 const float namedDefault =
-                    boys::BoysSingleF32WithRoute(boys::FitRoute::kChebyshev, n, xf);
+                    boys::BoysSingleF32WithRoute(kShippedRouteF32, n, xf);
                 const float namedUnknown = boys::BoysSingleF32WithRoute(
                     static_cast<boys::FitRoute>(99), n, xf);
-                const float namedRational =
-                    boys::BoysSingleF32WithRoute(boys::FitRoute::kRationalMinimax, n, xf);
+                const float namedOther =
+                    boys::BoysSingleF32WithRoute(kNonDefaultRouteF32, n, xf);
 
                 if (namedDefault != plain || namedUnknown != plain)
                 {
                     ++routeDefaultDiffF32;
                 }
 
+                if (namedOther == plain)
+                {
+                    continue;
+                }
+
                 bool inside = false;
 
                 for (const boys::FitRouteInfo& row : rows)
                 {
-                    if (row.route == boys::FitRoute::kRationalMinimax &&
+                    if (row.route == kNonDefaultRouteF32 &&
                         xf >= static_cast<float>(row.lo) && xf < static_cast<float>(row.hi))
                     {
                         inside = true;
                     }
-                }
-
-                if (namedRational == plain)
-                {
-                    continue;
                 }
 
                 if (inside)
@@ -3642,10 +3655,10 @@ int main(int argc, char** argv) {
 
         std::printf("  rows whose stored count disagrees with the table the kernel reads: "
                     "%zu\n"
-                    "  cells where naming the default route or a route outside the enumeration\n"
-                    "  differed from the default entry: %zu\n"
-                    "  cells outside a rational row's interval that naming the rational route\n"
-                    "  changed: %zu; inside one: %zu\n"
+                    "  cells where naming this build's default route or a route outside the\n"
+                    "  enumeration differed from the default entry: %zu\n"
+                    "  cells outside the non-default route's own rows that naming it changed:\n"
+                    "  %zu; inside one: %zu\n"
                     "  cells of the routes' sweep where the value is at or below the format's\n"
                     "  own floor: %zu\n",
                     routeStoredMismatchF32,
@@ -9004,14 +9017,16 @@ int main(int argc, char** argv) {
                      f32RouteWorstX));
 
         addRoute("float.route.report",
-                 "BoysFitRoutesF32's rows are true of the tables this revision ships, and a "
-                 "route value this build does not serve evaluates the default entry",
+                 "BoysFitRoutesF32's rows are true of the tables this revision ships, a "
+                 "route value this build does not serve evaluates the default entry, and the "
+                 "route this build does not default to changes a value only inside the "
+                 "intervals its own rows name",
                  "include/boys/boys.hpp (FitRouteInfo), include/boys/boys_coefficients.hpp",
                  f32ReportVerdict,
                  Fmt("%zu row(s) whose stored count disagrees with the table the kernel "
-                     "reads; %zu cell(s) where naming the default route or a value outside "
-                     "the enumeration differed from the default entry; %zu cell(s) outside a "
-                     "rational row's interval that naming the rational route changed",
+                     "reads; %zu cell(s) where naming this build's default route or a value "
+                     "outside the enumeration differed from the default entry; %zu cell(s) "
+                     "outside the non-default route's own rows that naming it changed",
                      routeStoredMismatchF32,
                      routeDefaultDiffF32,
                      routeDiffOutsideF32));

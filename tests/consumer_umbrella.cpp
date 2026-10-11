@@ -1048,9 +1048,13 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
         }
 
         // The default route is the default entry by construction, so only a
-        // row that names a different fit is required to change a value.
+        // row that names a different fit is required to change a value; the
+        // route the default names is read from the build's own row, because a
+        // seam may default this class to either route.
         Require(report,
-                row.route == boys::FitRoute::kChebyshev || changed > 0,
+                row.route == boys::DefaultPolicy<boys::Precision::kFp32,
+                                                 boys::Shape::kSingle>::kRoute ||
+                    changed > 0,
                 "naming a float route other than the default changes values inside the domain "
                 "its own row serves");
         Require(report,
@@ -1218,8 +1222,12 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             sameAsSelector[0] == cells.size() && sameAsSelector[1] == cells.size(),
             "each route's policy answers what that route's run-time selector answers, bit for "
             "bit, so the two ways in read one body");
+    // The scheme axis is a reading only where the class's route stores both schemes: the lane
+    // stores both forms of its Chebyshev family and one of the rational family, so a row at the
+    // rational route has no second scheme to read and naming one changes nothing. Measured
+    // 2026-10-12 on an emitted seam whose float single class names the rational route.
     Require(report,
-            changedByScheme > 0,
+            changedByScheme > 0 || SingleDefault::kRoute != boys::FitRoute::kChebyshev,
             "naming the scheme the single-order class does not carry changes values the "
             "unnamed call answers with, so the unnamed call is not reading that scheme's "
             "tables");
@@ -2176,13 +2184,19 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
                 "two schemes' own bounds");
     }
 
+    // The scheme axis is a reading only where the class's route stores both schemes: the lane
+    // stores both forms of its Chebyshev family and one of the rational family, so a row at the
+    // rational route has no second scheme to read and naming one changes nothing, for the batch
+    // class as for the single one. Measured 2026-10-12 on an emitted seam.
     Require(report,
-            schemePartsFromOther > 0,
+            schemePartsFromOther > 0 ||
+                SingleDefault::kRoute != boys::FitRoute::kChebyshev,
             "naming the scheme the single-order class does not carry changes values the unnamed "
             "call answers with somewhere on the reference grid, so the unnamed call reads the "
             "class row's scheme and not the other one's tables");
     Require(report,
-            batchSchemePartsFromOther > 0,
+            batchSchemePartsFromOther > 0 ||
+                AllOrdersDefault::kRoute != boys::FitRoute::kChebyshev,
             "naming the scheme the batch class does not carry changes values the unnamed batch "
             "call answers with somewhere on the reference grid");
 
