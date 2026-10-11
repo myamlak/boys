@@ -104,6 +104,11 @@ SLOW = {
         "a full render is 59268 mpmath evaluations at 80 dps, measured in ci.yml at "
         "\"2m20s to 2m40s end to end\""
     ),
+    "gen_boys_far_gate_reference.py": (
+        "a full render is 77418 mpmath evaluations at 80 dps - the far half of the gate's own "
+        "grid with every boundary the far arms dispatch on resolved - measured at \"2m13s end "
+        "to end\" on the development host"
+    ),
     "check_class_combinations.py": (
         "compiles one instantiation of each one-order shape at the orders packing axis, and "
         "requires the compile to fail; ci.yml: \"the check proves by compiling rather than by "

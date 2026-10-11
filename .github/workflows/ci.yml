@@ -628,6 +628,18 @@ jobs:
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/gen_boys_accuracy_gate_reference.py --check
+      # The far region's grid, the same way and on the same leg. It is a second grid because
+      # the gate's own reaches the far region coarsely where the far arms' figures are set:
+      # it carried no argument between 29.0 and 29.85319827456517 and none at 117, and the
+      # worst cell of every far-representation arm sits inside those two bands. Read against
+      # the gate's own grid alone, the recurrence's named entry delivers 1.77e-14 where its
+      # own grid shows 4.94e-14, and the corrected seed passes a relative figure it misses by
+      # 1.59x once the band is resolved. The render is the far half of the committed grid
+      # plus the boundaries, so it is one file and one `--check`, not a per-arm instrument.
+      - name: Far-region gate reference (the far grid against its generator)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          .venv/bin/python tools/gen_boys_far_gate_reference.py --check
       # .github/required-checks.txt is the list branch protection holds a merge
       # on, and this workflow is what reports those names. Both are written by
       # hand and every way they can part is silent: a required name no leg

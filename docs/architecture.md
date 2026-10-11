@@ -159,6 +159,7 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 |---|---|---|---|
 | `include/boys/boys_coefficients.hpp`, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites both | its own `--check`, re-deriving both and comparing byte for byte |
 | `tests/data/boys_accuracy_gate_reference.csv` | `tools/gen_boys_accuracy_gate_reference.py` | run it with no flag | its own `--check` |
+| `tests/data/boys_far_gate_reference.csv` | `tools/gen_boys_far_gate_reference.py` | run it with no flag | its own `--check` |
 | The platform table inside `docs/specification.md` | `tools/gen_platform_table.py`, from the workflow and `.github/required-checks.txt` | run it with no flag | its own `--check` |
 | The row region inside `docs/build-facts.md` | `tools/gen_build_facts.py` | `--record <file>` with a captured probe row; it merges the row in and re-renders the document | its own `--check`, which also refuses a table holding no CI leg's row |
 | `.github/option-matrix.json` | `tools/gen_option_matrix.py`, from the library's own declarations | run it with no flag | its own `--check`, in both directions |

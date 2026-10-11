@@ -2,6 +2,13 @@
 // mpmath grid (tests/data/boys_accuracy_gate_reference.csv, re-derived by
 // tools/gen_boys_accuracy_gate_reference.py, whose routes agree to 1e-81 - 65 to 81 orders below
 // the tightest bound here). Any claim not verified at this revision exits non-zero.
+//
+// The far-representation book at the end reads a second grid of its own
+// (tests/data/boys_far_gate_reference.csv, tools/gen_boys_far_gate_reference.py) over the same
+// function at the same precision: the far region's three arms dispatch on boundaries the grid
+// above does not resolve, and read against it alone an arm passes with a delivered error several
+// times its own figure. Each row there prints its reading on the grid above beside its reading on
+// its own, so the two are comparable rather than one being quoted.
 
 #include <boys/kernels.hpp>
 #include <boys/f16.hpp>
@@ -131,6 +138,18 @@ constexpr double kFloatFloor = 1.1754943508222875e-38;
 // The withdrawn header claim (1e-15 over every x < x0): its slot is still measured so the
 // finding stays re-measurable, but no live claim is judged by it.
 constexpr double kWithdrawnHeaderABound = 1e-15;
+
+// The far-representation axis's figures. The recurrence's is region C's own and it is absolute:
+// its step leaves out the exp(-x)/2 term the region's recurrence carries, so at kX1 the error is
+// 5.0e-14 at n=32 against a value of 1.95e-14, its worst relative error is 2.56, and no relative
+// figure at or below 1e-13 is true of it. The corrected seed's figure is relative - the same
+// arithmetic with that term restored and the seed's erfc(sqrt(x)) error carried - and it is a
+// measurement at this tree's arithmetic rather than a certified bound. The figure it is judged at
+// is 2^-48, the measured worst case rounded up to the enclosing power of two: the worst relative
+// error the arm delivers over the far region is 3.264e-15 at n=32, x=29.000000000000053, against
+// the 2^-48 this row states. The earlier 2.05e-15 was 2^-49 and the arm exceeded it by 1.592x.
+// The scaled table's figure is not here: it is the row the library publishes it in, read below.
+constexpr double kFarCorrectedSeedFigure = 3.5527136788005009e-15; // 2^-48
 
 // The native packed half lane (include/boys/half2.hpp): region C only, the ladder in binary16
 // scaled by 2^15 so it stays normal down to F_k(x) = 2^-29, and its published bound is in ULP of
@@ -312,6 +331,50 @@ BoundForm form = {}) {
     a.additive = form.additive;
     EntryClaims().push_back(a);
     return static_cast<int>(EntryClaims().size()) - 1;
+}
+
+// The far-representation axis's own book, apart from the six above and for the reason each of
+// them gives: the axis is a name a caller passes to one entry, so its cells belong to a call no
+// other book makes.
+//
+// The book is here because the gate had no row for the axis at all. The far region is decided by
+// three arithmetics - the seed and its upward recurrence, the same recurrence seeded and stepped
+// correctly, and a stored scaled table - and every other book reaches the region through the
+// lane's own default entry, which names one of the three. Two of them were reached by
+// tests/boys_test.cpp's selectability rows and by nothing here, so an instrument whose whole job
+// is measuring documented claims was silent about the arithmetic the far region returns, and
+// green said nothing about it.
+std::vector<Accum>& FarClaims() {
+    static std::vector<Accum> claims;
+    return claims;
+}
+
+int AddFarClaim(const char* lane, const char* region, double bound) {
+    Accum a;
+    a.lane = lane;
+    a.region = region;
+    a.baseBound = bound;
+    FarClaims().push_back(a);
+    return static_cast<int>(FarClaims().size()) - 1;
+}
+
+// The three arms' own bodies, reached directly rather than through the entry that names them:
+// an arm is a compile-time arithmetic behind a run-time dispatch, and a call that goes through
+// the dispatch measures the dispatch's answer and not the arm's. The division form is the
+// default entry's, which is the form the shipped dispatch divides in.
+void FarAsymptoticBody(int nmax, double x, double* out) noexcept
+{
+    boys::detail::BoysAllNBodyRegionC<boys::kDefaultDivisionForm>(nmax, x, 1, out);
+}
+
+void FarCorrectedSeedBody(int nmax, double x, double* out) noexcept
+{
+    boys::detail::CorrectedSeedAllOrders<boys::kDefaultDivisionForm>(nmax, x, out);
+}
+
+void FarScaledTableBody(int nmax, double x, double* out) noexcept
+{
+    boys::detail::ScaledFarAllOrders<boys::kDefaultDivisionForm>(nmax, x, out);
 }
 
 // The region a double-single argument is dispatched in, by the README interval table: the
@@ -14021,6 +14084,479 @@ int main(int argc, char** argv) {
                     "narrow member's fits - the substitution the\n  partition axis exists to "
                     "prevent)\n");
         return 1;
+    }
+
+    // ---- the far-representation book ----------------------------------------
+    // The axis decides the whole far region - kX1 and every argument above it - and no book above
+    // has a row for it. Each arm is measured twice: once through the entry a caller names it by,
+    // which is what a caller receives, and once against the arm's own body, which is the
+    // arithmetic behind the entry. An arm that agrees with itself bit for bit below the entry's
+    // own dispatch is a second finding, and the two rows are what tell it from one arm reached
+    // two ways.
+    //
+    // Each row is judged against its OWN figure and in that figure's own form. The arms do not
+    // publish the same kind of number: the recurrence's is absolute - its step drops the
+    // exp(-x)/2 term the region's recurrence carries, so at kX1 the error is 5.0e-14 against a
+    // value of 1.95e-14 and its worst relative error is 2.56, and no relative figure is true of
+    // it - while the two seeded arms' are relative, errors on the value. A row judged at the
+    // other form is a false finding in one direction and a false pass in the other.
+    {
+        const Reference farref = LoadReference(std::string(BoysDataDir) +
+                                               "/boys_far_gate_reference.csv");
+
+        boys::backend::MulAddRoute farRoute = boys::backend::MulAddRoute::kFused;
+
+        for (const boys::backend::BackendInfo& b : boys::backend::BoysBackends())
+        {
+            if (std::strcmp(b.name, "scalar-fp64") == 0)
+            {
+                farRoute = b.route;
+            }
+        }
+
+        // The scaled table's figure is read out of the row the library publishes it in rather
+        // than transcribed here: a figure typed in the gate and a row stated in the header drift
+        // apart with nothing to say so, which is what reading it removes.
+        const boys::detail::ScaledFarRow& tableRow = boys::detail::kScaledFarRows[0];
+        const double tableFigure = farRoute == boys::backend::MulAddRoute::kSeparate
+                                       ? tableRow.del_separate
+                                       : tableRow.del_fused;
+
+        // One arm's row: the name a report prints it under, the span it is judged over, the
+        // figure and the form, and how the cells are reached.
+        struct FarArmRow {
+            const char* lane;
+            const char* span;
+            const char* source;
+            double figure;
+            bool relative;
+            boys::FarRepresentation arm;
+            void (*body)(int, double, double*) noexcept;
+            bool throughEntry; // the shipped entry rather than the arm's body
+            double lo;         // the span's left edge, inclusive
+            double hi;         // the span's right edge, exclusive
+        };
+
+        const FarArmRow farArms[] = {
+            {"asymptotic recurrence",
+             "C, the arm's own body",
+             "README.md's region-C cell, the figure every published far-region figure was "
+             "measured at; absolute, at kX1 5.0e-14 of it at n=32 against a value of 1.95e-14",
+             kBoundSingleC,
+             false,
+             boys::FarRepresentation::kAsymptoticRecurrence,
+             FarAsymptoticBody,
+             false,
+             boys::detail::kX1,
+             HUGE_VAL},
+            {"asymptotic recurrence",
+             "C, the named entry",
+             "the same figure: the entry answers this arm's values over the whole region",
+             kBoundSingleC,
+             false,
+             boys::FarRepresentation::kAsymptoticRecurrence,
+             FarAsymptoticBody,
+             true,
+             boys::detail::kX1,
+             HUGE_VAL},
+            {"corrected seed",
+             "C, the arm's own body",
+             "the arm's own relative figure, measured: the recurrence with its dropped term "
+             "restored and the seed's erfc(sqrt(x)) error carried",
+             kFarCorrectedSeedFigure,
+             true,
+             boys::FarRepresentation::kCorrectedSeed,
+             FarCorrectedSeedBody,
+             false,
+             boys::detail::kX1,
+             HUGE_VAL},
+            {"corrected seed",
+             "C, the named entry",
+             "the same figure: the entry answers this arm's values at every x >= kX1",
+             kFarCorrectedSeedFigure,
+             true,
+             boys::FarRepresentation::kCorrectedSeed,
+             FarCorrectedSeedBody,
+             true,
+             boys::detail::kX1,
+             HUGE_VAL},
+            {"scaled table",
+             "C, the table's span, the arm's own body",
+             "the row the table publishes (boys_coefficients.hpp, kScaledFarRows): relative, a "
+             "swept maximum over 32 points per interval rounded up to a power of two",
+             tableFigure,
+             true,
+             boys::FarRepresentation::kScaledTable,
+             FarScaledTableBody,
+             false,
+             boys::detail::kX1,
+             boys::detail::kScaledFarX1},
+            {"scaled table",
+             "C, the table's span, the named entry",
+             "the same figure: the entry answers the table's values inside its span",
+             tableFigure,
+             true,
+             boys::FarRepresentation::kScaledTable,
+             FarScaledTableBody,
+             true,
+             boys::detail::kX1,
+             boys::detail::kScaledFarX1},
+            {"scaled table",
+             "C, at and above the table's right edge, the named entry",
+             "the recurrence's figure: outside its span the table is the default entry outright, "
+             "so the join at kScaledFarX1 is measured rather than assumed",
+             kBoundSingleC,
+             false,
+             boys::FarRepresentation::kScaledTable,
+             FarScaledTableBody,
+             true,
+             boys::detail::kScaledFarX1,
+             HUGE_VAL},
+        };
+
+        // The cell's bound in the figure's own form. A relative figure is a fraction of the value
+        // and not a number, so a cell's bound is the product; a cell whose value falls below
+        // binary64's smallest normal returns a subnormal or a zero, no accuracy is claimed there,
+        // and the cell is counted outside the claim rather than passed by a bound that cannot bind.
+        const auto farCellBound = [](double figure, bool relative, double ref) {
+            if (!relative)
+            {
+                return figure;
+            }
+
+            const double value = std::fabs(ref);
+
+            return value < std::numeric_limits<double>::min()
+                       ? std::numeric_limits<double>::infinity()
+                       : figure * value;
+        };
+
+        const auto farHolds = [](double x, const FarArmRow& row) {
+            return x >= row.lo && x < row.hi;
+        };
+
+        const auto farEvaluate = [&](const FarArmRow& row, double x, double* out) {
+            if (row.throughEntry)
+            {
+                boys::BoysAllOrdersWithFarRepresentation(row.arm, nmax, x, out);
+            } else
+            {
+                row.body(nmax, x, out);
+            }
+        };
+
+        std::vector<Accum> onTheGateGrid(std::size(farArms));
+
+        for (const FarArmRow& row : farArms)
+        {
+            const int slot = AddFarClaim(row.lane, row.span, row.figure);
+            Accum& own = FarClaims()[static_cast<std::size_t>(slot)];
+            Accum& onGate = onTheGateGrid[static_cast<std::size_t>(slot)];
+            onGate.lane = row.lane;
+            onGate.region = row.span;
+            onGate.baseBound = row.figure;
+            double got[boys::kMaxBoysOrder + 1] = {};
+            double onGateGot[boys::kMaxBoysOrder + 1] = {};
+
+            for (std::size_t i = 0; i < farref.count; ++i)
+            {
+                const double x = farref.x[i];
+
+                if (!farHolds(x, row))
+                {
+                    continue;
+                }
+
+                farEvaluate(row, x, got);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = farref.Index(n, i);
+
+                    MeasureAt(own,
+                              n,
+                              x,
+                              got[n],
+                              farref.v[k],
+                              farref.decade[k],
+                              farCellBound(row.figure, row.relative, farref.v[k]),
+                              std::fabs(got[n]) < std::numeric_limits<double>::min());
+                }
+            }
+
+            // The same arm read against the gate's own grid alone, which is what the gate had
+            // before this book: printed as the reading it is and never judged, because the arm's
+            // own grid carries every far argument this one does and more. A row whose two
+            // readings differ is a statement about the arguments and not about the arm.
+            for (std::size_t i = 0; i < ref.count; ++i)
+            {
+                const double x = ref.x[i];
+
+                if (!farHolds(x, row))
+                {
+                    continue;
+                }
+
+                farEvaluate(row, x, onGateGot);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    const std::size_t k = ref.Index(n, i);
+
+                    MeasureAt(onGate,
+                              n,
+                              x,
+                              onGateGot[n],
+                              ref.v[k],
+                              ref.decade[k],
+                              farCellBound(row.figure, row.relative, ref.v[k]),
+                              std::fabs(onGateGot[n]) < std::numeric_limits<double>::min());
+                }
+            }
+        }
+
+        std::printf("\nthe far-representation book: the three arms of the FarRepresentation axis - "
+                    "the seed and its\nupward recurrence, the same recurrence seeded and stepped "
+                    "correctly, and the stored scaled\ntable - each measured under its own name "
+                    "and against its own figure, over the region's own\nreference grid. Every "
+                    "other book reaches the far region through a lane's default entry,\nwhich "
+                    "names one arm, so an arm no default names had no row anywhere in this file "
+                    "until\nthis one. The grid carries the two bands the gate's own grid does "
+                    "not: no far argument\nbelow 29.85319827456517 and none at 117, which is "
+                    "where the table's span ends\n");
+        std::printf("  arithmetic in force for scalar-fp64: %s (the route each row's figure is "
+                    "read at)\n",
+                    boys::backend::MulAddRouteName(farRoute));
+        std::printf("  `as a figure` is the row's worst cell read in the figure's own form, "
+                    "ratio x figure: for a\n  relative figure that is the relative error the "
+                    "cell delivers, and for an absolute one it is\n  the delivered error itself. "
+                    "A row over its figure prints it, so the reader is given the\n  figure the "
+                    "arm's own row would have to state and not only the verdict\n");
+        std::printf("  %-22s %-46s %8s %8s  %-11s %-9s %-11s %-11s %7s  %-24s %s\n",
+                    "arm",
+                    "span and reading",
+                    "cells",
+                    "judged",
+                    "figure",
+                    "form",
+                    "delivered",
+                    "as a figure",
+                    "ratio",
+                    "worst cell",
+                    "verdict");
+        std::printf("  %s\n", std::string(176, '-').c_str());
+
+        std::size_t farCells = 0;
+        std::size_t farNonDiscriminating = 0;
+        std::vector<std::string> farNotMet;
+
+        for (std::size_t r = 0; r < std::size(farArms); ++r)
+        {
+            const FarArmRow& row = farArms[r];
+            const Accum& a = FarClaims()[r];
+            const Accum& g = onTheGateGrid[r];
+            const Verdict v = FromAccum(a);
+            char where[64] = "-";
+            char delivered[48] = "-";
+            // The row's worst cell read in the figure's own form: `ratio x figure`. For a
+            // relative figure that IS the relative error the cell delivers, which is the
+            // figure an arm's own row would state if the one above it moved; for an absolute
+            // one it is the delivered error itself. A row over its figure prints both, so
+            // the reader is given the honest figure and not only the verdict.
+            char implied[48] = "-";
+
+            if (a.worstN >= 0)
+            {
+                std::snprintf(where,
+                              sizeof(where),
+                              "n=%d, x=%.17g",
+                              a.worstN,
+                              a.worstX);
+                std::snprintf(delivered, sizeof(delivered), "%.4g", a.worstErr);
+                std::snprintf(implied, sizeof(implied), "%.4g", a.worstRatio * row.figure);
+            }
+
+            if (!IsMet(v))
+            {
+                farNotMet.push_back(std::string(row.lane) + " / " + row.span);
+            }
+
+            std::printf("  %-22s %-46s %8zu %8zu  %-11.4g %-9s %-11s %-11s %7.4g  %-24s %s\n",
+                        row.lane,
+                        row.span,
+                        a.points,
+                        a.points - a.vacuous,
+                        row.figure,
+                        row.relative ? "relative" : "absolute",
+                        delivered,
+                        implied,
+                        a.worstN >= 0 ? a.worstRatio : 0.0,
+                        where,
+                        VerdictName(v));
+            std::printf("    judged against: %s\n", row.source);
+            std::printf("    the same reading on the gate's own grid alone: %zu cell(s), worst "
+                        "%.4g, %s\n",
+                        g.points,
+                        g.worstErr,
+                        g.points == 0 ? "the gate's grid carries no argument in this span at "
+                                        "all, which is the hole this row would have inherited"
+                                      : "printed and not judged - the region's own grid above "
+                                        "carries every far argument this one does and more");
+        }
+
+        // Whether the name a caller passes reaches that arm's own arithmetic, or another arm's.
+        // Measured per cell rather than read off the dispatch, because the two answers are values
+        // and a selection that falls through to the default is invisible in the code a reader
+        // scans. The count is over the arm's own span, at every order.
+        struct FarAgreement {
+            boys::FarRepresentation arm;
+            const char* name;
+            double lo;
+            double hi;
+        };
+
+        const FarAgreement farAgreement[] = {
+            {boys::FarRepresentation::kAsymptoticRecurrence,
+             "asymptotic recurrence",
+             boys::detail::kX1,
+             HUGE_VAL},
+            {boys::FarRepresentation::kCorrectedSeed,
+             "corrected seed",
+             boys::detail::kX1,
+             HUGE_VAL},
+            {boys::FarRepresentation::kScaledTable,
+             "scaled table",
+             boys::detail::kX1,
+             boys::detail::kScaledFarX1},
+        };
+
+        std::printf("  the entry a caller names against the arm's own body, bit for bit, over "
+                    "each arm's span:\n  a cell where the two disagree is a name that answers "
+                    "another arm's values, which is a property\n  of the dispatch and not of "
+                    "either arithmetic\n");
+
+        for (const FarAgreement& row : farAgreement)
+        {
+            std::size_t cells = 0;
+            std::size_t differ = 0;
+            double firstX = 0.0;
+            int firstN = -1;
+            double body[boys::kMaxBoysOrder + 1] = {};
+            double named[boys::kMaxBoysOrder + 1] = {};
+
+            for (std::size_t i = 0; i < farref.count; ++i)
+            {
+                const double x = farref.x[i];
+
+                if (x < row.lo || x >= row.hi)
+                {
+                    continue;
+                }
+
+                if (row.arm == boys::FarRepresentation::kAsymptoticRecurrence)
+                {
+                    FarAsymptoticBody(nmax, x, body);
+                } else if (row.arm == boys::FarRepresentation::kCorrectedSeed)
+                {
+                    FarCorrectedSeedBody(nmax, x, body);
+                } else
+                {
+                    FarScaledTableBody(nmax, x, body);
+                }
+
+                boys::BoysAllOrdersWithFarRepresentation(row.arm, nmax, x, named);
+
+                for (int n = 0; n <= nmax; ++n)
+                {
+                    ++cells;
+
+                    if (named[n] != body[n])
+                    {
+                        if (differ == 0)
+                        {
+                            firstX = x;
+                            firstN = n;
+                        }
+
+                        ++differ;
+                    }
+                }
+            }
+
+            if (differ == 0)
+            {
+                std::printf("  %-22s %zu cell(s), 0 differ - the name reaches this arm's own "
+                            "arithmetic\n",
+                            row.name,
+                            cells);
+            } else
+            {
+                char where[64];
+                std::snprintf(where, sizeof(where), "n=%d x=%.17g", firstN, firstX);
+                std::printf("  %-22s %zu cell(s), %zu differ, first at %-30s\n  %-22s the name "
+                            "answers another arm's values at those cells\n",
+                            row.name,
+                            cells,
+                            differ,
+                            where,
+                            "");
+            }
+        }
+
+        for (const Accum& a : FarClaims())
+        {
+            farCells += a.points;
+            farNonDiscriminating += a.vacuous;
+        }
+
+        std::printf("  %s\n", std::string(176, '-').c_str());
+        std::printf("  FAR RESULT: %zu of %zu arm row(s) met at this revision; %zu of %zu far "
+                    "cell(s) carry a\n              bound that can bind, the other %zu lying "
+                    "outside the figure (a relative figure below\n              binary64's "
+                    "smallest normal, or an absolute figure at or above the value)\n",
+                    std::size(farArms) - farNotMet.size(),
+                    std::size(farArms),
+                    farCells - farNonDiscriminating,
+                    farCells,
+                    farNonDiscriminating);
+
+        // What the scaled table's row can and cannot be read as. The table publishes a figure
+        // and the figure is a swept maximum: the reader below is owed the difference, because a
+        // caller who reads the number as a bound is reading a claim the tree does not make yet.
+        std::printf("              the scaled table's figure is not a bound and this row does "
+                    "not read it as one. It\n              is a swept maximum - FAR_MEASURE_"
+                    "POINTS = %d arguments per interval in\n              tools/gen_boys_"
+                    "coefficients.py - rounded up to a power of two by that file's\n"
+                    "              scheme_bound, which is what keeps the row's verdict about the "
+                    "scheme rather than\n              about two grids' luck; the round-up is at "
+                    "most a factor of two. It is a reading\n              of the partition the "
+                    "header carries, and that partition is a placeholder: equal\n"
+                    "              width at one degree, over %d intervals from kX1 to the right "
+                    "edge at %g\n              marked PROVISIONAL in the same file, with the "
+                    "derived partition spliced in where\n              it lands. So the row says "
+                    "what the shipped placeholder delivers and not what\n              the far "
+                    "region guarantees. A bound can be written for the axis once the derived\n"
+                    "              partition's own rows carry what it delivers; until then this "
+                    "row is a reading,\n              and a reader who needs a bound over the "
+                    "far region reads the recurrence's\n              absolute cell above it\n",
+                    32,
+                    static_cast<int>(boys::detail::kScaledFarIntervals),
+                    static_cast<double>(boys::detail::kScaledFarX1));
+
+        if (!farNotMet.empty())
+        {
+            std::printf("  NOT MET at this revision:");
+
+            for (const std::string& id : farNotMet)
+            {
+                std::printf(" [%s]", id.c_str());
+            }
+
+            std::printf("\n  FAIL (exit status 1; the far-representation rows are judged against "
+                        "each arm's own\n  figure in that figure's own form, and a row over its "
+                        "figure is an arm returning\n  worse than the tree says it does)\n");
+            return 1;
+        }
     }
 
     // The last line, and the only one a caller that reads nothing else sees. It
