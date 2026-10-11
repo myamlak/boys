@@ -4033,6 +4033,67 @@ inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double*
     }
 }
 
+// The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
+// ARGUMENTS at once - the arguments axis, not the orders axis: the ladder is a recurrence in the
+// order, so four arguments are what a register can hold in parallel and four orders are not.
+//
+// The lane is the scalar body's arithmetic operation for operation, so the acceptance test is
+// equality and not a bound. The half-exponential is the one step it does not carry - a library
+// call - and the caller forms it per argument through the same RegionBHalfExp the scalar body
+// reads. Declared here; defined in src/boys_simd.cpp with the vector tier's flags, and against the
+// certified scalar lane on a target without them, where BoysAvx2Available() is false.
+void BoysFarLadderLanes(int nmax,
+                        const double* x,
+                        const double* halfExp,
+                        std::size_t stride,
+                        double* const* cols,
+                        DivisionForm form) noexcept;
+
+// How many arguments the far ladder's lane holds at once: the tier's own double width, and the
+// width it is compiled and measured at.
+constexpr std::size_t kBoysFarLaneWidth = 4;
+
+/// The far run's lane kernel: one run of far arguments through BoysFarLadderLanes, four
+/// arguments at a time, with the per-argument body for what is left over.
+///
+/// The groups are the run cut at the lane's width, so what the lane does not take is a run shorter
+/// than four and the tail of one that is not a multiple of four - and a run shorter than four does
+/// not reach this kernel at all, which is the entry's own condition: three arguments or fewer keep
+/// the ungrouped kernel, whose body is this kernel's own arithmetic one argument at a time.
+///
+/// The whole run is the kernel's, marshalling included, and it is out of line for a reason the
+/// entry's price shows: the arguments a run does NOT put through the lane must cost what they cost
+/// without it. A lane inlined into the entry's own code moves the paths that never take it - the
+/// counter reading behind this kernel's first shape, where a one-argument far run came out 11% over
+/// the same run without a lane - so what the entry carries is a call.
+///
+/// Which of the two writers it uses is the ungrouped kernel's choice and its reasons: the sorted
+/// overload's run is consecutive in the output, so the tile turns an order's four-argument groups
+/// into four consecutive doubles and the lane writes one register store an order; the unsorted
+/// entry's run is the caller's positions, so its groups land wherever the permutation put them and
+/// staging them costs more than it buys.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      the caller's argument array
+/// \param index  the run's argument positions in `x` (the unsorted entry), or nullptr where the
+///               run's arguments are the positions themselves (the sorted overload)
+/// \param out    the caller's planes, `count` doubles an order
+/// \param count  the call's argument count, the planes' stride
+/// \param begin  first argument of the run
+/// \param end    one past its last; `end - begin` >= kBoysFarLaneWidth
+/// \param form   the division form the run's steps run, the policy's own
+///
+/// Defined in src/boys_simd.cpp with the vector tier's flags, and against the certified scalar
+/// lane on a target without them, where BoysAvx2Available() is false and no caller reaches it.
+void BoysFarLadderRun(int nmax,
+                      const double* x,
+                      const std::size_t* index,
+                      double* out,
+                      std::size_t count,
+                      std::size_t begin,
+                      std::size_t end,
+                      DivisionForm form) noexcept;
+
 /// The ungrouped kernel: one argument at a time over the run, the path's body per argument.
 ///
 /// Which of the two writers it uses is decided by where its stores land, a property of the caller's array
@@ -4394,6 +4455,24 @@ void BoysAllNPartitionedImpl(int nmax,
 
         if (from != to)
         {
+            // The far region's ladder takes the arguments lane - one ladder per lane, four
+            // arguments of the run at a time - at every policy: its body is one recurrence whose
+            // seed, its correction, the reciprocal and the division form are policy reads the
+            // lane makes the same way, and it reads no fit and no partition, so there is nothing
+            // for a route, a scheme or a granularity to trade away. A run that cannot fill the
+            // register is not sent to it at all - three arguments or fewer are the ungrouped
+            // kernel's, one argument at a time, at the price the entry pays for them without a
+            // lane - and the test is here rather than inside BoysAllNRun because of what the
+            // entry costs when the lane is not taken: a branch added to the shared run kernel
+            // moves the paths that never take it (measured, a one-argument far run came out 5.7%
+            // over the same run without a lane; the same branch at the caller costs 1%).
+            if (vectorTier && static_cast<BoysPath>(p) == BoysPath::kAsymptotic &&
+                to - from >= kBoysFarLaneWidth)
+            {
+                BoysFarLadderRun(nmax, x, workspace, out, count, from, to, Policy::kDivision);
+                continue;
+            }
+
             BoysAllNRun<Policy>(
                 nmax, x, workspace, out, count, vectorTier, static_cast<BoysPath>(p), from, to);
         }
@@ -4492,6 +4571,15 @@ void BoysAllNSortedPartitionedImpl(int nmax,
         {
             assert(x[end] >= x[end - 1]); // the BoysSortedArgs declaration
             ++end;
+        }
+
+        // The far ladder's lane, as in BoysAllNPartitionedImpl and for the same reason, including
+        // the one its own comment gives for testing here and not inside BoysAllNRun.
+        if (vectorTier && path == BoysPath::kAsymptotic && end - begin >= kBoysFarLaneWidth)
+        {
+            BoysFarLadderRun(nmax, x, nullptr, out, count, begin, end, Policy::kDivision);
+            begin = end;
+            continue;
         }
 
         BoysAllNRun<Policy>(nmax, x, nullptr, out, count, vectorTier, path, begin, end);

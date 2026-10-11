@@ -682,6 +682,103 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
     }
 }
 
+// The far region's ladder runs four arguments of ONE ladder in a register - the arguments axis, the
+// only axis a recurrence in the order can be run on - and the lane is the per-argument body's own
+// arithmetic rather than a second one. So every far cell is the per-argument entry's value at that
+// argument, bit for bit, in both overloads, at every top order the library serves, and at the
+// lengths either side of the lane's width: a run shorter than four never reaches the lane, and a
+// longer run's tail does not.
+TEST(BoysAllNTest, FarLaneIsThePerArgumentBodyBitForBit) {
+    using FarLane = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                                     boys::EvalScheme::kHorner,
+                                     boys::BoysBudget::kFloat,
+                                     boys::PackAxis::kArguments,
+                                     boys::FitGranularity::kCoarsest,
+                                     boys::DivisionForm::kPlainReciprocal>;
+
+    // The region's own edges and a walk of it: its opening argument, the end of the seed
+    // correction's span and both sides of it, and the decades above.
+    const std::vector<double> far = {kX1,
+                                     kX1 + 1e-12,
+                                     29.0,
+                                     30.0,
+                                     32.0,
+                                     34.0,
+                                     34.5,
+                                     36.0,
+                                     50.0,
+                                     100.0,
+                                     500.0,
+                                     1.0e4};
+    std::size_t cells = 0;
+    std::size_t differing = 0;
+
+    for (const std::size_t count : {std::size_t{1},
+                                    std::size_t{2},
+                                    std::size_t{3},
+                                    std::size_t{4},
+                                    std::size_t{5},
+                                    std::size_t{7},
+                                    std::size_t{8},
+                                    std::size_t{127},
+                                    std::size_t{128},
+                                    std::size_t{129}})
+    {
+        std::vector<double> xs(count);
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            xs[i] = far[i % far.size()];
+        }
+
+        std::vector<double> ascending = xs;
+        std::sort(ascending.begin(), ascending.end());
+
+        for (int nmax = 0; nmax <= boys::kMaxBoysOrder; ++nmax)
+        {
+            const std::size_t orders = static_cast<std::size_t>(nmax) + 1;
+            std::vector<double> planes(count * orders);
+            std::vector<double> sortedPlanes(count * orders);
+            std::vector<std::size_t> ws(count);
+
+            BoysAllN<FarLane>(nmax, xs.data(), planes.data(), count, ws.data());
+            BoysAllN<FarLane>(nmax, ascending.data(), sortedPlanes.data(), count, BoysSortedArgs{});
+
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                // Each plane holds its own call's arguments in the order that call was handed
+                // them, so the sorted overload's column i is the argument ascending[i] and not
+                // xs[i]: the two lines are the same values in two orders.
+                std::vector<double> row(orders);
+                std::vector<double> rowAscending(orders);
+                BoysAllOrders<FarLane>(nmax, xs[i], row.data());
+                BoysAllOrders<FarLane>(nmax, ascending[i], rowAscending.data());
+
+                for (int l = 0; l <= nmax; ++l)
+                {
+                    const std::size_t slot = static_cast<std::size_t>(l) * count + i;
+                    ++cells;
+
+                    if (!SameBits(planes[slot], row[static_cast<std::size_t>(l)]))
+                    {
+                        ++differing;
+                    }
+
+                    if (!SameBits(sortedPlanes[slot], rowAscending[static_cast<std::size_t>(l)]))
+                    {
+                        ++differing;
+                    }
+                }
+            }
+        }
+    }
+
+    EXPECT_GT(cells, 0u);
+    EXPECT_EQ(differing, 0u) << "of " << cells
+                             << " far cells: the arguments lane and the per-argument body have "
+                                "parted";
+}
+
 // Past the packed lane's own interval the axis runs the certified scalar single lane one order at a
 // time, asserted exactly. The lane is the one at the policy the axis names, which is the policy this
 // test asks the batch entry with, so the per-order side is asked at it rather than at the
