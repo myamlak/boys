@@ -33,7 +33,9 @@
         "tests/boys_accuracy_gate.cpp :: kBoundSingleB",
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
       ],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.single-order",
@@ -44,72 +46,116 @@
         "tests/boys_accuracy_gate.cpp :: kBoundSingleB",
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
       ],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.fixed-n",
       "body": "include/boys/boys_impl.hpp::BoysFixedNImpl",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundDoubleBatch"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.region-b-band",
       "body": "include/boys/boys_impl.hpp::Next",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleBand"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleBand"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.all-n.region-a-down",
       "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionADown",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleA"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleA"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.all-n.region-a-extended",
       "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionAExtended",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleA"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleA"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.all-n.region-b",
       "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionB",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleB"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleB"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.double.all-n.region-c",
       "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionC",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleC"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.float.single-order",
       "body": "include/boys/boys_impl.hpp::SingleOrderF32Body",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundFloat"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundFloat"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.float.all-orders",
       "body": "include/boys/boys_impl.hpp::BoysAllOrdersF32Impl",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundFloat"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundFloat"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.simd.double.region-c",
       "body": "src/boys_simd.cpp::BoysRegionCSimd",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundSingleC"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.simd.half.region-c",
       "body": "src/boys_simd.cpp::RegionCSimdHalf",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kBoundFloat"],
-      "verified_by": ["tests/boys_accuracy_gate.cpp :: main"]
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundFloat"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
     },
     {
       "id": "host.native-half.region-c",
       "body": "src/boys_half_native.cpp::HalfNativeLadder",
-      "bar": ["tests/boys_accuracy_gate.cpp :: kNativeUlpBound"],
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kNativeUlpBound"
+      ],
       "verified_by": [
         "tests/boys_half_native_test.cpp :: NativeHalfLaneTest.LaneStaysInsideItsBoundAcrossRegionC"
       ]
@@ -117,19 +163,29 @@
     {
       "id": "device.f64.single",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceSingleF64",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"],
-      "verified_by": ["tests/boys_cuda_accuracy_gate.cpp :: RunProbe"]
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
+      "verified_by": [
+        "tests/boys_cuda_accuracy_gate.cpp :: RunProbe"
+      ]
     },
     {
       "id": "device.f64.all-orders",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF64",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"],
-      "verified_by": ["tests/boys_cuda_accuracy_gate.cpp :: RunProbe"]
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
+      "verified_by": [
+        "tests/boys_cuda_accuracy_gate.cpp :: RunProbe"
+      ]
     },
     {
       "id": "device.f64.uniform-grid",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF64Flat",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"],
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
       "verified_by": [
         "tests/boys_cuda_axis_sensitivity_device.cu :: LadderKernel"
       ]
@@ -137,7 +193,9 @@
     {
       "id": "device.f64.rational-grid",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF64FlatRat",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"],
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
       "verified_by": [
         "tests/boys_cuda_axis_sensitivity_device.cu :: LadderKernel"
       ]
@@ -145,19 +203,29 @@
     {
       "id": "device.f32.single",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceSingleF32",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"],
-      "verified_by": ["tests/boys_cuda_accuracy_gate.cpp :: RunProbe"]
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"
+      ],
+      "verified_by": [
+        "tests/boys_cuda_accuracy_gate.cpp :: RunProbe"
+      ]
     },
     {
       "id": "device.f32.all-orders",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF32",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"],
-      "verified_by": ["tests/boys_cuda_accuracy_gate.cpp :: RunProbe"]
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"
+      ],
+      "verified_by": [
+        "tests/boys_cuda_accuracy_gate.cpp :: RunProbe"
+      ]
     },
     {
       "id": "device.f32.uniform-grid",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF32Flat",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"],
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"
+      ],
       "verified_by": [
         "tests/boys_cuda_axis_sensitivity_device.cu :: LadderKernel"
       ]
@@ -165,9 +233,55 @@
     {
       "id": "device.f32.rational-grid",
       "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceAllOrdersF32FlatRat",
-      "bar": ["tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"],
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundFloat"
+      ],
       "verified_by": [
         "tests/boys_cuda_axis_sensitivity_device.cu :: LadderKernel"
+      ]
+    },
+    {
+      "id": "host.double.far.seed",
+      "body": "include/boys/boys_impl.hpp::FarSeedAt",
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
+        "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
+      ],
+      "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main"
+      ]
+    },
+    {
+      "id": "host.double.far.simd-lanes",
+      "body": "src/boys_simd.cpp::FarLadderLanesAt",
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
+        "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
+      ],
+      "verified_by": [
+        "tests/boys_all_n_test.cpp :: BoysAllNTest.FarLaneIsThePerArgumentBodyBitForBit"
+      ]
+    },
+    {
+      "id": "host.double.far.simd-seed",
+      "body": "src/boys_simd.cpp::FarLadderSeed",
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
+        "include/boys/boys.hpp :: BoysAllOrdersWithFarRepresentation"
+      ],
+      "verified_by": [
+        "tests/boys_all_n_test.cpp :: BoysAllNTest.FarLaneIsThePerArgumentBodyBitForBit"
+      ]
+    },
+    {
+      "id": "device.far.seed",
+      "body": "include/boys/boys_cuda_arithmetic.hpp::DeviceFarSeed",
+      "bar": [
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundSingleC",
+        "tests/boys_cuda_accuracy_gate.cpp :: kBoundDoubleBatch"
+      ],
+      "verified_by": [
+        "tests/boys_cuda_accuracy_gate.cpp :: main"
       ]
     }
   ]
