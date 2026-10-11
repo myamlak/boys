@@ -3546,6 +3546,71 @@ private:
     bool _bitIdentical = true;
 };
 
+/// The far region's representation axis, measured once over the workload and outside
+/// the clock: one row per member the library reports, each arm's worst relative
+/// difference from the certified lane over the arguments at or above kX1.
+///
+/// The arms are swept from \c BoysFarRepresentations() and not from a list here, so a
+/// member added to the enum is measured without this file being edited - and a member
+/// the library stops serving is one the sweep stops calling.
+///
+/// The argument at exactly \c kX1 is a far argument: region C is \c [kX1, inf), and
+/// the entry routes by the same comparison this does.
+///
+/// \param work the workload the run was measured over
+///
+/// \returns one row per member of \c BoysFarRepresentations(), in the table's order
+std::vector<OptionProbeFarArm> MeasureFarRepresentations(const Workload& work) {
+    std::vector<OptionProbeFarArm> arms;
+
+    for (const FarRepresentationInfo& member : BoysFarRepresentations())
+    {
+        OptionProbeFarArm arm;
+        arm.name = member.name;
+
+        double values[kMaxBoysOrder + 1];
+
+        for (std::size_t i = 0; i < work.x.size(); ++i)
+        {
+            if (work.x[i] < detail::kX1)
+            {
+                continue;
+            }
+
+            ++arm.farArguments;
+
+            const int n = work.order[i];
+            BoysAllOrdersWithFarRepresentation(member.representation, n, work.x[i], values);
+
+            for (int k = 0; k <= n; ++k)
+            {
+                const double expected = BoysSingle(k, work.x[i]);
+
+                if (expected == 0.0)
+                {
+                    continue;
+                }
+
+                const double relative = std::fabs(values[k] - expected) / std::fabs(expected);
+
+                if (relative > arm.maxRelativeError)
+                {
+                    arm.maxRelativeError = relative;
+                    arm.errorAtX = work.x[i];
+                    arm.errorAtOrder = k;
+                }
+
+                arm.bitIdentical += values[k] == expected ? 1 : 0;
+                ++arm.compared;
+            }
+        }
+
+        arms.push_back(std::move(arm));
+    }
+
+    return arms;
+}
+
 // --- the conclusion ---------------------------------------------------------
 
 /// One rival measured against its class's leader, inside the rounds.
@@ -5117,6 +5182,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     report.avx2 = BoysAvx2Available();
     report.backends = backend::BoysBackends();
     report.granularities = BoysFitGranularities();
+    report.farRepresentations = BoysFarRepresentations();
     report.referenceBound = LaneCellBound(OptionPrecision::kFp64, kAnchorCell.route,
                                           kAnchorCell.scheme, kAnchorCell.pack,
                                           kAnchorCell.granularity, kAnchorCell.division);
@@ -5369,6 +5435,11 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         measurement.withinReferenceFloor =
             !measurement.meetsBound && measurement.maxError <= report.referenceBound;
     }
+
+    // The far region's representation axis, measured once outside the clock for the same
+    // reason the column above is: what an argument above kX1 is answered by is a property of
+    // the build rather than of the machine's load.
+    report.farArms = MeasureFarRepresentations(work);
 
     // The paired figures: each option's ratios to the reference are formed inside the round
     // its two calls were timed in, so a drift common to the round is in both terms and cancels.
@@ -7515,6 +7586,54 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "   the values a lane returns are a property of the build, so a run on a machine whose\n";
     text += "   clock wandered still reports which rows delivered what they document, and its cost\n";
     text += "   columns read 'not measured' only where no figure could be formed at all.)\n";
+
+    // The far axis has no row in the table above and no cell in the book below, so this is the
+    // only place its figures appear: a reader who found nothing about it would be reading a
+    // report that had passed over three choices the library serves.
+    if (!report.farArms.empty())
+    {
+        text += "\nthe far region's representations — what answers an argument at or above kX1, "
+                "one member\n  per row, swept from the library's own table of the axis and called "
+                "over this run's far\n  arguments. They are not cells of the space below: the "
+                "entry that takes a member takes no\n  route, so no cell of this shape could run "
+                "it, and the axis is measured here instead — once,\n  untimed, and ranking "
+                "nothing. The figures are relative, where the measured column above is\n"
+                "  absolute: F_n falls to 2.6e-14 at kX1 for n = 32, so an absolute figure over "
+                "the whole\n  domain would be the fitted regions' error and would not move for any "
+                "change here.\n\n";
+
+        text += Text("  %-22s %9s %10s %15s %13s %12s %4s\n", "name", "far args", "compared",
+                     "bit-identical", "worst rel.", "at x", "n");
+
+        for (const OptionProbeFarArm& arm : report.farArms)
+        {
+            // A row with nothing compared is a run whose arguments were all in the fitted
+            // regions: it is printed as that rather than as an arm that agreed everywhere.
+            if (arm.compared == 0)
+            {
+                text += Text("  %-22s %9zu %10s %15s %13s %12s %4s\n", arm.name.c_str(),
+                             arm.farArguments, "-", "-", "-", "-", "-");
+                continue;
+            }
+
+            text += Text("  %-22s %9zu %10zu %15zu %13.3e %12.4g %4d\n", arm.name.c_str(),
+                         arm.farArguments, arm.compared, arm.bitIdentical, arm.maxRelativeError,
+                         arm.errorAtX, arm.errorAtOrder);
+        }
+
+        text += "  relative to the certified per-order fp64 lane, BoysSingle, at the same argument "
+                "and\n  order; the run-time entry serves every member over the whole region, and a "
+                "member is\n  named here in the library's own spelling.\n";
+
+        // The table read from the library beside the rows measured from it: the two are the
+        // same list, so a member the sweep did not reach is a number here and not an absence.
+        text += Text("  the library's own table of this axis: %zu member(s), and %zu of them above"
+                     "%s\n",
+                     report.farRepresentations.size(), report.farArms.size(),
+                     report.farRepresentations.size() == report.farArms.size()
+                         ? ""
+                         : " — THE TWO LISTS DIFFER, so a member of this axis has no row here");
+    }
 
     if (!report.refused.empty())
     {

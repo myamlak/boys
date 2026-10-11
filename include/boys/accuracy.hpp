@@ -655,8 +655,10 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept;
 /// are ranked by measurement rather than by construction.
 ///
 /// **A named representation serves the arguments it covers and changes nothing
-/// else.** \c kAsymptoticRecurrence is the entry's own body over the whole
-/// region, at the default entry's values. \c kScaledTable serves the arguments
+/// else.** \c kAsymptoticRecurrence is the bare ladder over the whole region, at
+/// the default entry's values: the same seed and the same step the other two arms
+/// read, with the two repairs left out, so it is the one arm whose errors are the
+/// region's own rather than a fit's or a table's. \c kScaledTable serves the arguments
 /// in \c [kScaledFarX0, kScaledFarX1) from the stored scaled table and is the
 /// default entry's elsewhere, so every argument a caller may pass is answered
 /// under either name and the values outside the table's span are the same under
@@ -665,8 +667,10 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept;
 /// \ingroup boys
 enum class FarRepresentation : std::uint8_t {
     /// The seed and the upward recurrence: \c F_0 = sqrt(pi)/(2 sqrt(x)) and one
-    /// dependent step per order, which is the region's own arithmetic and what
-    /// every published far-region figure was measured at.
+    /// dependent step per order. It is the region's own arithmetic with neither of
+    /// the two repairs \c kCorrectedSeed carries, so both of the errors that member
+    /// names are live here at the size the region gives them: \c erfc(sqrt(x)) from
+    /// the seed, 2.65e-14 at \c kX1, and the dropped \c exp(-x)/2 term from the step.
     kAsymptoticRecurrence = 0,
 
     /// The stored scaled table: a Chebyshev fit per (interval, order) of
@@ -686,16 +690,28 @@ enum class FarRepresentation : std::uint8_t {
     kCorrectedSeed = 2,
 };
 
-/// The representation the far region takes when the caller names none.
+/// The name a report prints a far representation under, and never null.
+///
+/// \param representation the member
+///
+/// \returns a string literal naming it: "asymptotic-recurrence", "scaled-table" or
+///          "corrected-seed", and "unknown" for a value outside the enumerators
+///
+/// A value outside the enumerators is answered rather than refused.
+const char* FarRepresentationName(FarRepresentation representation) noexcept;
+
+/// The representation the far region's default entries run, and the fallback for a name this
+/// build does not serve. Those are one statement here and not two: every member of the axis is
+/// served, so what the fallback answers is a value that is no member of the enum at all.
 ///
 /// **The recurrence's repaired form, and this is a repair rather than a
 /// ranking.** The asymptotic recurrence is not a candidate that lost on
-/// measurement: the `exp(-x)/2` term its step drops is 6.6 times `F_32` at
-/// `kX1`, so its relative error is 2.55 at the region's own edge and it holds
-/// no relative figure worth stating. The corrected seed is that same arithmetic
-/// with the term restored and the seed's own error carried, so the two are one
-/// path and one of them is right. The scaled table is ranked against it by the
-/// option probe, which has not run.
+/// measurement: the `exp(-x)/2` term its step drops is 6.58 times `F_32` at
+/// `kX1`, so its relative error there is 2.56 and it holds no relative figure
+/// worth stating. The corrected seed is that same arithmetic with the term
+/// restored and the seed's own error carried, so the two are one path and one of
+/// them is right. The scaled table is ranked against it by the option probe,
+/// which has not run.
 inline constexpr FarRepresentation kDefaultFarRepresentation = FarRepresentation::kCorrectedSeed;
 
 } // namespace boys

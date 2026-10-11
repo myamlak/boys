@@ -584,31 +584,21 @@ TEST(BoysTest, AsymptoticBehavior) {
 }
 
 TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
-    // Neither name moves the default, and each is held to its contract: the recurrence is the
-    // default's bit for bit, the table the default's outside its span, the reference grid's inside.
+    // The table's name is held to its contract: the default entry's outside its span, and the
+    // committed reference grid's inside. The arguments straddle the span, its edges and the region
+    // boundaries, so a fallback that missed any of them would show here.
     using boys::FarRepresentation;
     constexpr int kMax = boys::kMaxBoysOrder;
     std::vector<double> named(kMax + 1);
     std::vector<double> shipped(kMax + 1);
 
-    // The recurrence name is the shipped entry outright. The arguments straddle
-    // the table's span, its left edge and the region boundaries, so a fallback
-    // that missed any of them would show here.
     for (double x : {0.5, 11.5, 12.5, 28.5, boys::detail::kX1, 30.0, 60.0, 116.0, 117.0, 400.0})
     {
-        boys::BoysAllOrders(kMax, x, shipped.data());
-        boys::BoysAllOrdersWithFarRepresentation(
-            FarRepresentation::kAsymptoticRecurrence, kMax, x, named.data());
-
-        for (int n = 0; n <= kMax; ++n)
-        {
-            EXPECT_EQ(named[n], shipped[n]) << "n=" << n << " x=" << x;
-        }
-
-        // The table's name is the shipped entry's outside the span, bit for bit:
+        // The table's name is the default entry's outside the span, bit for bit:
         // the table answers [kScaledFarX0, kScaledFarX1) and nothing beside it.
         if (x < boys::detail::kScaledFarX0 || x >= boys::detail::kScaledFarX1)
         {
+            boys::BoysAllOrders(kMax, x, shipped.data());
             boys::BoysAllOrdersWithFarRepresentation(
                 FarRepresentation::kScaledTable, kMax, x, named.data());
 
@@ -619,9 +609,9 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
         }
     }
 
-    // Held to the committed reference grid and not to the shipped entry: above the flat grid the
-    // shipped entry is the asymptotic form, 2.55 of the value at n = 32 and 1.88 by x = 30, so
-    // asserting the two agree would be asserting against the reference.
+    // Held to the committed reference grid and not to the default entry: inside the span the two
+    // are two arithmetics, each with a delivered figure of its own, so a comparison between them
+    // would be measuring one approximation against another rather than against the function.
     double worst = 0.0;
     double worst_x = 0.0;
     int worst_n = 0;
@@ -772,6 +762,40 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
     EXPECT_LE(step, 2.0e-14) << "the ladder steps by " << step << " relative ("
                              << std::abs(below[step_n] - above[step_n])
                              << " absolute) at n=" << step_n << " across the join";
+}
+
+TEST(BoysTest, FarRepresentationArmsAreNotSubstituted) {
+    // The axis's own discriminator: each name serves the arithmetic it names, so the two names a
+    // substitution would fuse are held apart here at the two arguments that separate them.
+    using boys::FarRepresentation;
+    const double x = boys::detail::kX1;
+    std::vector<double> bare(boys::kMaxBoysOrder + 1);
+    std::vector<double> corrected(boys::kMaxBoysOrder + 1);
+
+    // At order 0 the ladders have taken no step, so what separates them is the seed alone. The
+    // bare seed is F_0 * H_0 with H_0 held at 1 and the corrected one carries H_0 - 1, so the gap
+    // between them is erfc(sqrt(x)): measured at 2.664e-14 for an erfc of 2.650e-14.
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kAsymptoticRecurrence, 0, x,
+                                             bare.data());
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 0, x,
+                                             corrected.data());
+
+    const double seed_error = std::erfc(std::sqrt(x));
+    const double seed_gap = std::abs(bare[0] - corrected[0]) / std::abs(corrected[0]);
+    EXPECT_NEAR(seed_gap, seed_error, 0.02 * seed_error)
+        << "the two seeds differ by " << seed_gap << " at kX1, against erfc(sqrt(kX1)) = "
+        << seed_error;
+
+    // At order 32 the step separates them as well: the bare step drops the exp(-x)/2 term, which
+    // at kX1 is larger than F_32 itself, so the bare ladder is more than twice the other's value.
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kAsymptoticRecurrence, 32, x,
+                                             bare.data());
+    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 32, x,
+                                             corrected.data());
+
+    const double step_gap = std::abs(bare[32] - corrected[32]) / std::abs(corrected[32]);
+    EXPECT_GT(step_gap, 2.0) << "the two ladders differ by " << step_gap
+                             << " at n = 32, so the step under the first name is not the bare one";
 }
 
 // Region-B exp-Taylor gather-table pin: the shipped ExpTable is private to its TU, so this is a

@@ -186,13 +186,23 @@ void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
                                         int nmax,
                                         double x,
                                         double* out) noexcept {
-    // A representation this build does not serve is the default entry outright,
-    // the fallback BoysAllOrdersWithRoute takes for a route it does not serve: the
-    // default is named where it is declared rather than spelled here.
-    const FarRepresentation selected =
-        far == FarRepresentation::kScaledTable || far == FarRepresentation::kCorrectedSeed
-            ? far
-            : kDefaultFarRepresentation;
+    // Every member of the axis is served below, so a caller naming one gets what the name
+    // says: what the fallback is for is a name this build does not serve, which is the
+    // default entry outright, the fallback BoysAllOrdersWithRoute takes for a route it
+    // does not serve. The default is named where it is declared, not spelled here.
+    const bool served = far == FarRepresentation::kAsymptoticRecurrence ||
+                        far == FarRepresentation::kScaledTable ||
+                        far == FarRepresentation::kCorrectedSeed;
+    const FarRepresentation selected = served ? far : kDefaultFarRepresentation;
+
+    // The bare ladder is the region's own arithmetic, over the whole region and at the
+    // default entry's values: below kX1 the fitted regions answer, as they do under
+    // every name on this axis.
+    if (selected == FarRepresentation::kAsymptoticRecurrence && x >= detail::kX1)
+    {
+        detail::AsymptoticRecurrenceAllOrders<kDefaultDivisionForm>(nmax, x, out);
+        return;
+    }
 
     // The table serves the span its rows report and nothing else: outside it the
     // default entry answers, at its own values and by its own code, so the join at
@@ -212,8 +222,7 @@ void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
     // The corrected seed serves region C, which is the whole of [kX1, inf): below
     // it the fitted regions answer. Its span is the region itself rather than a
     // table's, because the seed correction and the stepped exp term are properties
-    // of the region; at order 0 the correction ends at kSeedCorrectionX1, above
-    // which the two arms' seeds agree.
+    // of the region and not of a table's rows.
     if (selected == FarRepresentation::kCorrectedSeed && x >= detail::kX1)
     {
         detail::CorrectedSeedAllOrders<kDefaultDivisionForm>(nmax, x, out);
@@ -431,6 +440,20 @@ const char* DivisionFormName(DivisionForm form) noexcept {
     return "unknown";
 }
 
+const char* FarRepresentationName(FarRepresentation representation) noexcept {
+    switch (representation)
+    {
+    case FarRepresentation::kAsymptoticRecurrence:
+        return "asymptotic-recurrence";
+    case FarRepresentation::kScaledTable:
+        return "scaled-table";
+    case FarRepresentation::kCorrectedSeed:
+        return "corrected-seed";
+    }
+
+    return "unknown";
+}
+
 std::span<const PackAxisInfo> BoysPackAxes() noexcept {
     // Both members evaluate the region-A per-order fits of the double lane, so both
     // are certified against that region's bar. The packed lanes cover region A and
@@ -475,6 +498,20 @@ std::span<const DivisionFormInfo> BoysDivisionForms() noexcept {
         {DivisionForm::kExactDivision, DivisionFormName(DivisionForm::kExactDivision)},
         {DivisionForm::kPlainReciprocal, DivisionFormName(DivisionForm::kPlainReciprocal)},
         {DivisionForm::kRefinedReciprocal, DivisionFormName(DivisionForm::kRefinedReciprocal)},
+    }};
+
+    return rows;
+}
+
+std::span<const FarRepresentationInfo> BoysFarRepresentations() noexcept {
+    // One row per member, and every row is served: the axis is read inside the far
+    // region's own arithmetic, and the entry that takes it hands a member to that
+    // arithmetic rather than choosing an entry.
+    static const std::array<FarRepresentationInfo, 3> rows = {{
+        {FarRepresentation::kAsymptoticRecurrence,
+         FarRepresentationName(FarRepresentation::kAsymptoticRecurrence)},
+        {FarRepresentation::kScaledTable, FarRepresentationName(FarRepresentation::kScaledTable)},
+        {FarRepresentation::kCorrectedSeed, FarRepresentationName(FarRepresentation::kCorrectedSeed)},
     }};
 
     return rows;

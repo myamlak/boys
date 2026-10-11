@@ -1287,6 +1287,31 @@ template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, do
     CorrectedSeedLadder<kForm, LadderLeg::kAskingLeg>(nmax, x, out);
 }
 
+/// The far region's bare ladder: the closed form's seed and the upward step without
+/// the term the repaired arms carry.
+///
+/// It is one of the region's representations and not a coarser reading of another:
+/// both of the arithmetic's own errors are live here, and both are the region's own
+/// size at its edge. The seed is \c F_0 * H_0 with \c H_0 held at 1, whose relative
+/// error is \c erfc(sqrt(x)) - 2.65e-14 at \c kX1 - and the step drops the
+/// \c exp(-x)/2 term, which at \c kX1 is larger than \c F_32 itself.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    argument, kX1 <= x
+/// \param out  receives nmax + 1 values, out[k] = F_k(x)
+template <DivisionForm kForm> void AsymptoticRecurrenceAllOrders(int nmax, double x, double* out) noexcept {
+    double f = kBoysHalfSqrtPi / std::sqrt(x);
+
+    const double invx = StepReciprocal<kForm>(x);
+    out[0] = f;
+
+    for (int l = 1; l <= nmax; ++l)
+    {
+        f = DivideStep<kForm>((l - 0.5) * f, x, invx);
+        out[l] = f;
+    }
+}
+
 // The rational minimax route: a numerator/denominator pair per piece, read by Horner
 // in the same mapped argument, the denominator stored as q_1..q_k with q_0 held at
 // 1. An alternative to the shipped route rather than a replacement: the same pieces,

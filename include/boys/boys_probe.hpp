@@ -697,6 +697,38 @@ struct OptionProbeRefinement {
     std::string note;
 };
 
+/// One far representation, as the run measured it: the worst relative difference
+/// from the certified lane over the arguments the arm answers differently, and
+/// where it was.
+///
+/// Relative, where the option rows are absolute. The far region's values run from
+/// \c F_0 = 1.02e-2 down to \c F_32 = 2.6e-14 at \c kX1, so an absolute figure over
+/// the whole domain would be the near region's error and would not move for any
+/// change this axis makes.
+///
+/// \ingroup boys
+struct OptionProbeFarArm {
+    /// The library's own spelling of the member, from \c BoysFarRepresentations().
+    std::string name;
+
+    /// Arguments the workload holds at or above \c kX1: the ones this axis is
+    /// about, and the ones the figures below were taken over. Zero leaves every
+    /// figure below zero, which is a run whose arguments were all in the fitted
+    /// regions and is reported as that rather than as a clean arm.
+    std::size_t farArguments = 0;
+
+    /// Values compared, and how many of them were bit-identical to the certified
+    /// lane. Counted over the far arguments only.
+    std::size_t compared = 0;
+    std::size_t bitIdentical = 0;
+
+    /// The worst relative difference from the certified lane, and the argument and
+    /// order it was at.
+    double maxRelativeError = 0.0;
+    double errorAtX = 0.0;
+    int errorAtOrder = 0;
+};
+
 /// Everything the probe measured and concluded.
 ///
 /// \ingroup boys
@@ -739,6 +771,21 @@ struct OptionProbeReport {
     /// library. The report prints what each one's tables hold and which cells
     /// its kernels cover.
     std::span<const FitGranularityInfo> granularities;
+
+    /// The far region's representations this build carries, read from the library.
+    /// The report sweeps this table, so a member added to the enum is measured
+    /// without the probe being edited.
+    std::span<const FarRepresentationInfo> farRepresentations;
+
+    /// One row per far representation, in the table's own order: what each arm's
+    /// arithmetic answers over the workload's far arguments, measured once and
+    /// outside the clock.
+    ///
+    /// **Ranked nowhere.** The axis is not a cell of the space above: the entry that
+    /// takes a member takes nothing else, so there is no cell of this shape to run
+    /// it at - a cell naming a route would be a cell the entry could not be handed.
+    /// These figures therefore travel beside the ranked ones.
+    std::vector<OptionProbeFarArm> farArms;
 
     /// One entry per option measured, in the order the report prints them.
     std::vector<OptionProbeMeasurement> measurements;

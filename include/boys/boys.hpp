@@ -291,6 +291,27 @@ struct DivisionFormInfo {
 /// \ingroup boys
 std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 
+/// What one far representation is, as a report names it.
+///
+/// The member is which arithmetic answers an argument at or above \c kX1, so it is
+/// a property of the region and not of a call shape: the one entry that takes it
+/// serves every member over the whole region. That is why these rows carry no
+/// coverage fields where the partition rows do.
+///
+/// \ingroup boys
+struct FarRepresentationInfo {
+    FarRepresentation representation =
+        FarRepresentation::kAsymptoticRecurrence; ///< the selector value this row describes
+    const char* name = ""; ///< the name a report prints it under
+};
+
+/// The far representations this build carries, as a report prints them.
+///
+/// \returns one row per member, in enumerator order
+///
+/// \ingroup boys
+std::span<const FarRepresentationInfo> BoysFarRepresentations() noexcept;
+
 /// What one region-B exponential is, as a report names it.
 ///
 /// The member is the arithmetic a region-B ladder's seed is evaluated in, so it
@@ -1153,8 +1174,9 @@ void BoysAllOrdersWithRoute(
 /// route returns the default's outside the intervals its rows report: every
 /// argument the library accepts is answered under either name, and the arguments
 /// the table covers are the only ones the two differ on. \c kAsymptoticRecurrence
-/// is the default entry outright, so a caller who names it receives today's values
-/// bit for bit.
+/// serves \c [kX1, inf) from the region's own arithmetic - the closed form's seed
+/// and the bare upward step, with neither of the two corrections the repaired arms
+/// carry - and returns the default entry's values below it.
 ///
 /// \c kCorrectedSeed serves \c [kX1, inf) and returns the default entry's values
 /// below it. It is the same function reached more accurately, not a second
