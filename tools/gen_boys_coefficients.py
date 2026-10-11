@@ -66,7 +66,9 @@ from functools import lru_cache
 
 try:
     import mpmath
-    from mpmath import erf, erfc, mp, mpf, cos, exp, gamma, pi, sqrt
+    from mpmath import erf, erfc, libmp, mp, mpf, cos, exp, gamma, pi, sqrt
+    from mpmath.libmp import (from_int, mpf_add, mpf_div, mpf_lt, mpf_mul,
+                              mpf_neg)
 except ImportError:
     if "--check" in sys.argv:
         # The regeneration ctest: CI runs without the pip package skip.
@@ -272,25 +274,38 @@ def boys_ref(n, x, tail_floor=REF_TAIL_FLOOR, max_terms=REF_TERMS):
     """
     if x == 0:
         return mpf(1) / (2 * n + 1)
-    # mpf("<decimal>") parses a string at the current precision, and inside this loop that parse
-    # was the function's whole cost: measured 3293 us per call against 1336 with the constants
-    # hoisted, on identical values. This loop runs once per fit-grid node, millions of times.
-    half = mpf(0.5)
-    three_halves = mpf(1.5)
-    s = mpf(0)
-    term = mpf(1) / (n + half)
-    e = exp(-x) / 2
+    # The series is summed at the raw libmp level: the same operations, in the same order, at
+    # the same precision, so the rounding is the one committed, at four tuple calls per term
+    # against six object-level operations. Measured 1.60x to 2.15x on this table's own cell
+    # arguments. A per-term mpf("<decimal>") parse was the function's whole cost once (3293 us
+    # per call against 1336 with the constants hoisted, on identical values), and this loop
+    # runs once per fit-grid node, millions of times per generation.
+    prec = mp.prec
+    rnd = mp.rounding
+    xt = mpf(x)._mpf_
+    one, zero, two = from_int(1), from_int(0), from_int(2)
+    half = mpf_div(one, two, prec, rnd)
+    three_halves = mpf_div(from_int(3), two, prec, rnd)
+    s = zero
+    term = mpf_div(one, mpf_add(from_int(n), half, prec, rnd), prec, rnd)
+    e = mpf_div(libmp.mpf_exp(mpf_neg(xt, prec, rnd), prec, rnd), two, prec, rnd)
+    # n + l + 3/2 needs eleven bits, so stepping the denominator by one is exact and each
+    # divisor is the value the object-level expression rounds to.
+    den = mpf_add(from_int(n), three_halves, prec, rnd)
+    within = tail_floor._mpf_
+    add, div, mul = mpf_add, mpf_div, mpf_mul
     for l in range(max_terms):
-        s += term
-        if l > 20 and term < tail_floor:
+        s = add(s, term, prec, rnd)
+        if l > 20 and mpf_lt(term, within):
             break
-        term *= x / (n + l + three_halves)
+        term = mul(term, div(xt, den, prec, rnd), prec, rnd)
+        den = add(den, one, prec, rnd)
     else:
         raise RuntimeError(
             f"boys_ref: F_{n}({mp.nstr(x, 20)}) is not converged in {max_terms} terms - the "
             f"term is still above {mp.nstr(tail_floor, 3)} and the sum is truncated. An "
             f"argument this far past the series' peak needs a larger max_terms.")
-    return e * s
+    return mp.make_mpf(mul(e, s, prec, rnd))
 
 
 def grid(a, b, npts):
