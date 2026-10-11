@@ -570,11 +570,11 @@ jobs:
       - name: Seam splicer (the control)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: .venv/bin/python tools/splice_default_rows.py --control
-      # The probe report's provenance. A report names the revision it was taken at, and the
-      # files the probe reads must not have moved since. This leg is red on the committed
-      # report, which names none: 9688c97 renamed every option cell and no instrument could
-      # notice, so the report described a probe that no longer exists.
-      - name: Probe report (the revision it names, against the files it read)
+      # The probe report's provenance. A report names the version it was taken at and the content
+      # of every file the probe reads, and the check recomputes both and compares them. This leg
+      # is red on the committed report, which names neither: it was stamped before the stamp
+      # carried a version and a digest, and it is re-made by a run, not by an edit.
+      - name: Probe report (the version it names, against the content it read)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
           .venv/bin/python tools/check_probe_run.py --control
@@ -609,14 +609,16 @@ jobs:
       # generator changed without regenerating, moves what every lane is
       # measured against and leaves every run green; this step is what notices.
       #
-      # It is the expensive generator under tools/ - a full render is 56694
+      # It is the expensive generator under tools/ - a full render is 59268
       # mpmath evaluations at 80 dps - so its cost is stated rather than left to
       # be discovered: 2m20s to 2m40s end to end across two runs on the
       # development host while four other lanes were running on it, of which
       # 1m56s is the render and the rest the route agreements the generator
-      # prints as its evidence that the grid is right. Both run here, on the one
-      # combination the source-integrity gates above are scoped to, so the price
-      # is paid once rather than on all nineteen legs.
+      # prints as its evidence that the grid is right. The times were taken at
+      # the 56694-evaluation render this grid grew from, 4.5 per cent smaller
+      # than the count above; the count is what was re-derived since. Both run
+      # here, on the one combination the source-integrity gates above are scoped
+      # to, so the price is paid once rather than on all nineteen legs.
       #
       # mpmath is what it needs, and it is this leg that installs it, pinned at
       # 1.4.1 - the version the committed bytes reproduce against. The generator
@@ -766,16 +768,20 @@ jobs:
         run: |
           .venv/bin/python tools/check_bound_transcripts.py --check
       # The step above holds the README's printed-run table to the gate's
-      # recorded run, and a run is a record of one revision: taken before a
-      # change to the library, it still satisfies that tie while the document
-      # states figures this tree's gate may no longer print. This step is the
-      # other half - the record against the code - and it reads the revision out
-      # of the run and asks git what has changed since, over the files the gate
-      # prints from. It cannot see a difference only a build would show, and it
-      # says so; what it can see is a record of a tree that has moved.
-      - name: Docs (the gate's recorded run, against this revision)
+      # recorded run, and a run is a record of one tree: taken before a change
+      # to the library, it still satisfies that tie while the document states
+      # figures this tree's gate may no longer print. This step is the other
+      # half - the record against the code - and it reads the version out of the
+      # run's own stamp and recomputes the digests of the files the gate prints
+      # from, comparing them group by group. It cannot see a difference only a
+      # build would show, and it says so; what it can see is a record of a tree
+      # whose content has moved. This leg is red on the committed run, which is
+      # stamped with a revision and no content, until the run is re-made from a
+      # build that stamps both.
+      - name: Docs (the gate's recorded run, against this tree)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
+          .venv/bin/python tools/check_recorded_run.py --control
           .venv/bin/python tools/check_recorded_run.py
       # The step above asks whether the record still belongs to this tree. It does
       # not ask what the record covers, and the two are different questions: a

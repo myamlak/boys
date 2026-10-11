@@ -2,33 +2,39 @@
 """Holds the option probe's recorded report to the tree it says it was taken from.
 
 `tests/data/boys_option_probe_report.txt` is a run of `boys-option-probe` kept as a file: the
-report the tool prints, whose first line stamps the run with the revision it was taken at and the
-verdict it reached. `docs/getting-started.md` quotes a measured table out of such a report, and
-`tools/check_probe_table.py` holds that quotation to this file. That tie is between two records -
-the document and the report - and it cannot see the code: a report taken before a change to the
-option surface still satisfies it, while the labels its rows name are options this tree may not
-carry. A reader of the document then reads an account of a library that is not this one.
+report the tool prints, whose first line stamps the run with the version it was taken at and the
+content of the files it read from. `docs/getting-started.md` quotes a measured table out of such
+a report, and `tools/check_probe_table.py` holds that quotation to this file. That tie is between
+two records - the document and the report - and it cannot see the code: a report taken before a
+change to the option surface still satisfies it, while the labels its rows name are options this
+tree may not carry. A reader of the document then reads an account of a library that is not this
+one.
 
-This check is that half. It reads the revision out of the report's first line and asks the
-repository what has changed since, over the files that decide what the probe prints: the
-library's sources and headers, and the probe's own driver. A file that moved is a finding, and
-the reading for it is a new run rather than an edit: the report is one build's measurement on one
-host, and no other tree's run can be made to say what this tree's probe prints.
+This check is that half, and it reads the two cells of the stamp through `tools/record_stamp.py`,
+the module that states what a digest covers:
 
-A commit that touches none of those files moves nothing the probe reads - the same build would
-print the same report - so the record is still this tree's and this check passes, saying how many
-commits it looked past and over what.
+  * `version <v>`, held to the version `include/boys/version.hpp` states - the release this tree
+    is, which is what a reader places a record by;
+  * `inputs <group>=<digest> ...`, recomputed from this tree and compared group by group. This is
+    the check that holds: the version is bumped by hand, and a source file that moved under a
+    stamp nobody bumped is the record this check exists to refuse.
 
-THE BUILD DESCRIPTION IS REPORTED AND NOT GATED, and the reason is a limit of reading rather than
-a judgement: `CMakeLists.txt` decides the flags a target is compiled under, and it also decides
-which sources are in which target, and a file diff does not say which of the two a change was.
-The probe measures the options a build carries, so the flags are an input of substance to its
-answer; the file is printed as moved or unmoved on every run, with what this check cannot decide
-named beside it, for the reader who has the diff in front of them.
+The stamp named a commit until it named content, and the reason for the move is the merge: a pull
+request is squash merged, so a commit id written into a tracked artifact is in no clone's history
+afterwards, and a checker resolving one refuses the record for a reason about the merge rather
+than about the tree. A squash carries the same bytes, so the digest is the identity that survives
+it, and this check reads no history at all - it works in a checkout one commit deep.
+
+A group whose digest moved is a finding, because the files the probe reads decide what it prints.
+`CMakeLists.txt` is the exception, reported and not gated, for a reason that is a limit of
+reading: it decides the flags the probe is compiled under and it decides which sources are in
+which target, and a file's digest does not say which of the two a change was. The report's cell
+carries the file's content, so a reader sees it move, and what this check cannot decide is named
+beside it for the reader who has the diff in front of them.
 
 What this does not do, and why:
   * it does not run the probe, so it cannot see a difference only a build would show: what an
-    option costs is a property of the host and the clock, and no file listing holds a report to
+    option costs is a property of the host and the clock, and no content digest holds a report to
     it. The reading for that is a run, and a run is a measurement;
   * it does not read the report's figures. A cell's fastest entry, its figure and the count of
     options the run could not place behind it are what the probe measured, and they are held to
@@ -36,56 +42,68 @@ What this does not do, and why:
 
 Usage:
     python3 tools/check_probe_run.py
-    python3 tools/check_probe_run.py --report build-probe-record/report.txt --revision main
+    python3 tools/check_probe_run.py --report build-probe-record/report.txt
     python3 tools/check_probe_run.py --control
 
-Exit status is 0 when every file the probe reads from is unchanged since the revision the report
-names, and 1 when one is, when the report names no revision, when the revision is not in this
-repository's history, or when there is no recorded report to read at all. A run with `--control`
-exits 0 when every planted defect is caught and 1 when one is not.
+Exit status is 0 when the report names this tree's version and every group of its inputs cell
+reads the same content here, and 1 when one differs, when the stamp names no version or no
+inputs, when a cell states `unknown`, or when there is no recorded report to read at all. A run
+with `--control` exits 0 when every planted defect is caught and 1 when one is not.
 """
 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 REPORT = REPO / "tests" / "data" / "boys_option_probe_report.txt"
 
-# What the probe prints from: the library it links (sources and headers) and the driver that calls
-# it. The report is not among them - the record is not an input to what it records - and neither
-# is anything under tools/, docs/ or tests/, which the probe never reads.
-INPUTS = (
-    "src",
-    "include",
-    "benchmarks/boys_option_probe.cpp",
-)
-
-# The build description, an input of a different kind: it holds the flags the probe is compiled
-# under, and this check cannot read a flag out of it. Reported, never gated.
-BUILD_DESCRIPTION = "CMakeLists.txt"
+# The record this check reads, by the name `tools/record_stamp.py` knows its input list by.
+RECORD = "probe"
 
 # The words the probe opens its report with. They are what makes a file a probe run rather than
 # another closure on disk, and they are read by their own spelling instead of by a pattern this
 # file invents, so a rewritten stamp is a finding rather than a silently unread report.
 STAMP = "boys option probe | "
 
-# The revision cell of that first line: the cell worded `revision`, wherever in the line the
-# emission put it. It is read by its own word and not by its position, because the line already
-# opens with a timestamp other readers key on - a field added before this one would otherwise
-# read as a missing revision. The whitespace inside a cell is not fixed by anything this reads,
-# so a report the probe stamped is read whatever its padding.
-REVISION = re.compile(r"\|\s*revision\s+(?P<rev>[^|]*?)\s*(?:\||$)")
+# The two cells of that first line, each worded as the emission words it and read wherever in the
+# line the emission put it. They are read by their own words and not by their positions, because
+# the line already opens with a timestamp other readers key on - a field added before either
+# would otherwise read as a missing one. The whitespace inside a cell is not fixed by anything
+# this reads, so a report the probe stamped is read whatever its padding.
+VERSION = re.compile(r"\|\s*version\s+(?P<version>[^|]*?)\s*(?:\||$)")
+INPUTS = re.compile(r"\|\s*inputs\s+(?P<inputs>[^|]*?)\s*(?:\||$)")
 
-# What the probe prints when it was built where no revision was passed to it. It names no tree,
-# and a report that carries it is one this check cannot place in time.
+# What the probe prints when it was built where no content digest was passed to it. It names no
+# tree, and a report that carries it is one this check cannot hold to anything.
 UNKNOWN = "unknown"
 
 WORK = REPO / "build-probe-record"
+
+
+def stamp_module():
+    """`tools/record_stamp.py`, loaded from its path rather than copied.
+
+    The digests a report is held to are the ones the tool that wrote its cell computes, so the
+    two readings are one implementation and not two that have to agree.
+    """
+    path = pathlib.Path(__file__).resolve().parent / "record_stamp.py"
+    spec = importlib.util.spec_from_file_location("record_stamp", path)
+    module = importlib.util.module_from_spec(spec)
+    # Registered before it is executed: a class the module decorates looks itself up in
+    # `sys.modules` while the module is being built, and a module that is not there fails.
+    sys.modules["record_stamp"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+record_stamp = stamp_module()
 
 
 def display(path: pathlib.Path) -> str:
@@ -113,14 +131,29 @@ def git(*args: str) -> tuple[int, str, str]:
     return proc.returncode, proc.stdout, proc.stderr.strip()
 
 
-def read(report_path: pathlib.Path, revision: str) -> tuple[list[str], list[str]]:
+def edited_here() -> list[str]:
+    """The files the probe reads that this working tree holds modified, as git reports them.
+
+    A diagnostic and not a gate, and no history is read for it: what a checkout in CI holds is
+    the record's own content, while a developer's uncommitted edits are theirs to judge - and
+    they are worth naming, because a digest that differs from the record's most often differs
+    because of them.
+    """
+    paths = tuple(path for group in record_stamp.INPUTS[RECORD].values() for path in group)
+    status, dirty, _ = git("status", "--porcelain", "--", *paths)
+    if status != 0:
+        return []
+    return [line[3:].strip() for line in dirty.splitlines() if len(line) > 3]
+
+
+def read(report_path: pathlib.Path) -> tuple[list[str], list[str]]:
     """The report against the tree: the lines a reader gets, and what is wrong.
 
     The lines are printed by the caller whatever the verdict, and the findings are what decides
     it. The control below reads its fixtures through this same function, so a control that
     passes is a control over the reading and not over a second copy of it.
     """
-    lines = [f"the option probe's recorded report, held to {revision}"]
+    lines = ["the option probe's recorded report, held to the version and the inputs it names"]
     findings: list[str] = []
 
     if not report_path.is_file():
@@ -147,125 +180,157 @@ def read(report_path: pathlib.Path, revision: str) -> tuple[list[str], list[str]
         )
         return lines, findings
 
-    found = REVISION.search(first)
-    named = found.group("rev").strip() if found else ""
+    found = VERSION.search(first)
+    named = found.group("version").strip() if found else ""
+    lines.append(f"  version: {named or 'none named'}")
 
     if not named or named == UNKNOWN:
-        lines.append(f"  revision: {named or 'none named'}")
         findings.append(
-            f"{display(report_path)} names no revision: its first line "
-            + (f"carries `revision {UNKNOWN}`, which is what the probe prints when it was built "
-               f"where no revision was passed to it"
+            f"{display(report_path)} names no version: its first line "
+            + (f"carries `version {UNKNOWN}`, which is what a build states when it could not "
+               f"name the version it linked"
                if named else
-               f"carries no `revision` cell, which is what dates a run")
-            + f". A report that dates itself by nothing cannot be told from a stale one, and this "
-            f"check would then be passing over a file it cannot place in time. The probe writes "
-            f"the revision its build was configured with, so re-make the report from a build of "
-            f"this tree"
+               f"carries no `version` cell, which is what places a run in a release")
+            + f". A report that dates itself by nothing cannot be told from a stale one, and "
+            f"this check would then be passing over a file it cannot place. The probe states the "
+            f"version of the library it linked, so re-make the report from a build of this tree"
         )
-        return lines, findings
+    else:
+        try:
+            tree_version = record_stamp.version(REPO)
+        except record_stamp.StampError as error:
+            lines.append(f"  this tree: {error}")
+            findings.append(
+                f"the version this tree states could not be read ({error}), so the report's own "
+                f"`version {named}` cell is held to nothing. This is the tree and not the record: "
+                f"`{record_stamp.VERSION_HEADER}` carries the version as `kVersionString` and a "
+                f"configure asserts it against the project's own number"
+            )
+        else:
+            lines.append(f"  this tree: version {tree_version}")
+            if named != tree_version:
+                findings.append(
+                    f"{display(report_path)} names version {named}, and this tree states "
+                    f"{tree_version}: the report is an account of another release, and the labels "
+                    f"its rows carry are the options that release served, so a document held to "
+                    f"it is held to an option surface this tree may not carry. Re-make the report "
+                    f"- build boys-option-probe in this tree, run it, and write its output to "
+                    f"{display(report_path)} - and commit the new record with the change that "
+                    f"moved the version"
+                )
 
-    lines.append(f"  revision: {named}")
+    found = INPUTS.search(first)
+    stated = found.group("inputs").strip() if found else ""
 
-    status, resolved, error = git("rev-parse", "--verify", "--quiet", f"{named}^{{commit}}")
-    resolved = resolved.strip()
-
-    if status != 0 or not resolved:
-        lines.append("  resolved: no - the revision is not in this repository's history")
+    if not stated or stated == UNKNOWN:
+        lines.append(f"  inputs: {stated or 'none named'}")
         findings.append(
-            f"the report names revision {named}, and this repository cannot resolve it"
-            + (f" ({error})" if error else "")
-            + ". A record whose revision is not in the history being checked cannot be told from "
-            "a stale one: fetch the revision the report names (a shallow checkout has only the "
-            "tip commit), or record a run of a revision this tree carries"
+            f"{display(report_path)} names no inputs: its first line "
+            + (f"carries `inputs {UNKNOWN}`, which is what a build states when it was configured "
+               f"with no content for the files the probe reads"
+               if stated else
+               f"carries no `inputs` cell, which is what holds a record to the files it read")
+            + f". A report that names no content cannot be told from one taken before the code "
+            f"moved under it, which is the reading this check exists for. Re-make the report from "
+            f"a build of this tree"
         )
         return lines, findings
 
-    status, changed, error = git("diff", "--name-only", resolved, revision, "--", *INPUTS)
-
-    if status != 0:
-        lines.append("  compared: no")
-        findings.append(
-            f"git could not compare {named} with {revision}: {error or 'no reason given'}"
-        )
-        return lines, findings
-
-    moved = [line for line in changed.splitlines() if line.strip()]
-    status, count, _ = git("rev-list", "--count", f"{named}..{revision}")
-    commits = count.strip() if status == 0 else "an unknown number of"
-    status, build_moved, _ = git("diff", "--name-only", resolved, revision, "--",
-                                 BUILD_DESCRIPTION)
-
-    lines.append(f"  the probe reads: {', '.join(INPUTS)}")
-    lines.append(
-        "  " + (f"{BUILD_DESCRIPTION} moved since the run: it holds the flags the probe compiles "
-                "under as well as the target lists, and this check cannot tell the two apart - "
-                "read it, and re-make the report if it moved a flag the probe measures under"
-                if build_moved.strip() else
-                f"{BUILD_DESCRIPTION} is unchanged since the run")
-    )
-
-    # What a working tree holds is not always the revision a report names. This is not a finding:
-    # a checkout in CI is the revision named, and a developer's uncommitted edits are theirs to
-    # judge. It is said out loud because the figures the report records are the committed tree's,
-    # and a reader comparing them against a local build would otherwise be comparing two trees
-    # without being told.
-    status, dirty, _ = git("status", "--porcelain", "--", *INPUTS)
-    edited = [line[3:].strip() for line in dirty.splitlines() if len(line) > 3]
-
-    if edited:
-        lines.append(
-            f"  the working tree: {len(edited)} file(s) the probe reads are modified here "
-            f"({', '.join(edited[:4])}" + (", ..." if len(edited) > 4 else "")
-            + f"); the report describes {named} and not these edits"
-        )
-
-    if not moved:
-        lines.append(
-            f"  changed since: none, over {commits} commit(s) between {named} and {revision}"
-        )
-        return lines, findings
+    recorded = record_stamp.parse_cell(stated)
+    expected = record_stamp.INPUTS[RECORD]
+    computed = record_stamp.digests(REPO, RECORD)
+    edited = edited_here()
 
     lines.append(
-        f"  changed since, over {commits} commit(s) between {named} and {revision}: "
-        f"{len(moved)} file(s)"
+        "  the probe reads: "
+        + ", ".join(path for paths in expected.values() for path in paths)
     )
 
-    for name in moved[:12]:
-        lines.append(f"    {name}")
+    for name in record_stamp.gated(RECORD):
+        if name not in recorded:
+            lines.append(f"    {name}: named by no group of the report's cell")
+            findings.append(
+                f"the report's inputs cell holds no {name} group, so the content the probe read "
+                f"there is held to nothing: the cell is written by the build and a group it "
+                f"leaves out is one this check cannot compare. Re-make the report from a build "
+                f"of this tree"
+            )
+        elif recorded[name] != computed[name]:
+            lines.append(f"    {name}: recorded {recorded[name]}, this tree {computed[name]}")
+            findings.append(
+                f"the content the report was taken from differs in {name}: its cell states "
+                f"{recorded[name]} and this tree reads {computed[name]}"
+                + (f", over {len(edited)} file(s) the probe reads that are modified here "
+                   f"({', '.join(edited[:4])}" + (", ..." if len(edited) > 4 else "") + ")"
+                   if edited else "")
+                + f". The report is an account of files this tree does not carry, and the labels "
+                f"its rows name are the options that build served, so a document held to it is "
+                f"held to an option surface this tree may not have. Re-make the report - build "
+                f"boys-option-probe in this tree, run it, and write its output to "
+                f"{display(report_path)} - and commit the new record with the change that moved "
+                f"the content"
+            )
+        else:
+            lines.append(f"    {name}: {computed[name]}")
 
-    if len(moved) > 12:
-        lines.append(f"    ... and {len(moved) - 12} more")
+    for name in expected:
+        if name in record_stamp.NOT_GATED:
+            moved = name in recorded and recorded[name] != computed[name]
+            lines.append(
+                "  " + ("CMakeLists.txt differs from the report's cell: it holds the flags the "
+                       "probe compiles under as well as the target lists, and this check does "
+                       "not gate it, because a digest does not say which of the two a change "
+                       "was - read it, and re-make the report if it moved a flag the probe "
+                       "measures under"
+                       if moved else
+                       "CMakeLists.txt reads the same content the report's cell states")
+            )
 
-    findings.append(
-        f"the recorded report was taken at {named}, and {len(moved)} file(s) the probe reads "
-        f"from have changed since ({moved[0]}"
-        + (f" and {len(moved) - 1} more" if len(moved) > 1 else "")
-        + f"). The report is an account of a different build: the labels its rows carry are the "
-        f"options that build served, so a document held to it is held to an option surface this "
-        f"tree may not have. Re-make the report - build boys-option-probe at {revision}, run it, "
-        f"and write its output to {display(report_path)} - and commit the new record with the "
-        f"change that moved the figures"
-    )
     return lines, findings
 
 
-def stamped(header: str, revision: str | None) -> str:
-    """A report's first line with its revision cell set to `revision`, and one added where it
-    carries none.
+def stamped(header: str, cells: dict[str, str | None]) -> str:
+    """A report's first line with the named cells set to these values, and one added where the
+    line carries none. A cell whose value is None is taken out.
 
     The fixture's line is built out of the line this tree's report opens with, cell by cell, so
     that a fixture differs from a real report in one cell and not in a shape this tool wrote.
     """
-    parts = [part for part in header.split(" | ") if not part.strip().startswith("revision ")]
+    parts = [part.strip() for part in header.split(" | ") if part.strip()]
+    kept = [part for index, part in enumerate(parts)
+            if index == 0 or part.split(" ", 1)[0] not in cells]
 
-    if revision is None:
-        return " | ".join(parts)
+    for word, value in cells.items():
+        if value is None:
+            continue
+        at = next((index for index, part in enumerate(kept)
+                   if part.split(" ", 1)[0] == "verdict"), len(kept))
+        kept.insert(at, f"{word} {value}")
+    return " | ".join(kept)
 
-    at = next((index for index, part in enumerate(parts) if part.strip().startswith("verdict")),
-              len(parts))
-    parts.insert(at, f"revision {revision}")
-    return " | ".join(parts)
+
+def moved_digest() -> tuple[str, str]:
+    """One gated group's digest as a tree whose content moved reads it.
+
+    The group's own files are copied under the scratch directory and one byte of the first of
+    them is changed, so the value is a digest of content that differs from this tree's by that
+    edit - the defect this check exists to see, and not a typo of the right shape.
+    """
+    name = record_stamp.gated(RECORD)[0]
+    paths = record_stamp.INPUTS[RECORD][name]
+    relative = record_stamp.files(REPO, paths)
+    scratch = WORK / "moved"
+
+    if scratch.exists():
+        shutil.rmtree(scratch)
+    for entry in relative:
+        target = scratch / entry
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(REPO / entry, target)
+
+    edited = scratch / relative[0]
+    edited.write_bytes(edited.read_bytes() + b"\n")
+    return name, record_stamp.digest(scratch, paths)
 
 
 def control() -> int:
@@ -275,75 +340,75 @@ def control() -> int:
     report's body and differs from it in what the run says about itself. A control that passed
     would be a reading that cannot see the defect it exists for - which is how a report went
     stale while every check over it stayed green.
+
+    The last arm is the other direction: a fixture carrying this tree's own version and this
+    tree's own digests, which must read clean. A control whose every arm is caught has not shown
+    that the check can pass, and a check that cannot pass is one a reader stops reading.
     """
     source = REPORT.read_text(encoding="utf-8", errors="replace") if REPORT.is_file() else ""
     header = (source.splitlines()[0] if source.splitlines()
               else f"{STAMP}started 1970-01-01T00:00:00Z | verdict CANNOT DETERMINE")
     body = "\n".join(source.splitlines()[1:])
 
-    status, oldest, _ = git("rev-list", "--max-parents=0", "HEAD")
-    root = oldest.strip().splitlines()[0] if status == 0 and oldest.strip() else ""
+    WORK.mkdir(parents=True, exist_ok=True)
+    clean = record_stamp.digests(REPO, RECORD)
+    name, stale = moved_digest()
+    differing = dict(clean)
+    differing[name] = stale
+
+    # What this tree would stamp its own report with. Every arm below differs from it in one
+    # cell, so a finding is the arm's own defect and not a second one read beside it.
+    base: dict[str, str | None] = {"version": record_stamp.version(REPO),
+                                   "inputs": record_stamp.cell(clean)}
 
     # Each arm states the reading it is planted for: a control that failed for another reason
     # would be a green control over a check that cannot see this defect.
-    arms: list[tuple[str, str | None, str]] = [
-        ("a stamp with the revision cell taken out", None, "names no revision"),
-        (f"a build that was passed no revision, so its cell reads `{UNKNOWN}`", UNKNOWN,
-         "names no revision"),
-        ("a revision this repository's history does not carry", "0f0f0f0f0f0f",
-         "cannot resolve it"),
+    arms: list[tuple[str, dict[str, str | None], str | None]] = [
+        ("a stamp with the version cell taken out", {"version": None}, "names no version"),
+        (f"a build that could not name the version it linked, so its cell reads `{UNKNOWN}`",
+         {"version": UNKNOWN}, "names no version"),
+        ("a report of a version this tree is not", {"version": "0.0.0-planted"},
+         "another release"),
+        ("a stamp with the inputs cell taken out", {"inputs": None}, "names no inputs"),
+        (f"a report whose {name} digest is of content this tree does not carry",
+         {"inputs": record_stamp.cell(differing)}, "content the report was taken from differs"),
+        ("this tree's own version and this tree's own digests", {}, None),
     ]
 
-    # The arm a shallow checkout cannot plant: it needs a revision old enough for an input to
-    # have moved past it, and a checkout whose history is one commit deep has none. The arm is
-    # reported as skipped with that reason rather than counted as one that passed.
-    skipped = ""
-
-    if root:
-        status, ahead, _ = git("diff", "--name-only", root, "HEAD", "--", *INPUTS)
-        if status == 0 and ahead.strip():
-            arms.append((f"a report of revision {root[:12]}, which the probe's inputs have moved "
-                         f"past", root, "have changed since"))
-        else:
-            skipped = (f"the arm planted from revision {root[:12]} is skipped: nothing under "
-                       f"{', '.join(INPUTS)} differs between it and HEAD, so a fixture naming it "
-                       f"is not a report the inputs have moved past")
-    else:
-        skipped = ("the arm planted from the oldest revision is skipped: this checkout's history "
-                   "does not name one")
-
-    WORK.mkdir(parents=True, exist_ok=True)
     failures = 0
+    planted = 0
 
-    for index, (what, revision, expected) in enumerate(arms):
+    for index, (what, cells, expected) in enumerate(arms):
         fixture = WORK / f"control-{index}.txt"
-        fixture.write_text(stamped(header, revision) + "\n" + body, encoding="utf-8")
-        _, findings = read(fixture, "HEAD")
-        caught = any(expected in finding for finding in findings)
+        fixture.write_text(stamped(header, {**base, **cells}) + "\n" + body, encoding="utf-8")
+        _, findings = read(fixture)
 
         print(f"control {index}: {what} - written to {display(fixture)}")
-        print(f"  {'caught' if caught else 'NOT CAUGHT'}"
-              + ("" if caught else f": no finding reads `{expected}`"))
+
+        if expected is None:
+            caught = not findings
+            print("  clean" if caught else f"  NOT CLEAN: {findings[0][:96]}")
+        else:
+            planted += 1
+            caught = any(expected in finding for finding in findings)
+            print("  caught" if caught else f"  NOT CAUGHT: no finding reads `{expected}`")
+
         failures += 0 if caught else 1
 
-    if skipped:
-        print(f"  skipped: {skipped}")
-
     if failures:
-        print(f"\ncontrol: {failures} of {len(arms)} planted defect(s) were not caught. This "
-              f"check cannot see the defect it exists for, so a green run of it says nothing")
+        print(f"\ncontrol: {failures} of {len(arms)} arm(s) did not read as planted. This check "
+              f"cannot see the defect it exists for, so a green run of it says nothing")
         return 1
 
-    print(f"\ncontrol: all {len(arms)} planted defect(s) caught")
+    print(f"\ncontrol: all {planted} planted defect(s) caught, and the report this tree stamps "
+          f"reads clean")
     return 0
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--report", default=str(REPORT),
-                        help="the probe's recorded report: the file that names the revision")
-    parser.add_argument("--revision", default="HEAD",
-                        help="the revision to hold the report to (default: the working tree's HEAD)")
+                        help="the probe's recorded report: the file that carries the stamp")
     parser.add_argument("--control", action="store_true",
                         help="read a fixture planted in a scratch copy instead of the tree, and "
                              "exit non-zero unless every planted defect is caught")
@@ -352,7 +417,7 @@ def main() -> int:
     if args.control:
         return control()
 
-    lines, findings = read(pathlib.Path(args.report), args.revision)
+    lines, findings = read(pathlib.Path(args.report))
 
     for line in lines:
         print(line)
@@ -364,8 +429,9 @@ def main() -> int:
         return 1
 
     print(
-        "\nverdict: clean - the recorded report names a revision this tree carries, and no file "
-        "the probe reads from has changed since: the labels its rows carry are this tree's probe's"
+        "\nverdict: clean - the recorded report names this tree's version, and every group of "
+        "the content it says it read reads the same here: the labels its rows carry are this "
+        "tree's probe's"
     )
     return 0
 

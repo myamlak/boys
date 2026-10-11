@@ -380,8 +380,9 @@ def probe_space() -> tuple[str, list[str], bool]:
     complete.
     """
     # IDENTIFIED, and only because the probe stamps its own output. The first line of a run is
-    # `boys option probe | started <ts> | finished <ts> | seed <n> | verdict <v>`, which is the stamp
-    # this space lacked: three other closures sit on disk - the host probe's cell cross, the option
+    # `boys option probe | started <ts> | finished <ts> | seed <n> | version <v> | inputs <cell> |
+    # verdict <v>`, which is the stamp this space lacked: three other closures sit on disk - the host
+    # probe's cell cross, the option
     # book's axes cross and the region-B book, two of them also totalling 720 - and none of them says
     # which space its arithmetic is over. Reading "the newest whole closure" printed the option
     # book's 720 as this space's answer once; this reads the probe's own header instead.

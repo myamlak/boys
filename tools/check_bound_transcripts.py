@@ -43,8 +43,8 @@ cell to declare uncovered. Where no recorded run is read, the delivered column i
 the file that is missing rather than a quiet pass: the figures are in the document either way, and a
 check that drops its subject when its evidence is absent is the failure this file exists to close.
 
-Two limits are worth stating rather than leaving to be assumed. A recorded run names the revision
-it was taken at, and the report prints it, so a reader can see which revision's output the documents
+Two limits are worth stating rather than leaving to be assumed. A recorded run names the version
+it was taken at, and the report prints it, so a reader can see which version's output the documents
 are held to; but the tie is between two records - the document and the run - and a run that has gone
 stale relative to the code satisfies it. Holding the run itself to the code means comparing it with
 what this leg's gate prints, which is the producing and not the reading half, and this check does
@@ -186,6 +186,15 @@ RUN = REPO / "tests" / "data" / "boys_accuracy_gate_run.txt"
 BOUND = re.compile(
     r"\u2264\s*(?:m[\u00b7*]\s*)?(?P<num>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)(?!\s*ULP)"
 )
+# The relative form the contract is stated in: `<sign> 1e-13 <dot> F`, the figure
+# times the value rather than a figure of its own. The float lane's bar is written
+# as the power it is, `2^-22`, because that is the format fact and not a decimal
+# that happens to equal it; both spellings read to the same number.
+RELATIVE = re.compile(
+    r"≤\s*"
+    r"(?:(?P<num>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(?P<base>\d+)\^(?P<exp>-?\d+))"
+    r"\s*[·*]\s*F(?:_n\(x\)|\(x\))?"
+)
 # The additive form, `m<dot>1.5e-7 + 8e-8`, which the specification's fast device row
 # and the library's own additive member both state. A trailing `+ 1/2 ULP`
 # carries no number and is prose, not a figure.
@@ -216,8 +225,11 @@ RUN_ROW = re.compile(
     r"(?P<delivered>\S+)[ \t]+/[ \t]+(?P<claimed>\S+)(?=[ \t]|$)",
     re.M,
 )
-# The run names the revision it was taken at: `accuracy gate, revision <rev>`.
-RUN_REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
+# The version the run was taken at: `accuracy gate, version <v>`. The stamp named a
+# commit until it named content - a pull request here is squash merged, so a commit
+# written into this record is in no clone's history afterwards - and the cell that
+# places a run is the release.
+RUN_VERSION = re.compile(r"^accuracy gate, version[ \t]+(?P<version>\S+)[ \t]*$", re.M)
 # `-` is what `PrintClaim` writes where the claim had no measured cell at all.
 NO_FIGURE = "-"
 
@@ -244,6 +256,13 @@ ROW_STRUCT = "LaneContractInfo"
 # the name it ends with is the member's.
 MEMBER_NAME = re.compile(r"(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*$")
 
+# The additive figure the single-precision lane's plain reciprocal states beside
+# its base. The base moved to the relative form and this term did not: it is the
+# extra rounding of that form, a term of the form rather than of the value, and
+# the library's own fp32 row states it unchanged. It is held by a tie of its own
+# below, which is why it is named here.
+PLAIN_TERM = 1e-7
+
 # The column of the header's contract table, by the label this check reads it
 # under. Matching is by prefix so a parenthesised range beside a label - the
 # header writes `region B (x0 <= x < x1)` - does not have to be transcribed here
@@ -260,7 +279,7 @@ class Figure:
     """One number read off one side, with where it was read."""
 
     value: float
-    unit: str  # "absolute" | "additive" | "ulp"
+    unit: str  # "absolute" | "relative" | "additive" | "ulp"
     text: str
     where: str
 
@@ -326,32 +345,66 @@ class RunRow:
 
 @dataclass(frozen=True)
 class Run:
-    """A recorded run of the accuracy gate: its revision, and its printed rows."""
+    """A recorded run of the accuracy gate: its version, and its printed rows."""
 
     source: str
-    revision: str
+    version: str
     rows: tuple[RunRow, ...]
 
 
 @dataclass(frozen=True)
 class Tie:
-    """One gate constant, and the document cells that state the same fact."""
+    """One gate constant, and the document cells that state the same fact.
+
+    `unit` is the form the figure is stated in on both sides: the contract's own
+    form, a fraction of the value, or one of the two forms a lane of a narrow
+    format publishes beside it. A cell stating one unit can never satisfy a tie
+    of another.
+    """
 
     constant: str
     header: str  # the header table's row label
     columns: tuple[str, ...]  # the header table's columns, by REGIONS key
     document: str  # the contract table's row label, read in every document that carries one
     unit: str = "absolute"
-    regions: tuple[tuple[str, str], ...] = ()  # (lane, region) in the specification's run table
+    # A gate constant naming the absolute figure a lane states beside the figure
+    # above, where that lane keeps one: the figure it published before the
+    # contract stated its error against the value, which binds wherever the
+    # relative arm falls below it. The cells are then held to both figures as a
+    # set - the relative one and the floor - because a row that keeps a floor
+    # publishes two figures for one lane and a reader may rely on either.
+    floor: str | None = None
 
 
 @dataclass(frozen=True)
 class LibraryTie:
-    """One `BoysLaneContracts()` row, and the document rows that state its figures."""
+    """One `BoysLaneContracts()` row, and the document rows that state its figures.
+
+    `additive_only` marks a row whose base figure has moved to the contract's
+    relative form while the library's own row has not: the one figure still stated
+    in the same words on both sides is the term that form states beside its base,
+    the plain reciprocal's own extra rounding, and the tie holds that term alone.
+    The base of such a row is declared a gap below.
+    """
 
     row: str  # the lane name the library's row carries
     document: str  # the contract table's row label, read in every document that carries one
     header: str | None = None
+    additive_only: bool = False
+
+
+@dataclass(frozen=True)
+class LibraryGap:
+    """One `BoysLaneContracts()` row this check cannot hold to a document row, and why.
+
+    A row whose figures have not moved while the documents' have is the same fact
+    stated two ways, and the two are not the same figure: nothing here can compare
+    them. The gap is declared rather than left out of the tie table, so the row is
+    named in the run and the reason it is not held is read with it.
+    """
+
+    row: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -368,8 +421,8 @@ class Uncovered:
 
     table: str  # "header" | "<document path>:contract" | "spec-run"
     label: str
-    region: str
-    reason: str
+    region: str = ""  # the `Region` cell of a spec-run row; empty for the other two
+    reason: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -384,20 +437,31 @@ class Uncovered:
 # `double single | A`.
 # ---------------------------------------------------------------------------
 TIES = (
-    Tie("kBoundSingleA", "double single", ("A",), "double single",
-        regions=(("double single", "A"),)),
-    Tie("kBoundSingleBand", "double single", ("band",), "double single",
-        regions=(("double single", "band"),)),
-    Tie("kBoundSingleB", "double single", ("B",), "double single",
-        regions=(("double single", "B"),)),
-    Tie("kBoundSingleC", "double single", ("C",), "double single",
-        regions=(("double single", "C"),)),
-    # The double batch lane's figure is flat over the whole domain, so all four
-    # of the header's columns carry it and the specification's contract row carries it
-    # once. The specification's printed run has no row for the lane.
-    Tie("kBoundDoubleBatch", "double batch", ("A", "band", "B", "C"), "double batch"),
+    # The double lanes' figures are the contract's own form: the error against
+    # the value, one figure over the whole domain, and the four region constants
+    # carry it because a report still reads a cell region by region. The
+    # header's four columns are therefore the same cell four times, and the
+    # contract rows carry it once.
+    #
+    # No tie reads the specification's printed-run table any more. That table is
+    # a transcription of a run of the gate, and the run in the tree was taken
+    # before the contract moved: its `Bound claimed` column states the figures
+    # that were in force then. A tie would hold a document to a figure the run
+    # did not print, and the table is re-made with the run. The rows are declared
+    # in UNCOVERED below, and the delivered column is still held - to the run
+    # itself, which is the side that states it.
+    Tie("kBoundSingleA", "double single", ("A",), "double single", unit="relative"),
+    Tie("kBoundSingleBand", "double single", ("band",), "double single", unit="relative"),
+    Tie("kBoundSingleB", "double single", ("B",), "double single", unit="relative"),
+    Tie("kBoundSingleC", "double single", ("C",), "double single", unit="relative"),
+    Tie("kBoundDoubleBatch", "double batch", ("A", "band", "B", "C"), "double batch",
+        unit="relative"),
+    # The float lane's row is the one that carries a floor: its arithmetic is
+    # binary32, so the relative figure alone is not a figure any lane of that
+    # format can keep on values of order one, and the figure it published before
+    # the move stays beside it - the larger of the two is what its row states.
     Tie("kBoundFloat", "float single / batch", ("A", "band", "B", "C"), "float single / batch",
-        regions=(("float single", "all"),)),
+        unit="relative", floor="kFloatValueFloor"),
     # The native half lane's bound is in ULP of the returned value, not an
     # absolute figure: the number that ties is the 8, and the unit is carried
     # with it so it can never be compared against an absolute cell.
@@ -420,15 +484,12 @@ TIES = (
 ALIASES: tuple[tuple[str, str], ...] = ()
 
 LIBRARY_TIES = (
-    # The double batch entry is a double-precision entry: the specification's row for
-    # it is the row the library's fp64 lane states.
-    LibraryTie("fp64", "double batch", "double batch"),
-    LibraryTie("fp32", "float single / batch", "float single / batch"),
-    LibraryTie("fp16", "fp16 / bf16", "fp16 / bf16"),
-    # The device lane's additive, 8e-8, is stated by no constant of the gate at
-    # all - it is here that it is read, against the specification row that publishes
-    # it. The header's table has no device row to hold it to.
-    LibraryTie("fp32-device", "CUDA fp32, `RegionBExp::kFast`"),
+    # The two half lanes whose figures did not move. A half lane's bound is a base
+    # plus the returned value's own quantum, or the quantum alone, and the contract
+    # that moved is the double and single-precision lanes' error against the value.
+    # These rows state their figures in the words the documents state them in, so
+    # the ties are the ones that stood before the move.
+    #
     # The device half lane's row states the plain reciprocal's own term beside
     # its base, and both figures of it are read here rather than from the gate:
     # this lane's half-digit term is composed at run time, and no constant
@@ -438,17 +499,50 @@ LIBRARY_TIES = (
     # check exists for, and before this entry was added the two figures of this
     # row were published by the library and held by nothing.
     LibraryTie("fp16-device", "CUDA fp16"),
-    # The device double lane's row states one figure, the double lane's 5.5e-14
-    # over the whole of x >= 0, and the specification row it belongs to was a
-    # cross-reference - "the same budgets as the CPU double lanes" - carrying no
-    # figure at all, which is the one row shape this check cannot hold. So the
-    # library published a bound that no document cell stated and no tie could
-    # read, and the row states it now: this entry is what holds the two
-    # together. docs/mainpage.md's copy of that row was the same cross-reference
-    # and is corrected with it - one lane, one figure, two documents stating it,
-    # and the tie is read against both, which is what the second document in
-    # DOCUMENTS is for. The header's table has no device row.
-    LibraryTie("fp64-device", "CUDA fp64"),
+    LibraryTie("fp16", "fp16 / bf16", "fp16 / bf16"),
+    # The single-precision lanes' bases moved to the relative form and their rows
+    # in src/boys.cpp have not, so the base is a gap (LIBRARY_GAPS below). What
+    # both sides still state in the same words is the term the plain reciprocal
+    # adds beside that base - the fp32 row's plainAdditive, the device row's
+    # additive - and that term is held here as the additive figure the document
+    # rows write after the relative one. The header's table states the base alone,
+    # so these two ties read the contract rows and no header row.
+    LibraryTie("fp32", "float single / batch", additive_only=True),
+    LibraryTie("fp32-device", "CUDA fp32, `RegionBExp::kFast`", additive_only=True),
+)
+
+# The library's own rows this check cannot hold to a document row, and why. Each
+# is named in the run with its reason: a row that is not held and not explained is
+# a figure the library publishes and nothing reads.
+LIBRARY_GAPS = (
+    LibraryGap(
+        "fp64",
+        "the row states 5.5e-14 over the whole domain, and the contract's double figure is now "
+        "1e-13 of the value: the two bound the same lane in different forms, so no comparison of "
+        "them says anything. The row moves with the library's own statements - BoysLaneContracts() "
+        "is read by the option probe, and its report is tests/data/, re-made centrally at the "
+        "freeze - and until then the document row `double batch` is held by the gate's constants",
+    ),
+    LibraryGap(
+        "fp64-device",
+        "as the fp64 row above: 5.5e-14 against the same lane's relative 1e-13, stated by the CUDA "
+        "surface's own entries. No constant of this gate states a device figure, so the document "
+        "row `CUDA fp64` is declared in UNCOVERED until the library's rows move",
+    ),
+    LibraryGap(
+        "fp32",
+        "the row's base is the lane's published absolute figure, which the contract rows now carry "
+        "as the floor under its relative one - the gate's kFloatValueFloor states that same figure "
+        "and is tied to them. The row states the floor alone and not the relative arm beside it, so "
+        "the two sides are not one fact stated twice and no set comparison holds this row: the base "
+        "is a gap until BoysLaneContracts() states the lane's figure in the contract's form, which "
+        "is a library change with the probe's report to re-make with it",
+    ),
+    LibraryGap(
+        "fp32-device",
+        "as the fp32 row above, on the device lane: its base is the same absolute floor and is a "
+        "gap for the same reason, and the 8e-8 its fast region-B exponential adds is held",
+    ),
 )
 
 UNTIED = (
@@ -462,6 +556,39 @@ UNTIED = (
         "in the header's double-single row outside region A, or the gate's note would be wrong "
         "about the file it describes",
     ),
+)
+
+# The names the coverage sweep keys a contract row's `Uncovered` entry by: the
+# document's own table, written the way that sweep names it.
+SPEC_CONTRACT = "docs/specification.md:contract"
+MAINPAGE_CONTRACT = "docs/mainpage.md:contract"
+
+# Why the specification's printed-run table is held by no tie on its bound column.
+# The column states the figures the gate printed, and the run in the tree printed
+# the pre-move ones: a tie here would hold a document to a figure no run states.
+PRINTED_RUN_REASON = (
+    "the cell is the `Bound claimed` figure of a printed run of the gate, not a figure a "
+    "constant of it is compared against: tests/data/boys_accuracy_gate_run.txt was taken "
+    "before the contract moved and states the figures that were in force at that revision. "
+    "A tie here would hold the document to a figure the run did not print. The table is "
+    "re-made with the run, which is a freeze act; the delivered column of this table is "
+    "still held, to the recorded run's own row"
+)
+
+# Why the two device contract rows that carry a moved figure are held by nothing.
+DEVICE_ROW_REASON = (
+    "the lane's figure has moved to the contract's relative form and the device lane's own "
+    "statements have not: the library's row for it is declared a gap in LIBRARY_GAPS, and the "
+    "device gate (tests/boys_cuda_accuracy_gate.cpp) carries its own constants for this lane, "
+    "in the pre-move absolute form, which this check does not read. No constant of the gate it "
+    "does read states a device figure"
+)
+
+# ... and what is still held on the second of them.
+ADDITIVE_HELD = (
+    ". What is held on this row is the term its fast region-B exponential adds beside that "
+    "base: the library's `fp32-device` row states it unchanged and the LibraryTie for that row "
+    "reads it against this cell"
 )
 
 UNCOVERED = (
@@ -482,6 +609,60 @@ UNCOVERED = (
         "single",
         "as the fp16 row above: the half-quantum term of the same claim, computed at run time "
         "from bf16's own quantum at the returned value",
+    ),
+    Uncovered(
+        "spec-run",
+        "double single",
+        "A",
+        PRINTED_RUN_REASON,
+    ),
+    Uncovered(
+        "spec-run",
+        "double single",
+        "band",
+        PRINTED_RUN_REASON,
+    ),
+    Uncovered(
+        "spec-run",
+        "double single",
+        "B",
+        PRINTED_RUN_REASON,
+    ),
+    Uncovered(
+        "spec-run",
+        "double single",
+        "C",
+        PRINTED_RUN_REASON,
+    ),
+    Uncovered(
+        "spec-run",
+        "float single",
+        "all",
+        PRINTED_RUN_REASON,
+    ),
+    Uncovered(
+        SPEC_CONTRACT,
+        "CUDA fp64",
+        "",
+        DEVICE_ROW_REASON,
+    ),
+    Uncovered(
+        SPEC_CONTRACT,
+        "CUDA fp32, `RegionBExp::kFast`",
+        "",
+        DEVICE_ROW_REASON + ADDITIVE_HELD,
+    ),
+    Uncovered(
+        MAINPAGE_CONTRACT,
+        "CUDA fp64",
+        "",
+        DEVICE_ROW_REASON,
+    ),
+    Uncovered(
+        MAINPAGE_CONTRACT,
+        "CUDA fp32, `RegionBExp::kFast`",
+        "",
+        DEVICE_ROW_REASON + ADDITIVE_HELD,
     ),
 )
 
@@ -710,15 +891,73 @@ def region_row(table: Table, region_column: int, lane: str, region: str) -> Row:
     return hits[0]
 
 
+def relative_value(match: re.Match[str]) -> float:
+    """The figure a relative spelling states, whichever of the two ways it is written."""
+    if match.group("num") is not None:
+        return float(match.group("num"))
+    return float(int(match.group("base")) ** int(match.group("exp")))
+
+
+def uncovered_target(
+    uncovered: Uncovered,
+    header: Table,
+    header_columns: tuple[int, ...],
+    contracts: list[Contract],
+    run: Table,
+    run_region: int,
+    run_bound: int,
+) -> tuple[Table, Row, tuple[int, ...]]:
+    """The table, row and figure-bearing columns an `UNCOVERED` entry names.
+
+    An entry names one of three tables - the header's, a document's contract table
+    (written `<path>:contract`), or the specification's printed-run table - and the
+    row by the label it carries there, with the region too where the label alone
+    does not name one row. A name no table carries is an error: an entry that
+    stops matching a row is a declaration nothing stands behind.
+    """
+    if uncovered.table == "spec-run":
+        return run, region_row(run, run_region, uncovered.label, uncovered.region), (run_bound,)
+    if uncovered.table == "header":
+        return header, row_of(header, uncovered.label), header_columns
+    source = uncovered.table.removesuffix(":contract")
+    contract = next(
+        (contract for contract in contracts if contract.table.source == source), None
+    )
+    if contract is None:
+        raise CheckError(
+            f"the uncovered list names a row of `{uncovered.table}`, and no document whose "
+            f"contract table this check reads is named that: "
+            f"{', '.join(contract.table.source for contract in contracts)}"
+        )
+    return contract.table, row_of(contract.table, uncovered.label), (contract.bound,)
+
+
 def figures_in(text: str) -> list[tuple[float, str, str]]:
-    """Every bound figure in one cell, as (value, unit, as written)."""
+    """Every bound figure in one cell, as (value, unit, as written).
+
+    A relative spelling is read first and its span is masked out of the text the
+    absolute readers see, so `2^-22` cannot be read as the figure 2 and the `F`
+    of the spelling cannot be read as anything at all.
+    """
     found: list[tuple[float, str, str]] = []
-    for match in BOUND.finditer(text):
-        found.append((float(match.group("num")), "absolute", match.group(0)))
+    masked = list(text)
+    for match in RELATIVE.finditer(text):
+        found.append((relative_value(match), "relative", match.group(0)))
+        # The additive a lane states beside a relative figure - the plain
+        # reciprocal's own term on the float lanes - is written after it, in the
+        # same cell, and is read from the text rather than the masked copy.
         addend = ADDEND.match(text[match.end() :])
         if addend is not None:
             found.append((float(addend.group("num")), "additive", addend.group(0).strip()))
-    for match in ULP.finditer(text):
+        for index in range(match.start(), match.end()):
+            masked[index] = "#"
+    rest = "".join(masked)
+    for match in BOUND.finditer(rest):
+        found.append((float(match.group("num")), "absolute", match.group(0)))
+        addend = ADDEND.match(rest[match.end() :])
+        if addend is not None:
+            found.append((float(addend.group("num")), "additive", addend.group(0).strip()))
+    for match in ULP.finditer(rest):
         found.append((float(match.group("num")), "ulp", match.group(0)))
     if not found:
         bare = BARE.fullmatch(text.strip())
@@ -909,14 +1148,19 @@ def struct_member_names(path: pathlib.Path) -> list[str]:
 
 def read_lanes(
     path: pathlib.Path, header: pathlib.Path
-) -> dict[str, tuple[Figure, Figure | None, Figure | None]]:
-    """The `BoysLaneContracts()` rows: lane name to its bound, additive and plain term.
+) -> dict[str, tuple[Figure, Figure | None, Figure | None, Figure | None]]:
+    """The `BoysLaneContracts()` rows: lane name to its bound, additive and plain terms.
 
     The third is the plain reciprocal's own term, zero on a lane whose forms
     deliver one figure. Where it is not zero the figure the lane publishes for
     that form is the bound plus it, and that sum is what the document rows are
     held to - the row states the term and the document states the figure, which
     is the same fact written the two ways each side writes it.
+
+    The fourth is that same term read on its own, as the additive figure the
+    documents write beside a base - the step the row's own rounding is - which is
+    what the single-precision lanes' rows are still held by after their bases
+    moved to the relative form.
 
     `header` is the file the row struct's declaration is read from, which is the
     header the rest of this check reads - `--header` names another revision of
@@ -995,6 +1239,9 @@ def read_lanes(
             )
             if float(plain_additive) != 0.0
             else None,
+            Figure(float(plain_additive), "additive", plain_additive, f"{where} plain-additive")
+            if float(plain_additive) != 0.0
+            else None,
         )
     if not lanes:
         raise CheckError(f"{source}: the initialiser holds rows and no lane")
@@ -1002,7 +1249,7 @@ def read_lanes(
 
 
 def read_run(path: pathlib.Path) -> Run:
-    """The gate's own output, as the per-lane rows it printed and the revision it names.
+    """The gate's own output, as the per-lane rows it printed and the version it names.
 
     A delivered figure is a swept maximum the gate prints, so the only record
     of one is a run of the gate: this reads that record. The row's first
@@ -1031,8 +1278,8 @@ def read_run(path: pathlib.Path) -> Run:
             f"and this reader reads the delivered figure there; a run that states it another way "
             f"has to be told to this check rather than read as a run with no figures"
         )
-    revision = RUN_REVISION.search(text)
-    return Run(source, revision.group("rev") if revision is not None else "unnamed", tuple(rows))
+    version = RUN_VERSION.search(text)
+    return Run(source, version.group("version") if version is not None else "unnamed", tuple(rows))
 
 
 def printed_row(run: Run, lane: str, region: str) -> RunRow | None:
@@ -1114,6 +1361,7 @@ def main() -> int:
 
         header = find_table(read_tables(header_path), header_path, "Lane", 1 + len(REGIONS))
         region_column = {key: column_of(header, label) for key, label in REGIONS.items()}
+        header_columns = tuple(region_column[key] for key in REGIONS)
 
         spec_tables = read_tables(spec_path)
         run = find_table(spec_tables, spec_path, "Lane", 4)
@@ -1153,7 +1401,7 @@ def main() -> int:
             lines.append(f"  {untied.constant:<22} {figure.text:<9} {figure.where} (not tied)")
 
         lines.append(f"\nthe library's own lane rows ({display(library_path)}, BoysLaneContracts())")
-        for lane, (bound, additive, plain) in lanes.items():
+        for lane, (bound, additive, plain, _) in lanes.items():
             term = f" + {additive.text}" if additive is not None else ""
             plain_term = f", or {plain.text} in the plain form" if plain is not None else ""
             lines.append(
@@ -1162,7 +1410,7 @@ def main() -> int:
             )
 
         for table, name, columns in (
-            (header, "the header's contract table", tuple(region_column.values())),
+            (header, "the header's contract table", header_columns),
             *(
                 (contract.table, f"{contract.table.source}'s contract table", (contract.bound,))
                 for contract in contracts
@@ -1182,8 +1430,8 @@ def main() -> int:
 
         if recorded is not None:
             lines.append(
-                f"\nthe gate's recorded run ({recorded.source}), revision "
-                f"{ascii_safe(recorded.revision)}, {len(recorded.rows)} printed rows; the row it "
+                f"\nthe gate's recorded run ({recorded.source}), version "
+                f"{ascii_safe(recorded.version)}, {len(recorded.rows)} printed rows; the row it "
                 f"printed for each row of the specification's printed-run table"
             )
             for row in run.rows:
@@ -1216,37 +1464,35 @@ def main() -> int:
                     f"gate, whose figures are absolute"
                 )
             stated = f"{figure.text} ({tie.unit})" if tie.unit != "absolute" else figure.text
-            wanted = (figure.value, tie.unit)
+            wanted = {(figure.value, tie.unit)}
+            if tie.floor is not None:
+                # A tie with a floor holds two figures: the relative one and the
+                # absolute figure the lane states beside it, which is the figure
+                # the cells have to carry as well.
+                floor = declared_gate(gate, tie.floor)
+                wanted.add((floor.value, "absolute"))
+                stated += f", floored at {floor.text}"
             header_row = row_of(header, tie.header)
             tied.add((header.source, header_row.line))
             for key in tie.columns:
-                found = one(
-                    cell_figures(header, header_row, region_column[key]),
-                    f"{header.source}:{header_row.line} (`{tie.header}` / `{REGIONS[key]}`)",
-                )
-                if found.key != wanted:
+                where = f"{header.source}:{header_row.line} (`{tie.header}` / `{REGIONS[key]}`)"
+                found = keys(cell_figures(header, header_row, region_column[key]))
+                if found != wanted:
                     findings.append(
                         f"{tie.constant} is {stated} at {figure.where}, and the header's "
-                        f"`{tie.header}` row states {found.text} ({found.unit}) in its "
-                        f"{REGIONS[key]} cell at {found.where}"
+                        f"`{tie.header}` row states "
+                        f"{', '.join(sorted(pretty(found_key) for found_key in found)) or 'nothing'} "
+                        f"in its {REGIONS[key]} cell at {where}"
                     )
             for contract in contracts:
                 contract_row = row_of(contract.table, tie.document)
                 tied.add((contract.table.source, contract_row.line))
-                expected.setdefault((contract.table.source, contract_row.line), set()).add(wanted)
-            for lane, region in tie.regions:
-                run_row = region_row(run, run_region, lane, region)
-                tied.add((run.source, run_row.line))
-                found = one(
-                    cell_figures(run, run_row, run_bound),
-                    f"{run.source}:{run_row.line} (`{lane}` / `{region}`)",
-                )
-                if found.key != wanted:
-                    findings.append(
-                        f"{tie.constant} is {stated} at {figure.where}, and the specification's printed "
-                        f"run states {found.text} ({found.unit}) for `{lane} | {region}` at "
-                        f"{found.where}"
-                    )
+                expected.setdefault((contract.table.source, contract_row.line), set()).update(wanted)
+        # A tie reads the header's cells and the contract rows of every document. It
+        # does not read the specification's printed-run table: see the note above
+        # TIES - that table's bound column is a run's own printed figure, and the run
+        # in the tree was taken before the contract moved. Its rows are declared in
+        # UNCOVERED, and the delivered column is held to the recorded run below.
 
         # The specification's printed-run table states two figures per row, and the
         # delivered one is not a constant of the gate: it is the worst cell of
@@ -1322,13 +1568,57 @@ def main() -> int:
                     f"table that drops one has to drop the alias with it"
                 )
 
+        # A row may be neither tied nor left out: the two gaps and the two rows
+        # below must be exactly the library's rows this check does not hold whole.
+        # A name in neither table is a row nothing reads, which is what this list
+        # exists to make visible rather than to leave to a reader of the script.
+        for gap in LIBRARY_GAPS:
+            if gap.row not in lanes:
+                raise CheckError(
+                    f"{display(library_path)}: no lane row named `{gap.row}`, which "
+                    f"LIBRARY_GAPS declares. The rows read are: {', '.join(sorted(lanes))}"
+                )
+            if any(tie.row == gap.row and not tie.additive_only for tie in LIBRARY_TIES):
+                raise CheckError(
+                    f"LIBRARY_GAPS declares `{gap.row}` a gap and a LIBRARY_TIES entry holds "
+                    f"the same row whole: the two say different things about one row"
+                )
+
         for tie in LIBRARY_TIES:
             if tie.row not in lanes:
                 raise CheckError(
                     f"{display(library_path)}: no lane row named `{tie.row}`. The rows read are: "
                     f"{', '.join(sorted(lanes))}"
                 )
-            bound, additive, plain = lanes[tie.row]
+            bound, additive, plain, plain_term = lanes[tie.row]
+            if tie.additive_only:
+                # The one figure both sides still state in the same words: the term
+                # the plain reciprocal adds beside the base. The row is not marked
+                # tied - its base is a gap, and the document row carries other
+                # figures this tie does not read - so the coverage sweep below
+                # still asks the row to be declared.
+                term = additive if additive is not None else plain_term
+                if term is None:
+                    raise CheckError(
+                        f"{display(library_path)}: the `{tie.row}` row the tie table holds by "
+                        f"its additive states no additive term at all (both its additive and its "
+                        f"plainAdditive read zero), so there is nothing for the tie to read"
+                    )
+                for contract in contracts:
+                    contract_row = row_of(contract.table, tie.document)
+                    expected.setdefault((contract.table.source, contract_row.line), set()).add(
+                        term.key
+                    )
+                    found = keys(row_figures(contract.table, contract_row, (contract.bound,)))
+                    if term.key not in found:
+                        findings.append(
+                            f"the library's `{tie.row}` row states {term.text} as the term its "
+                            f"plain reciprocal adds, at {term.where}, and the contract row "
+                            f"`{ascii_safe(tie.document)}` at {contract.table.source}:"
+                            f"{contract_row.line} does not state that term: it states "
+                            f"{', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
+                        )
+                continue
             figures = [bound] + ([additive] if additive is not None else [])
             # A contract row is the one cell that states every figure a lane
             # publishes, so it carries the plain form's own figure too. The
@@ -1361,7 +1651,7 @@ def main() -> int:
             if tie.header is not None:
                 header_row = row_of(header, tie.header)
                 tied.add((header.source, header_row.line))
-                found = keys(row_figures(header, header_row, tuple(region_column.values())))
+                found = keys(row_figures(header, header_row, header_columns))
                 if found != keys(figures):
                     findings.append(
                         f"the library's `{tie.row}` row carries "
@@ -1369,6 +1659,20 @@ def main() -> int:
                         f"the header's `{tie.header}` row at {header.source}:{header_row.line} "
                         f"states {', '.join(sorted(pretty(key) for key in found)) or 'nothing'}"
                     )
+
+        # A row declared in UNCOVERED is one this check does not hold, and the set
+        # sweep below asks a row's every figure to be tied, which is what the
+        # declaration says cannot be done for this row: the figure it carries has
+        # no side to be held to. What IS held on such a row is held by the tie that
+        # states it - a row's additive term - and that tie reports its own drift.
+        declared_uncovered = {
+            (table.source, row.line)
+            for uncovered in UNCOVERED
+            for table, row, _ in (
+                uncovered_target(uncovered, header, header_columns, contracts, run, run_region,
+                                 run_bound),
+            )
+        }
 
         # The contract rows of every document, as sets: a row states every figure
         # its lane publishes, and the figures tied to the row - the gate's
@@ -1379,7 +1683,7 @@ def main() -> int:
         for contract in contracts:
             for row in contract.table.rows:
                 wanted = expected.get((contract.table.source, row.line))
-                if wanted is None:
+                if wanted is None or (contract.table.source, row.line) in declared_uncovered:
                     continue
                 found = keys(row_figures(contract.table, row, (contract.bound,)))
                 where = f"{contract.table.source}:{row.line} (`{ascii_safe(row.label)}`)"
@@ -1413,12 +1717,19 @@ def main() -> int:
 
         # --- the sweep, and the coverage the declaration lists owe ------------
         declared = {tie.constant for tie in TIES}
+        declared |= {tie.floor for tie in TIES if tie.floor is not None}
         declared |= {constant for constant, _ in ALIASES}
         declared |= {untied.constant for untied in UNTIED}
         documented: dict[tuple[float, str], str] = {}
         for tie in TIES:
             figure = declared_gate(gate, tie.constant)
             documented.setdefault(figure.key, figure.where)
+            if tie.floor is not None:
+                # A floor is a documented figure like any other, and it is read
+                # off the set above, so a second constant stating it is a second
+                # transcription and the sweep below says so.
+                floor = declared_gate(gate, tie.floor)
+                documented.setdefault(floor.key, floor.where)
         for name, figure in sorted(gate.items()):
             if (
                 name not in declared
@@ -1438,7 +1749,7 @@ def main() -> int:
                 )
 
         coverage = [
-            ("header", header, tuple(region_column.values())),
+            ("header", header, header_columns),
             *(
                 (f"{contract.table.source}:contract", contract.table, (contract.bound,))
                 for contract in contracts
@@ -1465,28 +1776,18 @@ def main() -> int:
                 )
 
         for uncovered in UNCOVERED:
-            if uncovered.table == "spec-run":
-                row = region_row(run, run_region, uncovered.label, uncovered.region)
-                if not row_figures(run, row, (run_bound,)):
-                    findings.append(
-                        f"{run.source}:{row.line} (`{uncovered.label}` / `{uncovered.region}`) is "
-                        f"named as uncovered and carries no figure this check can read"
-                    )
-            elif uncovered.table == "header":
-                row_of(header, uncovered.label)
-            else:
-                # A contract row: the name says which document's table it is in.
-                source = uncovered.table.removesuffix(":contract")
-                contract = next(
-                    (contract for contract in contracts if contract.table.source == source), None
+            # Each entry names a row this check has to be able to read, and a row
+            # that stops carrying a figure leaves a declaration behind that would
+            # otherwise read as a row still there to be declared.
+            table, row, columns = uncovered_target(
+                uncovered, header, header_columns, contracts, run, run_region, run_bound
+            )
+            if not row_figures(table, row, columns):
+                findings.append(
+                    f"{table.source}:{row.line} (`{uncovered.label}`) is named in the UNCOVERED "
+                    f"list of tools/check_bound_transcripts.py and carries no figure this check "
+                    f"can read"
                 )
-                if contract is None:
-                    raise CheckError(
-                        f"the uncovered list names a row of `{uncovered.table}`, and no document "
-                        f"whose contract table this check reads is named that: "
-                        f"{', '.join(contract.table.source for contract in contracts)}"
-                    )
-                row_of(contract.table, uncovered.label)
 
         if read == 0:
             raise CheckError(
@@ -1513,13 +1814,13 @@ def main() -> int:
     )
     for tie in TIES:
         figure = declared_gate(gate, tie.constant)
-        places = [f"the contract row `{tie.document}` in {documents} (as a set)"]
-        places.extend(
-            f"`{lane} | {region}` in the specification's printed run" for lane, region in tie.regions
-        )
+        stated = f"{figure.text} ({tie.unit})" if tie.unit != "absolute" else figure.text
+        if tie.floor is not None:
+            stated += f", floored at {declared_gate(gate, tie.floor).text}"
         print(
-            f"  {tie.constant:<22} {pretty(figure.key):<14} = the header's `{tie.header}` "
-            f"({', '.join(tie.columns)}) = " + " = ".join(places),
+            f"  {tie.constant:<22} {stated:<14} = the header's `{tie.header}` "
+            f"({', '.join(tie.columns)}) = the contract row `{tie.document}` in {documents} "
+            f"(as a set)",
             file=out,
         )
     for constant, primary in ALIASES:
@@ -1529,7 +1830,16 @@ def main() -> int:
             file=out,
         )
     for tie in LIBRARY_TIES:
-        bound, additive, plain = lanes[tie.row]
+        bound, additive, plain, plain_term = lanes[tie.row]
+        if tie.additive_only:
+            term = additive if additive is not None else plain_term
+            print(
+                f"  BoysLaneContracts() {tie.row:<12} {pretty(term.key):<22} = the additive term "
+                f"the contract row `{tie.document}` in {documents} states beside its relative "
+                f"figure (the row's base is a gap, below)",
+                file=out,
+            )
+            continue
         figures = [bound] + ([additive] if additive is not None else [])
         contract_figures = figures + ([plain] if plain is not None else [])
         print(
@@ -1548,7 +1858,7 @@ def main() -> int:
                 f"  the specification's printed run {ascii_safe(lane)} | {ascii_safe(region):<12} "
                 f"{printed.pair if printed is not None else 'no row printed':<22} = "
                 f"{recorded.source}:{printed.line if printed is not None else '-'} "
-                f"(the gate's recorded run, revision {ascii_safe(recorded.revision)})",
+                f"(the gate's recorded run, version {ascii_safe(recorded.version)})",
                 file=out,
             )
 
@@ -1556,14 +1866,25 @@ def main() -> int:
     for untied in UNTIED:
         figure = declared_gate(gate, untied.constant)
         print(f"  {untied.constant} = {figure.text} ({figure.where}): {untied.reason}", file=out)
-    for uncovered in UNCOVERED:
-        row = region_row(run, run_region, uncovered.label, uncovered.region)
-        figures = ", ".join(pretty(figure.key) for figure in row_figures(run, row, (run_bound,)))
+    for gap in LIBRARY_GAPS:
+        bound = lanes[gap.row][0]
         print(
-            f"  {run.source}:{row.line} (`{uncovered.label}` / `{uncovered.region}`, "
-            f"{figures or 'no figure'}): {uncovered.reason}",
+            f"  BoysLaneContracts() {gap.row:<12} {bound.text} "
+            f"({bound.where.rsplit(' ', 1)[0]}): {gap.reason}",
             file=out,
         )
+    for uncovered in UNCOVERED:
+        table, row, columns = uncovered_target(
+            uncovered, header, header_columns, contracts, run, run_region, run_bound
+        )
+        figures = ", ".join(pretty(figure.key) for figure in row_figures(table, row, columns))
+        where = (
+            f"`{uncovered.label}` / `{uncovered.region}`"
+            if uncovered.table == "spec-run"
+            else f"`{uncovered.label}`"
+        )
+        print(f"  {table.source}:{row.line} ({where}, {figures or 'no figure'}): {uncovered.reason}",
+              file=out)
 
     if findings:
         print(f"\n{len(findings)} finding(s):", file=out)
@@ -1587,7 +1908,7 @@ def main() -> int:
         f"{documents} and include/boys/boys.hpp state, over the ties above. {read} figures were read "
         f"from the documents' tables, {len(gate)} numeric-literal constants from the gate, "
         f"{len(lanes)} lane rows from the library, and {len(recorded.rows)} printed rows from the "
-        f"gate's recorded run at {display(run_path)} (revision {ascii_safe(recorded.revision)})",
+        f"gate's recorded run at {display(run_path)} (version {ascii_safe(recorded.version)})",
         file=out,
     )
     return 0

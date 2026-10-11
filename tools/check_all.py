@@ -101,7 +101,7 @@ SLOW = {
         "compares anything; ci.yml calls it \"the longest step anywhere in this matrix\""
     ),
     "gen_boys_accuracy_gate_reference.py": (
-        "a full render is 56694 mpmath evaluations at 80 dps, measured in ci.yml at "
+        "a full render is 59268 mpmath evaluations at 80 dps, measured in ci.yml at "
         "\"2m20s to 2m40s end to end\""
     ),
     "check_class_combinations.py": (

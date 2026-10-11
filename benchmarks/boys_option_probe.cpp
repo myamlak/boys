@@ -3,6 +3,7 @@
 // reads the verdict from the text. A measured run exits 1 when its option space does not close (an
 // accounting defect, not a result), 3 on a failed --emit-defaults write, 2 otherwise.
 #include "boys/boys_probe.hpp"
+#include "boys/version.hpp"
 
 #include <array>
 #include <cstdio>
@@ -13,10 +14,11 @@
 #include <string>
 #include <vector>
 
-// CMake passes the revision the report was taken at; a build that bypasses it says so rather
-// than naming a revision it did not read.
-#ifndef BoysProbeRevision
-#define BoysProbeRevision "unknown"
+// CMake passes the content the report was taken from, as the digest of every file the probe reads,
+// computed by the tool that recomputes it at check time; a build that bypasses it says so rather
+// than naming content it did not read.
+#ifndef BoysProbeInputs
+#define BoysProbeInputs "unknown"
 #endif
 
 namespace {
@@ -195,12 +197,15 @@ int main(int argc, char** argv) {
     const std::string started = Timestamp();
     const boys::OptionProbeReport report = boys::RunOptionProbe(options);
 
-    // The revision follows the timestamp the line already opened with, so a reader keyed on that
-    // stamp reads what it read before, and the report dates itself for a check to hold it to.
-    std::printf("boys option probe | started %s | finished %s | seed %llu | revision %s | "
-                "verdict %s\n",
+    // The version and the content follow the timestamp the line already opened with, so a reader
+    // keyed on that stamp reads what it read before, and the report dates itself for a check to
+    // hold it to: the version is what a reader places it by, the digests are what a checker
+    // compares.
+    std::printf("boys option probe | started %s | finished %s | seed %llu | version %s | "
+                "inputs %s | verdict %s\n",
                 started.c_str(), Timestamp().c_str(),
-                static_cast<unsigned long long>(report.options.seed), BoysProbeRevision,
+                static_cast<unsigned long long>(report.options.seed), boys::kVersionString,
+                BoysProbeInputs,
                 report.verdict == boys::OptionProbeVerdict::kRecommend ? "RECOMMEND"
                                                                        : "CANNOT DETERMINE");
 
