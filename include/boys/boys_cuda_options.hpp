@@ -2116,7 +2116,11 @@ struct DeviceOptionInfo {
     DeviceOptionAxis axis; ///< the axis it varies, or kNone
     RegionBExp regionBExp; ///< the axis member it is; kAccurate for a row with no axis
     BoysDeviceLane lane; ///< the degree tables it reads, and whose seed it amplifies
-    double bound; ///< the documented bound, over the whole argument range the entry serves
+    double bound; ///< the absolute bar the device gate audits the entry at, over the whole
+                  ///< argument range it serves - the wide end of the figures the lane's fits are
+                  ///< cut against, and not the entry's published bound: that is \c boundForm, a
+                  ///< fraction of F_n(x) the entry states, and the gate reads no form beside this
+                  ///< member, so the two are separate facts and neither folds into the other
     const char* boundForm; ///< the documented form, in words, as the entry states it
     bool built; ///< whether this build serves the option
     const char* refusedBecause; ///< why not, when \c built is false; nullptr otherwise

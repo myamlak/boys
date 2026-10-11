@@ -189,10 +189,10 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///    device gate's sweep confirms (5.0e-8 measured at m = 1). On the host it is
 ///    the reduced-argument polynomial this library fits for itself
 ///    (`kRegionBExpReduced` and the reduction around it, `boys/boys_impl.hpp`):
-///    degree 7 on |r| <= ln 2/2, 8.336e-11 relative, reduced by the textbook
+///    degree 12 on |r| <= ln 2/2, 5.864e-19 relative, reduced by the textbook
 ///    x = k ln 2 + r with k out of a magic constant. It is read where the ladder's
 ///    own requirement admits it - the polynomial stands inside that requirement
-///    ten times over from kRegionBExpCheapFrom = 16.173039304440838 upward - and
+///    ten times over from kRegionBExpCheapFrom = 10.797904988647187 upward - and
 ///    below that argument the requirement is tighter than the polynomial's error
 ///    and the member reads the library routine instead. **That arm is part of the
 ///    member and not a fallback**, for the reason stated below: a member whose
@@ -244,12 +244,12 @@ enum class RegionBExp : int {
 /// double arithmetic rounded once to single at the lane's own type. Below the
 /// member's cut those are one evaluation bit for bit, because the narrowed member
 /// reads the same library routine there; above the cut the member adds the
-/// polynomial's 8.336e-11 relative to the half ulp the narrowing contributes,
-/// which is 8.336e-11 read beside 5.96e-8. So no published figure moves on that
-/// lane either - what moved is a fraction of a rounding whose share of the ladder
-/// the figure was measured with room for - and the values a caller gets there move
-/// by at most the two roundings the two members each carry: one ulp of that lane's
-/// type beside the same 8.336e-11 above the cut, and not at all below it.
+/// polynomial's 5.864e-19 relative to the half ulp the narrowing contributes,
+/// which is 5.864e-19 read beside 5.96e-8 - the narrowing's rounding and nothing
+/// else. So no published figure moves on that lane either - what moved is a
+/// fraction of a rounding whose share of the ladder the figure was measured with
+/// room for - and the values a caller gets there move by at most that one
+/// rounding, half an ulp of that lane's type, and not at all below the cut.
 ///
 /// The device lane's default is the other member and is its own constant, because
 /// that lane's published figures were measured at \c kAccurate. Both are stated
@@ -416,12 +416,13 @@ inline constexpr FitGranularity kDefaultFitGranularity = BOYS_BUILD_DEFAULT_FIT_
 /// **The single-precision lane's plain reciprocal publishes its own figure.**
 /// That lane's downward ladder divides by the step's constant, and the step reads
 /// whichever form the caller named. The plain form rounds once more there, which
-/// takes the ladder past the lane's 1.5e-7 base: over the accuracy gate's own
+/// takes the ladder past the lane's base: over the accuracy gate's own
 /// reference grid at the reference multiplier its worst cell is 1.7514e-07 at
 /// n = 0, x = 9.74054909, where the lane's exact and refined forms deliver
-/// 1.0835e-07 at worst. So the lane publishes a term beside its base for that
-/// form — 1.5e-7 plus 1e-7 — and the accuracy accessor answers it when the caller
-/// names the form. The double lane's downward ladder takes the form with room to
+/// 1.0835e-07 at worst — two absolute readings of one cell, 6.67e-8 apart. So the
+/// lane publishes a term beside its base for that form — 2^-22 · F_n(x), or
+/// 1.5e-7 where that is the larger — plus 1e-7, and the accuracy accessor answers it
+/// when the caller names the form. The double lane's downward ladder takes the form with room to
 /// spare: the plain form's worst cell over the grid's arguments below kX0 is
 /// 6.7292e-15 where exact division's is 3.2162e-15, and that cell lies in the band,
 /// which publishes 3e-14.
@@ -533,14 +534,16 @@ inline constexpr PackAxis kDefaultPackAxis = BOYS_BUILD_DEFAULT_PACK_AXIS;
 ///
 /// \ingroup boys
 enum class BoysBudget : std::uint8_t {
-    /// The float lane's 1.5e-7 budget.
+    /// The float lane's 1.5e-7 budget: the absolute figure that lane's fits are
+    /// cut against, in the region-A and region-B tails. It is not the lane's
+    /// published bound, which is stated as a fraction of the value.
     kFloat = 0,
 
     /// The fp16/bf16 engine's 1e-7 region target. The half lanes run the float
     /// lane's engine with the fits cut for the tighter target, and what they
-    /// publish is that lane's own figure, 1.5e-7, plus the half-ULP term their
-    /// store adds: a budget is what the cuts are placed against, not a bound a
-    /// caller is given.
+    /// publish is the fp32 engine's own arithmetic stated absolutely, 1.5e-7,
+    /// plus the half-ULP term their store adds: a budget is what the cuts are
+    /// placed against, not a bound a caller is given.
     kFp16 = 1,
 };
 
@@ -685,14 +688,14 @@ enum class FarRepresentation : std::uint8_t {
 
 /// The representation the far region takes when the caller names none.
 ///
-/// **The recurrence, because the table has not been ranked yet.** The recurrence
-/// and the table are ranked by the option probe on the machine it is run on, and
-/// the probe has not run over the scaled table: no timing, no delivered-error
-/// comparison against the recurrence over the same arguments, no crossover against
-/// the asymptotic lane above the table's right edge. Until it has, the default
-/// stays where the published figures were measured, and this name records that it
-/// is the published-figure representation rather than the measured winner.
-inline constexpr FarRepresentation kDefaultFarRepresentation =
-    FarRepresentation::kAsymptoticRecurrence;
+/// **The recurrence's repaired form, and this is a repair rather than a
+/// ranking.** The asymptotic recurrence is not a candidate that lost on
+/// measurement: the `exp(-x)/2` term its step drops is 6.6 times `F_32` at
+/// `kX1`, so its relative error is 2.55 at the region's own edge and it holds
+/// no relative figure worth stating. The corrected seed is that same arithmetic
+/// with the term restored and the seed's own error carried, so the two are one
+/// path and one of them is right. The scaled table is ranked against it by the
+/// option probe, which has not run.
+inline constexpr FarRepresentation kDefaultFarRepresentation = FarRepresentation::kCorrectedSeed;
 
 } // namespace boys

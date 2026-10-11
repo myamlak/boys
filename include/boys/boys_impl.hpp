@@ -408,32 +408,60 @@ inline T DivideDownwardStep(int l, T a) noexcept {
 // The region-B body seeds F_0 and steps to the top order with F_{l+1} = ((l + 1/2) F_l - t)/x,
 // t = e^{-x}/2, so an error d in t reaches F_N multiplied by the products of the steps after it:
 //   T(N, x) = (1/(2x)) * sum_{l=0}^{N-1} prod_{j=l+1}^{N-1} (2j+1)/(2x),  read at N = 32.
+// The recurrence's own sensitivity is exactly twice that, dF_N/dt = -2 T(N, x) - checked in
+// rational arithmetic at N = 1..7, and measured on the compiled ladder, whose response at x = 29
+// is 2.552530 where 2 T t / F_32 is 2.552531 - and the constants below are solved from the
+// doubled form.
 
-// The promise admits the term while |delta| <= kRegionBExpBar / T(N, x): near kX0 the ladder's
-// gain is 3.8e4 and only the library routine is admissible, while above kRegionBExpCheapFrom the
-// polynomial stands ten times inside.
+// The promise admits the term while |delta| <= kRegionBExpBar / (2 T(N, x)): near kX0 the ladder's
+// gain, 2 T(N, x) t / F_N, is 1.598e6 and only the library routine is admissible, while above
+// kRegionBExpCheapFrom the polynomial stands ten times inside.
 inline constexpr double kRegionBExpBar = 1.0e-14;
 
-// The smallest x whose requirement reaches ten times the polynomial's own
-// error, solved from T(32, 0, x). At a narrower ladder the requirement is
-// slacker, so what this buys at N = 32 it buys at every N <= 32 as well.
-inline constexpr double kRegionBExpCheapFrom = 16.173039304440838;
+// The smallest x whose requirement reaches ten times the fast member's own
+// error, solved from bar / (2 T(32, x) t) at 60 digits against the member's
+// measured 1.654e-16 over region B: no x below it satisfies the rule. At a
+// narrower ladder the requirement is slacker, so what this buys at N = 32 it
+// buys at every N <= 32 as well. It sits below kX0, which is what makes the
+// polynomial arm serve the whole of region B rather than a band interior to it.
+inline constexpr double kRegionBExpCheapFrom = 10.797904988647187;
 
-// e^{-r} on |r| <= ln 2/2, degree 7, Chebyshev fit, 8.336e-11 relative
-// (re-measured at 40 digits against the exponential itself).
-inline constexpr double kRegionBExpReduced[8] = {
-    0.9999999999190966,
-    -0.9999999999910163,
-    0.5000000168381031,
-    -0.16666666853653805,
-    0.04166608365203089,
-    -0.008333268585902836,
-    0.0013956053200368968,
-    -0.00019915868993476617,
+// e^{-r} on |r| <= ln 2/2, degree 12, Chebyshev fit: 5.864e-19 relative with
+// its coefficients rounded to double, which is the floor they carry - degree 13
+// and 14 measure 4.3e-19 and 4.7e-19, so the degree buys nothing the
+// evaluation's own rounding, 1.65e-16, does not already dominate. The degree-7
+// array this replaced carried 8.336e-11, which the ladder's gain at x = 16.19,
+// 4261, carries to 3.6e-07 on F_32: the accuracy gate's row there delivered
+// 2.44e-07 against a 1e-13 bar.
+inline constexpr double kRegionBExpReduced[13] = {
+    1.0,
+    -1.0,
+    0.5,
+    -0.16666666666666702,
+    0.04166666666666669,
+    -0.008333333333309528,
+    0.001388888888887189,
+    -0.000198412699092171,
+    2.4801587350110797e-05,
+    -2.7557224958392624e-06,
+    2.7557251904174915e-07,
+    -2.5114869528657765e-08,
+    2.09215799649503e-09,
 };
 
 inline constexpr double kRegionBExpLog2e = 1.4426950408889634073599246810018921;
-inline constexpr double kRegionBExpLn2 = 0.6931471805599453094172321214581766;
+
+// ln 2 in two pieces, the head being the double ln 2 with its lowest 25 significand
+// bits cleared and the tail the rest: head + tail is ln 2 to 4.0e-26, and kd * head
+// is exact for every kd a region-B or a region-C argument reaches (28 significand
+// bits, kd < 2^25). The reduction's first subtraction is exact with it - x and
+// kd * head sit within a factor of two - so only the second one rounds, at half an
+// ulp of r = 2.8e-17. A single ln 2 constant in place of the split rounds in the
+// product instead - half an ulp of kd ln 2, 1.78e-15 at region B's k = 42, with the
+// constant's own 3.3e-17 relative riding along at 9.7e-16 - and the member measures
+// 2.57e-15 over region B with it against the 1.65e-16 the split holds.
+inline constexpr double kRegionBExpLn2Head = 0.6931471787393093;
+inline constexpr double kRegionBExpLn2Tail = 1.8206359985041462e-09;
 inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
 
 /// 0.5 * e^{-x} for a region-B argument, in the member the policy named.
@@ -444,11 +472,16 @@ inline constexpr double kRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^5
 ///
 /// The fast member is the reduced-argument polynomial, x = k ln2 + r with
 /// |r| <= ln2/2, k out of a magic constant and 2^{-k} taken from the exponent
-/// field. Over region B k is in [25, 42], far from the exponent field's ends, so
+/// field. Over region B k is in [17, 42], far from the exponent field's ends, so
 /// the scale is exact. Below kRegionBExpCheapFrom the ladder's own requirement
-/// (kRegionBExpBar, above) is tighter than the polynomial's error and this member
-/// reads the library routine there: that arm is part of the member, because the
-/// polynomial alone would fail a bound over a band interior to region B.
+/// (kRegionBExpBar, above) is tighter than the member's error and this member
+/// reads the library routine there: that arm is part of the member, because a
+/// polynomial alone would fail a bound over a band interior to region B. It
+/// delivers 1.654e-16 relative at worst over region B, the only domain a policy
+/// reads it in, and 2.57e-15 at the same arithmetic with one ln 2 constant in
+/// place of the split below - which is what the constant above is solved against,
+/// the split being what keeps the member 235 times inside the requirement at kX0
+/// rather than 15.
 template <RegionBExp kExp>
 inline double RegionBHalfExp(double x) noexcept {
     if constexpr (kExp == RegionBExp::kAccurate)
@@ -464,11 +497,11 @@ inline double RegionBHalfExp(double x) noexcept {
 
         const double biased = x * kRegionBExpLog2e + kRegionBExpRoundMagic;
         const double kd = biased - kRegionBExpRoundMagic;
-        const double r = x - kd * kRegionBExpLn2;
+        const double r = (x - kd * kRegionBExpLn2Head) - kd * kRegionBExpLn2Tail;
 
-        double p = kRegionBExpReduced[7];
+        double p = kRegionBExpReduced[12];
 
-        for (int k = 6; k >= 0; --k)
+        for (int k = 11; k >= 0; --k)
         {
             p = p * r + kRegionBExpReduced[k];
         }
@@ -928,12 +961,8 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
     }
 }
 
-// One order's fit off the grid's stored coefficients, summed in the translation unit that
-// carries the fused instruction set (boys_orders_simd.cpp). The walk is FitSum's - the same
-// coefficients in the same order - so the value is the portable body's at every bit, and the
-// fused step is the instruction there rather than a call into the C runtime. A build without
-// the vector tier defines it too and never reaches it: BoysAvx2Available() is false there and
-// the portable body answers.
+// Defined in boys_orders_simd.cpp at FitSum's own coefficients and walk, so the value is the
+// portable body's at every bit; a build without the vector tier defines it and never calls it.
 template <EvalScheme kScheme>
 double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept;
 
@@ -987,19 +1016,8 @@ double FlatSingleOrder(int n, double x) noexcept {
     return UniformSingleOrder<Policy>(n, x);
 }
 
-// The far region's stored representation: a Chebyshev fit per (interval, order)
-// of the asymptotically scaled H_n = 2 F_n x^(n+1/2) / Gamma(n+1/2) - the
-// regularized lower incomplete gamma, a function of order one across the whole
-// region where F spans some twenty orders of magnitude - and the one multiply per
-// order that recovers F from it. A second representation of the region the seed
-// and its upward recurrence already serve, carried beside it (FarRepresentation,
-// accuracy.hpp), not in place of it.
-
-// The far table's degrees, held to the reader's contract rather than assumed, for
-// the reason the uniform grid's are: the split Clenshaw's odd part is the D
-// family's finalization and is derived for an even degree of at least 4, and a
-// degree above the read cap is beyond the coefficients the interval stores. A
-// partition that did not meet either would be summed into a different polynomial.
+// The far region's stored representation: a fit of the scaled H_n = 2 F_n x^(n+1/2)/Gamma(n+1/2) -
+// order one where F spans twenty orders - read back by one multiply per order (kScaledTable).
 constexpr bool ScaledFarDegreesCarried() noexcept {
     for (std::size_t iv = 0; iv < static_cast<std::size_t>(detail::kScaledFarIntervals); ++iv)
     {
@@ -1097,24 +1115,8 @@ template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double
     }
 }
 
-// The far region's third representation: the entry's own seed and ladder with the
-// two things wrong with them repaired. It stores no value of the function - nine
-// coefficients of the correction alone, against the far table's 12,342 - and spends
-// the ladder's recurrence to make them.
-//
-// The seed sqrt(pi)/(2 sqrt(x)) is F_0 * H_0 with H_0 = erf(sqrt(x)) held at 1, so
-// its relative error is erfc(sqrt(x)): 2.65e-14 at kX1, above the unit roundoff
-// until kSeedCorrectionX1. One polynomial carries that error over
-// [kX1, kSeedCorrectionX1), and at and above that argument erfc has fallen below
-// the roundoff and the held 1 is already the correctly rounded H_0.
-//
-// The ladder is BoysAllNBodyRegionC's step with the term region C drops:
-// F_l = ((l - 1/2) F_(l-1) - exp(-x)/2) / x. At kX1 that dropped term is 6.6 times
-// F_32, so it is not a small correction at high order: over the committed
-// reference's cells above kFlatHi, where the default's own region C opens, the
-// default ladder's worst error is 1.88 of the value at n = 32, x = 30, and
-// 1.49e-14 in absolute terms; the 1.88 of the value is the figure the contract
-// states now, and repairing the dropped term is what this arm buys.
+// The far region's third representation: the default seed and ladder with their two errors
+// repaired - the H_0 = 1 held in the seed, and the exp(-x)/2 term the asymptotic step drops.
 
 // The correction's degree, held to the reader's contract rather than assumed, for
 // the reason the far table's degrees are: the split Clenshaw's odd part is the D
@@ -1143,6 +1145,26 @@ inline double SeedCorrectionAt(double x) noexcept {
                                               detail::kSeedCorrectionDeg, t);
 }
 
+/// The far region's seed at one argument: the closed form with the error the closed
+/// form's own truncation carries, over the span where that error is above the roundoff.
+///
+/// Every ladder above \c kX1 seeds here, which is what keeps the region one arithmetic:
+/// the ladder's step adds the \c exp(-x)/2 term the asymptotic step drops, so a ladder
+/// seeded at the bare closed form would be stepping a different function rather than a
+/// coarser one.
+///
+/// \param x argument, kX1 <= x
+inline double FarSeedAt(double x) noexcept {
+    double f = kBoysHalfSqrtPi / std::sqrt(x);
+
+    if (x < detail::kSeedCorrectionX1)
+    {
+        f *= 1.0 + SeedCorrectionAt(x);
+    }
+
+    return f;
+}
+
 /// One argument's whole ladder from the corrected seed.
 ///
 /// The exp is the accurate member of region B's axis, which is the library
@@ -1153,12 +1175,7 @@ inline double SeedCorrectionAt(double x) noexcept {
 /// \param x    argument, kX1 <= x
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
 template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
-    double f = kBoysHalfSqrtPi / std::sqrt(x);
-
-    if (x < detail::kSeedCorrectionX1)
-    {
-        f *= 1.0 + SeedCorrectionAt(x);
-    }
+    double f = FarSeedAt(x);
 
     const double invx = StepReciprocal<kForm>(x);
     const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
@@ -2798,9 +2815,14 @@ float SingleOrderF32Body(int n, float x) noexcept {
     f = kBoysHalfSqrtPiF32 / std::sqrt(x);
     const float invx = StepReciprocal<kForm>(x);
 
+    // The far step carries the exp(-x)/2 term the bare asymptotic step drops.
+    const float expx = RegionBHalfExpF32<RegionBExp::kAccurate>(x);
+
     for (int l = 0; l < n; ++l)
     {
-        f = DivideStep<kForm>((static_cast<float>(l) + 0.5f) * f, x, invx);
+        f = DivideStep<kForm>(backend::ScalarFp32::MulSub(
+                                  static_cast<float>(l) + 0.5f, f, expx),
+                              x, invx);
     }
 
     return f;
@@ -2927,13 +2949,14 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         return;
     }
 
-    double f = kBoysHalfSqrtPi / std::sqrt(x);
+    double f = FarSeedAt(x);
     out[0] = f;
     const double invx = StepReciprocal<Policy::kDivision>(x);
+    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
 
     for (int l = 1; l <= nmax; ++l)
     {
-        f = DivideStep<Policy::kDivision>((l - 0.5) * f, x, invx);
+        f = UpwardStep<Policy::kDivision>(l, f, x, invx, expx);
         out[l] = f;
     }
 }
@@ -3009,12 +3032,13 @@ double SingleOrder(int n, double x) noexcept {
         return f;
     }
 
-    double f = kBoysHalfSqrtPi / std::sqrt(x);
+    double f = FarSeedAt(x);
     const double invx = StepReciprocal<Policy::kDivision>(x);
+    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
 
     for (int l = 0; l < n; ++l)
     {
-        f = DivideStep<Policy::kDivision>((l + 0.5) * f, x, invx);
+        f = UpwardStep<Policy::kDivision>(l + 1, f, x, invx, expx);
     }
 
     return f;
@@ -3240,11 +3264,12 @@ void BoysFixedNImpl(
                 continue;
             }
 
-            f = kBoysHalfSqrtPi / std::sqrt(xi);
+            f = FarSeedAt(xi);
+            const double expx = RegionBHalfExp<RegionBExp::kAccurate>(xi);
 
             for (int l = 0; l < n; ++l)
             {
-                f = DivideStep<Policy::kDivision>((l + 0.5) * f, xi, invxi);
+                f = UpwardStep<Policy::kDivision>(l + 1, f, xi, invxi, expx);
             }
 
             out[i * stride] = f;
@@ -3412,9 +3437,12 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
         f = kBoysHalfSqrtPiF32 / std::sqrt(x);
         out[0] = f;
 
+        // The far step carries the exp(-x)/2 term the bare asymptotic step drops.
+        const float expx = RegionBHalfExpF32<RegionBExp::kAccurate>(x);
+
         for (int l = 1; l <= nmax; ++l)
         {
-            f = DivideStep<Policy::kDivision>((static_cast<float>(l) - 0.5f) * f, x, invx);
+            f = DivideStep<Policy::kDivision>((static_cast<float>(l) - 0.5f) * f - expx, x, invx);
             out[l] = f;
         }
     }
@@ -3925,16 +3953,17 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t stride, double* 
     }
 }
 
-// Region C: the asymptotic form (m-invariant).
+// Region C: the far seed and its upward recurrence (m-invariant).
 template <DivisionForm kForm = kDefaultDivisionForm>
 inline void BoysAllNBodyRegionC(int nmax, double x, std::size_t stride, double* plane) noexcept {
-    double f = kBoysHalfSqrtPi / std::sqrt(x);
+    double f = FarSeedAt(x);
     plane[0] = f;
     const double invx = StepReciprocal<kForm>(x);
+    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
 
     for (int l = 1; l <= nmax; ++l)
     {
-        f = DivideStep<kForm>((l - 0.5) * f, x, invx);
+        f = UpwardStep<kForm>(l, f, x, invx, expx);
         plane[static_cast<std::size_t>(l) * stride] = f;
     }
 }

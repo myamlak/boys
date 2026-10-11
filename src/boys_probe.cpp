@@ -2337,8 +2337,10 @@ void CellPolicy(Run&& run,
 ///
 /// It is a property of the class and not a choice inside it: the single-precision
 /// lane's entries are compiled at \c BoysBudget::kFloat and the half lanes' at
-/// the tighter \c BoysBudget::kFp16, which is the axis that makes their bound 1e-7
-/// rather than the float lane's 1.5e-7 and the reason the two are not one class.
+/// the tighter \c BoysBudget::kFp16, which is the axis that makes their fits cut
+/// for 1e-7 rather than the float lane's 1.5e-7, and the reason the two are not
+/// one class. Both are budgets: what the two lanes publish is the fp32 engine's
+/// arithmetic stated absolutely, 1.5e-7, plus the half-ULP term of each store.
 ///
 /// \param precision the class
 ///

@@ -2,6 +2,9 @@
 
 #include "boys/boys.hpp"
 #include "boys/status.hpp"
+// The policy arms below refuse an unnamed enumeration member with boys::detail::kAlwaysFalse,
+// which the kernels' header declares; this header is reached without it by boys_cuda.cpp.
+#include "boys/boys_impl.hpp"
 #include "boys/boys_cuda_muladd.hpp"
 #include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
@@ -203,11 +206,15 @@ public:
     /// gate's sweep:
     ///
     ///  - \c RegionBExp::kAccurate, \c kDefaultRegionBExp and the default:
-    ///    |F̂ − F| ≤ 1.5e-7, the f32 lane's documented bound, in every region.
-    ///    Measured: 1.29e-7 at its worst, 0.86 of the bound.
-    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ 1.5e-7 + 8e-8 — the lane's bound plus
-    ///    the corrected seed's own contribution, which the recurrence's amplification
-    ///    caps at 8e-8. Measured: 1.44e-7 at its worst, 0.63 of that bound;
+    ///    |F̂ − F| ≤ 2^-22 · F_n(x), or ≤ 1.5e-7 where that is the larger — the
+    ///    f32 lane's documented bound, in every region.
+    ///    Measured: 1.29e-7 absolute at its worst, against the 1.5e-7 absolute bar
+    ///    that lane's fits are cut against.
+    ///  - \c RegionBExp::kFast: |F̂ − F| ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8
+    ///    where that is the larger — the lane's bound plus the corrected seed's own
+    ///    contribution, which the recurrence's amplification caps at 8e-8.
+    ///    Measured: 1.44e-7 absolute at its worst, against the same
+    ///    bar plus that term;
     ///    the contribution itself is 5.0e-8, and the option returns the function's
     ///    sign at every cell the gate audits.
     ///
@@ -365,8 +372,10 @@ public:
     static BoysStatus AllNF32WithPolicy(
         int nmax, const double* x, float* out, std::size_t count, void* stream);
 
-    /// F_n(x[i]) in double precision, |error| <= 5.5e-14 (the double single
-    /// lane's loosest per-region bound; the others are tighter).
+    /// F_n(x[i]) in double precision, |F̂ − F| <= 1e-13 · F_n(x) — the host double
+    /// lane's documented figure, over the whole of x >= 0 (the per-region figures
+    /// those entries' fits are cut against, 5.5e-14 among them, are absolute bars
+    /// and are not this bound).
     ///
     /// \param n      device array of orders, 0..kMaxBoysOrder
     /// \param x      device array of arguments, >= 0
@@ -885,7 +894,7 @@ public:
     /// two carry a figure each and nothing substitutes one for the other
     /// (`RegionBExp`, boys/accuracy.hpp).
     ///
-    /// The figure is the lane's own, \c 5.5e-14: this lane's fast member is the host's reduced-
+    /// The figure is the lane's own, \c 1e-13 \c of \c F_n(x): this lane's fast member is the host's reduced-
     /// argument polynomial ported rather than re-derived, and the host's own documentation of that
     /// member is that its relative error sits inside the ladder's requirement below the member's
     /// cut and that no published figure moves at it. The float lane's `+ 8e-8` is that lane's fast
@@ -1647,8 +1656,8 @@ public:
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN
-    /// documents, |F_hat - F| <= 5.5e-14 (the double batch lane's
-    /// per-region budget, the same in every region).
+    /// documents, |F_hat - F| <= 1e-13 · F_n(x) (the host double lane's figure,
+    /// the same in every region).
     ///
     /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract
     ///      AllNF32 states, for the reason it states there.
@@ -1933,7 +1942,8 @@ public:
     /// The figure they answer at is \c Precision::kFp16Device's own row of
     /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
     /// digit of the returned value, which in this format is 2^-11. It is not the
-    /// float lane's \c 1.5e-7, and it is not the bf16 class's 1e-7 + 2^-8: the
+    /// float lane's figure (the larger of \c 2^-22 \c of \c F_n(x) and its \c 1.5e-7
+    /// floor, the absolute base that lane's fits are cut against), and it is not the bf16 class's 1e-7 + 2^-8: the
     /// two stores are two classes of this lane (boys/boys_build_defaults.hpp) and
     /// the store is this format's.
     ///
@@ -2438,7 +2448,8 @@ public:
     /// separates `AllOrdersF32` from `AllOrdersF32Fast` is the arithmetic the seed is
     /// evaluated in. This lane's fast member is the floated reading of the double
     /// lane's own, whose contribution to the returned value the recurrence caps at
-    /// 8e-8: the figure is the lane's bound plus that term, \c 1.5e-7 \c + \c 8e-8,
+    /// 8e-8: the figure is the lane's bound plus that term, \c 2^-22 \c of \c F_n(x) \c + \c 8e-8, or
+    /// \c 1.5e-7 \c + \c 8e-8 where the floor is the larger,
     /// and nothing substitutes one exponential for the other (`RegionBExp`,
     /// boys/accuracy.hpp).
     ///
@@ -2641,7 +2652,7 @@ public:
     /// The parameters, the layout and the precondition of each member are the entry
     /// of its own name; only the region-B exponential differs. The double lane's
     /// member carries the lane's own figure and no added term; the float lane's
-    /// carries \c 1.5e-7 \c + \c 8e-8, as the block above states.
+    /// carries that lane's figure plus \c 8e-8, as the block above states.
     ///
     /// \param n      device array of orders, 0..kMaxBoysOrder (SingleF64Fast); or the
     ///   highest order, 0..kMaxBoysOrder (the all-N members)
@@ -3063,7 +3074,8 @@ public:
     /// The figure they answer at is \c Precision::kBf16Device's own row of
     /// \c BoysLaneContracts, which is `1e-7` plus half of the last representable
     /// digit of the returned value, which in this format is 2^-8 = 3.90625e-03.
-    /// It is not the float lane's \c 1.5e-7, and it is not the fp16 class's
+    /// It is not the float lane's published figure (the larger of \c 2^-22 \c of \c F_n(x) and
+    /// that lane's \c 1.5e-7 floor), and it is not the fp16 class's
     /// 1e-7 + 2^-11 either: the two stores are two classes of this lane
     /// (boys/boys_build_defaults.hpp) and the store is this format's.
     ///

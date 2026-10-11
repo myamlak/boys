@@ -2798,18 +2798,20 @@ constexpr bool kFp16Served = false;
 constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (BoysFp16 = 0)";
 #endif
 
-// The documented forms, as the entries of this header state them. Two constant parts that are
-// not the lane's own bound are why the form is carried beside the number: the fast f32 option's
-// seed contribution and the fp16 lane's half ULP are terms a report must state and cannot fold
-// into one figure.
-constexpr const char* kFormF64 = "5.5e-14";
+// The documented form of each entry, beside the number the device gate audits it at. The form is
+// the contract the entry publishes - a fraction of F_n(x) on the double and float lanes
+// (boys_cuda.hpp) - and the number is an absolute bar, the wide end of the figures that lane's
+// fits are cut against (5.5e-14 over the double lanes, 1.5e-7 over the float lane's two).
+constexpr const char* kFormF64 = "1e-13 * F_n(x)";
 // The double lane reads the fast member at the lane's own figure: the device's double fast member
 // is the host's arithmetic ported rather than re-derived (boys_cuda_arithmetic.hpp,
 // DeviceRegionBExp), and the host's documentation of it is that the polynomial's 8.336e-11 relative
 // sits inside the ladder's requirement below its cut, so no published figure moves on that lane.
-constexpr const char* kFormF64Fast = "5.5e-14";
-constexpr const char* kFormF32 = "1.5e-7";
-constexpr const char* kFormF32Fast = "1.5e-7 + 8e-8";
+constexpr const char* kFormF64Fast = "1e-13 * F_n(x)";
+constexpr const char* kFormF32 =
+    "2^-22 * F_n(x), or 1.5e-7 where that is the larger";
+constexpr const char* kFormF32Fast =
+    "2^-22 * F_n(x) + 8e-8, or 1.5e-7 + 8e-8 where that is the larger";
 constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 // The half lane's other store, whose form names the digit the sentence above leaves in words: the
 // half ULP is the FORMAT's - 2^-11 for a binary16 return against 2^-8 for a bfloat16 one - and the
@@ -2818,10 +2820,10 @@ constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 constexpr const char* kFormBf16 =
     "1e-7 + half an ULP of the returned value, which in this format is 2^-8 = 3.90625e-03";
 
-// The figures, with any term a returned value decides dropped - the half ULP and nothing else:
-// every other form is a number here. The half lane's constant part is the lane's and not the
-// format's (the CUDA surface publishes 1e-7 for both stores, boys/boys_cuda.hpp), so the two
-// constants below hold one number, stated per format because the form beside each is that format's.
+// The figures, with any term a returned value decides dropped - the half ULP and nothing else.
+// The half lane's constant part is the lane's and not the format's (the CUDA surface publishes
+// 1e-7 for both stores, boys/boys_cuda.hpp), so the two constants below hold one number, stated
+// per format because the form beside each is that format's.
 constexpr double kBoundF64 = 5.5e-14;
 constexpr double kBoundF64Fast = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;

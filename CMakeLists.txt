@@ -19,7 +19,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 3.0.0 LANGUAGES CXX)
+project(boys VERSION 4.0.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -536,12 +536,13 @@ else()
         "BoysAvx2Available() reports false.")
 endif()
 
-# The revision this tree is at, read at configure time, for every program here that writes a
-# record: the accuracy gate and both probes. A record naming no revision is attributable to
-# nothing and can be held to nothing - a renamed option cell once left the committed probe
-# report describing a probe that no longer existed, and no instrument could say so because
-# the report named no revision for a check to disagree with. Computed here and not inside a
-# block, because the two probes are built under options the gate's block does not cover.
+# The revision this tree is at, read at configure time, for the two programs here that write one
+# into a record: the host accuracy gate and the device one. A record naming no revision is
+# attributable to nothing and can be held to nothing - a renamed option cell once left the
+# committed probe report describing a probe that no longer existed, and no instrument could say
+# so because the report named no revision for a check to disagree with. Computed here and not
+# inside a block, because the host gate is built under the tests option and the device gate
+# under BUILD_CUDA.
 find_package(Git QUIET)
 if(GIT_FOUND)
     execute_process(
@@ -563,10 +564,10 @@ if(GIT_FOUND)
         string(STRIP "${_boys_git_output}" _boys_git_output)
         message(FATAL_ERROR
             "boys: this source tree is a git work tree (\"${CMAKE_CURRENT_SOURCE_DIR}/.git\" "
-            "is present) but its revision could not be read. The accuracy gate and the "
-            "probes stamp that revision into the record they write, and \"unknown\" would "
-            "leave the record attributable to no tree, so the configure stops here rather "
-            "than after a probe or gate run.\n"
+            "is present) but its revision could not be read. The accuracy gates stamp that "
+            "revision into the record they write, and \"unknown\" would leave the record "
+            "attributable to no tree, so the configure stops here rather than after a gate "
+            "run.\n"
             "  command: \"${GIT_EXECUTABLE}\" rev-parse --short HEAD\n"
             "  exit:    ${_boys_git_status}\n"
             "  output:  ${_boys_git_output}\n"
@@ -579,6 +580,59 @@ endif()
 if(NOT BOYS_GATE_REVISION)
     set(BOYS_GATE_REVISION "unknown")
 endif()
+
+# The content a record's stamp carries: every file the program reads from, hashed at configure
+# time by the tool that recomputes those digests at check time. One implementation is what makes
+# the two comparable - a second hashing written here would have to agree with the first over
+# every byte of every file, and nothing would say when it did not.
+#
+# The version is not read here. A program prints the library's own, from the header it compiles
+# against, so that cell cannot disagree with the code that prints it; the content it was built
+# from is what a program cannot know by itself, and that is what these cells carry.
+#
+# The interpreter is asked for and not required, and its absence is the fallback below: a tree
+# configured without one carries the version and no digest, and the stamp says so visibly rather
+# than naming content it did not read. An interpreter that is here and a read that fails is the
+# opposite case and stops the configure, for the reason the revision read above does: a record
+# that cannot date itself is refused by the checker after the run, when the run is spent.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+foreach(_boys_record IN ITEMS probe gate)
+    string(TOUPPER "${_boys_record}" _boys_RECORD)
+    set(BOYS_${_boys_RECORD}_INPUTS "unknown")
+
+    if(Python3_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py"
+                    --inputs ${_boys_record} --root "${CMAKE_CURRENT_SOURCE_DIR}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _boys_cell
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _boys_status
+            ERROR_VARIABLE _boys_output)
+
+        if(NOT _boys_status STREQUAL "0")
+            string(STRIP "${_boys_output}" _boys_output)
+            message(FATAL_ERROR
+                "boys: this source tree carries tools/record_stamp.py and an interpreter, and "
+                "the files the ${_boys_record} record reads from could not be read. The digest "
+                "the record would carry would name content this tree does not have, and the "
+                "check that reads the record refuses one it cannot hold to a tree - after the "
+                "run.\n"
+                "  command: \"${Python3_EXECUTABLE}\" tools/record_stamp.py --inputs "
+                "${_boys_record} --root ${CMAKE_CURRENT_SOURCE_DIR}\n"
+                "  exit:    ${_boys_status}\n"
+                "  output:  ${_boys_output}\n"
+                "A source tree without the tool or without an interpreter is not this case: its "
+                "digest is \"unknown\" and its stamp says so.")
+        endif()
+
+        set(BOYS_${_boys_RECORD}_INPUTS "${_boys_cell}")
+    endif()
+
+    unset(_boys_cell)
+    unset(_boys_status)
+    unset(_boys_output)
+endforeach()
 
 # --- Tests (gtest; the reference grid is located via BoysDataDir) -----------
 if (BOYS_BUILD_TESTS)
@@ -666,7 +720,10 @@ if (BOYS_BUILD_TESTS)
     target_compile_features(boys-accuracy-gate PRIVATE cxx_std_23)
     target_compile_definitions(boys-accuracy-gate PRIVATE
         BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
-        BoysGateRevision="${BOYS_GATE_REVISION}")
+        BoysGateRevision="${BOYS_GATE_REVISION}"
+        # The content the run was taken from, beside the revision it names: the stamp carries
+        # both, and the checker holds the record to the digests.
+        BoysGateInputs="${BOYS_GATE_INPUTS}")
     boys_strict_warnings(boys-accuracy-gate)
 
     # The DEVICE LANE's arm of that cross. The gate measures the device lane
@@ -1199,12 +1256,13 @@ int main() {
     add_executable(boys-option-probe benchmarks/boys_option_probe.cpp)
     target_link_libraries(boys-option-probe PRIVATE boys)
     target_compile_features(boys-option-probe PRIVATE cxx_std_20)
-    # The revision the report was taken at, as the accuracy gate states its own: a report
-    # read months later is otherwise attributable to nothing, and nothing can hold one to
-    # the tree it describes. 9688c97 renamed every option cell and the committed report did
-    # not follow, because it named no revision for a check to disagree with.
+    # The content the report was taken from, read at configure time: a report read months later
+    # is otherwise attributable to nothing, and nothing can hold one to the tree it describes.
+    # 9688c97 renamed every option cell and the committed report did not follow, because it
+    # named no revision for a check to disagree with. The driver prints the library's own
+    # version beside this digest, read from the header it compiles against.
     target_compile_definitions(boys-option-probe PRIVATE
-        BoysProbeRevision="${BOYS_GATE_REVISION}")
+        BoysProbeInputs="${BOYS_PROBE_INPUTS}")
     boys_strict_warnings(boys-option-probe)
 
     # The defaults command: what this build's unnamed calls resolve to, class by

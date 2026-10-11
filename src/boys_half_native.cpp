@@ -58,7 +58,10 @@ inline void HalfNativeLadder(int nmax, Half2 x, Half2* out) noexcept {
 
     for (int l = 1; l <= nmax; ++l)
     {
-        // The shipped region-C body, op for op: f = (l - 1/2) * f / x.
+        // The shipped region-C step, f = (l - 1/2) * f / x, without the exp(-x)/2 term the
+        // scalar ladder carries: in this lane's arithmetic, scaled by 2^15, that term is
+        // 4.21221e-09 at x = kX1 and under half's smallest subnormal (2^-24 = 5.96046e-08)
+        // everywhere the lane serves, so it cannot change a delivered bit here.
         const F16 factor = F16FromDouble(static_cast<double>(l) - 0.5);
         f = Half2Div(Half2Mul(Half2::Broadcast(factor), f), x);
         out[l] = f;

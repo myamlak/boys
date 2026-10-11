@@ -293,10 +293,12 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane either, and unlike region B it holds its bound - C lands 5.0e-14
-// against the 5.5e-14 the contract table states - so the omission is not an accuracy one. The
-// tree's one remark on the choice is the batch entry's note that region C runs scalar there. It
-// takes no policy and forms 1/x once, the plain reciprocal.
+// No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy
+// and forms 1/x once, the plain reciprocal. The body runs the shipped far tail's own three pieces -
+// the closed-form seed times the correction that restores H_0 over the span the correction is
+// certified on, then the step that carries the exp(-x)/2 term the bare asymptotic step drops. The
+// term's exp is the library routine rather than region B's table, which is a fit on [0, 30] while
+// the term stays above this lane's bound out to arguments near 60 at the top order.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -307,9 +309,36 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
         const __m256d invx = _mm256_div_pd(_mm256_set1_pd(1.0), xv);
         __m256d f = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_sqrt_pd(invx));
 
+        // H_0 = 1 + correction, where the correction's fit is defined.
+        const __m256d t = _mm256_sub_pd(
+            _mm256_div_pd(
+                _mm256_mul_pd(_mm256_set1_pd(2.0),
+                              _mm256_sub_pd(xv, _mm256_set1_pd(kSeedCorrectionX0))),
+                _mm256_set1_pd(kSeedCorrectionX1 - kSeedCorrectionX0)),
+            _mm256_set1_pd(1.0));
+        const __m256d corrected = _mm256_mul_pd(
+            f,
+            _mm256_add_pd(_mm256_set1_pd(1.0),
+                          ClenshawSplit<backend::Avx2Fp64<>>(kSeedCorrectionCoeffs.data(),
+                                                            kSeedCorrectionDeg,
+                                                            t)));
+        f = _mm256_blendv_pd(
+            f, corrected, _mm256_cmp_pd(xv, _mm256_set1_pd(kSeedCorrectionX1), _CMP_LT_OQ));
+
+        double lanes[4];
+        _mm256_storeu_pd(lanes, xv);
+
+        for (double& argument : lanes)
+        {
+            argument = RegionBHalfExp<RegionBExp::kAccurate>(argument);
+        }
+
+        const __m256d expv = _mm256_loadu_pd(lanes);
+
         for (int l = 0; l < n; ++l)
         {
-            f = _mm256_mul_pd(_mm256_mul_pd(f, _mm256_set1_pd(l + 0.5)), invx);
+            f = _mm256_mul_pd(
+                _mm256_sub_pd(_mm256_mul_pd(f, _mm256_set1_pd(l + 0.5)), expv), invx);
         }
 
         _mm256_storeu_pd(out + i, f);
@@ -533,9 +562,25 @@ void RegionCSimdHalf(int n,
         __m256 f =
             _mm256_mul_ps(_mm256_set1_ps(static_cast<float>(kHalfSqrtPi)), _mm256_sqrt_ps(invx));
 
+        // The step's exp(-x)/2 term, which the scalar entries this lane is compared against
+        // carry: the whole grid's worth of it cannot move a half, and its absence would leave
+        // the two shapes solving different recurrences.
+        float arguments[8];
+        _mm256_storeu_ps(arguments, xv);
+
+        for (float& argument : arguments)
+        {
+            argument = RegionBHalfExpF32<RegionBExp::kAccurate>(argument);
+        }
+
+        const __m256 expv = _mm256_loadu_ps(arguments);
+
         for (int l = 0; l < n; ++l)
         {
-            f = _mm256_mul_ps(_mm256_mul_ps(f, _mm256_set1_ps(static_cast<float>(l) + 0.5f)), invx);
+            f = _mm256_mul_ps(
+                _mm256_sub_ps(_mm256_mul_ps(f, _mm256_set1_ps(static_cast<float>(l) + 0.5f)),
+                              expv),
+                invx);
         }
 
         Lane::Store(out + i, f);

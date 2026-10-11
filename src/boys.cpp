@@ -701,9 +701,9 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 }
 
 std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
-    // The figures the README's contract table publishes, stated once so the table, the accuracy
-    // gate and BoysAccuracyGuaranteed read one number. Each is a lane's figure for one value over
-    // the whole of x >= 0 at the reference multiplier; the plain form's own term is stated apart,
+    // The figures these rows carry are the absolute ones their runs measured; the contract is
+    // relative (README, docs/specification.md). Each is a lane's figure for one value over the
+    // whole of x >= 0 at the reference multiplier; the plain form's own term is stated apart,
     // measured at n = 0, x = 9.74054909 for fp32 and n = 32, x = 11.9453125 for fp16-device.
     static const std::array<LaneContractInfo, 8> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
@@ -742,7 +742,8 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // row because it is a different lane, and a kFp64Device class reads this lane's own statement.
         {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
-         "publish it as \"|error| <= 5.5e-14\" (boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
+         "publish it in the contract's relative form, \"|error| <= 1e-13 * F_n(x)\" "
+         "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
          "It is the host double lane's number because it is the same arithmetic over the same "
          "pieces; it is this row's because the lane is this lane's - a device class asked for "
          "its bound is answered here and not by the host row beside this one. The lane carries "

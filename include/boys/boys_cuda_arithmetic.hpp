@@ -40,9 +40,10 @@
 ///
 /// The region structure is the library's: region A (x below kX0) is the piecewise
 /// Chebyshev fit of F_n itself, region B (up to kX1) is the upward recursion seeded
-/// by the region-B fit of F_0, and region C is the F_0 asymptotic form with the same
-/// recursion. The all-orders bodies carry a second, downward recursion inside region
-/// A: the fit there is of F_n, and the lower orders come back down from it.
+/// by the region-B fit of F_0, and region C is the far region's corrected seed with
+/// the same recursion carrying the exp(-x)/2 term the asymptotic step drops. The
+/// all-orders bodies carry a second, downward recursion inside region A: the fit
+/// there is of F_n, and the lower orders come back down from it.
 
 #include "boys/accuracy.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -56,8 +57,9 @@
 namespace boys::detail {
 
 /// The F_0 asymptotic prefactor: the integral that gives F_0 at large x is
-/// sqrt(pi/x)/2, so F_0 = sqrt(pi)/2 * rsqrt(x) is the value the region-C
-/// recursion starts from.
+/// sqrt(pi/x)/2, so sqrt(pi)/2 * rsqrt(x) is the closed form the region-C seed
+/// starts from (DeviceFarSeed restores the erfc(sqrt(x)) the closed form's own
+/// truncation drops, over the span that error is above the roundoff).
 inline constexpr double kHalfSqrtPi = 0.886226925452758014;
 
 // ---------------------------------------------------------------------------
@@ -413,34 +415,55 @@ __device__ __forceinline__ float DeviceSeed32(const Lane& lane, int order, float
 // back to its own few ulp, flat in the argument; the other member is the library routine.
 
 // The double lane's two members are the host's own (boys_impl.hpp, RegionBHalfExp), ported
-// rather than re-derived so that a name has one bound and not two.
+// rather than re-derived so that a name has one bound and not two. The port is measured and
+// not asserted: at the separate route the two spellings agree bit for bit over 200001 values
+// of [10.9, 60], and the fused route is the same polynomial at one rounding per step.
 
 // The host's constants at the device's own names: kDeviceRegionBExpReduced is e^{-r} on
-// |r| <= ln 2/2, degree 7, Chebyshev fit, 8.336e-11 relative, and kDeviceRegionBExpCheapFrom
-// the smallest x whose ladder requirement reaches ten times that error. A device object because
-// the sum indexes it at a loop variable, an odr-use the device compiler needs a copy for.
-inline constexpr double kDeviceRegionBExpCheapFrom = 16.173039304440838;
-__device__ constexpr double kDeviceRegionBExpReduced[8] = {
-    0.9999999999190966,
-    -0.9999999999910163,
-    0.5000000168381031,
-    -0.16666666853653805,
-    0.04166608365203089,
-    -0.008333268585902836,
-    0.0013956053200368968,
-    -0.00019915868993476617,
+// |r| <= ln 2/2, degree 12, Chebyshev fit, 5.864e-19 relative with its coefficients rounded to
+// double, and kDeviceRegionBExpCheapFrom the smallest x whose ladder requirement reaches ten
+// times the member's error. A device object because the sum indexes it at a loop variable, an
+// odr-use the device compiler needs a copy for.
+inline constexpr double kDeviceRegionBExpCheapFrom = 10.797904988647187;
+__device__ constexpr double kDeviceRegionBExpReduced[13] = {
+    1.0,
+    -1.0,
+    0.5,
+    -0.16666666666666702,
+    0.04166666666666669,
+    -0.008333333333309528,
+    0.001388888888887189,
+    -0.000198412699092171,
+    2.4801587350110797e-05,
+    -2.7557224958392624e-06,
+    2.7557251904174915e-07,
+    -2.5114869528657765e-08,
+    2.09215799649503e-09,
 };
 inline constexpr double kDeviceRegionBExpLog2e = 1.4426950408889634073599246810018921;
-inline constexpr double kDeviceRegionBExpLn2 = 0.6931471805599453094172321214581766;
+
+// ln 2 in two pieces, the host's own split (boys_impl.hpp): head + tail is ln 2 to 4.0e-26 and
+// kd * head is exact for every kd a region-B or a region-C argument reaches, so the reduction's
+// first subtraction is exact at either route and only the second rounds. The single constant
+// this replaced rounded in the product instead - half an ulp of kd ln 2, 1.78e-15 at region B's
+// k = 42 - and holds region B at 1.08e-15 (fused) and 2.57e-15 (separate) where the split holds
+// 1.35e-16 and 1.65e-16.
+inline constexpr double kDeviceRegionBExpLn2Head = 0.6931471787393093;
+inline constexpr double kDeviceRegionBExpLn2Tail = 1.8206359985041462e-09;
 inline constexpr double kDeviceRegionBExpRoundMagic = 6755399441055744.0; // 1.5 * 2^52
 
 // The reduction is x = k ln 2 + r, |r| <= ln 2/2, so e^{-x} = 2^{-k} e^{-r}; over region B
-// k in [25, 42] keeps the exponent-field scale exact. Below kDeviceRegionBExpCheapFrom the
-// ladder's requirement (kRegionBExpBar / T(N, x)) is tighter than the polynomial's error, so
-// this arm reads the library routine there - the polynomial alone fails a bound interior to it.
+// k in [17, 42] keeps the exponent-field scale exact. Below kDeviceRegionBExpCheapFrom the
+// ladder's requirement (kRegionBExpBar / (2 T(N, x)), boys_impl.hpp) is tighter than the
+// member's error, so this arm reads the library routine there - the polynomial alone fails a
+// bound interior to it.
 
-// The steps run at the build's multiply-add route; at the separate route the extra rounding is
-// four orders below the 8.336e-11 the polynomial carries.
+// The steps run at the build's multiply-add route. The threshold is the host's, re-derived
+// against this lane's arithmetic rather than copied: the separate spelling is the host's own
+// and measures 1.654e-16 over region B, solving to 10.798, and the fused one measures
+// 1.349e-16 and solves to 10.730, so the host's constant covers both. It sits below kX0, where
+// the requirement is 3.892e-14 - 235 times the larger of those errors - so the member serves
+// the whole of region B and the rule's ten-times margin binds nowhere the member is read.
 template <bool kFastExp, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename T>
 __device__ __forceinline__ T DeviceRegionBExp(T xx) {
     if constexpr (std::is_same_v<T, float>)
@@ -468,11 +491,12 @@ __device__ __forceinline__ T DeviceRegionBExp(T xx) {
             const double biased =
                 DeviceMulAdd<kRoute>(xx, kDeviceRegionBExpLog2e, kDeviceRegionBExpRoundMagic);
             const double kd = biased - kDeviceRegionBExpRoundMagic;
-            const double r = DeviceMulAdd<kRoute>(-kd, kDeviceRegionBExpLn2, xx);
+            const double hi = DeviceMulAdd<kRoute>(-kd, kDeviceRegionBExpLn2Head, xx);
+            const double r = DeviceMulAdd<kRoute>(-kd, kDeviceRegionBExpLn2Tail, hi);
 
-            double p = kDeviceRegionBExpReduced[7];
+            double p = kDeviceRegionBExpReduced[12];
 
-            for (int k = 6; k >= 0; --k)
+            for (int k = 11; k >= 0; --k)
             {
                 p = DeviceMulAdd<kRoute>(p, r, kDeviceRegionBExpReduced[k]);
             }
@@ -638,6 +662,53 @@ __device__ __forceinline__ T DeviceDivideDownwardStep(int l, T a) {
 }
 
 // ---------------------------------------------------------------------------
+// the far region's corrected seed
+// ---------------------------------------------------------------------------
+
+// The closed form the region-C bodies seed from, (1/2)sqrt(pi/x), is F_0 times H_0 with
+// H_0 = erf(sqrt(x)) held at 1, so its relative error is erfc(sqrt(x)): 2.65e-14 at kX1,
+// falling to the unit roundoff at kDeviceSeedCorrectionX1, above which the closed form is
+// the correctly rounded H_0 and a correction has nothing left to remove. The coefficients,
+// the span and the summation are the host's own (boys_impl.hpp, FarSeedAt and
+// SeedCorrectionAt, over boys_coefficients.hpp kSeedCorrectionCoeffs): the device does not
+// re-derive a fit the host gate certifies.
+inline constexpr double kDeviceSeedCorrectionX1 = 3.43816261058342079e+01;
+__device__ constexpr double kDeviceSeedCorrection[9] = {
+    -6.78314550125780223e-15,
+    1.06992635030804860e-14,
+    -5.75490553058459897e-15,
+    2.29862646710483319e-15,
+    -7.23786489724359351e-16,
+    1.87330345184596075e-16,
+    -4.10728367421541463e-17,
+    7.79960988647732642e-18,
+    -1.28044887796989350e-18,
+};
+
+/// The far region's seed at one argument, the host's \c FarSeedAt: the closed form with
+/// the error its own truncation carries, restored over the span that error is above the
+/// roundoff.
+///
+/// The ladder above \c kX1 seeds here and its step adds the \c exp(-x)/2 term the
+/// asymptotic step drops, so the region is one arithmetic: a ladder seeded at the bare
+/// closed form while stepping the corrected recurrence would be stepping a different
+/// function rather than a coarser one.
+///
+/// \param xx argument, kX1 <= xx
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute>
+__device__ __forceinline__ double DeviceFarSeed(double xx) {
+    double f = kHalfSqrtPi * rsqrt(xx);
+
+    if (xx < kDeviceSeedCorrectionX1)
+    {
+        const double t = 2.0 * (xx - kX1) / (kDeviceSeedCorrectionX1 - kX1) - 1.0;
+        f *= 1.0 + DeviceClenshawSplit<kRoute>(kDeviceSeedCorrection, 8, t);
+    }
+
+    return f;
+}
+
+// ---------------------------------------------------------------------------
 // one order at one argument
 // ---------------------------------------------------------------------------
 
@@ -666,12 +737,16 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return f;
     }
 
-    double f = kHalfSqrtPi * rsqrt(xx);
+    double f = DeviceFarSeed<kRoute>(xx);
     const double invx = DeviceStepReciprocal<kForm>(xx);
+
+    // The step carries the exp(-x)/2 term the asymptotic step drops; the accurate member,
+    // as the host's far ladder reads it (boys_impl.hpp, CorrectedSeedAllOrders).
+    const double expx = DeviceRegionBExp<false, kRoute>(xx);
 
     for (int l = 0; l < order; ++l)
     {
-        f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
+        f = DeviceDivideStep<kForm>((l + 0.5) * f - expx, xx, invx);
     }
 
     return f;
@@ -704,9 +779,14 @@ __device__ __forceinline__ float DeviceSingleF32(const Lane& lane, int order, fl
     float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
     const float invx = DeviceStepReciprocal<kForm>(xx);
 
+    // The step carries the exp(-x)/2 term the asymptotic step drops, at the same accurate
+    // member and for the same reason as the double lane above. The fp32 lane seeds at the
+    // bare closed form: its error is 2.65e-14 relative, below this lane's 2^-22.
+    const float expx = DeviceRegionBExp<false, kRoute>(xx);
+
     for (int l = 0; l < order; ++l)
     {
-        f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
+        f = DeviceDivideStep<kForm>((l + 0.5f) * f - expx, xx, invx);
     }
 
     return f;
@@ -754,13 +834,14 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    double f = kHalfSqrtPi * rsqrt(xx);
+    double f = DeviceFarSeed<kRoute>(xx);
     store(0, f);
     const double invx = DeviceStepReciprocal<kForm>(xx);
+    const double expx = DeviceRegionBExp<false, kRoute>(xx);
 
     for (int l = 1; l <= order; ++l)
     {
-        f = DeviceDivideStep<kForm>((l - 0.5) * f, xx, invx);
+        f = DeviceDivideStep<kForm>((l - 0.5) * f - expx, xx, invx);
         store(l, f);
     }
 }
@@ -807,10 +888,11 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
     float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
     store(0, f);
     const float invx = DeviceStepReciprocal<kForm>(xx);
+    const float expx = DeviceRegionBExp<false, kRoute>(xx);
 
     for (int l = 1; l <= order; ++l)
     {
-        f = DeviceDivideStep<kForm>((l - 0.5f) * f, xx, invx);
+        f = DeviceDivideStep<kForm>((l - 0.5f) * f - expx, xx, invx);
         store(l, f);
     }
 }
@@ -825,7 +907,7 @@ __device__ __forceinline__ void DeviceAllOrdersF32(
 
 // kMonomial selects the reader and nothing else - the index arithmetic, the join at kFlatHi and
 // the arm above it are one spelling for both forms - and the join needs no interpolation:
-// kFlatHi is above kX1, so an argument the table does not serve is one the asymptotic served.
+// kFlatHi is above kX1, so an argument the table does not serve is one the far region serves.
 
 // The uniform route's ladder, in double.
 template <DivisionForm kForm, bool kMonomial, backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Store>
@@ -838,14 +920,15 @@ __device__ __forceinline__ void DeviceAllOrdersF64Flat(const double* cheb,
                                                        Store store) {
     if (xx >= kFlatHi)
     {
-        double f = kHalfSqrtPi * rsqrt(xx);
+        double f = DeviceFarSeed<kRoute>(xx);
         const double invx = DeviceStepReciprocal<kForm>(xx);
+        const double expx = DeviceRegionBExp<false, kRoute>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
+            f = DeviceDivideStep<kForm>((l + 0.5) * f - expx, xx, invx);
         }
 
         return;
@@ -919,14 +1002,15 @@ __device__ __forceinline__ void DeviceAllOrdersF64FlatRat(const double* rat,
                                                           Store store) {
     if (xx >= kFlatHi)
     {
-        double f = kHalfSqrtPi * rsqrt(xx);
+        double f = DeviceFarSeed<kRoute>(xx);
         const double invx = DeviceStepReciprocal<kForm>(xx);
+        const double expx = DeviceRegionBExp<false, kRoute>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = DeviceDivideStep<kForm>((l + 0.5) * f, xx, invx);
+            f = DeviceDivideStep<kForm>((l + 0.5) * f - expx, xx, invx);
         }
 
         return;
@@ -980,12 +1064,13 @@ __device__ __forceinline__ void DeviceAllOrdersF32Flat(const float* cheb,
     {
         float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
         const float invx = DeviceStepReciprocal<kForm>(xx);
+        const float expx = DeviceRegionBExp<false, kRoute>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
+            f = DeviceDivideStep<kForm>((l + 0.5f) * f - expx, xx, invx);
         }
 
         return;
@@ -1055,12 +1140,13 @@ __device__ __forceinline__ void DeviceAllOrdersF32FlatRat(const float* rat,
     {
         float f = static_cast<float>(kHalfSqrtPi) * rsqrtf(xx);
         const float invx = DeviceStepReciprocal<kForm>(xx);
+        const float expx = DeviceRegionBExp<false, kRoute>(xx);
 
 #pragma unroll 4
         for (int l = 0; l <= order; ++l)
         {
             store(l, f);
-            f = DeviceDivideStep<kForm>((l + 0.5f) * f, xx, invx);
+            f = DeviceDivideStep<kForm>((l + 0.5f) * f - expx, xx, invx);
         }
 
         return;

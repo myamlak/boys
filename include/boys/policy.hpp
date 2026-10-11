@@ -361,7 +361,7 @@ concept EvalPolicyLike = requires {
 ///    \c BoysBudget::kFp16 budget, which cuts their fits for a 1e-7 region target
 ///    rather than the float lane's. That is not an accuracy they can publish: they
 ///    run the float lane's arithmetic and store what it returns, so their published
-///    figure is that lane's 1.5e-7 plus the half-ULP term the store adds - 2^-11 for
+///    figure is the fp32 engine's arithmetic stated absolutely, 1.5e-7, plus the half-ULP term the store adds - 2^-11 for
 ///    the binary16 store, 2^-8 for the bfloat16 one;
 ///  - \c DefaultPolicyFp16 and \c DefaultPolicyBf16 denote one and the same policy
 ///    type - one engine, one budget, and no cell of a policy is a format - and

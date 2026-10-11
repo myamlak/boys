@@ -7,11 +7,16 @@
  * Every entry returns an int status; results are written through the pointer
  * arguments.
  *
- * B is the per-region bound of the lane an entry reaches, at the one accuracy
- * this library carries. The rows this surface reaches are: the single-order
- * double entries, 1e-15 in region A and 3e-14 over the extended band and
- * region B, and 5.5e-14 in region C; the double batch entries, 5.5e-14 in every
- * region; and the single-precision entries, 1.5e-7 in every region.
+ * B is the bound of the lane an entry reaches, at the one accuracy this library
+ * carries: the error of a returned value is at or below **1e-13 times F_n(x)**
+ * over the whole of x >= 0, above the format's smallest normal, and the
+ * single-precision entries carry **the larger of 2^-22 · F_n(x) and 1.5e-7**
+ * instead, that lane's arithmetic being binary32 and holding an absolute floor (its
+ * plain-reciprocal form adds a term of 1e-7 to that figure; no entry here takes a
+ * form, so these four run the library's default division). The
+ * per-region figures those lanes' fits were cut against — 1e-15, 3e-14, 5e-14,
+ * 5.5e-14 and 1.5e-7 — are measurements of the tables, not this contract, and
+ * docs/lane-contract.md prints them as such.
  *
  * \ingroup boys
  */

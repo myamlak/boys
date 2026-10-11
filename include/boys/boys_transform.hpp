@@ -26,9 +26,12 @@
 ///
 /// **What is verified on this machine is the arithmetic, not the hardware.** The
 /// modes below \c kFp64 evaluate a *model* of an fp32 accumulator, which is not
-/// what a card's fused sum does. The two split modes' floor is 1.28 to 1.30 times
-/// the float lane's 1.5e-7, so they miss that lane's budget at \c m = 1 and carry
-/// it from \c m = 2.
+/// what a card's fused sum does. The two split modes' floor is 1.92e-7 to 1.95e-7
+/// absolute — 1.28 to 1.30 times the 1.5e-7 the float lane's fits are cut against
+/// — so they miss that lane's budget at \c m = 1 and carry it from \c m = 2. The
+/// lane's published bound is a fraction of the value rather than a budget, and a
+/// floor of this kind sits inside it only where F_n(x) is above about 0.81: below
+/// that the floor is the larger of the two and does not follow the value down.
 ///
 /// A caller who feeds one order's value to the shipped downward recursion
 /// instead is held to a tighter requirement: that recursion carries order N's

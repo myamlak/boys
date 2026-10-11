@@ -18,7 +18,9 @@
 // rounds no more than the m = 1 lane the base is asserted for.
 
 // The fp16/bf16 lanes are I/O around the fp32 engine: their 1e-7 region budgets are stricter
-// than the float lanes' documented 1.5e-7, and their half-ULP term is m-independent.
+// than the 1.5e-7 the float lane's fits are cut against, and their half-ULP term is m-independent.
+// The 1.5e-7 is that lane's budget and not its figure: the figure it publishes is a fraction of
+// the value (BoysBudget, accuracy.hpp).
 
 /// \cond
 // Not API: the degree arithmetic the entries are compiled from.
