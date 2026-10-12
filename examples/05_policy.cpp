@@ -32,11 +32,11 @@ int main()
     }
 
     // The two are different sums of the same approximation of F, so they agree
-    // to well inside the error the library guarantees for either.
+    // to well inside the error the library guarantees for either. The ask reads
+    // the named policy's own axes, its division form included.
     const double bound = boys::BoysAccuracyGuaranteed(
-                             boys::Precision::kFp64, boys::FitRoute::kChebyshev,
-                             boys::EvalScheme::kSplitClenshaw, boys::PackAxis::kArguments,
-                             boys::FitGranularity::kCoarsest)
+                             boys::Precision::kFp64, Named::kRoute, Named::kScheme, Named::kPack,
+                             Named::kGranularity, Named::kDivision, Named::kRegionBExp)
                              .value;
     std::printf("worst disagreement: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;

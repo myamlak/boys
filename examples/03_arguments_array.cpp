@@ -30,11 +30,8 @@ int main()
     {
         worst = std::fmax(worst, std::fabs(column[i * 2] - boys::BoysSingle(n, x[i])));
     }
-    const double bound = boys::BoysAccuracyGuaranteed(
-                             boys::Precision::kFp64, boys::FitRoute::kChebyshev,
-                             boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
-                             boys::FitGranularity::kNarrow)
-                             .value;
+    const double bound =
+        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kFixedN>().value;
     std::printf("worst gap against BoysSingle: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;
 }

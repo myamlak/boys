@@ -1,5 +1,5 @@
 // A shell quartet does not ask for one order. What does the batch it needs cost?
-//   c++ -std=c++20 -I include examples/08_shell_quartet_batch.cpp -L build -lboys -o quartet
+//   c++ -std=c++20 -I include examples/08_shell_quartet_batch.cpp -L build -lboys -o quartet && ./quartet
 
 // Every argument of a real batch arrives with its own highest order, running to la + lb + lc + ld,
 // and padding all of them to the batch's largest is the easy call and not free. The bound and the
@@ -8,6 +8,8 @@
 #include <boys/boys_span.hpp>
 
 #include <array>
+#include <cmath>
+#include <cstddef>
 #include <cstdio>
 
 int main()
@@ -55,7 +57,7 @@ int main()
         for (int k = 0; k <= n[i]; ++k)
         {
             const std::size_t at = static_cast<std::size_t>(k) * count + i;
-            const double difference = perArgument[at] - padded[at];
+            const double difference = std::fabs(perArgument[at] - padded[at]);
             worst = difference > worst ? difference : worst;
             ++compared;
         }
@@ -63,12 +65,10 @@ int main()
     std::printf("cells compared against the padded call:  %zu, worst difference %.3g\n", compared,
                 worst);
 
-    // What the library promises for this call, asked rather than assumed. The
-    // default policy is what a call naming no policy compiles.
+    // What the library promises for the per-argument call, asked rather than
+    // assumed: the bound its own default policy carries in this build.
     const boys::AccuracyFigure guaranteed =
-        boys::BoysAccuracyGuaranteed(boys::Precision::kFp64, boys::kDefaultFitRoute,
-                                     boys::kDefaultEvalScheme, boys::kDefaultPackAxis,
-                                     boys::kDefaultFitGranularity);
+        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>();
     std::printf("guaranteed error per value:             %.3g  (%s)\n", guaranteed.value,
                 guaranteed.source);
 

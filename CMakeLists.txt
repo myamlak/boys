@@ -1249,14 +1249,14 @@ int main() {
         # Scoped to a build whose defaults are the committed ones. The quoted figures are what the
         # evaluation an unnamed call resolves to prints, so a build that replaced that resolution
         # through BOYS_BUILD_DEFAULTS prints other digits by construction - the tuned fixture moves
-        # F_3(1.25) from the quoted 0.055476132923077535 to 0.055476132923077695 - and the claim is
+        # F_3(1.25) from the quoted 0.055476132923077584 to 0.055476132923077695 - and the claim is
         # not one that tree makes. Registering it there would be a leg that is red for being the
         # configuration it declares itself to be.
         #
         # The same reasoning excludes a build on the separate multiply-add route. The quoted figures
         # are the fused route's by construction, and a separate-route build prints the last digit
         # differently: measured, examples/08_shell_quartet_batch.cpp prints 0.052602850434881915
-        # where docs/getting-started.md quotes 0.052602850434881922 - one token on one line, with
+        # where docs/getting-started.md quotes 0.05260285043488188 - one token on one line, with
         # every other example matching.
         #
         # The delivery kernel is deliberately NOT excluded. An AVX2 build and a build forced onto

@@ -23,9 +23,8 @@ int main()
     }
 
     // Each order must agree with the single-order entry, inside the bound.
-    const boys::AccuracyFigure bound = boys::BoysAccuracyGuaranteed(
-        boys::Precision::kFp64, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
-        boys::PackAxis::kArguments, boys::FitGranularity::kNarrow);
+    const boys::AccuracyFigure bound =
+        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllOrders>();
 
     double worst = 0.0;
     for (int k = 0; k <= nmax; ++k)
