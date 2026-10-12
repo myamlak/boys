@@ -104,7 +104,7 @@
 /// **The host rows are measurements taken on one machine.** They are the option
 /// probe's winners for this host - 12 logical processors, the AVX2+FMA tier
 /// present, seed 47, 5 passes of 5 rounds over 16384 arguments to order 32 - run
-/// 2026-10-05T10:19:50Z, and the figure beside each is that class's time per
+/// 2026-10-12T17:48:30Z, and the figure beside each is that class's time per
 /// argument. They all carry one record name: this host's own word and the day the
 /// run was stamped with. A row is a property of the machine it was measured on, so
 /// a build on another host has its own winners and the probe is what finds them.
@@ -146,86 +146,86 @@
 /// reason, so a row that leaves either out does not compile either - a row whose
 /// provenance nothing states is the defect this format exists to remove.
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
-    /* measured: 88.66 ns per argument on this host, reached by vote */\
+    /* measured: 42.08 ns per argument on this host, reached by chosen-among-equals */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 94.49 ns per argument on this host, reached by vote */\
+      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 90.26 ns per argument on this host, reached by vote */\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 171.74 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 165.49 ns per argument on this host, reached by vote */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 302.68 ns per argument on this host, reached by vote */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 171.88 ns per argument on this host, reached by ordered */\
     X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 674.53 ns per argument on this host, reached by vote */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 400.46 ns per argument on this host, reached by refined */\
     X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 98.17 ns per argument on this host, reached by vote through the sorted-arguments call */\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 50.03 ns per argument on this host, reached by vote through the sorted-arguments call */\
     X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 140.56 ns per argument on this host, reached by vote */\
+      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kExactDivision,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 74.33 ns per argument on this host, reached by refined */\
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 240.08 ns per argument on this host, reached by ordered */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 234.55 ns per argument on this host, reached by refined */\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 104.60 ns per argument on this host, reached by vote */\
-    X(kHost, kFp32, kAllN, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 92.17 ns per argument on this host, reached by vote */\
+    X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 551.11 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 524.24 ns per argument on this host, reached by refined */\
     X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 125.34 ns per argument on this host, reached by vote */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 96.20 ns per argument on this host, reached by vote */\
     X(kHost, kFp32, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 358.79 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 330.03 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 782.96 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 755.84 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 165.25 ns per argument on this host, reached by refined */\
-    X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 141.99 ns per argument on this host, reached by refined */\
+    X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 229.58 ns per argument on this host, reached by refined */\
-    X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 167.72 ns per argument on this host, reached by refined */\
+    X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 107.21 ns per argument on this host, reached by refined */\
-    X(kHost, kBf16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 98.92 ns per argument on this host, reached by vote */\
+    X(kHost, kBf16, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 253.84 ns per argument on this host, reached by ordered */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 240.20 ns per argument on this host, reached by refined */\
     X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 577.52 ns per argument on this host, reached by ordered */\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 554.62 ns per argument on this host, reached by refined */\
     X(kHost, kBf16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 116.60 ns per argument on this host, reached by vote */\
-    X(kHost, kBf16, kAllN, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 102.27 ns per argument on this host, reached by vote */\
+    X(kHost, kBf16, kAllN, FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
-    /* measured: 140.28 ns per argument on this host, reached by vote */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+    /* measured: 115.43 ns per argument on this host, reached by chosen-among-equals */\
     X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-05")\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
     /* measured: 'device-single-fp64-fast', in its class's fastest group */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
