@@ -104,20 +104,23 @@
 /// **The host rows are measurements taken on one machine.** They are the option
 /// probe's winners for this host - 12 logical processors, the AVX2+FMA tier
 /// present, seed 47, 5 passes of 5 rounds over 16384 arguments to order 32 - run
-/// 2026-10-12T17:48:30Z, and the figure beside each is that class's time per
+/// 2026-10-12, and the figure beside each is that class's time per
 /// argument. They all carry one record name: this host's own word and the day the
 /// run was stamped with. A row is a property of the machine it was measured on, so
 /// a build on another host has its own winners and the probe is what finds them.
 ///
-/// **The device rows are a run's own winners.** Every member of the space - the
+/// **The device rows are runs' own winners.** Every member of the space - the
 /// library's 352 device option rows crossed with its three division forms - was
 /// measured on a Quadro T1000 on 2026-10-06 and published, 1056 of 1056, none
-/// refused. They all carry one record name: the card's own word and the day that run
-/// was stamped with. The run measured that no entry of a class beats the entry its
-/// row names; it could not order the fastest entries of a class against each other,
-/// so each row is one of the entries that class measured as equally fast and the
-/// report states the resolution it reached beside it. A row belongs to the card it
-/// was measured on, so another card has its own winners.
+/// refused; a re-run of the same space on 2026-10-12 measured 1056 of 1056 again,
+/// placed four of the twelve classes, and those rows carry that day's name, while
+/// the other eight keep the 2026-10-06 rows it wrote back because it could not
+/// separate their top entries. A row's record name says which run it came from. A
+/// run measures that no entry of a class beats the entry its row names; it may not
+/// be able to order the fastest entries of a class against each other, so each row
+/// is one of the entries that class measured as equally fast and each report states
+/// the resolution its run reached beside it. A row belongs to the card it was
+/// measured on, so another card has its own winners.
 ///
 /// **What a row's combination is, and what it came from, are its last two cells
 /// rather than a sentence beside it.** The basis is `RowBasis::kMeasured` where a
@@ -242,34 +245,34 @@
     X(kDevice, kFp64Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
-    /* measured: 'device-all-orders-fp32-rat-horner-exact-division', in its class's fastest group */\
-    X(kDevice, kFp32Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
+    /* the class could not be ordered: its 6 fastest entries could not be separated at the 32.62% it could order at; replaces the row the table in force carries */\
+    X(kDevice, kFp32Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner,\
+      BoysBudget::kFloat, PackAxis::kOrders, FitGranularity::kUniform,\
+      DivisionForm::kExactDivision, RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-12")\
     /* measured: 'device-all-orders-fp16-uniform-horner-exact-division', in its class's fastest group */\
     X(kDevice, kFp16Device, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kExactDivision,\
       RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
-    /* measured: 'device-all-n-fp64', in its class's fastest group */\
-    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
+    /* measured: 'device-all-n-fp64-fast-exact-division', reached by ordered; this class's own rounds placed every rival of it behind it; replaces the row the table in force carries */\
+    X(kDevice, kFp64Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFloat, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kExactDivision, RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-12")\
     /* measured: 'all-n-fp32-fast-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kFp32Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
       RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
-    /* measured: 'device-all-n-fp16-fast', in its class's fastest group */\
-    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
+    /* the class could not be ordered: its 4 fastest entries could not be separated at the 111.48% it could order at; replaces the row the table in force carries */\
+    X(kDevice, kFp16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw,\
+      BoysBudget::kFp16, PackAxis::kArguments, FitGranularity::kCoarsest,\
+      DivisionForm::kRefinedReciprocal, RegionBExp::kFast, RowBasis::kMeasured, "quadro-t1000-2026-10-12")\
     /* measured: 'device-single-bfloat16-exact-division', in its class's fastest group */\
     X(kDevice, kBf16Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kExactDivision,\
       RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
-    /* measured: 'device-all-orders-bfloat16-uniform-rat-horner-plain-reciprocal', in its class's fastest group */\
-    X(kDevice, kBf16Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-06")\
+    /* the class could not be ordered: its 3 fastest entries could not be separated at the 4485.48% it could order at; replaces the row the table in force carries */\
+    X(kDevice, kBf16Device, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner,\
+      BoysBudget::kFp16, PackAxis::kOrders, FitGranularity::kUniform,\
+      DivisionForm::kExactDivision, RegionBExp::kAccurate, RowBasis::kMeasured, "quadro-t1000-2026-10-12")\
     /* measured: 'device-all-n-bfloat16-plain-reciprocal', in its class's fastest group */\
     X(kDevice, kBf16Device, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kPlainReciprocal,\
