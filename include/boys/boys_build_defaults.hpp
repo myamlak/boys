@@ -119,7 +119,11 @@
 /// run measures that no entry of a class beats the entry its row names; it may not
 /// be able to order the fastest entries of a class against each other, so each row
 /// is one of the entries that class measured as equally fast and each report states
-/// the resolution its run reached beside it. A row belongs to the card it was
+/// the resolution its run reached beside it. A device report prices a class's
+/// entries by subtracting a kernel without the call from the same kernel with it,
+/// so an entry whose arithmetic sits inside that kernel's own traffic is listed as
+/// set aside rather than priced, and the fastest entry a report names is the
+/// fastest of those it resolved. A row belongs to the card it was
 /// measured on, so another card has its own winners.
 ///
 /// **What a row's combination is, and what it came from, are its last two cells
