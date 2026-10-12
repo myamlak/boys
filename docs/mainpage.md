@@ -2,8 +2,8 @@
 
 The boys kernel evaluates the Boys function family
 F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt for n = 0..32.
-It does so in scalar fp64 and fp32, an AVX2 vector tier behind the same entries, fp16/bf16 I/O, a
-native packed-half lane, and optional CUDA lanes.
+It does so in scalar fp64 and fp32 (double and single precision), an AVX2 vector tier behind the same
+entries, fp16/bf16 I/O (half and bfloat16), a native packed-half lane, and optional CUDA lanes.
 
 Source: the [GitHub repository](https://github.com/myamlak/boys).
 
@@ -12,7 +12,7 @@ library before, start with the first**: it builds the library, runs four calls, 
 output beside the command that reproduces it. **If you are calling this library on a GPU, the fifth
 is the one written for you.**
 
-- `docs/getting-started.md` — getting started: build it, call it, read the output
+- \subpage md_docs_2getting-started "getting started: build it, call it, read the output"
 - \subpage md_docs_2consumer-perspective "Choosing a lane: how much accuracy the calculation needs"
 - \subpage md_docs_2lane-contract "The per-lane contract: where each bound holds, and where it stops"
 - \subpage md_docs_2build-facts "Build facts: what a build of this library is, read out of the build"
@@ -66,9 +66,9 @@ compiler resolves where it is written (\ref boys::EvalPolicy). The CUDA lane's e
 device-callable entries of `boys/boys_cuda_device.hpp` take the division form their recurrence
 divides in and the exponential their tables read as template parameters, each defaulting to the
 lane's own member (\ref boys::kDefaultDeviceDivisionForm, \ref boys::kDefaultDeviceRegionBExp).
-Every entry evaluates at the one
-accuracy this library carries, the full static accuracy of the certified lane. The native half lane
-is the exception: it has no stored fit, and no region but region C. See the accuracy contract below.
+Every entry evaluates at the one accuracy this library carries, the full static accuracy of the
+certified lane — the lane the accuracy gate holds to its published bound. The native half lane is the
+exception: it has no stored fit, and no region but region C. See the accuracy contract below.
 
 The first column is the entry's name in this reference. The second names the lane each group belongs
 to, the call shape it answers — one order at one argument, the full ladder at one argument, one order
@@ -105,10 +105,10 @@ the certified fp64 lane.
 The comparison is paired: every option is called once in every round of every pass, and the
 comparison between two options is the ratio of their times within one round. A clock drift common to
 the round therefore cancels in it, instead of reading as a difference between the options. Each pass
-carries runs of a fixed-work integer canary beside its rounds. It is a diagnostic that gates nothing:
-a fixed work read by wall clock measures the clock as much as the load, so a decaying clock widens it
-on an idle machine. What the ordering is made in is the spread of the paired ratios, which the report
-measures.
+carries runs of a fixed-work integer canary beside its rounds. It is a diagnostic and not a gate:
+nothing fails on it. A fixed work read by wall clock measures the clock as much as the load, so a
+decaying clock widens it on an idle machine. The ordering is made in the spread of the paired ratios,
+which the report measures.
 
 The reported figure is the option's within-round ratio to the reference lane at the middle of the
 run's rounds, scaled by that lane's own cost, with its spread printed beside it. It is the middle
@@ -117,7 +117,7 @@ every other option at a lower quartile of its ratio would give the reference the
 rounds and its rivals less than the middle of theirs — a ranking that turns on which row the run
 anchored on.
 
-The classes the report ranks inside are one precision and one question shape.
+The report ranks inside classes, and a class is one precision and one question shape.
 The question shape is what the option hands back: one argument's ladder up to its own order, or one
 common ladder over an array of arguments. Every row of a class answers the same question.
 
@@ -125,10 +125,10 @@ The axes a caller does not choose — the fit route, the evaluation scheme, the 
 fitted regions and the packing axis — are columns inside the class, and compete in one ranking. The
 default is taken from the certified double lane's precision, answering the shape the probe's workload
 asks. A faster row of another precision or of the other shape is therefore never a candidate for it.
-Within that class the default is the
-row the class's own rounds put first where they order it, and the row the refinement's vote named
-where they cannot separate its members; where the vote named another tied row, both figures are
-printed beside the name.
+Within that class the default is the row the
+class's own rounds put first where they order it. Where they cannot separate its members, it is the
+row the refinement's vote named; where the vote named another tied row, both figures are printed
+beside the name.
 
 When a class cannot be ordered, the run still ends with one combination. A class cannot be ordered
 when a pair's within-round ratio band straddles one, or when too few rounds exist for a band. The
@@ -224,10 +224,10 @@ the caller's own kernel rather than branching within one.
 "ULP" is the last representable digit of the result in the format concerned.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two rows deliver a
-different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
-build decides which that is, because a build that contracts a bare product-plus-add compiles the
-separate selection onto the fused step: the `RouteInForce` the backend report is built from asks that
-question and returns the fused route there whatever the selection says. Against the committed
+different figure depending on which multiply-add the lane evaluates — one rounding or two. The build
+decides which that is, because a build that contracts a bare product-plus-add compiles the separate
+selection onto the fused step: the `RouteInForce` the backend report is built from asks that question
+and returns the fused route there whatever the selection says. Against the committed
 reference grid, built both ways — the default fused route and the `BOYS_MULADD_SEPARATE=ON` separate
 route — measured on MSVC x64 Release:
 
@@ -296,7 +296,7 @@ there, and a caller that has to be right there wants the double or float lane.
 Public signatures and supported domains are stable within a major version. Bitwise outputs are not;
 pin the release tag, the compiler and the flags for exact reproducibility — and read the
 reproducibility paragraph in the specification, because whose compiler and flags decide a value
-depends on the call: one that names no policy at the fp64 lanes is instantiated in the library, and
+depends on the call. A call that names no policy at the fp64 lanes is instantiated in the library;
 one written through a `With*` helper is instantiated in your own translation unit.
 
 The full contract statement and the region definitions are in the header comments (see

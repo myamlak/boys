@@ -1,8 +1,8 @@
 # Source map
 
-This page is for a reader who knows C++ and numerical analysis and nothing about this tree: it
-says which file implements what, and which test holds each thing to its contract. It is a map, not
-a specification — what a lane guarantees, and why the figures are what they are, is in
+**This page says which file implements what, and which test holds each thing to its contract.** It
+is written for a reader who knows C++ and numerical analysis and nothing about this tree. It is a
+map, not a specification — what a lane guarantees, and why the figures are what they are, is in
 [the per-lane contract](lane-contract.md) and [the accuracy contract](specification.md#accuracy-contract).
 
 Every claim below is read off the files it names. Where this page could not tell what a file is
@@ -18,8 +18,8 @@ vendored dependencies under `third_party/`. `docs/` holds the published pages.
 
 ## The three regions
 
-The argument line is cut into regions, and each is evaluated differently. The boundaries are
-`kX0 = 11.899848152108484` and `kX1 = 28.98933773882074`, both committed in
+The argument line is cut into regions — intervals of x — and each is evaluated differently. The
+boundaries are `kX0 = 11.899848152108484` and `kX1 = 28.98933773882074`, both committed in
 `include/boys/boys_coefficients.hpp`.
 
 | Region | Interval | What it is | The file that implements it | The test that holds it |
@@ -30,14 +30,16 @@ The argument line is cut into regions, and each is evaluated differently. The bo
 | C | `[kX1, inf)` | The asymptotic form `1/2 sqrt(pi/x)` plus upward recursion; no stored fit | `include/boys/boys_impl.hpp` (`kBoysHalfSqrtPi`, `BoysAllNBodyRegionC`), the vector tier in `src/boys_simd.cpp` (`BoysRegionCSimd`) | `tests/boys_accuracy_test.cpp`, `tests/boys_half_native_test.cpp` |
 | Which region one argument takes | — | The dispatch itself: zero, tabulated, extended, middle, asymptotic | `include/boys/boys_impl.hpp`, `BoysPath` and `BoysClassifyPath` | the region-boundary cases in `tests/boys_accuracy_test.cpp` and `tests/boys_boundary_test.cpp` |
 
-Two more things are stated per region rather than per lane and live in the same two places:
+Two more things are stated per region rather than per lane, and both live in the same two places.
 `include/boys/boys_effective_degrees.hpp` carries the lane roles the region budgets and the
-truncation amplification are read through, and `tools/gen_boys_coefficients.py` is what places the
+truncation amplification are read through. `tools/gen_boys_coefficients.py` is what places the
 fits and emits the boundaries and degrees.
 
 ## The lanes, and the entry points that serve them
 
-A *lane* is an entry plus the arithmetic behind it, and a bound always describes one lane. Five
+A *lane* is an entry plus the arithmetic behind it; a *bound* is the error ceiling that lane
+guarantees, and it always describes one lane. A fit or a combination is **certified** when the
+library carries it and the accuracy gate holds it to a published bound. Five
 precision families carry host entries - double, float, fp16 I/O, bf16 I/O and the native packed
 half - and the device lane adds four `Precision` members of its own. Every entry is declared twice:
 as a plain function in `include/boys/boys.hpp`, which is the spelling a call site that names no
@@ -91,9 +93,9 @@ and no call site names it.
 | packing axis | `PackAxis` | `include/boys/backend.hpp` | the vector lanes in `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`. The device's reading of the same question is `DevicePacking` in `include/boys/boys_cuda_options.hpp`, which adds the `kNotApplicable` member a one-order entry states | `tests/boys_across_orders_test.cpp`, `tools/check_host_entry_bijection.py` |
 | multiply-add route (the build's, not a call-site one) | `MulAddRoute` | `include/boys/backend.hpp` | the named arithmetic backends in `src/boys_backend_simd.hpp` and `src/boys_backend_registry.hpp`; the device's is `include/boys/boys_cuda_muladd.hpp` | `tests/boys_backend_test.cpp`, `tests/boys_muladd_route_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
 
-The choices a call naming no policy resolves to are the **build-defaults seam**,
-`include/boys/boys_build_defaults.hpp`: seven names, five for a host class and two for a device
-one, each checked against the enumerators of the axis it initialises. A build replaces the file
+**A call that names no policy resolves to the build-defaults seam**,
+`include/boys/boys_build_defaults.hpp`: seven names — five for a host class and two for a device
+one — each checked against the enumerators of the axis it initialises. A build replaces the file
 with `-DBOYS_BUILD_DEFAULTS=<header>`; the fixtures that move one axis at a time are under
 `tests/build_defaults_*.hpp`, and `tests/boys_build_defaults_test.cpp` and
 `tests/boys_defaults.cpp` read what the seam resolved. The row table itself — `DefaultPolicyRow`,
@@ -171,9 +173,9 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 | `tools/host-shapes.json` | a person | edit it when a host entry moves between shapes | `tools/check_host_entry_bijection.py`, which reads it against the headers in both directions |
 | The seam, `include/boys/boys_build_defaults.hpp` | a person — the committed five host names and two device ones | or: `tools/splice_default_rows.py --emitted <file> --seam <seam>` writes the rows a probe run emitted with `--emit-defaults` into it — matched by class and never by position, a class the emission did not place is left as the seam carries it, marker and cells together, and a splice that would leave the file naming a run its rows do not is refused rather than written | `tools/check_seam_macros.py` requires every name it offers to be expanded somewhere in `include/` or `src/`; `tools/splice_default_rows.py --control` holds the refusals the splicer makes; the CI legs that build against `tests/build_defaults_*.hpp` are what compiles a moved axis |
 
-A *recorded* file is a run kept as a file: it is not re-derived, so a check that reads one is asking
-about the version the run names and the content of the files it read, and the answer changes only
-when someone re-makes the run. `tests/data/boys_reference.csv` is the opposite — it is generated, and the committed bytes are
+**A check that reads a recorded file is asking about the version the run names and the content of
+the files it read**, and the answer changes only when someone re-makes the run.
+`tests/data/boys_reference.csv` is the opposite — it is generated, and the committed bytes are
 a claim about what its generator produces.
 
 ## The probes

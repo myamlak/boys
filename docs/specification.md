@@ -25,9 +25,9 @@ answers there, and no accuracy is claimed. To reproduce a figure: read the grid'
 and take the largest `|delivered − value| / |value|` over the cells whose `|value|` is above the
 lane's floor. The gate does exactly this and prints the ratio beside every row.
 
-The library evaluates the function differently at different argument sizes, and one lane is tighter
-over part of the range than over the rest — but the contract is one figure per lane, and a lane's
-tighter regions are inside its figure rather than written beside it. Every figure below holds for
+**The contract is one figure per lane.** The library evaluates the function differently at different
+argument sizes, and one lane is tighter over part of the range than over the rest — but a lane's
+tighter regions sit inside its published figure rather than beside it. Every figure below holds for
 **all** x ≥ 0:
 
 | Lane | Error bound |
@@ -70,12 +70,12 @@ figure is what the bound keeps as its floor:
 
 So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 5.5e-14**, and it is
 the absolute arm, not the relative one, that binds at the cells above; the float lane's row states
-the same union with its own two figures. What raises each family to the relative figure, one change
-apiece: an order whose value is far below its region's seed is carried up the recurrence by the
-gain [boys_impl.hpp](../include/boys/boys_impl.hpp) states (`2 T(N, x) t / F_N` is 1.598e6 at
-kX0), so serve it from its own fit, as the shipped entries' per-order grid does, or carry the
-recurrence in wider arithmetic; and the rational route's intervals between x = 11.5 and 12.0 store
-a fit that does not reach the bar their neighbours reach.
+the same union with its own two figures. Two changes, one per family, would raise each to the
+relative figure. The first: an order whose value is far below its region's seed is carried up the
+recurrence by the gain [boys_impl.hpp](../include/boys/boys_impl.hpp) states (`2 T(N, x) t / F_N` is
+1.598e6 at kX0), so serve it from its own fit, as the shipped entries' per-order grid does, or carry
+the recurrence in wider arithmetic. The second: the rational route's intervals between x = 11.5 and
+12.0 store a fit that does not reach the bar their neighbours reach.
 
 **One axis's members are not one figure.** `DivisionForm` is how every recurrence step divides, and
 its three members are three arithmetics, not three spellings of one. Exact division rounds once per
@@ -128,8 +128,8 @@ default as numbers. Two of the choices — the evaluation scheme and the interva
 set from the option probe's own runs, and **neither was settled by them**. The partition was not
 chosen against its axis at all: those runs are dated 2026-09-28, every partition-bearing row in them
 is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
-2026-09-30, so that default has not been derived against the whole axis. On the scheme axis the runs did
-compare both rows and did not separate them.
+2026-09-30. That default has therefore not been derived against the whole axis. On the scheme axis
+the runs did compare both rows and did not separate them.
 The route and the packing axis carry the settings the library has always shipped and have not been
 ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
 **Each default is a choice between two ways of computing one answer and not between two accuracies**, so
@@ -155,9 +155,9 @@ of it and the lane's absolute figure, held over the whole argument range the row
 a default-configure build's, as every figure on this page is, and the scope
 [the contract states](#accuracy-contract) is theirs: a build whose default rows are a replacement's
 moved the arithmetic under every cell here, and what it delivers is what its own option probe
-measured. The two are
-not a ratio of one another: what the columns of this table
-show is what moves with the route, and the row's delivered cells are the whole of what does.
+measured. The delivered columns and the figure beside them are not a ratio of one another: what the
+columns of this table show is what moves with the route, and the row's delivered cells are the whole
+of what does.
 
 The band row and the float single row are the whole of what moves: the double lane's other three
 regions and the float batch lane deliver the same worst cell, to the digit, on both routes. A figure
@@ -221,10 +221,10 @@ is the default and the arithmetic the batch entries already run.
 
 The correction is what the recurrence asks for, and the recurrence is what makes the choice
 non-trivial: its condition number is 7.6e4 at the region-B boundary at order 32, so an error in the
-e^{-x} it consumes is amplified by that much there, while an approximation whose relative error
-grows with the argument carries fifteen ulp at the boundary and thirty-five at the far end of the
-region. The bare approximation therefore fails the lane's budget over a band of region B at the
-highest order — predicted at 2.30e-7 against the 1.5e-7 budget, measured at 2.57e-7 — and returns
+e^{-x} it consumes is amplified by that much there. The bare approximation's own relative error
+grows with the argument: fifteen ulp at the boundary and thirty-five at the far end of the region.
+It therefore fails the lane's budget over a band of region B at the highest order — predicted at
+2.30e-7 against the 1.5e-7 budget, measured at 2.57e-7 — and returns
 the wrong sign there. It is not offered, because the failing band is interior to
 region B and there is no certified sub-range to restrict it to. Corrected, the seed's relative error
 is flat at a few ulp, its contribution to the value is capped at 8e-8 by that same amplification
@@ -693,7 +693,7 @@ design, and `-DBUILD_CUDA=ON`, which needs the CUDA toolkit.
 
 `-DBOYS_MULADD_SEPARATE=ON` moves the scalar multiply-add off the platform's fused call. On a target
 with the fused instruction the fused step is one instruction and there is no call to remove, but the
-option is not inert: it asks for two roundings where the fused call gives one, and on MSVC x64
+option is not inert: it asks for two roundings where the fused call gives one. On MSVC x64
 Release it delivers them — 4.63e-15 on the double single band where the fused route reads 3.22e-15,
 and 7.49e-08 on the float single lane where the fused route reads 6.36e-08, which is the
 separate-route column of the multiply-add table above. A compiler that contracts a bare
@@ -906,14 +906,14 @@ the entries.
 `boys::DeviceProbeStatus` is how a bad device is reported — an ordinal that does not exist is a
 status and not a crash, and the call does not throw for it.
 
-The report's last block counts the option space rather than describing it: every member — a row of
-`boys::BoysDeviceOptions()` crossed with a form of `boys::BoysDivisionForms()`, so the total is the
-product of those two tables' own sizes — is placed in one state of the run
-(measured, refused by this build with the library's reason and owed, not runnable on this card,
-offered and producing no figure, or not asked for by the run's request), the states are summed
-against the space's own total, and the classes the space admits are
-held against the classes the report carries. `boys::DeviceOptionSpaceClosure` answers those counts
-to a program, and `boys-device-probe` exits non-zero when they do not close: a member of the space
+**The report's last block counts the option space rather than describing it.** Every member — a row
+of `boys::BoysDeviceOptions()` crossed with a form of `boys::BoysDivisionForms()`, so the total is
+the product of those two tables' own sizes — is placed in one state of the run: measured, refused by
+this build with the library's reason and owed, not runnable on this card, offered and producing no
+figure, or not asked for by the run's request. The states are summed against the space's own total,
+and the classes the space admits are held against the classes the report carries.
+`boys::DeviceOptionSpaceClosure` answers those counts to a program, and `boys-device-probe` exits
+non-zero when they do not close: a member of the space
 in no state is a failed run and not a remark, so the device half is auditable the way the host
 gate's combination block makes the host half auditable.
 
@@ -989,11 +989,11 @@ mistyped name cannot block every pull request.
   formulas, using a pinned public `mpmath`, and writes beside them a record of what produced them,
   `tests/data/boys_coefficients_provenance.txt`: a digest of its own source, one of
   `requirements-boys.txt`, the versions those pins name, and a digest of each artefact. One CI leg
-  runs its `--check`: the linux-x86 gcc Release leg, in the workflow's Generator consistency step,
-  which re-derives both artefacts into scratch copies and compares them byte for byte without
-  writing either committed file whenever that record's generator, pins or environment does not
-  match the tree, and otherwise verifies the record's digests and the committed header's read-back
-  rules. The other legs build and test without it. The emitted header is
+  runs its `--check`: the linux-x86 gcc Release leg, in the workflow's Generator consistency step.
+  Whenever that record's generator, pins or environment does not match the tree, the check
+  re-derives both artefacts into scratch copies and compares them byte for byte without writing
+  either committed file; otherwise it verifies the record's digests and the committed header's
+  read-back rules. The other legs build and test without it. The emitted header is
   clang-format output, so
   `requirements-boys.txt` pins the formatter as well. The script reads `$CLANG_FORMAT` before
   searching `PATH`. Without a formatter it fails, rather than writing bytes the gate would report as

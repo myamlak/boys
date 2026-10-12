@@ -86,7 +86,7 @@ const double f = boys::BoysSingle(n, x);
 The second line is the whole accuracy story in one figure: **the answer is within 5.5e-14 of the true
 F_3(1.25)**. It is not an estimate of the error somebody observed. It is the bound the library
 guarantees for this call, read out of the library at run time rather than typed into a document. The
-phrase in parentheses after it says how far that figure reaches. The argument line is cut into
+phrase in parentheses after it says how far that figure reaches. The arguments are cut into
 regions, and this is the lane's bound over every one of them. If your calculation needs an error below
 that, see [I need to know what the library guarantees before I rely on
 it](#i-need-to-know-what-the-library-guarantees-before-i-rely-on-it).
@@ -222,7 +222,7 @@ boys::BoysAllOrders<Named>(nmax, x, named_ladder);
 The two agree here to within 6.9e-18, far inside the 5.5e-14 guarantee, and that is expected rather
 than a coincidence: the settings select how the same approximation is summed, not what is
 approximated, so they part company only in the last bits — three of the five lines above differ
-there. The places to change it are the ones where they do **not** agree. Finding those on your
+there. The places to change a setting are the ones where they do **not** agree. Finding those on your
 machine is what [the option probe](#i-want-to-know-which-option-is-fastest-on-this-machine) is for.
 
 The six settings the call above writes, in the order they are written: which stored fit serves the
@@ -363,10 +363,10 @@ table is five readings of one lane rather than a ranking of the five calls again
 **What that leaves unsaid about the batch.** The [section
 above](#i-want-every-order-over-many-arguments) says the batch entry groups the arguments once for the
 whole call rather than a ladder at a time. The committed run does not separate that grouping: it ranks
-the options inside one question shape, so its batch row here — the head of 288 measured combinations,
+the options inside one question shape. So its batch row here — the head of 288 measured combinations,
 with 14 the run could not place behind it — is the choice *within* the batch shape, and its ladder row
-is the choice inside the shape above. Read the grouping sentence as what the call does, and take the
-cost of grouping from a workload of your own rather than from this table.
+is the choice inside the ladder shape above. Read the grouping sentence as what the call does, and
+take the cost of grouping from a workload of your own rather than from this table.
 
 ---
 
@@ -405,9 +405,9 @@ computes. The rest can only be named where the call is compiled:
 | how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
 | which exponential seeds a region-B ladder | no | template argument only — `EvalPolicy`'s seventh parameter |
 
-The ones that cannot be named late are fixed when the translation unit is compiled. **There is no
-run-time entry for them.** A choice that has to be made per input record needs an `if` over
-two instantiations at the call site, not a value passed into one.
+The settings that cannot be named at run time are fixed when the translation unit is compiled.
+**There is no run-time entry for them.** A choice that has to be made per input record needs an `if`
+over two instantiations at the call site, not a value passed into one.
 
 ## On a GPU, the first call is the slow one {#on-a-gpu-the-first-call-is-the-slow-one}
 

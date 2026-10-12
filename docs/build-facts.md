@@ -3,7 +3,8 @@
 What a build of this library actually is, read out of the build: the instruction sets it targets,
 whether a bare `a * b + c` written in it is a single rounding, whether the compiled library reaches
 the runtime's `fma`, which arithmetic backends it carries and what each of them answers, and the
-machine each statement was observed on.
+machine each statement was observed on. **Read it when a call's arithmetic or its cost depends on
+how the library was built.**
 
 Every line here is deterministic. A line is a preprocessor fact, a compile-time constant, a symbol
 read out of the library's own object code, or the operating system's report of the processor.

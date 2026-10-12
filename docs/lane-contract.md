@@ -3,11 +3,9 @@
 This library evaluates the Boys function `F_n(x) = ∫₀¹ t^(2n) e^(−x t²) dt`, for orders n = 0 to 32
 and arguments x ≥ 0.
 
-It offers several lanes, which differ in precision and in cost. This page states each lane's error
-bound, the arguments the bound covers, and where the lane stops being usable.
-
-This page is the per-lane contract: for each lane, the bound it guarantees and the arguments that
-bound covers; then what each axis inside a lane changes; then what the default selects when a call
+It offers several lanes, which differ in precision and in cost. This page is the per-lane contract:
+for each lane, the bound it guarantees and the arguments that bound covers, and where the lane stops
+being usable; then what each axis inside a lane changes; then what the default selects when a call
 names nothing; and, at the end, what is not claimed. The words it uses are defined on
 [the API reference's landing page](mainpage.md) — *lane*, *region*, *route*, *scheme*, *partition*,
 *band*, *cell* and *gate* among them. Four shorter pages sit beside this one:
@@ -27,9 +25,9 @@ Every bound here is stated in the contract's own form, **relative to the value**
 normal (2^-1022 double, 2^-126 float), below which the return is subnormal or zero and no accuracy
 is claimed. A lane whose figure is a term of the result rather than of the value says so in its own
 entry: the half lanes add half of the returned value's last digit to a base, and the packed-half
-lane's bound is that digit alone, which is why neither of those two moved with this one. The
-per-region budgets and the bars a fit is cut against stay **absolute** figures and are printed as
-the measurements they are.
+lane's bound is that digit alone — neither of those two figures changed when the contract moved to
+the relative form. The per-region budgets and the bars a fit is cut against stay **absolute**
+figures and are printed as the measurements they are.
 
 Every figure on this page is measured by a program in this tree, and the command below prints the
 comparison for the machine you run it on:
@@ -44,9 +42,9 @@ and a non-zero status. `--per-order` extends it to every order and `--probe n x`
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
 
-A caller that has chosen a precision and does not want to choose an axis wants one name, and the
+**A caller that has chosen a precision and does not want to choose an axis wants one name.** The
 section *The default policy, per precision and per device* states, for each precision and for the
-device lane, what its default selects and the bound it carries — and where those settings come from.
+device lane, what its default selects, the bound it carries, and where those settings come from.
 
 ## How the argument affects the bound
 
@@ -62,7 +60,7 @@ differs with it:
 Below about x = 1.0855 the lowest orders are inside their own fits. The argument at which an
 order stops being read from its own fit rises with the order — 1.0855252345349333 for orders 0
 to 4, 2.015297705335114 for 5 to 8, 4.897870299825657 for 9 to 16 and 10.783587858916762 for 17
-to 32 — and past its own boundary an order is served by recursion from a single fit, the band
+to 32. Past its own boundary an order is served by recursion from a single fit, the band
 seed, which is slightly less accurate than the fits themselves.
 
 That single fit is the **extended band**: the part of region A running from the argument at which an
@@ -105,7 +103,7 @@ route delivers.
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
 that shows. A batch call answers every order to nmax at once, so no per-order figure bounds it:
 orders at or past their own region-A end are read from the extended band in both lanes, and from
-x = 1.0855252345349333 up every batch call's F_0 is the band's own value — so the band's own bar,
+x = 1.0855252345349333 up every batch call's F_0 is the band's own value. So the band's own bar,
 3e-14, is the tightest absolute figure this tree carries for that part of the column, and the stored
 fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at
 1e-15 under a reachable gain of at most 2.171050. Both entries carry the one relative figure, which
@@ -282,7 +280,7 @@ price it charges shows up as narrower pieces at the high orders' right ends rath
 
 **Where the bound comes from.** For F_n the analytic continuation carries an exact majorant:
 `|F_n(z)| ≤ F_n(Re z)` by the triangle inequality applied to the integral representation, and F_n
-decreases in its real argument, so on the Bernstein ellipse of `[a, b]` at parameter `rho` the
+decreases in its real argument. So on the Bernstein ellipse of `[a, b]` at parameter `rho` the
 maximum modulus is at most `F_n(c − (h/2)(rho + 1/rho))` — the ellipse's leftmost point, with
 `c = (a + b)/2` and `h = (b − a)/2`. Trefethen's interpolant bound ([Trefethen2019], ch. 8) then
 gives
@@ -379,10 +377,10 @@ measured truncation over the bound.**
 
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
 `FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
-the generated header's, reachable through the same entries as the shipped partition, and its
-certification is the accuracy gate's own block: its rows — one per partition, scheme and call
-shape — each judged against the bar the published table holds for the cell it ran in, with the worst
-cell named on the row, and three more for the rational route
+the generated header's, reachable through the same entries as the shipped partition. Its
+certification is the accuracy gate's own block: one row per partition, scheme and call shape, each
+judged against the bar the published table holds for the cell it ran in, with the worst cell named
+on the row — and three more for the rational route
 over the narrow partition. The call shapes are the stored fits read directly, the batch
 entry below the band (where the seeding fallback is taken), the batch and plane entries over the band
 and below, the batch entry over region B, the single-order entry at region A's cell, and the
@@ -989,8 +987,8 @@ was not. The shipped fetch steps from one order's coefficients to the next at a 
 works because every order's piece in the shipped region-A table shares its interval and its degree
 with the ones beside it; the narrow partition's pieces are cut per order, 311 pieces at 10 coefficients
 each with their own intervals, so no such stride exists. A stride is one way to fill a register, not a
-requirement of the axis: the lane fills it the other way, by fetching each of the four orders it holds
-its own piece's start and its own coefficients — one gather per stored coefficient rather than one
+requirement of the axis: the lane fills it the other way, giving each of the four orders it holds
+its own piece start and its own coefficients — one gather per stored coefficient rather than one
 stride per group — and summing the four as one vector. The value the row promises is unchanged, and so
 is the figure: the per-order bar is **|F̂ − F| ≤ 1e-15** on the per-order fits and **3e-14**
 on the extended band that closes region A, the two cells the header's table keeps apart.
@@ -1370,10 +1368,9 @@ Below about x = 16 the asymptotic form is outside the range where it is valid, a
 smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is
 stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and
 x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**. The figure the lane carries is stated
-in that same form — 1e-13 of the value — so the two are on one scale, and this page needs no ratio
-to make the point: inside the sub-16 part of the branch the accuracy is almost eighteen orders of
-magnitude away from the figure. A caller evaluating there should expect that, and should not read
-the figure as covering it.
+in that same form — 1e-13 of the value — so the two are on one scale: inside the sub-16 part of the
+branch the accuracy is almost eighteen orders of magnitude away from the figure. A caller evaluating
+there should expect that, and should not read the figure as covering it.
 
 ## Every combination: its bound, its delivered figure, and its tolerance
 

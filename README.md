@@ -12,10 +12,11 @@ the C++ standard library and the optional CUDA toolkit.
 
 ## Your first call
 
-Copy this into `try.cpp`, build it, run it. It prints the numbers below. They are a build that does not
-contract the multiply-add; a compiler that does answers with values that differ inside this lane's
-bound, `docs/build-facts.md` records per CI leg what each leg does, and `docs/specification.md` says
-which calls a consumer's own flags reach.
+Copy this into `try.cpp`, build it, run it. It prints the numbers below. They come from a build that
+does not contract the multiply-add: a product and a sum stay two roundings rather than becoming one.
+A compiler that does answers with values that differ inside this lane's bound. `docs/build-facts.md`
+records per CI leg what each leg does, and `docs/specification.md` says which calls a consumer's own
+flags reach.
 
 ```cpp
 #include <boys/boys_span.hpp>
@@ -73,9 +74,9 @@ overload of each many-argument entry taking a `std::span`, so a container goes s
 nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
 passing a pointer and a count still reaches the pointer entry exactly.
 
-The entries a call site names no policy for are the library's and need nothing beyond the front
-door: the build compiles one definition of each, so the flags a caller compiles with cannot reach
-their arithmetic. A caller that names a policy - `BoysAllOrders<Policy>` rather than
+The entries a call site names no policy for are the library's own and need nothing beyond the two
+headers above: the build compiles one definition of each, so the flags a caller compiles with cannot
+reach their arithmetic. A caller that names a policy - `BoysAllOrders<Policy>` rather than
 `BoysAllOrders` - reaches those entries through `boys/kernels.hpp`, which `boys_span.hpp` carries
 already; `boys/boys_all.hpp` is that header with the transform lane and the option probe beside it.
 
@@ -142,19 +143,19 @@ feature, and how to read the bound you got.
 
 **What the bound is, and what it is not.** For the shipped build the guarantee is **relative**: the
 error of a returned value is at or below **1e-13 · F_n(x)**, for every `n <= 32` and every
-`x >= 0`. It binds above
-the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
-subnormal or zero and no accuracy is claimed. The figure was an absolute `5.5e-14` until this
-release, and where F is small the two part company: at `n = 32, x = 29`, F is 1.93e-14 and the lane
-returned 6.87e-14 — an error of 4.94e-14, which the absolute figure of the day passed, and **2.55
-times the true value** read relative to F.
+`x >= 0`. The bound holds above the lane format's smallest normal, 2^-1022 in double and 2^-126 in
+float; below that the return is subnormal or zero and no accuracy is claimed. The figure was an
+absolute `5.5e-14` until this release, and where F is small the two figures disagree: at
+`n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
+absolute figure of the day, and **2.55 times the true value** read relative to F.
 
-**The figure has a floor, and two combinations are under it.** The relative figure is the one the
-shipped entries hold, with an order of margin: the double entries deliver at worst `9.99e-15 ·
-F_n(x)`, a tenth of it, and the worst cell is `n = 32, x = 29.04`. Two combinations the option
-space offers do not hold the relative figure alone yet, and hold the absolute figure these lanes
-published before it: a lean partition's extended-band ladder (`FitGranularity::kCoarsest`,
-`kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax route's high-order intervals.
+**The figure has a floor, and two combinations are bounded by the floor instead.** The relative
+figure is the one the shipped entries hold, with an order of margin: the double entries deliver at
+worst `9.99e-15 · F_n(x)`, a tenth of it, and the worst cell is `n = 32, x = 29.04`. Two
+combinations the option space offers do not hold the relative figure alone yet, and hold the absolute
+figure these lanes published before it: a lean partition's extended-band ladder
+(`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax
+route's high-order intervals.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
 values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger
 of `2^-22 · F_n(x)` and the `1.5e-7` it already published. So the bound is **the larger of
@@ -163,8 +164,8 @@ of `2^-22 · F_n(x)` and the `1.5e-7` it already published. So the bound is **th
 each holds at its worst cell, and what raises them to the relative one.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
 undefined, and a release build faults on `x < 0` or on a `NaN` anywhere in a batch, while `n > 32`
-answers a wrong number with no diagnostic. Every entry has a `*Checked` twin — `BoysAllOrdersChecked`
-and its four siblings — that refuses with a status instead of faulting. The
+answers a wrong number with no diagnostic. The five double entries each have a `*Checked` twin —
+`BoysAllOrdersChecked` and its four siblings — that refuses with a status instead of faulting. The
 [accuracy contract](docs/specification.md#accuracy-contract) carries the per-lane figures and the
 command that measures the bound on your machine.
 

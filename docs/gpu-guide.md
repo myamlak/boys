@@ -1,7 +1,7 @@
 # Calling this library on a GPU
 
-This page is the device half of `docs/getting-started.md`. That page takes a reader who has never
-called this library and walks them through the CPU entries, one question at a time. This one does
+This page is the device half of `docs/getting-started.md`. That page walks a reader who has never
+called this library through the CPU entries, one question at a time. This one does
 the same for the CUDA lane: which of the two routes answers your problem, what a call looks like,
 what you must allocate and pass, what the library refuses and why that is a feature, and how to
 read what you got.
@@ -52,9 +52,9 @@ own words:
 > and return the values to the calling thread, so the fused kernel needs neither the pass out nor
 > the pass back.
 
-Both routes read the same tables and answer at the same bounds. A caller that writes its own kernel
-"gets the entry's own arithmetic, not an approximation of it" (`boys_cuda.hpp`). So this is a
-question about your program's shape, never about accuracy.
+Both routes read the same tables and answer at the same bounds (the same published error guarantee).
+A caller that writes its own kernel "gets the entry's own arithmetic, not an approximation of it"
+(`boys_cuda.hpp`). So this is a question about your program's shape, never about accuracy.
 
 ## What you own, and what the library owns
 
@@ -123,8 +123,8 @@ static BoysStatus SingleF16(
     DivisionForm form = kDefaultDeviceDivisionForm);
 ```
 
-**Read `Single*` against the other two in the parameter list, not in the name.** `Single*` takes a
-device array of orders, one per element. `AllOrders*` takes a device array of orders *and* answers
+**Tell the three apart by their parameters, not by their names.** `Single*` takes a device array
+of orders, one per element. `AllOrders*` takes a device array of orders *and* answers
 every order up to each element's own top order. `AllN*` takes **one** top order as a plain `int`
 — the whole batch shares it — and takes no order array at all.
 
@@ -163,8 +163,8 @@ output, and that is what any caller that wants its values does too.
 
 ```cpp
 enum class BoysStatus {
-    kSuccess = 0, ///< the call succeeded
-    kInvalidArgument, ///< a parameter was invalid (see the entry's contract)
+    kSuccess = 0,     ///< the call ran and wrote its output
+    kInvalidArgument, ///< an argument was outside the contract the entry documents
     kDeviceError, ///< a CUDA operation failed
 };
 ```
@@ -367,15 +367,15 @@ giving one of them the other's figure.
 argument left out reaches the combination this build wrote for that class. Read that file's own
 words about where those twelve rows came from before you treat one as tuned:
 
-> a choice, not a measurement: no device run stands, so each of these twelve rows states the fallback
-> names above at its own lane's budget
+> **The device rows are runs' own winners.**
 
 **That is worth pausing on.** The host's rows in that same file carry a measured figure beside them
-— `measured: ... ns per argument on this host`. The twelve device rows do not, and the file states the
-reason rather than leaving you to guess it: no device run stands. The reason is one this library
-applies everywhere: a device figure is a card's, and a gate built with CUDA on that card is where it
-is taken. So the device default rows are the library's fallback names at the class's own budget, and
-the file says so rather than dressing them up. The two axes a device policy can move have their own
+— `measured: ... ns per argument on this host`. A device row names the run that placed it instead —
+`<machine>-<date>` — and the reason is one this library applies everywhere: a device figure is a
+card's, and a gate built with CUDA on that card is where it is taken. So a device default row is one
+of the entries its class measured as equally fast, and the report behind the row states the
+resolution the run reached rather than claiming an order it did not establish. The two axes a device
+policy can move have their own
 names in that file too: `BOYS_BUILD_DEFAULT_DEVICE_DIVISION_FORM` and
 `BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP`, read once as `boys::kDefaultDeviceDivisionForm` and
 `boys::kDefaultDeviceRegionBExp`.
@@ -413,7 +413,8 @@ entries report the three statuses above, and a refused call writes nothing.
 ## What you got: the bound
 
 The library's accuracy contract is a **bound**, not an observation: for every supported `n`, `x`,
-lane and region the returned value satisfies `|F̂_n(x) − F_n(x)| ≤ B` at a published `B`.
+lane and region the returned value satisfies `|F̂_n(x) − F_n(x)| ≤ B` at a published `B`. A region is
+one of three intervals of the argument `x`.
 
 **The bound is per lane, and a lane is not a precision.** On this surface the four device classes
 `Precision::kFp64Device`, `kFp32Device`, `kFp16Device` and `kBf16Device` are four lanes with four rows
@@ -442,8 +443,9 @@ per-lane bound tables, the four device rows among them, and
 authority behind them is a program, and this is the part to take away:
 
 **The device half carries no certified per-class accuracy figure of its own.** There is no valid
-device run standing behind one, which is the same fact the seam file states about its twelve rows and
-the header states about the lane's coverage. So this page quotes you no device
+device run standing behind one, and the header states the lane's coverage plainly: an entry documents
+the bound its tables deliver, and the device accuracy gate is the program that certifies it against
+the committed reference grid. So this page quotes you no device
 accuracy number: it would be a number no program printed, which is exactly the defect this library's
 documentation exists to avoid. What it tells you instead is where the number lives, and how to get
 the one that is true for your card.
@@ -459,9 +461,9 @@ cheapest is a property of the card and not of the library.
     ./build-cuda/Release/boys-device-probe     # the config directory is your generator's
 
 `boys::RunDeviceOptionProbe` takes a `boys::DeviceProbeOptions` — whose `device` field is the
-ordinal "as the CUDA runtime numbers it", and of which the probe "establishes this device's context
-before it allocates anything" — and returns a `boys::DeviceProbeReport` carrying the card's name and
-compute capability, one figure per row, and the entries it could not separate. **A row's cost and its
+ordinal "as the CUDA runtime numbers it" (the probe "establishes this device's context before it
+allocates anything"). It returns a `boys::DeviceProbeReport` carrying the card's name and compute
+capability, one figure per row, and the entries it could not separate. **A row's cost and its
 documented bound are reported together** — so the probe is where you read both the ranking and the
 bound, from a program, on your hardware.
 

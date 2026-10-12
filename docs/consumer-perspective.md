@@ -1,12 +1,12 @@
 # Choosing a lane
 
-This note is written for a reader who has not built the library yet and has not chosen anything yet.
-The words it needs — *lane*, *region*, *partition* — are defined on [the API reference's landing
-page](mainpage.md). What follows is about the choice rather than about the code.
+This note is about the choice rather than the code: how much accuracy your calculation actually
+needs, and where reduced precision earns its place. It is written for a reader who has not built the
+library yet and has not chosen anything yet. The words it needs — *lane*, *region*, *partition* — are
+defined on [the API reference's landing page](mainpage.md).
 
-[The per-lane contract](lane-contract.md) states what each lane guarantees and where it stops. This note is about the
-other half of the choice: how much accuracy your calculation actually needs, and where reduced
-precision earns its place.
+[The per-lane contract](lane-contract.md) states what each lane guarantees and where it stops. This
+note is about the other half of the choice.
 
 ## Your calculation probably does not need this function's accuracy
 
@@ -77,8 +77,8 @@ Picking a lane is not the whole of the choice. Inside one lane the library offer
 of them is a decision a caller can make:
 
 - **the fit route** — the stored fits that serve a region are either the Chebyshev ones the
-  certified lanes are defined by, or a rational minimax alternative that holds the same bar by
-  storing different things;
+  certified lanes are defined by (a certified lane is one the accuracy gate holds to its published
+  bound), or a rational minimax alternative that holds the same bar by storing different things;
 - **the evaluation scheme** — a fit's coefficients are summed either by the split Clenshaw
   recurrence on its Chebyshev form, or by Horner's rule on the monomial form of the same fit;
 - **the interval partition** — how the fitted intervals are cut: as the committed tables cut them; more
@@ -97,13 +97,13 @@ Each is a type the policy names: `FitRoute`, `EvalScheme`, `FitGranularity`, `Pa
 **Every axis is a name resolved where the code is written.** The route, the scheme, the partition,
 the packing axis and the division form are written into the call site, and there is nothing left over
 to decide per call. That is deliberate: which fits to read and how to sum them is a decision made
-once, while the code is being written, and a call site that resolved it on every call would pay,
-every time, to rediscover what its author already knew. So the axes are resolved where they are
+once, while the code is being written. A call site that resolved it on every call would pay, every
+time, to rediscover what its author already knew. So the axes are resolved where they are
 named and nowhere else: there is no combination to look up at the call, no name to match and no
 registry to consult. A call costs nothing beyond the arithmetic it asked for.
 
-**The library defaults what a caller has not decided, and the line between the two is the one the
-library draws.** Precision and the shape of the question are the caller's, because they change what
+**The library defaults what a caller has not decided, and the line between the two is the library's to
+draw.** Precision and the shape of the question are the caller's, because they change what
 comes back: which arithmetic is used, and whether the call answers for one order or for a ladder of
 them, at one argument or across an array of arguments. The five structural axes are the library's to
 default, and the device lane's own two — the division form its recurrence divides in and the
@@ -137,8 +137,8 @@ measurement does not say.
 question directly. Name a combination and the absolute error your calculation needs; you get a
 verdict beside the two figures it was made on. A combination whose guaranteed bound is at or below
 your requirement is inside it, and that guarantee is the state a calculation's safety can rest on. A
-combination whose bound is above the requirement while the error it was measured to deliver is at or
-below it is at your target in what it delivers and outside its guarantee. Read that state as what it
+combination whose guaranteed bound is above your requirement, but whose measured error is at or
+below it, is at your target in what it delivers and outside its guarantee. Read that state as what it
 is, not as a promise. A combination that is neither is outside. The two figures are also what to rank
 two combinations by, and they answer different questions: one is what the lane promises, the other is
 what it was measured to do.
