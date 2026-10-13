@@ -298,7 +298,7 @@ void CheckAgainstPerArgument(const Grid& grid,
         }
 
         const std::size_t i = ArgumentIndex(grid, row.x, shuffled);
-        double want[boys::kMaxBoysOrder + 1];
+        double want[boys::kMaxBoysOrder + 1] = {};
 
         // The per-argument path at the batch's own order, at the batch entry's class policy
         // (AllNPolicy above): region A's body seeds at nmax and recurses down, so the batch's F_k
@@ -399,7 +399,7 @@ TEST(BoysAllNTest, LaneRouteChunkBoundariesOverALongRun) {
 
         for (std::size_t i = 0; i < count; ++i)
         {
-            double want[boys::kMaxBoysOrder + 1];
+            double want[boys::kMaxBoysOrder + 1] = {};
             BoysAllOrders(kNmax, x[i], want);
 
             for (int k = 0; k <= kNmax; ++k)
@@ -472,7 +472,7 @@ TEST(BoysAllNTest, ExactBoundaryArgumentsMatchThePerArgumentPath) {
 
     for (std::size_t i = 0; i < xs.size(); ++i)
     {
-        double want[boys::kMaxBoysOrder + 1];
+        double want[boys::kMaxBoysOrder + 1] = {};
         BoysAllOrders<AllNPolicy>(boys::kMaxBoysOrder, xs[i], want);
 
         for (int k = 0; k <= boys::kMaxBoysOrder; ++k)
