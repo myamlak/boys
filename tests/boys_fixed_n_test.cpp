@@ -231,6 +231,110 @@ void SweepSingleIdentity(const GridColumns& grid) {
     }
 }
 
+// --- The two classes the cross-lane claims compare ---------------------------
+//
+// BoysFixedN and BoysSingle here name no policy, so the first resolves the fixed-order class's own
+// row and the second the single class's. The claims that follow - every element of the one is the
+// other's value, bit for bit - are the committed seam's own, whose two rows carry one arithmetic.
+// A replacement may answer the two classes with different arithmetic, and then the two values are
+// two arithmetics' and no cross-lane claim is judged: the case reports the cells that differ.
+//
+// The cells compared are the ones a value on these two shapes is reached through: the fit route,
+// the scheme, the partition and the division form. The region-B exponential joins them where
+// either class's partition is not the grid's own, whose path reaches neither the region-B ladder
+// that reads the cell nor the far ladder, which names the accurate member outright (kFlatHi is
+// above kX1, so no argument of a uniform class falls between them). The budget is the
+// single-precision engines' and the packing axis is refused on both shapes, so neither carries a
+// value here.
+using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
+using SingleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+
+// Whether either class's partition is one the recursing bodies serve, which is where the region-B
+// exponential reaches a value.
+constexpr bool kRegionBExpReachesAValue =
+    FixedNClass::kGranularity != boys::FitGranularity::kUniform ||
+    SingleClass::kGranularity != boys::FitGranularity::kUniform;
+
+// Whether the two rows carry one arithmetic. The cross-lane assertions run where they do.
+constexpr bool kOneArithmeticAcrossTheLanes =
+    FixedNClass::kRoute == SingleClass::kRoute && FixedNClass::kScheme == SingleClass::kScheme &&
+    FixedNClass::kGranularity == SingleClass::kGranularity &&
+    FixedNClass::kDivision == SingleClass::kDivision &&
+    (!kRegionBExpReachesAValue || FixedNClass::kRegionBExp == SingleClass::kRegionBExp);
+
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
+// The committed seam's two rows carry one arithmetic, and holding that here is what keeps the
+// claims below at the whole of what they assert on the seam this tree commits.
+static_assert(kOneArithmeticAcrossTheLanes,
+              "the committed seam answers the fixed-order class and the single class with one "
+              "arithmetic, which is what the cross-lane claims below rest on");
+#endif
+
+// The name a route carries in the library's own report - the words a probe's report prints - read
+// from that table rather than spelled here.
+const char* RouteCellName(boys::FitRoute route) {
+    for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+    {
+        if (row.route == route)
+        {
+            return row.name;
+        }
+    }
+
+    return "unknown";
+}
+
+// The cells the two rows differ in, as "axis: fixed-order vs single": what a seam that answered the
+// two classes with two arithmetics leaves to report where a claim was not judged. Every call site
+// is a branch a seam with one arithmetic discards, so the committed header leaves it uncalled.
+[[maybe_unused]] std::string LaneCellDifferences() {
+    std::string text;
+
+    const auto note = [&text](const char* axis, const char* fixedN, const char* single) {
+        if (!text.empty())
+        {
+            text += ", ";
+        }
+
+        text += axis;
+        text += ": ";
+        text += fixedN;
+        text += " vs ";
+        text += single;
+    };
+
+    if (FixedNClass::kRoute != SingleClass::kRoute)
+    {
+        note("fit route", RouteCellName(FixedNClass::kRoute), RouteCellName(SingleClass::kRoute));
+    }
+
+    if (FixedNClass::kScheme != SingleClass::kScheme)
+    {
+        note("scheme", boys::EvalSchemeName(FixedNClass::kScheme),
+             boys::EvalSchemeName(SingleClass::kScheme));
+    }
+
+    if (FixedNClass::kGranularity != SingleClass::kGranularity)
+    {
+        note("partition", boys::GranularityName(FixedNClass::kGranularity),
+             boys::GranularityName(SingleClass::kGranularity));
+    }
+
+    if (FixedNClass::kDivision != SingleClass::kDivision)
+    {
+        note("division form", boys::DivisionFormName(FixedNClass::kDivision),
+             boys::DivisionFormName(SingleClass::kDivision));
+    }
+
+    if (kRegionBExpReachesAValue && FixedNClass::kRegionBExp != SingleClass::kRegionBExp)
+    {
+        note("region-B exponential", boys::RegionBExpName(FixedNClass::kRegionBExp),
+             boys::RegionBExpName(SingleClass::kRegionBExp));
+    }
+
+    return text;
+}
+
 // --- The tests --------------------------------------------------------------
 
 TEST(BoysFixedNTest, GridSweepMatchesReferenceAtM1) {
@@ -239,6 +343,16 @@ TEST(BoysFixedNTest, GridSweepMatchesReferenceAtM1) {
 }
 
 TEST(BoysFixedNTest, ElementWiseBitIdentityWithBoysSingle) {
+    if constexpr (!kOneArithmeticAcrossTheLanes)
+    {
+        GTEST_SKIP() << "the fixed-order class and the single class are answered by two "
+                        "arithmetics under this build's seam ("
+                     << LaneCellDifferences()
+                     << "), so no element here is held to the single entry's value: the identity "
+                        "is the committed seam's own, whose two rows carry one arithmetic - a "
+                        "skipped check, not a passing one";
+    }
+
     const GridColumns grid = BuildColumns(gReference);
     SweepSingleIdentity(grid);
 }
@@ -253,15 +367,27 @@ TEST(BoysFixedNTest, StridedLayoutWritesOnlyStrideSlots) {
     const std::size_t count = xs.size();
     constexpr double kSentinel = 1.2345678901234567e100;
 
+    if constexpr (!kOneArithmeticAcrossTheLanes)
+    {
+        std::printf("strided layout: this build's seam answers the fixed-order class and the "
+                    "single class with two arithmetics (%s), so a slot's value is not held to the "
+                    "single entry's here - the layout's own claims are\n",
+                    LaneCellDifferences().c_str());
+    }
+
     for (const std::size_t stride :
          {std::size_t{1}, std::size_t{2}, std::size_t{3}, std::size_t{7}, std::size_t{16}})
     {
         std::vector<double> out((count - 1) * stride + 1, kSentinel);
         BoysFixedN(0, xs.data(), out.data(), count, stride);
 
-        for (std::size_t i = 0; i < count; ++i)
+        if constexpr (kOneArithmeticAcrossTheLanes)
         {
-            EXPECT_EQ(out[i * stride], BoysSingle(0, xs[i])) << "stride=" << stride << " i=" << i;
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                EXPECT_EQ(out[i * stride], BoysSingle(0, xs[i]))
+                    << "stride=" << stride << " i=" << i;
+            }
         }
 
         for (std::size_t j = 0; j < out.size(); ++j)
@@ -298,6 +424,16 @@ TEST(BoysFixedNTest, StridedLayoutWritesOnlyStrideSlots) {
 // out at 8/16/32/64-byte alignments all deliver the same values. The over-aligned
 // placements are what the AVX2 region lanes need, so one buffer serves both.
 TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
+    if constexpr (!kOneArithmeticAcrossTheLanes)
+    {
+        GTEST_SKIP() << "the fixed-order class and the single class are answered by two "
+                        "arithmetics under this build's seam ("
+                     << LaneCellDifferences()
+                     << "), so the values the alignments deliver are not held to the single "
+                        "entry's: the contract is the committed seam's own, whose two rows carry "
+                        "one arithmetic - a skipped check, not a passing one";
+    }
+
     const GridColumns grid = BuildColumns(gReference);
     alignas(64) std::array<double, 512> xStore{};
     alignas(64) std::array<double, 512> outStore{};
