@@ -35,8 +35,8 @@ bool SameBitsF32(float a, float b) noexcept {
 }
 
 // Whether the two lanes this file compares run one arithmetic: both read the build's multiply-add
-// selection, but the packed lane spells its own steps from it (kSelectedRoute, src/boys_orders_simd.cpp)
-// while the scalar lane takes it through the build's contraction (include/boys/backend.hpp, RouteInForce).
+// selection, but the packed lane spells its own steps from it (kSelectedRoute, boys/backend.hpp)
+// while the scalar lane takes it through the build's contraction (boys/backend.hpp, RouteInForce).
 // The bit-identity is asserted where the fused route is selected and printed where it is not.
 constexpr bool kScalarIsFused() noexcept {
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE

@@ -105,8 +105,8 @@ HOST_TOTAL = ("host total — combination(s) a class can be instantiated at and 
 ORDERS_AXIS = "kOrders"
 
 # The shapes whose entry evaluates one order, by the library's own documentation of each Shape
-# enumerator in include/boys/boys.hpp. A shape whose doc names one order has no ladder, and the
-# orders axis is not an axis on it.
+# enumerator in include/boys/boys_decl.hpp. A shape whose doc names one order has no ladder, and
+# the orders axis is not an axis on it.
 # Each enumerator carries its documentation after `///<`. Only the first member of the enum
 # carries `= 0`, so the initialiser is optional here.
 SHAPE_ENUM = re.compile(r"^\s*(k[A-Za-z0-9]+)\s*(?:=\s*\d+)?\s*,?\s*///<\s*(.*)$", re.M)
@@ -196,7 +196,7 @@ CALL = {
 
 def one_order_shapes(reader: Reader) -> set[str]:
     """The Shape enumerators whose own documentation names one order."""
-    text = reader.text("include/boys/boys.hpp")
+    text = reader.text("include/boys/boys_decl.hpp")
     start = text.find("enum class Shape")
 
     if start < 0:
@@ -303,8 +303,8 @@ def device_lanes(report: str) -> set[str]:
 
 # The library target's own statement of what a consumer's translation unit needs defined:
 #   target_compile_definitions(boys PUBLIC BoysFp16=1)
-# ``boys.hpp`` gates the half-precision surface on ``BoysFp16`` and states no default for it, so a
-# unit compiled without the definition is compiled against a smaller library than the one the
+# ``boys_decl.hpp`` gates the half-precision surface on ``BoysFp16`` and states no default for it,
+# so a unit compiled without the definition is compiled against a smaller library than the one the
 # report measured. Which definitions those are is read from the build file, not written here.
 DEFINITIONS = re.compile(r"target_compile_definitions\(\s*boys\s([^)]*)\)", re.S)
 DEFINITION_KEYWORD = re.compile(r"\b(PRIVATE|PUBLIC|INTERFACE)\b")
@@ -314,7 +314,7 @@ CONFIGURED = re.compile(r"\b(?:option|set|unset)\(\s*([A-Za-z_]\w*)")
 def build_definitions(tree: pathlib.Path) -> tuple[list[str], list[str]]:
     """The compile definitions a consumer of the headers inherits, and the names left out.
 
-    ``boys.hpp`` gates the half-precision surface on ``BoysFp16``, which the build states as a
+    ``boys_decl.hpp`` gates the half-precision surface on ``BoysFp16``, which the build states as a
     PUBLIC compile definition and the header states no default for: a unit compiled without it is a
     unit compiled against a smaller library than the one the report measured. Which definitions
     those are is read from the build file at the revision and never written here, and a name whose
@@ -628,7 +628,7 @@ def main() -> int:
     # measured short of its combinations, and one whose entry they do not declare is a gap in
     # the library that this check names rather than counts against the probe.
     surface = set()
-    for header in ("boys.hpp", "boys_span.hpp", "boys_half.hpp"):
+    for header in ("boys_decl.hpp", "boys_span.hpp", "boys_half.hpp"):
         surface.update(DECLARATION.findall(reader.text(f"include/boys/{header}")))
 
     if not surface:

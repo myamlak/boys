@@ -21,9 +21,9 @@
 // directory is on the path, so renaming one source file does not quietly retire the probe.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
-                                __has_include("boys_transform.cpp") ||                             \
+                                __has_include("boys_orders_simd.cpp") ||                           \
                                               __has_include("boys_c.cpp") ||                       \
-                                                            __has_include("boys_half_native.cpp")
+                                                            __has_include("boys_probe.cpp")
 #error                                                                                             \
     "this consumer check is compiled with src/ on its include path; it does not prove that a consumer can name the option space against the public headers alone"
 #endif

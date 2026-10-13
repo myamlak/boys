@@ -59,7 +59,7 @@ struct RouteForced {
 };
 
 /// The orders lane's STEP arithmetic at a route a test names:
-/// src/boys_orders_simd.cpp's StepMulAdd/StepMulSub as a backend. Its
+/// boys/boys_orders_lanes.hpp's StepMulAdd/StepMulSub as a backend. Its
 /// multiply-subtract sits on the route, unlike the backend's above: the fused
 /// form is one instruction and one rounding, whose scalar spelling is
 /// `fma(a, b, -c)`, and the separate form is the bare product and difference,

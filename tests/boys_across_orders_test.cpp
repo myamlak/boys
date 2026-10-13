@@ -513,7 +513,7 @@ using NarrowPerOrderPolicy =
 // The uniform partition on the axis: one fixed grid over the whole fitted domain, not a cut of region
 // A - pieces of one width, every order of a cell at one degree - interval-major, every order of one
 // interval one stride from the next order's. Its rational member has no stride between orders, so its
-// cell is served by the certified scalar orders lane (boys_orders_simd.cpp).
+// cell is served by the certified scalar orders lane (boys_orders_lanes.hpp).
 template <boys::EvalScheme kScheme>
 using UniformOrdersPolicy =
     boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,

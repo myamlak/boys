@@ -9,6 +9,7 @@
 #include "boys/boys_cuda_muladd.hpp"
 #include "boys/boys_cuda_options.hpp"
 #include "boys/boys_device_tables.hpp"
+#include "boys/boys_cuda_launch.hpp"
 
 #include <cstddef>
 #include <string>
@@ -3874,6 +3875,2427 @@ public:
 
 #endif // BoysFp16
 };
+
+// The class's entries, defined here so a consumer's own translation unit inlines them rather
+// than crossing a library boundary: the bodies are the ones src/boys_cuda.cpp held, unchanged,
+// and the launch seam they run on is boys_cuda_launch.hpp. The five names are that header's
+// helpers, which those unchanged bodies call unqualified.
+using detail::CheckDivisionForm;
+using detail::CheckOrder;
+using detail::FromLaunchCode;
+using detail::RunLaunch;
+using detail::RunLaunchOffset;
+
+// ---------------------------------------------------------------------------
+// the entries
+// ---------------------------------------------------------------------------
+
+inline BoysStatus BoysCuda::InitializeTables() {
+    return FromLaunchCode(BoysCudaUploadTables());
+}
+
+inline BoysStatus BoysCuda::DeviceTables(BoysDeviceTables* out) {
+    if (out == nullptr)
+    {
+        return BoysStatus::kInvalidArgument;
+    }
+
+    // The address order BoysCudaDeviceTableAddresses fills, one slot per symbol: the double lane's
+    // pieceStart, offset, a, b, deg, coeffs and region-B seed, then the float lane's seven, then
+    // three reserved slots the export fills with null, then the uniform grid's four pools. Both
+    // sides state the order; the .cu cannot name this type and this file cannot name a symbol.
+    void* addresses[21] = {};
+    const BoysStatus status = FromLaunchCode(BoysCudaDeviceTableAddresses(addresses));
+
+    if (status != BoysStatus::kSuccess)
+    {
+        return status;
+    }
+
+    // The rest of the order, in the array the second export fills. Its width is the handle's own
+    // count of the fields those slots belong to, so the two halves cannot disagree about where
+    // the second one starts, and the device image asserts that count against the order's length.
+    void* tail[kBoysDeviceTablesTailCount] = {};
+    const BoysStatus tailStatus =
+        FromLaunchCode(BoysCudaDeviceTableAddressesTail(tail));
+
+    if (tailStatus != BoysStatus::kSuccess)
+    {
+        return tailStatus;
+    }
+
+    BoysDeviceTables tables;
+    tables.pieceStart = static_cast<const int*>(addresses[0]);
+    tables.pieceOffset = static_cast<const int*>(addresses[1]);
+    tables.pieceA = static_cast<const double*>(addresses[2]);
+    tables.pieceB = static_cast<const double*>(addresses[3]);
+    tables.pieceDeg = static_cast<const int*>(addresses[4]);
+    tables.coeffs = static_cast<const double*>(addresses[5]);
+    tables.bSeedCoeffs = static_cast<const double*>(addresses[6]);
+    tables.bSeedDeg = detail::kBDeg;
+    tables.pieceStart32 = static_cast<const int*>(addresses[7]);
+    tables.pieceOffset32 = static_cast<const int*>(addresses[8]);
+    tables.pieceA32 = static_cast<const float*>(addresses[9]);
+    tables.pieceB32 = static_cast<const float*>(addresses[10]);
+    tables.pieceDeg32 = static_cast<const int*>(addresses[11]);
+    tables.coeffs32 = static_cast<const float*>(addresses[12]);
+    tables.bSeedCoeffs32 = static_cast<const float*>(addresses[13]);
+    tables.bSeedDeg32 = detail::f32::kBDeg;
+    // Slots 14 to 16 are reserved and exported null: the handle's relaxed-residency fields stay
+    // at the defaults their type gives them, and no reading of this handle consults them.
+
+    // The uniform grid's pools: one image, never retired. Each cell carries the degree the
+    // grid's own cell law placed it at, and no degree table beside it states anything about it.
+    tables.flatCoeffs = static_cast<const double*>(addresses[17]);
+    tables.flatMonoCoeffs = static_cast<const double*>(addresses[18]);
+    tables.flatCoeffs32 = static_cast<const float*>(addresses[19]);
+    tables.flatMonoCoeffs32 = static_cast<const float*>(addresses[20]);
+
+    // The narrow partition's and the fit route's tables, in the order the tail export fills them,
+    // which is the handle's field order. The *Relaxed* slots come back null and no entry of this
+    // revision reads them, but they are assigned all the same: the slot order is the one thing
+    // these two files have to state twice.
+    tables.narrowPieceStart = static_cast<const int*>(tail[0]);
+    tables.narrowPieceOffset = static_cast<const int*>(tail[1]);
+    tables.narrowPieceA = static_cast<const double*>(tail[2]);
+    tables.narrowPieceB = static_cast<const double*>(tail[3]);
+    tables.narrowStoredDeg = static_cast<const int*>(tail[4]);
+    tables.narrowCoeffs = static_cast<const double*>(tail[5]);
+    tables.narrowMonoCoeffs = static_cast<const double*>(tail[6]);
+    tables.narrowBEdges = static_cast<const double*>(tail[7]);
+    tables.narrowBCoeffs = static_cast<const double*>(tail[8]);
+    tables.narrowBMonoCoeffs = static_cast<const double*>(tail[9]);
+    tables.narrowRelaxedDegA = static_cast<const int*>(tail[10]);
+    tables.narrowRelaxedDegB = static_cast<const int*>(tail[11]);
+    tables.narrowMonoRelaxedDegA = static_cast<const int*>(tail[12]);
+    tables.narrowMonoRelaxedDegB = static_cast<const int*>(tail[13]);
+    tables.narrowPieceStart32 = static_cast<const int*>(tail[14]);
+    tables.narrowPieceOffset32 = static_cast<const int*>(tail[15]);
+    tables.narrowPieceA32 = static_cast<const float*>(tail[16]);
+    tables.narrowPieceB32 = static_cast<const float*>(tail[17]);
+    tables.narrowStoredDeg32 = static_cast<const int*>(tail[18]);
+    tables.narrowCoeffs32 = static_cast<const float*>(tail[19]);
+    tables.narrowMonoCoeffs32 = static_cast<const float*>(tail[20]);
+    tables.narrowBEdges32 = static_cast<const float*>(tail[21]);
+    tables.narrowBCoeffs32 = static_cast<const float*>(tail[22]);
+    tables.narrowBMonoCoeffs32 = static_cast<const float*>(tail[23]);
+    tables.ratCoeffs = static_cast<const double*>(tail[24]);
+    tables.ratOffset = static_cast<const int*>(tail[25]);
+    tables.ratDenOffset = static_cast<const int*>(tail[26]);
+    tables.ratNumDeg = static_cast<const int*>(tail[27]);
+    tables.ratDenDeg = static_cast<const int*>(tail[28]);
+    tables.ratBNum = static_cast<const double*>(tail[29]);
+    tables.ratBDen = static_cast<const double*>(tail[30]);
+    tables.ratRelaxedDegB = static_cast<const int*>(tail[31]);
+    tables.ratSeedDeg = static_cast<const int*>(tail[32]);
+    tables.ratBNum32 = static_cast<const float*>(tail[33]);
+    tables.ratBDen32 = static_cast<const float*>(tail[34]);
+    tables.narrowRatCoeffs = static_cast<const double*>(tail[35]);
+    tables.narrowRatOffset = static_cast<const int*>(tail[36]);
+    tables.narrowRatDenOffset = static_cast<const int*>(tail[37]);
+    tables.narrowRatNumDeg = static_cast<const int*>(tail[38]);
+    tables.narrowRatDenDeg = static_cast<const int*>(tail[39]);
+    tables.narrowRatSeedDeg = static_cast<const int*>(tail[40]);
+    tables.narrowRatBCoeffs = static_cast<const double*>(tail[41]);
+    tables.narrowRatBOffset = static_cast<const int*>(tail[42]);
+    tables.narrowRatBStoredNumDeg = static_cast<const int*>(tail[43]);
+    tables.narrowRatBDenDeg = static_cast<const int*>(tail[44]);
+    tables.narrowRatRelaxedDegB = static_cast<const int*>(tail[45]);
+    tables.narrowRatBCoeffs32 = static_cast<const float*>(tail[46]);
+    tables.narrowRatBOffset32 = static_cast<const int*>(tail[47]);
+    tables.narrowRatBStoredNumDeg32 = static_cast<const int*>(tail[48]);
+    tables.narrowRatBDenDeg32 = static_cast<const int*>(tail[49]);
+    tables.narrowRelaxedDegB32 = static_cast<const int*>(tail[50]);
+    tables.narrowMonoRelaxedDegB32 = static_cast<const int*>(tail[51]);
+    tables.ratRelaxedDegB32 = static_cast<const int*>(tail[52]);
+    tables.narrowRatRelaxedDegB32 = static_cast<const int*>(tail[53]);
+
+    // The same grid's two per-interval tables per lane, which its bodies address a cell with: one
+    // degree and one block start per interval, out of the tail export's last four slots. They are
+    // handed over with the coefficients they describe, since a handle carrying the pools without
+    // these would be read at a block length the table does not have.
+    tables.flatDegs = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid]);
+    tables.flatOffsets = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 1]);
+    tables.flatDegs32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 2]);
+    tables.flatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailFlatGrid + 3]);
+
+    // The same two grids on their rational route, out of the two groups appended after that one:
+    // the pool and the four columns one row is addressed with, handed over together for the reason
+    // the Chebyshev grid's are - the pool alone is a table no reader can step, since this route's
+    // stride is the interval's own stored count, and a handle missing one fails its readiness test.
+    tables.flatRatCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailRatGrid]);
+    tables.flatRatNumDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 1]);
+    tables.flatRatDenDeg = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 2]);
+    tables.flatRatStored = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 3]);
+    tables.flatRatOffsets = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid + 4]);
+
+    tables.flatRatCoeffs32 = static_cast<const float*>(tail[kBoysDeviceTablesTailRatGrid32]);
+    tables.flatRatNumDeg32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 1]);
+    tables.flatRatDenDeg32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 2]);
+    tables.flatRatStored32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 3]);
+    tables.flatRatOffsets32 = static_cast<const int*>(tail[kBoysDeviceTablesTailRatGrid32 + 4]);
+
+    // The coarsest partition's monomial tables, out of the group appended after the grid's: the two
+    // pools that lane's other stored form is read from, one per lane. The pieces, edges, degrees
+    // and the piece index base are the Chebyshev tables above, so these are the whole of what an
+    // entry that sums a piece by Horner reads beside them.
+    tables.monoCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailMono]);
+    tables.monoBSeedCoeffs = static_cast<const double*>(tail[kBoysDeviceTablesTailMono + 1]);
+    tables.monoCoeffs32 = static_cast<const float*>(tail[kBoysDeviceTablesTailMono + 2]);
+    tables.monoBSeedCoeffs32 = static_cast<const float*>(tail[kBoysDeviceTablesTailMono + 3]);
+
+    *out = tables;
+    return BoysStatus::kSuccess;
+}
+
+template <RegionBExp kExp>
+inline BoysStatus BoysCuda::SingleF32(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The two readings differ only in the region-B exponential.
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunch(BoysCudaLaunchSingleF32Fast, n, x, out, count, stream, form);
+    } else
+    {
+        return RunLaunch(BoysCudaLaunchSingleF32, n, x, out, count, stream, form);
+    }
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNF32(
+    int nmax, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF32, nmax, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::SingleF64(const int* n,
+                                      const double* x,
+                                      double* out,
+                                      std::size_t count,
+                                      void* stream,
+                                      DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleF64, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64(const int* n,
+                                         const double* x,
+                                         double* out,
+                                         std::size_t count,
+                                         void* stream,
+                                         DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64Orders(const int* n,
+                                               const double* x,
+                                               double* out,
+                                               std::size_t count,
+                                               void* stream,
+                                               DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Orders, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64Narrow(const int* n,
+                                               const double* x,
+                                               double* out,
+                                               std::size_t count,
+                                               void* stream,
+                                               DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The kernels read the degrees the partition was stored at, which BoysCudaUploadTables
+    // has already placed.
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Narrow, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrders(const int* n,
+                                                     const double* x,
+                                                     double* out,
+                                                     std::size_t count,
+                                                     void* stream,
+                                                     DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrders, n, x, out, count, stream, form);
+}
+
+// The monomial scheme's four shapes: the entries above's path, with the launcher naming the
+// pool and the summation the scheme reads.
+inline BoysStatus BoysCuda::AllOrdersF64Mono(const int* n,
+                                             const double* x,
+                                             double* out,
+                                             std::size_t count,
+                                             void* stream,
+                                             DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Mono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersMono(const int* n,
+                                                   const double* x,
+                                                   double* out,
+                                                   std::size_t count,
+                                                   void* stream,
+                                                   DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowMono(const int* n,
+                                                   const double* x,
+                                                   double* out,
+                                                   std::size_t count,
+                                                   void* stream,
+                                                   DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMono(const int* n,
+                                                         const double* x,
+                                                         double* out,
+                                                         std::size_t count,
+                                                         void* stream,
+                                                         DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+// The fit route's four shapes, on the same path: the launcher names the pair a piece is read
+// from, and the route's cut is per reading, so each shape's launcher names which cut it reads.
+inline BoysStatus BoysCuda::AllOrdersF64Rat(const int* n,
+                                            const double* x,
+                                            double* out,
+                                            std::size_t count,
+                                            void* stream,
+                                            DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Rat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersRat(const int* n,
+                                                  const double* x,
+                                                  double* out,
+                                                  std::size_t count,
+                                                  void* stream,
+                                                  DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowRat(const int* n,
+                                                  const double* x,
+                                                  double* out,
+                                                  std::size_t count,
+                                                  void* stream,
+                                                  DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRat(const int* n,
+                                                        const double* x,
+                                                        double* out,
+                                                        std::size_t count,
+                                                        void* stream,
+                                                        DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNF64(
+    int nmax, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF64, nmax, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::SingleF64Fast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    // The double lane's single-order entry at the lane's other region-B exponential: the entry
+    // above at the second member of the axis (kSingleF64Fast, boys_cuda_options.hpp).
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleF64Fast, n, x, out, count, stream, form);
+}
+
+template <RegionBExp kExp>
+inline BoysStatus BoysCuda::EachOrderF64(const int* n,
+                                         const double* x,
+                                         const int* offset,
+                                         double* out,
+                                         std::size_t count,
+                                         void* stream,
+                                         DivisionForm form) {
+    // The each-order shape over the coarsest ladder AllOrdersF64 reads, at the region-B exponential
+    // the call names: the two readings differ only in that seed, as SingleF32's pair does.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF64Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF64, n, x, offset, out, count, stream, form);
+    }
+}
+
+template <RegionBExp kExp>
+inline BoysStatus BoysCuda::EachOrderF32(const int* n,
+                                         const double* x,
+                                         const int* offset,
+                                         float* out,
+                                         std::size_t count,
+                                         void* stream,
+                                         DivisionForm form) {
+    // The double entry above on the float lane, whose ladder reads the same coarsest pieces
+    // narrowed (AllOrdersF32's lane pair).
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF32Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF32, n, x, offset, out, count, stream, form);
+    }
+}
+
+// The double lane's ladders at the other region-B exponential. Each member is the one named beside
+// it over the same launcher's kernel instantiated at the fast member, so what a caller chooses here
+// is the seed the ladder is built from and never a second body.
+inline BoysStatus BoysCuda::AllOrdersF64Fast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Fast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrdersFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64MonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64MonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersMonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowMonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrdersMonoFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersMonoFast, n, x, out, count, stream, form);
+}
+
+// The route's pair at the other exponential. One member per partition and packing, as the accurate
+// rows have one per pair: the pair is stored in one form, so neither scheme name reaches a second
+// member here and both fast rows of a pair name the one below.
+inline BoysStatus BoysCuda::AllOrdersF64RatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64RatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64OrdersRatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowRatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64NarrowOrdersRatFast(
+    const int* n, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64NarrowOrdersRatFast, n, x, out, count, stream, form);
+}
+
+#if BoysFp16
+inline BoysStatus BoysCuda::SingleF16(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleF16, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNF16(
+    int nmax, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF16, nmax, x, out, count, stream, form);
+}
+
+template <RegionBExp kExp>
+inline BoysStatus BoysCuda::EachOrderF16(const int* n,
+                                         const F16* x,
+                                         const int* offset,
+                                         F16* out,
+                                         std::size_t count,
+                                         void* stream,
+                                         DivisionForm form) {
+    // The float each-order entry above in this lane's store, at the same two readings of the
+    // region-B exponential.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF16Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderF16, n, x, offset, out, count, stream, form);
+    }
+}
+
+// The half lane's other bodies. Each of these is its float counterpart above at the same kernel
+// body with the half store around it, so the line that decides what an entry runs is the one the
+// float entry of that name already states; what these add is the fp16 store and its own figure.
+inline BoysStatus BoysCuda::AllOrdersF16Narrow(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Narrow, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16Uniform(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Uniform, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16UniformHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformHorner, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16Rat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route's pair is stored in one form, so the two scheme names a caller may use reach this
+    // one kernel and the twin below forwards here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Rat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16RatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair: both names reach one kernel
+    // and one arithmetic.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16Rat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16NarrowRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16UniformRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16UniformRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16UniformRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16Orders(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Orders, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrders(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrders, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16OrdersRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16NarrowOrdersRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersUniform(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's packing axis has one member, so this entry and its float counterpart run the
+    // per-argument kernel of the grid rather than a gather of their own.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Uniform, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersUniformHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's monomial blocks, the same kernel AllOrdersF16UniformHorner launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformHorner, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersUniformRat(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's rational route, one pair per interval and no second packing: the same kernel
+    // AllOrdersF16UniformRat launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersF16UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersUniformRatHorner(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF16OrdersUniformRat(n, x, out, count, stream, form);
+}
+#endif // BoysFp16
+
+inline BoysStatus BoysCuda::AllOrdersF64Uniform(const int* n,
+                                                const double* x,
+                                                double* out,
+                                                std::size_t count,
+                                                void* stream,
+                                                DivisionForm form) {
+    // The route's table is stored at one degree for every order and interval, so there is no
+    // shorter image of it to cut: that one degree is the arithmetic this entry documents.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF64UniformHorner(const int* n,
+                                                      const double* x,
+                                                      double* out,
+                                                      std::size_t count,
+                                                      void* stream,
+                                                      DivisionForm form) {
+    // The other form of the same table, at the same contract: the degree is a property of the
+    // stored table and not of the basis it is summed in.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersUniform(const int* n,
+                                                      const double* x,
+                                                      double* out,
+                                                      std::size_t count,
+                                                      void* stream,
+                                                      DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The route's one reading of the grid, and therefore the kernel
+    // AllOrdersF64Uniform launches: the packing axis this entry names has one
+    // member here, for the reason the header's declaration states.
+    return RunLaunch(BoysCudaLaunchAllOrdersF64Uniform, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersUniformHorner(const int* n,
+                                                            const double* x,
+                                                            double* out,
+                                                            std::size_t count,
+                                                            void* stream,
+                                                            DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformHorner, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32Uniform(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float lane's uniform table is stored at one degree for every order and interval
+    // exactly as the double lane's is, so the same contract holds. What the route's own
+    // placement of that degree buys is the lane's table budget.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32UniformHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream, form);
+}
+
+
+// The grid's rational member, whose contract is the entry above's with one thing different:
+// the table it reads is one numerator/denominator pair per interval rather than one polynomial
+// per interval, so the launch below is a kernel of its own and not the Chebyshev one.
+inline BoysStatus BoysCuda::AllOrdersF32UniformRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32UniformRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    return AllOrdersF32UniformRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64UniformRat(const int* n,
+                                                   const double* x,
+                                                   double* out,
+                                                   std::size_t count,
+                                                   void* stream,
+                                                   DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64UniformRatHorner(const int* n,
+                                                         const double* x,
+                                                         double* out,
+                                                         std::size_t count,
+                                                         void* stream,
+                                                         DivisionForm form) {
+
+    return AllOrdersF64UniformRat(n, x, out, count, stream, form);
+}
+
+// The grid's rational member over the route's other packing axis, which has one member here:
+// the pair is stored per interval at the interval's own pair and stored count, so no gather
+// has a stride to step and the launch below is the per-argument entry's kernel.
+inline BoysStatus BoysCuda::AllOrdersF32OrdersUniformRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersUniformRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    return AllOrdersF32OrdersUniformRat(n, x, out, count, stream, form);
+}
+
+// The same four on the double lane's grid: that lane's own pair per interval over its own
+// intervals, read by that lane's launcher.
+inline BoysStatus BoysCuda::AllOrdersF64OrdersUniformRat(const int* n,
+                                                         const double* x,
+                                                         double* out,
+                                                         std::size_t count,
+                                                         void* stream,
+                                                         DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF64UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF64OrdersUniformRatHorner(const int* n,
+                                                               const double* x,
+                                                               double* out,
+                                                               std::size_t count,
+                                                               void* stream,
+                                                               DivisionForm form) {
+
+    return AllOrdersF64OrdersUniformRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32Narrow(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The lane's narrow partition reads region B's degrees as the float lane's own
+    // (NarrowRegionBDegrees over the float pieces). Region A needs no table beside them
+    // because this lane's region-A seed is the double lane's.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Narrow, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowMono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other form of the partition above: the degrees are the monomial coefficients' own
+    // (NarrowRegionBDegrees at TailBasis::kMonomial). Region A is no second table here either:
+    // this lane's region-A seed is the double lane's narrow monomial table.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMono, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32Rat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The lane's rational route reads this lane's own fit: the region-B pair's degrees are its
+    // own (RationalRegionBF32Degrees), and region A's seed is the double lane's pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Rat, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32RatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair: both names reach one
+    // kernel and one arithmetic.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF32Rat(n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route above on the narrow partition, whose region-B pair is this lane's
+    // own fit there, read at its own degrees.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRat, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the pair above, over the same kernel.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF32NarrowRat(n, x, out, count, stream, form);
+}
+
+
+// The float lane's orders axis, one pair per shape: the same table its per-argument twin
+// reads, gathered at each order's own piece rather than shared across the batch, so the
+// coarsest partition under both its names, the narrow partition in both bases and the
+// rational route out of its own float pairs each have both packings.
+inline BoysStatus BoysCuda::AllOrdersF32Orders(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Orders, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrders(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The same two tables its per-argument twin reads, on the other axis: the
+    // degrees are a property of the stored fit and not of the reading.
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrders, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The same two tables its per-argument twin reads, on the other axis: the
+    // degrees are a property of the stored fit and not of the reading.
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRat, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF32OrdersRat(n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRat(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersF32NarrowOrdersRat(n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersUniform(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route's one reading of the grid, and therefore the kernel
+    // AllOrdersF32Uniform launches: the packing axis this entry names has one
+    // member here, for the reason the header's declaration states.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Uniform, n, x, out, count, stream, form);
+}
+
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersUniformHorner(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32UniformHorner, n, x, out, count, stream, form);
+}
+
+// The appended rows: the combinations these lanes already had a kernel and a launcher for, whose
+// option row and surface were not written. Nothing here is new arithmetic and none needs one of its
+// own - each calls the launcher of the float row of the same name, or the half lane's fast single -
+// so what was missing was the way in: a call a chooser can name and a row a report prints.
+inline BoysStatus BoysCuda::AllOrdersF32Mono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other form of the coarsest partition, as AllOrdersF32NarrowMono is of the narrow
+    // one: the same pieces, read by Horner over the monomial coefficients.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Mono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersMono(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The partition above on the orders reading of region A: each order's own piece, in the
+    // monomial basis.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersMono, n, x, out, count, stream, form);
+}
+
+#if BoysFp16
+inline BoysStatus BoysCuda::AllOrdersF16Mono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store, as every half-lane ladder row is.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Mono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersMono(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::SingleF16Fast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // SingleF16 at the lane's other region-B exponential, as SingleF32Fast is SingleF32.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleF16Fast, n, x, out, count, stream, form);
+}
+#endif // BoysFp16
+
+#if BoysFp16
+inline BoysStatus BoysCuda::AllNBf16Fast(
+    int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNBf16Fast, nmax, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNF16Fast(
+    int nmax, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF16Fast, nmax, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+#endif // BoysFp16
+
+inline BoysStatus BoysCuda::AllNF32Fast(
+    int nmax, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF32Fast, nmax, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNF64Fast(
+    int nmax, const double* x, double* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNF64Fast, nmax, x, out, count, stream, form);
+}
+
+#if BoysFp16
+inline BoysStatus BoysCuda::AllOrdersBf16Fast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Fast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16MonoFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16MonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowMonoFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersMonoFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRatFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowRatFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersMonoFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersRatFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16RatFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16RatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16Fast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16Fast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16MonoFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16MonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowMonoFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersMonoFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRatFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowRatFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersMonoFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersMonoFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersRatFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersRatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16RatFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16RatFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+#endif // BoysFp16
+
+inline BoysStatus BoysCuda::AllOrdersF32Fast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32Fast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32MonoFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32MonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowMonoFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowMonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersMonoFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersMonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowRatFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersMonoFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersMonoFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersRatFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRatFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32RatFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32RatFast, n, x, out, count, stream, form);
+}
+
+#if BoysFp16
+inline BoysStatus BoysCuda::SingleBf16Fast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleBf16Fast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+// The launched bfloat16 half: the fp16 wrappers above with the format's own store, each over the
+// kernel and the launcher the fp16 row of that name runs. The row list beside them books them
+// (kDeviceOptions, the launched bfloat16 block); the kernels are in boys_cuda.cu, and a declaration
+// on the public surface with no definition here is an entry a caller can name and cannot link.
+
+inline BoysStatus BoysCuda::SingleBf16(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchSingleBf16, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllNBf16(
+    int nmax, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    const auto valid = CheckOrder(nmax);
+
+    if (valid != BoysStatus::kSuccess)
+    {
+        return valid;
+    }
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllNBf16, nmax, x, out, count, stream, form);
+}
+
+template <RegionBExp kExp>
+inline BoysStatus BoysCuda::EachOrderBf16(const int* n,
+                                          const Bf16* x,
+                                          const int* offset,
+                                          Bf16* out,
+                                          std::size_t count,
+                                          void* stream,
+                                          DivisionForm form) {
+    // The float each-order entry above in this lane's store, at the same two readings of the
+    // region-B exponential.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    if constexpr (kExp == RegionBExp::kFast)
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderBf16Fast, n, x, offset, out, count, stream,
+                               form);
+    } else
+    {
+        return RunLaunchOffset(BoysCudaLaunchEachOrderBf16, n, x, offset, out, count, stream, form);
+    }
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16Narrow(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Narrow, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16Uniform(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Uniform, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16UniformHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformHorner, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16Rat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The route's pair is stored in one form, so the two scheme names a caller may use reach this
+    // one kernel and the twin below forwards here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Rat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16RatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair: both names reach one kernel
+    // and one arithmetic.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16Rat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16NarrowRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16UniformRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16UniformRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16UniformRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16Orders(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Orders, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrders(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrders, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16OrdersRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16NarrowOrdersRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersUniform(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's packing axis has one member, so this entry and its float counterpart run the
+    // per-argument kernel of the grid rather than a gather of their own.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Uniform, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersUniformHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's monomial blocks, the same kernel AllOrdersBf16UniformHorner launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformHorner, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersUniformRat(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    // The grid's rational route, one pair per interval and no second packing: the same kernel
+    // AllOrdersBf16UniformRat launches.
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16UniformRat, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersUniformRatHorner(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The other scheme name of the route above, over the same pair.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return AllOrdersBf16OrdersUniformRat(n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16Mono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store, as every half-lane ladder row is.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16Mono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersMono(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The float row above in the half lane's store.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersMono, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16RatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16RatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16OrdersRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16OrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersBf16NarrowOrdersRatHornerFast(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersBf16NarrowOrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+#endif // BoysFp16
+
+inline BoysStatus BoysCuda::AllOrdersF32RatHornerFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32RatHornerFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32OrdersRatHornerFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32OrdersRatHornerFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowRatHornerFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowRatHornerFast, n, x, out, count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF32NarrowOrdersRatHornerFast(
+    const int* n, const double* x, float* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF32NarrowOrdersRatHornerFast, n, x, out, count, stream, form);
+}
+
+#if BoysFp16
+inline BoysStatus BoysCuda::AllOrdersF16RatHornerFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16RatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16OrdersRatHornerFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16OrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowRatHornerFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+
+inline BoysStatus BoysCuda::AllOrdersF16NarrowOrdersRatHornerFast(
+    const int* n, const F16* x, F16* out, std::size_t count, void* stream, DivisionForm form) {
+    // The entry of its own name at the lane's other region-B exponential: the kernel is the one the
+    // accurate entry of that name launches, instantiated at kFast, and no arithmetic is added here.
+
+    if (BoysCuda::InitializeTables() != BoysStatus::kSuccess)
+    {
+        return BoysStatus::kDeviceError;
+    }
+
+    return RunLaunch(BoysCudaLaunchAllOrdersF16NarrowOrdersRatHornerFast, n, static_cast<const void*>(x), static_cast<void*>(out), count, stream, form);
+}
+#endif // BoysFp16
 
 /// The option space's rows counted by the arithmetic each one selects, as a report states
 /// it: how many names the space offers against how many distinct arithmetic they reach, and

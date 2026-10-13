@@ -685,18 +685,6 @@ jobs:
       # there), and the gates below read the tree and the build this leg has
       # already made, so each answer is one a reader wants even when another gate
       # has gone red. A gate is not less true for standing beside a failure.
-      # The packed orders lane is a template instantiated once per cell, and its
-      # cells are written out twice - as `extern template` declarations in
-      # include/boys/boys_impl.hpp and as definitions in src/boys_orders_simd.cpp.
-      # A cell that falls out of one of the two lists and not the other fails
-      # silently: declared and never defined is an unresolved external at a
-      # consumer's link, defined and never declared is a second copy of the body
-      # in every translation unit that calls it. No other gate in this file reads
-      # either list, so this step is the only thing that does.
-      - name: Packed orders cells (declared against instantiated)
-        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
-        run: |
-          .venv/bin/python tools/check_orders_packed_cells.py --check
       # The inventory of evaluation paths. One arithmetic - a seed and an upward
       # recurrence in a named division form - is written out once per lane, per
       # shape and per fit route, and nothing enforced that the copies stay a
@@ -774,7 +762,7 @@ jobs:
           .venv/bin/python tools/check_doc_transcripts.py --check
       # The accuracy gate judges every lane and region against a bound, and
       # those bounds are constants it transcribes: the block they sit in says
-      # "transcribed from README.md and include/boys/boys.hpp". Nothing read the
+      # "transcribed from README.md and include/boys/boys_decl.hpp". Nothing read the
       # two against each other until this step, so a figure edited in a document
       # and not in the gate left the gate certifying its own transcription - the
       # run green, the document's claim printed beside the gate's number.
@@ -1546,7 +1534,7 @@ jobs:
   # tests/boys_cuda_device_demo.cu and tests/boys_cuda_route_test.cu, the
   # consumer default check's tests/consumer_cuda_defaults.cu, and the benchmark
   # driver's benchmarks/boys_cuda_benchmark_kernels.cu) and not one of the
-  # host-side translation units that include the toolkit's headers for them
+  # lane's host-side translation units
   # (src/boys_cuda.cpp, src/boys_cuda_probe.cpp, tests/boys_cuda_test.cpp,
   # tests/boys_cuda_probe_test.cpp, the two device gate TUs, the consumer
   # default check's host half and the two benchmark drivers) had ever been

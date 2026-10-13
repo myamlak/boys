@@ -1469,7 +1469,7 @@ __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
 
 // ---------------------------------------------------------------------------
 // host layer: plain exported functions (no library C++ types - this TU
-// stays C++20). The BoysStatus layer lives in boys_cuda.cpp (C++23).
+// stays C++20). The BoysStatus layer lives in boys_cuda.hpp (C++23).
 // ---------------------------------------------------------------------------
 int gTablesDevice = -1; // device ordinal the tables were uploaded to
 

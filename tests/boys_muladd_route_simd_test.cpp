@@ -11,24 +11,10 @@
 #include "boys_muladd_route_reference.hpp"
 
 // --- Architecture guard -----------------------------------------------------
-// As src/boys_simd.cpp: the build's answer when it states one, the compiler's predefines otherwise.
-// Unlike that unit this one does not refuse an unstated non-x86_64 target - the library's SIMD unit
-// is the one that must not compile the tier out silently - so such a target gets one skipping test.
-#ifdef BOYS_SIMD_X86
-
-// The build answered; nothing to detect.
-
-#elif defined(__x86_64__) || defined(_M_X64)
-
-#define BOYS_SIMD_X86 1
-
-#else
-
-#define BOYS_SIMD_X86 0
-
-#endif
-
-#if BOYS_SIMD_X86
+// The tier this unit's own flags name, not the library's: BOYS_ISA_AVX2_FMA is derived from the
+// predefines by the boys headers this file includes (boys/isa_tiers.hpp), the same set CMake pins
+// on this target; a unit whose flags name no tier has no intrinsics to compile and gets one skip.
+#if BOYS_ISA_AVX2_FMA
 
 #include "boys_backend_simd.hpp"
 
@@ -340,9 +326,8 @@ TEST(BoysMulAddRouteSimd, TheReportNamesTheseInstantiations) {
 #else
 
 TEST(BoysMulAddRouteSimd, PackedBackendsAreNotBuiltOnThisTarget) {
-    GTEST_SKIP() << "this target has no AVX2 + FMA tier: src/boys_simd.cpp defines the region "
-                    "kernels against the certified scalar lanes here and there is no packed "
-                    "backend to hold to a route";
+    GTEST_SKIP() << "this unit's flags name no AVX2 + FMA tier: with no intrinsics compiled in, "
+                    "there is no packed backend here to hold to a route";
 }
 
-#endif // BOYS_SIMD_X86
+#endif // BOYS_ISA_AVX2_FMA

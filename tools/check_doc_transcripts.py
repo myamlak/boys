@@ -182,8 +182,10 @@ ROWS = re.compile(
 # literal against the documents and passed, quietly, over the drift this check
 # exists to see. The declaration is the only place where "the member named
 # `source`" is written down, so that is where this reads it, and a declaration it
-# cannot read is an error naming the construct.
-CONTRACT_STRUCT = REPO / "include" / "boys" / "boys.hpp"
+# cannot read is an error naming the construct. It is declared in
+# `include/boys/boys_decl.hpp`, the header that carries the declarations and no
+# arithmetic; `boys/boys.hpp` is the calls header over it and declares no member.
+CONTRACT_STRUCT = REPO / "include" / "boys" / "boys_decl.hpp"
 ROW_STRUCT = "LaneContractInfo"
 SOURCE_MEMBER = "source"
 

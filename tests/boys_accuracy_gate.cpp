@@ -102,7 +102,7 @@ using namespace boys_gate;
 namespace {
 
 // ---------------------------------------------------------------------------
-// The documented bounds, transcribed from README.md and include/boys/boys.hpp, in the form each
+// The documented bounds, transcribed from README.md and include/boys/boys_decl.hpp, in the form each
 // lane states them: relative for the double and float lanes, beside the value for the half lanes.
 // ---------------------------------------------------------------------------
 
@@ -1595,7 +1595,7 @@ constexpr auto GateDeviceEntryFast(boys::FitRoute route,
 
 /// The double lane's launched entry at the other region-B exponential: its own fast
 /// member, whose name is the lane's (`BoysCuda::SingleF64Fast`, boys/boys_cuda.hpp,
-/// defined in src/boys_cuda.cpp beside the float lane's).
+/// defined in boys_cuda.hpp beside the float lane's).
 ///
 /// The four parameters are unused for the reason the float lane's map states above:
 /// this member's launch is one arithmetic of the lane and not one per cell.
@@ -3518,14 +3518,10 @@ int main(int argc, char** argv) {
             }
         }
 
-        // What naming a route changes, cell by cell: the route this build's own seam defaults
-        // to, and a value outside the enumeration, must both be the default entry's value bit
-        // for bit, and the route this build does NOT default to may differ only where a row of
-        // BoysFitRoutesF32 says its selector takes over. The default route is read from the
-        // build and not named here: an emitted seam may default this lane to either route
-        // (measured 2026-10-12: the option probe's vote names kRationalMinimax for the float
-        // single class), and a named constant would then read the default's own substitution as
-        // a difference.
+        // What naming a route changes, cell by cell: the build's own default route, and a
+        // value outside the enumeration, must be the default entry's value bit for bit; the
+        // other route may differ only where BoysFitRoutesF32 says a selector takes over. The
+        // default route is read from the build and never named: an emitted seam may pick either.
         for (int n = 0; n <= nmax; ++n)
         {
             for (std::size_t i = 0; i < count; ++i)

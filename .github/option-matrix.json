@@ -51,7 +51,7 @@
     {
       "key": "granularity",
       "kind": "carried",
-      "source": "boys.hpp: EvalLane",
+      "source": "boys_decl.hpp: EvalLane",
       "members": [
         "region-a",
         "region-b",

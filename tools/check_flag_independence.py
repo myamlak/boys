@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""The front door's values are the library's, not the calling unit's.
+"""The entries are the caller's to compile, and the four flag sets read one arithmetic source.
 
 WHAT IT CHECKS. One source file, built several ways - a different optimization level, a different
-target feature set, a different contraction setting each - must print the same digest of the bits
-every default entry returned. The entries a call site names no policy for are defined once, in the
-library, so nothing the caller's flags do can reach their arithmetic; a digest that differs says
-they are being compiled at the call site instead, which is the defect.
+target feature set each, and never a different contraction setting: the entries are the caller's to
+compile, so the variants differ only in what a caller chose - must
+print the same digest of the bits every default entry returned. The four agree because the
+arithmetic is one source and the ISA tiers are documented bit-equal to the scalar twins; a digest
+that differs is a finding to report, never something to weaken the check for. The profile the
+certified figures belong to is `docs/build-facts.md`'s business, not this check's.
 
-An argument that is not exact in binary would make the program measure its own rounding rather
-than the library's, so every argument is a multiple of 1/64 below 500 - the source says so where
-it builds them.
+An argument that is not exact in binary would put a rounding difference into the digest that the
+entries are not responsible for, so every argument is a multiple of 1/64 below 500 - the source
+says so where it builds them.
 
     python tools/check_flag_independence.py --check build/boys-flag-independence-o2 ...
     python tools/check_flag_independence.py            # report only

@@ -37,8 +37,8 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parent.parent
 ACCURACY_HPP = REPO / "include" / "boys" / "accuracy.hpp"
 BACKEND_HPP = REPO / "include" / "boys" / "backend.hpp"
-BOYS_HPP = REPO / "include" / "boys" / "boys.hpp"
-SIMD_BACKEND_HPP = REPO / "src" / "boys_backend_simd.hpp"
+BOYS_DECL_HPP = REPO / "include" / "boys" / "boys_decl.hpp"
+SIMD_BACKEND_HPP = REPO / "include" / "boys" / "boys_backend_simd.hpp"
 CMAKELISTS = REPO / "CMakeLists.txt"
 MATRIX_JSON = REPO / ".github" / "option-matrix.json"
 
@@ -121,7 +121,7 @@ AXES = (
     {"key": "evaluation", "kind": "carried",
      "source": "accuracy.hpp: EvalScheme"},
     {"key": "granularity", "kind": "carried",
-     "source": "boys.hpp: EvalLane"},
+     "source": "boys_decl.hpp: EvalLane"},
 )
 
 
@@ -174,8 +174,8 @@ def backend_names():
     names |= set(re.findall(r'"(scalar-fp\d+|avx2-fp\d+)"', read(SIMD_BACKEND_HPP)))
     if len(names) < 4:
         raise SystemExit("gen_option_matrix: the backend names are not all in "
-                         "backend.hpp and src/boys_backend_simd.hpp - teach this "
-                         "script about it")
+                         "backend.hpp and include/boys/boys_backend_simd.hpp - "
+                         "teach this script about it")
     return sorted(names)
 
 
@@ -277,7 +277,7 @@ def axis_members():
         "precision": widths,
         "family": [kebab(m) for m in enum_members(ACCURACY_HPP, "FitRoute")],
         "evaluation": [kebab(m) for m in enum_members(ACCURACY_HPP, "EvalScheme")],
-        "granularity": [kebab(m) for m in enum_members(BOYS_HPP, "EvalLane")],
+        "granularity": [kebab(m) for m in enum_members(BOYS_DECL_HPP, "EvalLane")],
         # The ISAs the backends name are the device's members on the library's
         # own terms; CI realises them as the host's runner, so they are carried
         # facts here rather than a second device axis.

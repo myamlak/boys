@@ -501,7 +501,7 @@ def sorted_overload_entries(reader: Reader) -> set[str]:
     """
     found: set[str] = set()
 
-    for header in ("boys.hpp", "boys_span.hpp", "boys_half.hpp"):
+    for header in ("boys_decl.hpp", "boys_span.hpp", "boys_half.hpp"):
         text = join_continuations(reader.text(f"include/boys/{header}"))
 
         for match in SORTED_OVERLOAD.finditer(text):
@@ -800,7 +800,7 @@ SEAM_DEVICE_PRECISION = "Device"
 
 def one_order_shapes(reader: Reader) -> set[str]:
     """The ``Shape`` enumerators whose own documentation names one order."""
-    text = reader.text("include/boys/boys.hpp")
+    text = reader.text("include/boys/boys_decl.hpp")
     start = text.find("enum class Shape")
 
     if start < 0:
@@ -1071,7 +1071,7 @@ def main() -> int:
         return 1
 
     surface = set()
-    for header in ("boys.hpp", "boys_span.hpp", "boys_half.hpp"):
+    for header in ("boys_decl.hpp", "boys_span.hpp", "boys_half.hpp"):
         surface.update(DECLARATION.findall(reader.text(f"include/boys/{header}")))
 
     if not surface:
@@ -1174,7 +1174,7 @@ def main() -> int:
 
     ENUMS.update(maps)
 
-    carriers = precision_carriers(reader.text("include/boys/boys.hpp"))
+    carriers = precision_carriers(reader.text("include/boys/boys_decl.hpp"))
 
     if not carriers:
         print("combination_matrix: the Precision enumeration was read as carrying no format, so no "

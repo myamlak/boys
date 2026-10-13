@@ -14,11 +14,13 @@
 #include "boys/policy.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
+#include "boys/isa_tiers.hpp"
 #include "boys/dependent_false.hpp"
 #include "boys/status.hpp"
 
 #if BoysFp16
 #include "boys/f16.hpp"
+#include "boys/half2.hpp"
 #endif
 
 #include <algorithm>
@@ -31,24 +33,6 @@
 #include <new>
 
 namespace boys {
-
-namespace detail {
-
-// CPUID and OSXSAVE on x86_64, false on every other target. Declared here and
-// defined in the shipped unit; not an entry point, not in the public header.
-bool DetectAvx2() noexcept;
-
-// The cached answer, for the library's own callers: inline, so an entry that
-// answers one argument at a time pays a load rather than a call. One
-// function-local static, so it is one object across every TU. boys/boys.hpp
-// declares the entry of this name that a consumer calls; src/boys.cpp defines it.
-inline bool Avx2Available() noexcept
-{
-    static const bool available = DetectAvx2();
-    return available;
-}
-
-} // namespace detail
 
 namespace detail {
 
@@ -939,15 +923,19 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
     }
 }
 
-// Defined in boys_orders_simd.cpp at FitSum's own coefficients and walk, so the value is the
-// portable body's at every bit; a build without the vector tier defines it and never calls it.
+// The flat grid's one-order fit as the vector tier reads it: FitSum's own coefficients and walk,
+// so the value is the portable body's at every bit - what the flags of the compiling unit change
+// is where the fused step comes from, not the arithmetic. The scalar tier calls it nowhere, so
+// where the tier is absent the name stays a declaration and no body is parsed.
+#if BOYS_ISA_AVX2_FMA
+template <EvalScheme kScheme>
+double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept {
+    return FitSum<kScheme, backend::ScalarFp64>(cheb, mono, deg, t);
+}
+#else
 template <EvalScheme kScheme>
 double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept;
-
-extern template double FlatFitSum<EvalScheme::kHorner>(const double*, const double*, int,
-                                                       double) noexcept;
-extern template double FlatFitSum<EvalScheme::kSplitClenshaw>(const double*, const double*, int,
-                                                              double) noexcept;
+#endif
 
 // One argument's ladder off the uniform table: every order read from its own
 // coefficients, none from another's.
@@ -970,26 +958,25 @@ double UniformSingleOrder(int n, double x) noexcept {
     return UniformOrderAt<Policy>(FlatLocate(x), n);
 }
 
-// One order off the grid, taken from the translation unit that carries the fused instruction
-// set where one is present, and from UniformSingleOrder above where none is. The index, the
-// coefficients and the walk are that body's own, so the value is its value at every bit: what
-// changes is where the fused step comes from, the instruction or a call into the C runtime.
+// One order off the grid, from this unit's own vector tier where it has one and UniformSingleOrder
+// above where it does not. The index, coefficients and walk are that body's own, so the value is
+// its value at every bit: what changes is where the fused step comes from, the instruction or a
+// call into the C runtime. The tier is this unit's flags, never the host's processor.
 template <typename Policy>
 double FlatSingleOrder(int n, double x) noexcept {
+#if BOYS_ISA_AVX2_FMA
     if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
-        if (Avx2Available())
-        {
-            const FlatPoint at = FlatLocate(x);
-            const std::size_t base =
-                at.block + static_cast<std::size_t>(n) *
-                               static_cast<std::size_t>(detail::kFlatDegs[at.iv] + 1);
+        const FlatPoint at = FlatLocate(x);
+        const std::size_t base =
+            at.block + static_cast<std::size_t>(n) *
+                           static_cast<std::size_t>(detail::kFlatDegs[at.iv] + 1);
 
-            return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base,
-                                               detail::kFlatMonoCoeffs.data() + base,
-                                               detail::kFlatDegs[at.iv], at.t);
-        }
+        return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base,
+                                           detail::kFlatMonoCoeffs.data() + base,
+                                           detail::kFlatDegs[at.iv], at.t);
     }
+#endif
 
     return UniformSingleOrder<Policy>(n, x);
 }
@@ -1037,12 +1024,11 @@ static_assert(ScaledFarDegreesCarried(),
 /// pre-change build is what establishes - so what the tag decides is where the
 /// instruction comes from, never what arithmetic runs.
 enum class LadderLeg {
-    /// The leg that asks: the body compiled where the entry was called, at that
-    /// unit's own flags. The tier check's fallback arm, and the arm a host without
-    /// the fused instruction set reaches.
+    /// The leg that asks: the body of the unit compiled without the fused instruction set, which
+    /// reaches it as a call. The scalar tier's arm.
     kAskingLeg,
-    /// The leg of boys_orders_simd.cpp, which carries the fused instruction set.
-    /// The tier check's other arm, defined in that unit alone.
+    /// The leg of boys_orders_simd.cpp, which carries the fused instruction set. The vector
+    /// tier's arm, defined in that unit alone.
     kFusedLeg,
 };
 
@@ -1148,19 +1134,17 @@ extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg
 /// receives, and the two differ by m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
 ///
 /// Two bodies of one arithmetic, chosen as CorrectedSeedAllOrders' are: the fused
-/// leg where the fused instruction set is present, the asking leg everywhere else.
+/// leg where this unit carries the fused instruction set, the asking leg everywhere else.
 ///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, kScaledFarX0 <= x < kScaledFarX1
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
 template <DivisionForm kForm> void ScaledFarAllOrders(int nmax, double x, double* out) noexcept {
-    if (Avx2Available())
-    {
-        ScaledFarLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
-        return;
-    }
-
+#if BOYS_ISA_AVX2_FMA
+    ScaledFarLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
+#else
     ScaledFarLadder<kForm, LadderLeg::kAskingLeg>(nmax, x, out);
+#endif
 }
 
 // The far region's third representation: the default seed and ladder with their two errors
@@ -1260,25 +1244,23 @@ extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, Ladde
 
 /// One argument's whole ladder from the corrected seed.
 ///
-/// Two legs of one arithmetic, chosen by the tier the caller's host carries: the
-/// fused leg where the fused instruction set is present, which is where the
+/// Two legs of one arithmetic, chosen by the tier the compiling unit carries: the
+/// fused leg where the fused instruction set is in force, which is where the
 /// refined form's exact product costs one instruction, and the asking leg
 /// everywhere else, which is where it costs a call. The predicate is the vector
 /// tier's own - the fused leg's unit is compiled for AVX2, so entering it is its
-/// licence - and a host without it takes the asking leg, which is the certified
+/// licence - and a unit without it takes the asking leg, which is the certified
 /// lane and is present on every target.
 ///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, kX1 <= x
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
 template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, double* out) noexcept {
-    if (Avx2Available())
-    {
-        CorrectedSeedLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
-        return;
-    }
-
+#if BOYS_ISA_AVX2_FMA
+    CorrectedSeedLadder<kForm, LadderLeg::kFusedLeg>(nmax, x, out);
+#else
     CorrectedSeedLadder<kForm, LadderLeg::kAskingLeg>(nmax, x, out);
+#endif
 }
 
 /// The far region's bare ladder: the closed form's seed and the upward step without
@@ -3234,7 +3216,7 @@ template <EvalScheme kScheme,
           DivisionForm kForm>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
-// The single-precision lane's entry on the same axis (defined in boys_orders_simd.cpp),
+// The single-precision lane's entry on the same axis (defined by boys/boys_orders_lanes.hpp),
 // declared here for the same reason and one more: this lane's degree table is certified against
 // a region budget as well as against a table, so the computation budget is a choice it carries
 // and the double lane's entry does not.
@@ -3672,8 +3654,10 @@ void BoysAllNAtOrdersF32Impl(
 // committed reference grid lands 1.4e-15 on the band at n = 32, C 5.0e-14 inside its bar with 10%
 // slack, and B 2.2e-13 at n = 32, x = kX0 - four times its own bar.
 
-// Region B is therefore served by the scalar body in the batch entry. On a non-x86_64 target these
-// are defined against the certified scalar lanes (boys_simd.cpp) and BoysAvx2Available() is false.
+// Region B is therefore served by the scalar body in the batch entry. The region-A lane is the one
+// the entries reach and is defined by boys_arguments_lanes.hpp at this unit's own tier; these two
+// are the measurement-only lanes and stay out of line in boys_simd.cpp, at the tier it is compiled
+// at - its scalar twin where the vector flags are absent.
 void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept;
 
 /// F_0(x)..F_n(x) for arguments in region B; out[order * count + i].
@@ -3718,207 +3702,13 @@ template <EvalScheme kScheme = kDefaultEvalScheme,
           DivisionForm kForm = kDefaultDivisionForm>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 
-// The shapes this entry is instantiated at, expanded at each of the three division forms: the
-// form is a policy field, so the axis triples the cells. Declared here so a call site reaches the
-// definition the library holds; tools/check_orders_packed_cells.py holds this block to
-// boys_orders_simd.cpp's definitions.
-#define BOYS_ORD_EXTERN(kScheme, kRoute, kGranularity, kForm)              \
-    extern template void BoysAllOrdersPacked<kScheme, kRoute, kGranularity, kForm>(\
-        int nmax, double x, double* out) noexcept;
+// The shapes this entry is instantiated at are the call sites' own: the lane's bodies are
+// defined by boys_orders_lanes.hpp below at the tier this unit's flags name, and by its
+// scalar twin where they name none, so a call site instantiates the cell it named and the
+// header reaches nothing outside this translation unit.
 
-#define BOYS_ORD_SHIPPED(kScheme, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kChebyshev, FitGranularity::kCoarsest, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kRationalMinimax, FitGranularity::kCoarsest, kForm)
-
-#define BOYS_ORD_NARROW(kScheme, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kChebyshev, FitGranularity::kNarrow, kForm)
-
-#define BOYS_ORD_NARROW_RAT(kScheme, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kRationalMinimax, FitGranularity::kNarrow, kForm)
-
-// The uniform partition on the Chebyshev route, at every rung this lane names: the grid's cells are
-// stored at the degrees the derivation fitted them at, and the criterion that would cut them reaches
-// the full degree at every multiplier, so a rung of this partition is the reference reading. The cells
-// are therefore the same seven the shipped and narrow partitions are declared at.
-#define BOYS_ORD_UNIFORM(kScheme, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kChebyshev, FitGranularity::kUniform, kForm)
-
-// The uniform partition on the rational route, for the same reading. The member stores one pair per
-// interval, so it is read as the stored pairs are. The body delegates this route's call to the scalar
-// orders lane, and the declarations are here for the reason every one above them is: so a call site
-// naming a cell reaches the definition the library holds.
-#define BOYS_ORD_UNIFORM_RAT(kScheme, kForm) \
-    BOYS_ORD_EXTERN(kScheme, FitRoute::kRationalMinimax, FitGranularity::kUniform, kForm)
-
-BOYS_ORD_SHIPPED(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
-BOYS_ORD_SHIPPED(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
-BOYS_ORD_SHIPPED(EvalScheme::kSplitClenshaw, DivisionForm::kRefinedReciprocal)
-BOYS_ORD_SHIPPED(EvalScheme::kHorner, DivisionForm::kExactDivision)
-BOYS_ORD_SHIPPED(EvalScheme::kHorner, DivisionForm::kPlainReciprocal)
-BOYS_ORD_SHIPPED(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
-
-BOYS_ORD_NARROW(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
-BOYS_ORD_NARROW(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
-BOYS_ORD_NARROW(EvalScheme::kSplitClenshaw, DivisionForm::kRefinedReciprocal)
-BOYS_ORD_NARROW(EvalScheme::kHorner, DivisionForm::kExactDivision)
-BOYS_ORD_NARROW(EvalScheme::kHorner, DivisionForm::kPlainReciprocal)
-BOYS_ORD_NARROW(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
-
-BOYS_ORD_NARROW_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
-BOYS_ORD_NARROW_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
-BOYS_ORD_NARROW_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kRefinedReciprocal)
-BOYS_ORD_NARROW_RAT(EvalScheme::kHorner, DivisionForm::kExactDivision)
-BOYS_ORD_NARROW_RAT(EvalScheme::kHorner, DivisionForm::kPlainReciprocal)
-BOYS_ORD_NARROW_RAT(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
-
-BOYS_ORD_UNIFORM(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
-BOYS_ORD_UNIFORM(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
-BOYS_ORD_UNIFORM(EvalScheme::kSplitClenshaw, DivisionForm::kRefinedReciprocal)
-BOYS_ORD_UNIFORM(EvalScheme::kHorner, DivisionForm::kExactDivision)
-BOYS_ORD_UNIFORM(EvalScheme::kHorner, DivisionForm::kPlainReciprocal)
-BOYS_ORD_UNIFORM(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
-
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kExactDivision)
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kPlainReciprocal)
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kSplitClenshaw, DivisionForm::kRefinedReciprocal)
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kHorner, DivisionForm::kExactDivision)
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kHorner, DivisionForm::kPlainReciprocal)
-BOYS_ORD_UNIFORM_RAT(EvalScheme::kHorner, DivisionForm::kRefinedReciprocal)
-
-#undef BOYS_ORD_EXTERN
-#undef BOYS_ORD_SHIPPED
-#undef BOYS_ORD_NARROW
-#undef BOYS_ORD_NARROW_RAT
-#undef BOYS_ORD_UNIFORM
-#undef BOYS_ORD_UNIFORM_RAT
-
-// The single-precision lane's shapes on the same axis: two schemes and two
-// computation budgets, with either route. Declared here for the
-// reason above - so that a call site reaches the definition the library
-// already holds rather than instantiating a second copy of the body.
-#define BOYS_F32_ORDERS_PACKED_REFERENCE(kScheme, kBudget, kForm)                                  \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kChebyshev, kBudget,       \
-                                                FitGranularity::kCoarsest, kForm>(                  \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kRationalMinimax, kBudget, \
-                                                FitGranularity::kCoarsest, kForm>(                  \
-        int nmax, float x, float* out) noexcept;
-
-
-
-// The narrow partition's shapes on this lane, which boys_orders_simd.cpp instantiates: the same four
-// (scheme, route) pairs at the reference rung plus the six relaxed ones, cut against the narrow table.
-// Declared here so a call site reaching one of them reaches the definition the library already holds;
-// tools/check_orders_packed_cells.py holds the two lists to each other.
-#define BOYS_F32_ORDERS_PACKED_NARROW(kScheme, kBudget, kForm)                                     \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kChebyshev, kBudget,       \
-                                                FitGranularity::kNarrow, kForm>(                   \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kRationalMinimax, kBudget, \
-                                                FitGranularity::kNarrow, kForm>(                   \
-        int nmax, float x, float* out) noexcept;
-
-
-
-// The uniform partition's shapes on this lane, at every multiplier: this lane's arm does not
-// refuse the rung - its cells are stored at the degrees the derivation fitted them at, so a relaxed
-// call is served them uncut - so its cells are the seven the axis and the probe both name.
-
-// Both routes are carried: the rational member over this lane's grid is a fit of the lane's own
-// arithmetic, stored beside the Chebyshev member it shares.
-
-// The same cells on the rational route, whose member over this lane's grid is stored
-// beside the Chebyshev one and whose relaxed multipliers are the stored pairs uncut.
-// The body delegates this route's call to the scalar orders lane, so the declarations
-// are here to keep a call site off a second copy of it.
-
-#define BOYS_F32_ORDERS_PACKED_UNIFORM(kScheme, kBudget, kForm)                                    \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kChebyshev, kBudget,            \
-                                                FitGranularity::kUniform, kForm>(                  \
-        int nmax, float x, float* out) noexcept;                                                   \
-    extern template void BoysAllOrdersF32Packed<kScheme, FitRoute::kRationalMinimax, kBudget,      \
-                                                FitGranularity::kUniform, kForm>(                  \
-        int nmax, float x, float* out) noexcept;
-
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                    \
-                                 DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                    \
-                                 DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                    \
-                                 DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                     \
-                                 DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                     \
-                                 DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                     \
-                                 DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat,                           \
-                                 DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat,                           \
-                                 DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFloat,                           \
-                                 DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16,                            \
-                                 DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16,                            \
-                                 DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_REFERENCE(EvalScheme::kHorner, BoysBudget::kFp16,                            \
-                                 DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                       \
-                              DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                       \
-                              DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                       \
-                              DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                        \
-                              DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                        \
-                              DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                        \
-                              DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFloat, DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFloat,                              \
-                              DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFloat,                              \
-                              DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFp16, DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFp16,                               \
-                              DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_NARROW(EvalScheme::kHorner, BoysBudget::kFp16,                               \
-                              DivisionForm::kRefinedReciprocal)
-
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                      \
-                               DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                      \
-                               DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFloat,                      \
-                               DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                       \
-                               DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                       \
-                               DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kSplitClenshaw, BoysBudget::kFp16,                       \
-                               DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFloat, DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFloat,                             \
-                               DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFloat,                             \
-                               DivisionForm::kRefinedReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16, DivisionForm::kExactDivision)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16,                              \
-                               DivisionForm::kPlainReciprocal)
-BOYS_F32_ORDERS_PACKED_UNIFORM(EvalScheme::kHorner, BoysBudget::kFp16,                              \
-                               DivisionForm::kRefinedReciprocal)
-
-#undef BOYS_F32_ORDERS_PACKED_REFERENCE
-#undef BOYS_F32_ORDERS_PACKED_RUNGS
-#undef BOYS_F32_ORDERS_PACKED_RUNG
-#undef BOYS_F32_ORDERS_PACKED_NARROW
-#undef BOYS_F32_ORDERS_PACKED_NARROW_RUNG
-#undef BOYS_F32_ORDERS_PACKED_NARROW_RUNGS
-#undef BOYS_F32_ORDERS_PACKED_UNIFORM
-#undef BOYS_F32_ORDERS_PACKED_UNIFORM_RUNG
-#undef BOYS_F32_ORDERS_PACKED_UNIFORM_RATIONAL_RUNG
+// The single-precision lane's shapes on the same axis - two schemes and two computation
+// budgets, with either route - are instantiated by their call sites on the same terms.
 
 // Every dispatch path is an interval of the argument line and the intervals are ordered, so the
 // classification is monotone in x: a non-decreasing array is already contiguous by path, which is
@@ -4172,9 +3962,9 @@ inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double*
 }
 
 // The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
-// ARGUMENTS at once - the arguments axis, not the orders axis, since a ladder recurs in the order.
-// Arithmetic for arithmetic with the scalar body, so its test is equality and not a bound, and the
-// half-exponential it does not carry the caller forms per argument. Defined in src/boys_simd.cpp.
+// ARGUMENTS at once - the arguments axis, since a ladder recurs in the order. Arithmetic for
+// arithmetic with the scalar body, so its test is equality and not a bound; the half-exponential it
+// does not carry the caller forms per argument. boys_arguments_lanes.hpp owns both tiers' bodies.
 void BoysFarLadderLanes(int nmax,
                         const double* x,
                         const double* halfExp,
@@ -4216,8 +4006,8 @@ constexpr std::size_t kBoysFarLaneWidth = 4;
 /// \param end    one past its last; `end - begin` >= kBoysFarLaneWidth
 /// \param form   the division form the run's steps run, the policy's own
 ///
-/// Defined in src/boys_simd.cpp with the vector tier's flags, and against the certified scalar
-/// lane on a target without them, where BoysAvx2Available() is false and no caller reaches it.
+/// Defined by the arguments lane's own header (boys_arguments_lanes.hpp at the vector tier, its
+/// scalar twin where the flags are absent), which is what keeps the lane free of the library.
 void BoysFarLadderRun(int nmax,
                       const double* x,
                       const std::size_t* index,
@@ -4226,6 +4016,27 @@ void BoysFarLadderRun(int nmax,
                       std::size_t begin,
                       std::size_t end,
                       DivisionForm form) noexcept;
+
+// The lanes the entries below reach, at the tier this unit's own flags name: the region-A packed
+// lane and the far ladder's, whose vector bodies the header holds and whose no-flag bodies it holds
+// beside them. Both are consumer-reachable - the entries call them - so both are defined here
+// rather than in a shipped unit, and a unit without the vector flags parses the scalar twin alone.
+
+// The namespaces close around the includes and reopen after them, which is not a style: a
+// standard header read inside a namespace is a different standard library.
+} // namespace detail
+
+} // namespace boys
+
+#include "boys/boys_arguments_lanes.hpp"
+
+// The orders-axis lanes, on the same terms: the across-orders packed lane (four ORDERS to a
+// register) and the flat grid's one-order fit it and the single-order entry share.
+#include "boys/boys_orders_lanes.hpp"
+
+namespace boys {
+
+namespace detail {
 
 /// The ungrouped kernel: one argument at a time over the run, the path's body per argument.
 ///
@@ -4406,9 +4217,9 @@ void BoysAllNRun(int nmax,
 /// four values of one formula, and the region's formula is the step that produces the next order of
 /// the previous one. Four ARGUMENTS is what a register can hold of it, and that is the arguments
 /// axis's lane: this path reaches it here or not at all. Nothing about the arithmetic changes,
-/// because the body the lane reproduces (boys_simd.cpp, BoysFarLadderLanes) is the body this
-/// predicate selects: at the orders axis the packed body hands an argument past its fits to the
-/// certified scalar orders lane (boys_orders_simd.cpp, BoysAllOrdersPacked), and that lane's arm
+/// because the body the lane reproduces (boys/boys_arguments_lanes.hpp, BoysFarLadderLanes) is the
+/// body this predicate selects: at the orders axis the packed body hands an argument past its fits
+/// to the certified scalar orders lane (boys/boys_orders_lanes.hpp, BoysAllOrdersPacked), and that lane's arm
 /// above its fits is BoysAllNBodyRegionC - one argument at a time, this ladder.
 ///
 /// The join and the axis are that lane's own predicate, ScalarOrders' `aboveFits`: the grid ends at
@@ -4440,21 +4251,20 @@ void BoysAllNRunPerArgument(int nmax,
                             double* out,
                             std::size_t count) noexcept {
     // One register's worth of the far region, held until it fills or the path ends: the arguments,
-    // the half-exponential the body forms per argument, and where each one's column is. The tier and
-    // the lane it answers for are the library's own compiled bodies, so this arm is BOYS_SIMD_X86's:
-    // a caller that instantiates this body answers the far region one argument at a time.
-#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
+    // the half-exponential the body forms per argument, and where each one's column is. The arm is
+    // the vector tier's, and the tier is this unit's own flags: a unit compiled without them answers
+    // the far region one argument at a time, which is the body the lane reproduces.
+#if BOYS_ISA_AVX2_FMA
     double farX[kBoysFarLaneWidth];
     double farHalfExp[kBoysFarLaneWidth];
     double* farCol[kBoysFarLaneWidth];
     std::size_t held = 0;
-    const bool vectorTier = Avx2Available();
 #endif
 
     for (std::size_t i = 0; i < count; ++i)
     {
-#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
-        if (FarLadderIsThePerArgumentBody<Policy>(x[i], vectorTier))
+#if BOYS_ISA_AVX2_FMA
+        if (FarLadderIsThePerArgumentBody<Policy>(x[i], true))
         {
             farX[held] = x[i];
             farHalfExp[held] = RegionBHalfExp<RegionBExp::kAccurate>(x[i]);
@@ -4479,7 +4289,7 @@ void BoysAllNRunPerArgument(int nmax,
         }
     }
 
-#if defined(BOYS_SIMD_X86) && BOYS_SIMD_X86
+#if BOYS_ISA_AVX2_FMA
     // What the register did not fill is this path's own, one argument at a time: three arguments
     // are not a lane, and the same body answers them.
     for (std::size_t t = 0; t < held; ++t)
@@ -4609,11 +4419,11 @@ void BoysAllNPartitionedImpl(int nmax,
         return;
     }
 
-    // Unguarded, unlike BoysAllNRunPerArgument: the region-A group here is BoysAllNRunGrouped,
-    // which calls the packed lane BoysRegionASimd, so a unit that instantiates this body reaches
-    // the library already. The tier answers for that lane as well as the far ladder, and a guard
-    // would make a linking caller run different arithmetic.
-    const bool vectorTier = Avx2Available();
+    // The tier is this unit's own flags, not the host's processor: the region-A group here is
+    // BoysAllNRunGrouped, which calls the packed lane BoysRegionASimd, and the lane the unit's flags
+    // select is the one it runs. At the scalar tier the grouped kernel is the extra indirection over
+    // the scalar body and the runs are better served one group at a time.
+    constexpr bool vectorTier = BOYS_ISA_AVX2_FMA != 0;
     const double tierSplit = kTierThresholds[0];
 
     std::size_t* owned = nullptr;
@@ -4756,8 +4566,8 @@ void BoysAllNSortedPartitionedImpl(int nmax,
         return;
     }
 
-    // Unguarded as in BoysAllNPartitionedImpl, whose reason is stated there.
-    const bool vectorTier = Avx2Available();
+    // The tier is this unit's own flags, as in BoysAllNPartitionedImpl, whose reason is stated there.
+    constexpr bool vectorTier = BOYS_ISA_AVX2_FMA != 0;
     const double tierSplit = kTierThresholds[0];
 
     assert(x[0] >= 0.0);
@@ -5259,6 +5069,96 @@ void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t co
 // The half lanes' rung-argument entries: the fp16 engine's ladder through the
 // store this lane makes, at the policy named, so the two selections meet here as
 // they do on the double lane.
+
+// The packed half lane's own bodies, under the seam that declares the entries: the packed
+// arithmetic is half2.hpp's, one correctly rounded operation at a time, and the entry the front
+// door declares is defined here so that a consumer naming the lane compiles it.
+
+namespace detail {
+
+// Region C's asymptotic ladder in packed correctly rounded half arithmetic: a square root and a
+// divide for the seed, then a packed multiply and divide per order. The roundings are relative,
+// so the error is about one half ULP carried; the running value is scaled by 2^15 to keep the
+// ladder's values normal down to F_n(x) = 2^-29, and the lane has a precondition (x >= kX1).
+
+// The seed (1/2)sqrt(pi/x) is one divide by the square root, so the constant is
+// sqrt(pi)/2 rounded to half once here and exact from then on.
+constexpr F16 kHalfNativeSeedConstant = F16FromDouble(kBoysHalfSqrtPi);
+
+// The per-order scale: the largest power of two binary16 holds.
+constexpr F16 kHalfNativeScaleConstant = F16FromDouble(32768.0); // 2^15
+
+/// F_0(x)..F_nmax(x) for one packed pair of arguments, scaled by 2^15.
+///
+/// The output is 2^15 * F_k(x) half by half; the scale is the same for every
+/// order, so a caller unscales by one exact power-of-two division.
+///
+/// \param nmax Highest order, 0..kMaxBoysOrder.
+/// \param x    Packed pair of arguments, both >= kX1.
+/// \param out  Receives nmax + 1 packed pairs, out[k] = 2^15 * (F_k(x.low), F_k(x.high)).
+inline void HalfNativeLadder(int nmax, Half2 x, Half2* out) noexcept {
+    const Half2 seed = Half2::Broadcast(kHalfNativeSeedConstant);
+    const Half2 scale = Half2::Broadcast(kHalfNativeScaleConstant);
+
+    // Seed: F_0(x) = (1/2) sqrt(pi/x), then the exact per-order scale.
+    Half2 f = Half2Mul(Half2Div(seed, Half2Sqrt(x)), scale);
+    out[0] = f;
+
+    for (int l = 1; l <= nmax; ++l)
+    {
+        // The shipped region-C step, f = (l - 1/2) * f / x, without the exp(-x)/2 term the
+        // scalar ladder carries: in this lane's arithmetic, scaled by 2^15, that term is
+        // 4.21221e-09 at x = kX1 and under half's smallest subnormal (2^-24 = 5.96046e-08)
+        // everywhere the lane serves, so it cannot change a delivered bit here.
+        const F16 factor = F16FromDouble(static_cast<double>(l) - 0.5);
+        f = Half2Div(Half2Mul(Half2::Broadcast(factor), f), x);
+        out[l] = f;
+    }
+}
+
+} // namespace detail
+
+// Defined here rather than in a shipped unit, at the header that declares it: the entry is part
+// of the front door's surface and takes the header's own packed type, so a consumer that names it
+// compiles it. Its contract is the declaration's on boys/boys.hpp.
+inline void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x.Low() >= detail::F16FromDouble(detail::kX1) &&
+           x.High() >= detail::F16FromDouble(detail::kX1));
+    assert(out != nullptr);
+
+    detail::HalfNativeLadder(nmax, x, out);
+}
+
+inline void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    assert(x != nullptr || count == 0);
+    assert(out != nullptr || count == 0);
+
+    for (std::size_t i = 0; i < count; i += 2)
+    {
+        // The pair is the unit of work; a lone trailing argument rides in both
+        // halves of the register and only the low half is written back.
+        const bool paired = i + 1 < count;
+        const Half2 arguments = Half2(x[i], paired ? x[i + 1] : x[i]);
+
+        assert(arguments.Low() >= detail::F16FromDouble(detail::kX1) &&
+               arguments.High() >= detail::F16FromDouble(detail::kX1));
+
+        Half2 values[kMaxBoysOrder + 1];
+        detail::HalfNativeLadder(nmax, arguments, values);
+
+        for (int k = 0; k <= nmax; ++k)
+        {
+            out[static_cast<std::size_t>(k) * count + i] = values[k].Low();
+
+            if (paired)
+            {
+                out[static_cast<std::size_t>(k) * count + i + 1] = values[k].High();
+            }
+        }
+    }
+}
 
 #endif // BoysFp16
 

@@ -585,7 +585,7 @@ using OrdersAxisPolicy =
 
 // The certified scalar single lane the axis's fallback runs: the axis's own policy with the packing
 // axis set to this shape's, the one cell the per-order entry carries (boys_impl.hpp asserts it) - the
-// cell ScalarOrders names when it hands its orders over one at a time (src/boys_orders_simd.cpp).
+// cell ScalarOrders names when it hands its orders over one at a time (boys_orders_lanes.hpp).
 // Every other cell is the axis's, so a rung and a form fall back to their own arithmetic.
 template <boys::EvalScheme kScheme>
 using OrdersAxisSingleLane =

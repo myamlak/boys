@@ -19,8 +19,8 @@ generated and the prose around it is not: this tool refuses to touch a line outs
     python tools/gen_entry_aliases.py             # write the block
     python tools/gen_entry_aliases.py --check     # exit non-zero unless it is what the bodies say
 
-`--options`, `--library`, `--kernel`, `--device` and `--host-library` read a side from
-another file, which is how a moved forwarder is shown to fail as a negative control.
+`--options`, `--library`, `--surface`, `--kernel`, `--device` and `--host-library` read a side
+from another file, which is how a moved forwarder is shown to fail as a negative control.
 
 Exit status: 0 when the block matches the sources; 1 when it does not (and, without
 `--check`, it has been rewritten to match); 2 when a row states no entry, or an enumerator
@@ -35,7 +35,10 @@ import re
 import sys
 
 OPTIONS = pathlib.Path("include/boys/boys_cuda_options.hpp")
+# The option table, and the entries' bodies: the table stays in the translation unit and the bodies
+# are header-defined, so the two sides are read from two files.
 LIBRARY = pathlib.Path("src/boys_cuda.cpp")
+SURFACE = pathlib.Path("include/boys/boys_cuda.hpp")
 KERNEL = pathlib.Path("src/boys_cuda.cu")
 DEVICE = pathlib.Path("include/boys/boys_cuda_device.hpp")
 HOST_LIBRARY = pathlib.Path("src/boys.cpp")
@@ -55,8 +58,8 @@ DOC_HOST = re.compile(r"BoysCuda::(\w+)")
 DOC_DEVICE = re.compile(r"(BoysDevice\w+)")
 
 # A body is read from the head of its own line, so a call inside another body is not mistaken
-# for a definition.
-HOST_HEAD = re.compile(r"^BoysStatus BoysCuda::(\w+)\(")
+# for a definition: the header's definitions carry `inline`, the translation unit's did not.
+HOST_HEAD = re.compile(r"^(?:inline\s+)?BoysStatus BoysCuda::(\w+)\(")
 DEVICE_HEAD = re.compile(r"^(?:__device__\s+)?BoysDeviceStatus\s+(BoysDevice\w+)\s*\(")
 LAUNCHER_HEAD = re.compile(r"^extern \"C\" int (BoysCudaLaunch\w+)\(")
 # A definition of the CPU surface, for the other half of the question.
@@ -251,6 +254,7 @@ def forwarding_host_entries(text: str) -> dict[str, str]:
 def derive(
     options: pathlib.Path,
     library: pathlib.Path,
+    surface: pathlib.Path,
     kernel: pathlib.Path,
     device: pathlib.Path,
     host_library: pathlib.Path,
@@ -258,7 +262,8 @@ def derive(
     """The rows, each resolved to the arithmetic it runs, and the CPU surface's forwarders."""
     text = options.read_text(encoding="utf-8", errors="replace")
     library_text = library.read_text(encoding="utf-8", errors="replace")
-    host = bodies(library_text, HOST_HEAD)
+    surface_text = surface.read_text(encoding="utf-8", errors="replace")
+    host = bodies(surface_text, HOST_HEAD)
     host.pop("InitializeTables", None)
     launchers = bodies(kernel.read_text(encoding="utf-8", errors="replace"), LAUNCHER_HEAD)
     device_bodies = bodies(device.read_text(encoding="utf-8", errors="replace"), DEVICE_HEAD)
@@ -479,6 +484,7 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="verify the block instead of writing it")
     parser.add_argument("--options", type=pathlib.Path, default=OPTIONS)
     parser.add_argument("--library", type=pathlib.Path, default=LIBRARY)
+    parser.add_argument("--surface", type=pathlib.Path, default=SURFACE)
     parser.add_argument("--kernel", type=pathlib.Path, default=KERNEL)
     parser.add_argument("--device", type=pathlib.Path, default=DEVICE)
     parser.add_argument("--host-library", type=pathlib.Path, default=HOST_LIBRARY)
@@ -488,6 +494,7 @@ def main() -> int:
     rows, forwarding = derive(
         arguments.options,
         arguments.library,
+        arguments.surface,
         arguments.kernel,
         arguments.device,
         arguments.host_library,

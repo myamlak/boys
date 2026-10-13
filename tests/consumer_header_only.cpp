@@ -1,14 +1,12 @@
 // Consumer check: are the lane templates' definitions reachable from the public headers alone, with
-// no library on the link line, on the paths that stay off the vector tier? The library pre-
-// instantiates the default policy's entries, so only a policy outside that set proves anything: this
-// target links nothing (CMakeLists.txt asserts it) and names two it does not export.
+// no library on the link line? The library pre-instantiates the default policy's entries, so only
+// a policy outside that set proves anything: this target links nothing (CMakeLists.txt asserts it)
+// and names two it does not export.
 
-// The two policies are off the build's own default rows by construction - the static assertions
-// below hold that, and a build whose rows leave no candidate off fails the build here - sit at the
-// one fit route whose path stays off the vector tier, and name no division form, so each combination
-// named here is one the lane carries and runs the form the build's own seam chose. The division form
-// is the one axis that moves a lane's guaranteed figure, so the figure a rule is judged against is
-// the build's and not the shipped revision's.
+// The two policies are off the build's own default rows by construction (the static assertions
+// below hold that) and name no division form, so each is one the lane carries and runs the build's
+// seam's own form - the one axis that moves a lane's guaranteed figure, judged against the build's
+// and not the revision's.
 
 // Values are judged against the committed 45-digit grid, with the double lane at the policy this
 // file names as the oracle, so a composed bound includes the oracle's own figure.
@@ -32,9 +30,9 @@
 // each name below resolves only if a directory holding that file is on it.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
-                                __has_include("boys_transform.cpp") ||                             \
+                                __has_include("boys_orders_simd.cpp") ||                           \
                                               __has_include("boys_c.cpp") ||                       \
-                                                            __has_include("boys_half_native.cpp")
+                                                            __has_include("boys_probe.cpp")
 #error                                                                                             \
     "this consumer check is compiled with src/ on its include path; it does not prove that a consumer can build against the public headers alone"
 #endif
@@ -311,18 +309,13 @@ constexpr bool OffEveryClassRowThisFileReaches =
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kSingle>> &&
     !std::is_same_v<Policy, boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllOrders>>;
 
-/// The route whose path stays off the vector tier.
+/// The route the candidate policies below are built with, in place of the row's own: the axis fixed
+/// for all four, where the scheme and the granularity are moved per candidate.
 ///
-/// The two fit routes are not interchangeable for this target: FlatSingleOrder's Chebyshev arm is
-/// guarded by the tier query and returns the flat fit, and both of those are the shipped unit's
-/// definitions (boys/boys_impl.hpp: DetectAvx2 and the FlatFitSum instantiations), so a policy at
-/// the Chebyshev route fails this target's link - measured 2026-10-12, at a seam whose rows name
-/// that route. A policy a header-only caller can name is therefore one at the rational-minimax
-/// route, which is what architecture.md's row for this check states: "links nothing while it stays
-/// off the vector tier". That route is a property of the library and not of a table, so it is
-/// named here; the scheme and the granularity below are read from the row and moved only as far as
-/// staying off the rows a build carries requires, because an emitted seam names rows of more than
-/// one route and more than one scheme and a fixed cell lands on another class's row under it.
+/// No link constraint stands behind the name: the flat fit's walk and the tier query are the
+/// headers' own definitions (boys/boys_impl.hpp: FlatSingleOrder, FlatFitSum; boys/isa_tiers.hpp:
+/// DetectAvx2), so a policy at the Chebyshev route links with no library as well - measured
+/// 2026-10-13, at policies built from both class rows.
 constexpr boys::FitRoute kHeaderOnlyRoute = boys::FitRoute::kRationalMinimax;
 
 template <boys::FitGranularity kGranularity>

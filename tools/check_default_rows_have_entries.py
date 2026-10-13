@@ -21,8 +21,9 @@ It checks one direction hard and the other one softly:
     here means the two files were read differently and the reading is suspect.
 
 The third list — whether the default instantiation can be LINKED — cannot be checked by reading
-files, because `extern template` and out-of-line definitions are invisible to a parser. That half
-is `tests/boys_defaults_link_test.cpp`, which calls every default at a multiplier no list holds.
+files. That half is the configure gate in `CMakeLists.txt`
+(`BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL`): a default call must compile and link from
+`boys/boys.hpp` alone, with no archive on the link line.
 
 Exit status is 0 when the lists agree and 1 with a per-class report when they do not.
 """
@@ -38,9 +39,11 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ROWS_FILE = os.path.join(REPO, "include", "boys", "boys_build_defaults.hpp")
 
 # Every public header an entry can be declared in. The device surface declares its own entries
-# and is swept too, so a device row added without an entry is caught the same way.
+# and is swept too, so a device row added without an entry is caught the same way. The host
+# entries are declared in `boys_decl.hpp`, which `boys.hpp` - the calls header - carries, so one
+# of the two is read here rather than both.
 ENTRY_FILES = [
-    os.path.join(REPO, "include", "boys", "boys.hpp"),
+    os.path.join(REPO, "include", "boys", "boys_decl.hpp"),
     os.path.join(REPO, "include", "boys", "kernels.hpp"),
     os.path.join(REPO, "include", "boys", "boys_span.hpp"),
     os.path.join(REPO, "include", "boys", "boys_cuda.hpp"),
@@ -88,7 +91,7 @@ def code(path: str) -> str:
 
     A name is read out of the code and not out of what the code says about itself. This
     library's headers explain the shape of an entry's default in prose, and prose spells
-    the same `DefaultPolicy<Precision::k..., Shape::k...>` an entry does: boys.hpp's own
+    the same `DefaultPolicy<Precision::k..., Shape::k...>` an entry does: boys_decl.hpp's own
     comment on the composed table writes the placeholders `kX` and `kY` in exactly that
     form, and a reader that does not skip comments books a class called (kX, kY) that no
     row could ever carry. Blanking rather than dropping keeps every line number the line

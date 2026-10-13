@@ -1,7 +1,7 @@
 // The defaults command (ctest case boys-defaults, BOYS_BUILD_TESTS): what this build's unnamed
 // calls resolve to, read from the table it carries (boys::detail::DefaultPolicyRow,
-// include/boys/boys.hpp). Holding every class an entry reaches to a row is not this report's:
-// tools/check_default_rows_have_entries.py and tests/boys_defaults_link_test.cpp do that.
+// include/boys/boys_decl.hpp). Holding every class an entry reaches to a row is not this report's:
+// tools/check_default_rows_have_entries.py does that.
 
 #include "boys/boys.hpp"
 

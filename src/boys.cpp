@@ -28,32 +28,18 @@ const char* BuildDefaultsSeamIdentity() noexcept {
 // that includes the front door alone and links the library - tests/consumer_umbrella.cpp and
 // tests/boys_avx2_probe.cpp are both written that way - reaches this copy. The library's own
 // callers read detail::Avx2Available(), which is inline, so the argument path pays no call.
+// The answer is this build's tier AND the machine's, which is what the entry's contract states:
+// the tier is the compiling unit's flag set, and under the one-flag-set contract this unit's
+// answer is the program's.
 bool BoysAvx2Available() noexcept {
-    return detail::Avx2Available();
+    return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
 }
 
-template double BoysSingle<>(int n, double x) noexcept;
-template void BoysAllOrders<>(int nmax, double x, double* out) noexcept;
-template void BoysFixedN<>(
-    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
-template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
-template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-template void BoysAllNAtOrders<>(
-    const int* n, const double* x, double* out, std::size_t count) noexcept;
 template float BoysSingleF32<EvalPolicy<>>(int n, float x) noexcept;
 template void BoysAllOrdersF32<EvalPolicy<>>(
     int nmax, float x, float* out) noexcept;
 template void BoysAllNF32<EvalPolicy<>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
-
-#if BoysFp16
-template F16 BoysSingleF16<>(int n, F16 x) noexcept;
-template void BoysAllOrdersF16<>(int nmax, F16 x, F16* out) noexcept;
-template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
-template void BoysAllOrdersBf16<>(int nmax, Bf16 x, Bf16* out) noexcept;
-#endif // BoysFp16
 
 // The far ladders' asking leg: the arm a host without the fused instruction set reaches, defined
 // here because this unit carries no fused flag, and defined once - the declarations in
@@ -305,11 +291,10 @@ float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
     // runs: an arm naming its own fit family would answer from another partition's tables.
     using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
 
-    // Every route this build does not serve is the default entry outright, the fallback the
-    // double lane's selector takes; the default is read from the row and not pinned to
-    // kChebyshev, because a seam may default this class to either route - measured 2026-10-12 on
-    // an emitted seam, whose float single class names kRationalMinimax - and a pinned arm then
-    // answers the other route's tables for a value outside the enumeration.
+    // Every route this build does not serve is the default entry outright; the fallback is
+    // read from the class row, never pinned to kChebyshev: an emitted seam may default this
+    // class to the other route (measured 2026-10-12, the probe's vote names kRationalMinimax
+    // for the float single class), and a pinned arm answers the wrong tables.
     const bool served = route == FitRoute::kChebyshev || route == FitRoute::kRationalMinimax;
     const FitRoute selected = served ? route : SingleOrderClass::kRoute;
 

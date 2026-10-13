@@ -47,10 +47,11 @@ import pathlib
 import re
 import sys
 
-# The one header that declares the host entries this probe measures, and the sources a probe
+# The headers that declare the host entries this probe measures - the declarations in
+# `boys_decl.hpp` and the policy-taking spellings in `kernels.hpp` - and the sources a probe
 # measures from. The CUDA surface is a separate build and a separate probe
 # (`boys-device-probe`), so it is not read here; a host entry is what this check is about.
-DECLARING_HEADERS = ["include/boys/boys.hpp", "include/boys/kernels.hpp"]
+DECLARING_HEADERS = ["include/boys/boys_decl.hpp", "include/boys/kernels.hpp"]
 PROBE_SOURCES = ["src/boys_probe.cpp"]
 
 # What makes a declaration an entry: it returns `void` and writes its results, or it returns

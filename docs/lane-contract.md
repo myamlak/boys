@@ -771,11 +771,11 @@ and by nothing else. So the route's float half is a report about an arithmetic t
 not a choice a caller can reach — the third gap, and the one that is a work item rather than a
 property of the axis.
 
-The across-orders lane (`src/boys_orders_simd.cpp`) is a packed lane the route reaches: its steps
-read the selection the build made, so its values move between the routes — **5,067 of 32,868** values
-of the across-orders double lane and **3,723 of 32,868** of the float lane differ across the two
-builds. At the fused route the lane's values are unchanged from before the route reached it: the same
-hash over all 38,068 rows of the dump.
+The across-orders lane (`include/boys/boys_orders_lanes.hpp`) is a packed lane the route reaches: its
+steps read the selection the build made, so its values move between the routes — **5,067 of 32,868**
+values of the across-orders double lane and **3,723 of 32,868** of the float lane differ across the
+two builds. At the fused route the lane's values are unchanged from before the route reached it: the
+same hash over all 38,068 rows of the dump.
 
 **The separate route does not remove every call, and the remainder is deliberate.** The transform
 lane's own product contains no fused step at all — its splits are exact by construction and its
@@ -1152,11 +1152,12 @@ packed value is the per-order value — and it is asserted as bit-identity rathe
 on the same reasoning the double lane's is.
 
 **The route is not what separates the two lanes: both run the one the build selected.** The two
-packed backends are templates over the route, defaulted to that selection (`src/boys_backend_simd.hpp`,
-`Avx2Fp64` and `Avx2Fp32`), and the across-orders lane's own steps read the same selection, so a build
-with `BOYS_MULADD_SEPARATE=ON` hands the packed lane the two-rounding form on the same terms as the
-scalar lane. The packed backends spell that multiply-add themselves from the selection rather than
-leaving the step to the compiler, so the arithmetic is the one the build named. The two lanes are
+packed backends are templates over the route, defaulted to that selection
+(`include/boys/boys_backend_simd.hpp`, `Avx2Fp64` and `Avx2Fp32`), and the across-orders lane's own
+steps read the same selection, so a build with `BOYS_MULADD_SEPARATE=ON` hands the packed lane the
+two-rounding form on the same terms as the scalar lane. The packed backends spell that multiply-add
+themselves from the selection rather than leaving the step to the compiler, so the arithmetic is the
+one the build named. The two lanes are
 therefore one arithmetic on both builds, and on either build the packed lane's values are the same
 bits as the per-order lane's: **0 of 879,351** swept values differ and the worst parting is
 0.000e+00, on the two-rounding build as on the fused one.
@@ -1209,8 +1210,9 @@ the entry's own loop and the identical call beside it — two inlined copies of 
 can return adjacent values. Measured over region B in that spelling, the entry's fallback and the
 per-order lane
 parted by at most **4.04e-09** at the worst (`x = 12.8164, n = 32`, from 6.4190026e-08 against
-6.8225951e-08), which is 2.7% of the lane's bar; in the contract sweep, where the only region-B
-argument is the first one, 15 of the 33 orders at `x = 11.8998` differed and no other argument did.
+6.8225951e-08), which is 2.7% of the lane's published `1.5e-7` bar; in the contract sweep, where the
+only region-B argument is the first one, 15 of the 33 orders at `x = 11.8998` differed and no other
+argument did.
 Region C, which reads no coefficient and names no multiply-add, differed in nothing, and order 0 at
 every given argument differed in nothing either — it is the region-B seed and takes no recurrence
 step. The step is spelled

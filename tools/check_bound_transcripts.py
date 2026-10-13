@@ -4,16 +4,16 @@
 `tests/boys_accuracy_gate.cpp` judges every lane and region of this library against a bound, and
 those bounds are constants in the gate: `kBoundSingleA`, `kBoundSingleBand`, `kBoundSingleB`,
 `kBoundSingleC`, `kBoundDoubleBatch`, `kBoundFloat`, `kNativeUlpBound`. The block they are declared
-in records where they come from - a document of the tree and `include/boys/boys.hpp` - and until
-this script nothing read the two against each other. A figure edited in a document and not in the
+in records where they come from - a document of the tree and `include/boys/boys_decl.hpp` - and
+until this script nothing read the two against each other. A figure edited in a document and not in
 gate leaves the gate certifying its own transcription: the run is green, the claim printed beside it
 is the document's, and the number under it is the gate's.
 
 This script reads the figures off both sides and compares them. The sides are:
 
   * the gate's constants, read from `tests/boys_accuracy_gate.cpp`;
-  * `include/boys/boys.hpp`, whose preamble carries the contract table - one cell per lane and per
-    region, which is the finest statement of these figures in the tree;
+  * `include/boys/boys_decl.hpp`, whose preamble carries the contract table - one cell per lane and
+    per region, which is the finest statement of these figures in the tree;
   * `docs/specification.md`, two tables of it: the contract table under "Accuracy contract", which
     resolves by region in its prose, and the table of the gate's own printed run, whose `Bound
     claimed` column is the gate's row identity and its bound;
@@ -80,6 +80,12 @@ check exists for is exactly a new transcription nobody tied. Where the reader ca
 construct at all - a table whose header has moved, a cell with no figure in it, a lane row whose
 members are not five - it names the construct and exits non-zero. Zero figures read from the
 documents is an error: a check that can pass by reading nothing is not a check.
+
+WHAT `--header` NAMES. The declarations, which the split of the front door put in
+`include/boys/boys_decl.hpp`: that is where the contract table in the file preamble and the
+`LaneContractInfo` declaration are read from. `include/boys/boys.hpp` is the calls header over it
+and carries neither - it is the declarations plus the kernel that defines the entries, and the
+figures this check holds are stated once.
 
 What this check does not read, and why:
 
@@ -148,7 +154,7 @@ from dataclasses import dataclass
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
-HEADER = REPO / "include" / "boys" / "boys.hpp"
+HEADER = REPO / "include" / "boys" / "boys_decl.hpp"
 # The specification page: the document that states these figures, and the file
 # this check reads two tables out of - the contract table under "Accuracy
 # contract", and the table of the gate's own printed run. It is the README that
@@ -1905,7 +1911,7 @@ def main() -> int:
     print(
         f"\nverdict: clean - {len(TIES)} transcribed constants, {len(LIBRARY_TIES)} library rows "
         f"and the {len(run.rows)} rows of the specification's printed run agree with the figures "
-        f"{documents} and include/boys/boys.hpp state, over the ties above. {read} figures were read "
+        f"{documents} and {display(HEADER)} state, over the ties above. {read} figures were read "
         f"from the documents' tables, {len(gate)} numeric-literal constants from the gate, "
         f"{len(lanes)} lane rows from the library, and {len(recorded.rows)} printed rows from the "
         f"gate's recorded run at {display(run_path)} (version {ascii_safe(recorded.version)})",

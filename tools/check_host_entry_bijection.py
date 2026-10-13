@@ -22,9 +22,12 @@ written in the file, so a one-order shape has a packing axis of one value by con
 than by a refusal in the table.
 
 Names are read from the headers rather than from a second list, so the check cannot agree with
-itself while disagreeing with the code. Two things are skipped on the way, both because they spell
-an entry's name without being an entry: the `extern template` instantiations in boys.hpp's `\cond`
-block - instantiations at the defaults, not declarations - and every line inside that block.
+itself while disagreeing with the code. The declarations are read from `boys_decl.hpp` where the
+tree keeps them split out of the front door, and from `boys.hpp` where it does not, so the reader
+follows the file they live in rather than a fixed name. Two things are skipped on the way, both
+because they spell a name without declaring one: a line that starts `extern template`, which
+instantiates at the defaults, and every line inside a `\cond` block, where the default-policy
+table's row macros are written as call-shaped lines that place no entry.
 
 Usage:
   python3 tools/check_host_entry_bijection.py --check
@@ -41,8 +44,11 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 TABLE = pathlib.Path(__file__).resolve().parent / "host-shapes.json"
+# The front door's declarations, read where the tree keeps them: the split file where it has one,
+# the front door itself where it does not.
+DECLARATIONS = REPO / "include" / "boys" / "boys_decl.hpp"
 SOURCES = (
-    REPO / "include" / "boys" / "boys.hpp",
+    DECLARATIONS if DECLARATIONS.is_file() else REPO / "include" / "boys" / "boys.hpp",
     REPO / "include" / "boys" / "boys_span.hpp",
     REPO / "include" / "boys" / "boys_c.h",
 )

@@ -2,7 +2,7 @@
 r"""Check that every class the library's own enumerations imply has an entry.
 
 The host surface is a cross of two enumerations the library declares: `Precision` and `Shape`, both
-in `include/boys/boys.hpp`. A class is one cell of that cross, and a class with no entry is a
+in `include/boys/boys_decl.hpp`. A class is one cell of that cross, and a class with no entry is a
 combination a caller can name and the library cannot serve.
 
 `tools/check_host_entry_bijection.py` reconciles the names a header declares with the shapes the
@@ -34,11 +34,12 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-# The front door carries the classifications' keys - the two enumerations - and the kernel header
+# The declarations carry the classifications' keys - the two enumerations - and the kernel header
 # carries the entries' own default policies, which are what names a class here. Both are read: an
 # entry declared without the key is an entry this check cannot place, and one declared in the
-# other file alone is not a class served.
-HEADER = REPO / "include" / "boys" / "boys.hpp"
+# other file alone is not a class served. `boys/boys.hpp` is the calls header over the
+# declarations, so a class is named here from the same text it was named from before the split.
+HEADER = REPO / "include" / "boys" / "boys_decl.hpp"
 ENTRY_HEADER = REPO / "include" / "boys" / "kernels.hpp"
 TABLE = pathlib.Path(__file__).resolve().parent / "host-shapes.json"
 

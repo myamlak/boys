@@ -31,6 +31,7 @@
 #include "boys/f16.hpp"
 
 #include <bit>
+#include <cmath>
 #include <cstdint>
 
 namespace boys {
@@ -39,14 +40,16 @@ namespace detail {
 
 /// The double square root the packed entry below is computed through.
 ///
-/// It is a function rather than a call into `<cmath>` because this header is on the front
-/// door's include path (`boys/boys.hpp` declares the packed entry, so it needs `Half2`), and
-/// `<cmath>` is by itself more of the front door's compile time than everything else in this
-/// header. The arithmetic is the same double square root either way.
+/// The front door declares the packed entry (`boys/boys.hpp`: BoysAllOrdersHalf2,
+/// BoysAllNF16Native), so its bodies live beside the type they are written in rather than in a
+/// shipped unit, and a consumer that names the lane compiles them. The arithmetic is the same
+/// double square root either way.
 ///
 /// \param value The value whose square root is taken.
 /// \returns The double square root of \p value, as \c std::sqrt returns it.
-double HalfSqrt(double value) noexcept;
+inline double HalfSqrt(double value) noexcept {
+    return std::sqrt(value);
+}
 
 /// The smallest magnitude that rounds to Inf rather than to the half maximum:
 /// the round-to-nearest-even midpoint between 65504 and 65536.

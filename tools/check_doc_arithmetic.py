@@ -1368,12 +1368,36 @@ def check_multiplier(doc):
 # Check 3 -- one quantity, two values
 # --------------------------------------------------------------------------
 
-def check_agreement(docs):
-    """The same fraction for the same named parameter, printed two ways.
+def claim_kind(sent, start, end):
+    """Which quantity a percentage states, so two kinds are never read as one.
 
-    Only percentage and fraction claims are grouped: two different arguments
-    legitimately carry two different bounds, and grouping them by their nearest
-    noun would drown the check in those.
+    A margin derives as 100 * (1 - r) and a share as 100 * n / d; grouping a
+    margin with a share would report a true figure as a false one, the rule
+    SHARE_RE's comment already states. The precedence mirrors check 1's:
+    share, margin, named bound, spread, occupancy.
+    """
+    if SHARE_RE.search(sent.slice(start - 90, start)):
+        return "share"
+    tail = sent.slice(end, end + 60)
+    if RATIO_TO_BOUND_RE.search(tail):
+        return "margin"
+    if NAMED_BOUND_RE.search(tail):
+        return "bound-share"
+    if SPREAD_RE.search(sent.text):
+        return "spread"
+    if OCCUPANCY_RE.search(tail) or OCCUPANCY_RE.search(
+            sent.slice(start - 60, end + 40)):
+        return "occupancy"
+    return "plain"
+
+
+def check_agreement(docs):
+    """The same fraction for the same named parameter and kind, printed two ways.
+
+    Only percentage and fraction claims are grouped, and only within one kind
+    (claim_kind): two different arguments legitimately carry two different
+    bounds, and a margin and a share are different quantities, so grouping by
+    the nearest noun alone would drown the check in both.
     """
     groups = {}
     for doc in docs:
@@ -1405,10 +1429,11 @@ def check_agreement(docs):
                 else:
                     key = min(keys, key=lambda k: abs(sent.text.find(k)
                                                       - (num.end - sent.start)))
-                groups.setdefault(key, []).append(
+                kind = claim_kind(sent, num.start, num.end)
+                groups.setdefault((key, kind), []).append(
                     (value, doc.path, line_of(doc, num.start), sent.text))
     findings = []
-    for key, rows in sorted(groups.items()):
+    for (key, kind), rows in sorted(groups.items()):
         values = sorted({round(r[0], 4) for r in rows})
         if len(values) < 2 or values[-1] / values[0] - 1.0 <= TOL_PLAIN:
             continue
@@ -1417,7 +1442,7 @@ def check_agreement(docs):
         finding = Finding("agreement", "mismatch", low[1], low[2],
                           f"{values[0]:g}% vs {values[-1]:g}%", low[3])
         finding.arithmetic = (
-            f"key {key}: {values[0]:g} per cent at {low[1]}:{low[2]}, "
+            f"key {key} ({kind}): {values[0]:g} per cent at {low[1]}:{low[2]}, "
             f"{values[-1]:g} per cent at {high[1]}:{high[2]}")
         finding.detail = (
             "one quantity, two printed values for the same key. Neither site can "

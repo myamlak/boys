@@ -4,11 +4,11 @@ cmake_minimum_required(VERSION 3.25)
 #
 # Layout: public headers under include/boys/, sources under src/,
 # tests under tests/ (gtest, vendored), benchmark drivers under
-# benchmarks/, the regeneration script under tools/. The templated entries'
-# kernel ships in the headers, so a consumer instantiates whichever policy it
-# names; the library itself exports the default instantiations (extern-template
-# architecture, see
-# include/boys/boys.hpp and src/boys.cpp). The CUDA lane is an optional second
+# benchmarks/, the regeneration script under tools/. The entries' kernels ship
+# in the headers, the default entries included: a consumer instantiates
+# whichever policy it names, and a consumer that links no archive still compiles
+# and links a call that names no policy (see include/boys/boys.hpp and
+# include/boys/kernels.hpp). The CUDA lane is an optional second
 # target that needs the CUDA toolkit (device pins are a documented local
 # gate — CI has no GPU leg and never builds it). No PCH in this tree.
 #
@@ -96,15 +96,13 @@ function(boys_strict_warnings target)
     set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS ${target})
 endfunction()
 
-# The header-only consumer check proves that the entries' template definitions
-# are reachable from the public headers for a policy the library does not
-# pre-instantiate, and it proves it by NOT linking the library: with a library on
-# its link line it would still compile, still run, and prove nothing. The reach it
-# proves is the per-argument path's - the vector tier's kernels are compiled into
-# the library with the tier's own flags, so a consumer that does not link the
-# library does not reach them (boys/boys.hpp, BoysAvx2Available). Assert the
-# absence here, so a later edit that links it fails the configure on every leg
-# instead of quietly retiring the check.
+# The header-only consumer check proves that the entries' definitions are
+# reachable from the public headers alone, at either tier, and it proves it by
+# NOT linking the library: with a library on its link line it would still
+# compile, still run, and prove nothing. What it proves is the header-only
+# contract itself - a call site compiles the body it calls, whatever its flags.
+# Assert the absence here, so a later edit that links it fails the configure on
+# every leg instead of quietly retiring the check.
 function(boys_assert_no_linked_library target)
     get_target_property(linked ${target} LINK_LIBRARIES)
     if (linked)
@@ -160,11 +158,9 @@ add_library(boys
     src/boys.cpp
     src/boys_c.cpp
     src/boys_defaults.cpp
-    src/boys_half_native.cpp
     src/boys_orders_simd.cpp
     src/boys_probe.cpp
-    src/boys_simd.cpp
-    src/boys_transform.cpp)
+    src/boys_simd.cpp)
 add_library(boys::boys ALIAS boys)
 # Two spellings of one directory: the source tree's absolute path for a consumer
 # that adds this tree, and `include` relative to the install prefix for the
@@ -299,9 +295,9 @@ if (BOYS_BUILD_DEFAULTS)
     file(SHA256 "${BOYS_BUILD_DEFAULTS_FILE}" BOYS_BUILD_DEFAULTS_SEAM_SHA256)
     # The same digest again as an identifier, because the front door names the namespace its
     # default entries are compiled into from the seam, and a namespace is named by a token
-    # rather than by a string. A translation unit compiled against one seam and linked against
-    # a library built with another therefore fails to link; the string above is what it reports
-    # once it does (`include/boys/version.hpp`, BuildDefaultsSeamIdentity()).
+    # rather than by a string: two translation units that read two seams then define two
+    # different entries rather than one entry with two bodies. The string above is what a build
+    # reports as the seam it read (`include/boys/version.hpp`, BuildDefaultsSeamIdentity()).
     set(BOYS_BUILD_DEFAULTS_SEAM_IDENT "seam_${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
     target_compile_definitions(boys PUBLIC
         BOYS_BUILD_DEFAULTS_REPLACED=1
@@ -475,63 +471,55 @@ check_cxx_source_compiles("
 int main() { return 0; }
 " BOYS_ARCH_X86_64)
 
+option(BOYS_ISA_AVX2
+    "compile the library - and, through the target, every consumer that links it - at the \
+AVX2+FMA+F16C tier; OFF builds the scalar tier across the whole tree"
+    ON)
+
 if (BOYS_ARCH_X86_64)
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=1)
 
-    # The flag set these TUs carry is two things at once, and only the first is
-    # why it is here. It lets the AVX2/FMA/F16C intrinsics compile - and, on
+    # The instruction-set tier is a property of the PROGRAM, not of a file: the
+    # entries are the caller's to compile now, and two translation units at two
+    # tiers cannot share one definition of them - the guard in
+    # include/boys/isa_tiers.hpp aborts such a program at startup rather than
+    # letting the linker merge one body silently. So the tier is set on the
+    # target and propagated PUBLIC, and a consumer that links `boys` inherits
+    # the one flag set this build was measured under; a consumer that needs the
+    # portable scalar tier configures -DBOYS_ISA_AVX2=OFF.
+    #
+    # The flag set is two things at once, and the second is why the contraction
+    # pin rides beside it. It lets the AVX2/FMA/F16C intrinsics compile - and, on
     # GCC and Clang, -mfma is also a licence to fuse a bare `a * b + c` into one
-    # rounding, which the rest of the build's flags do not give it.
-    #
-    # That licence is not this flag set's to spend. Whether a bare product-plus-
-    # add rounds once or twice is a property of the BUILD here: it was measured
-    # once, at the build's own flags, further up this file, and published as
-    # BOYS_SCALAR_CONTRACTS. A TU that carries the intrinsics' flags answers the
-    # same question a second time, and answers it faster than the build did - so
-    # the scalar code such a TU also carries (the fallback the packed orders axis
-    # runs outside its own interval, which is a scalar lane instantiated in that
-    # TU and not called out of line) is then a different arithmetic from the
-    # scalar lane a caller reaches, and the two part by a last bit. The
-    # measurement above is what makes that a disagreement rather than a
-    # description: a caller's own instantiation of the scalar lane is compiled at
-    # the build's flags, and the library's fallback is the value it has to
-    # reproduce.
-    #
-    # So the measured answer is pinned onto these TUs rather than inherited by
-    # them, and the arithmetic of everything they carry - vector bodies, whose
-    # FMA is written as an intrinsic and is unmoved by this, and scalar bodies,
-    # which are moved onto the build's answer - is the build's arithmetic.
-    if (MSVC)
-        # AVX2 intrinsics live in the SIMD TU only (F16C comes with /arch:AVX2);
-        # the entry points are runtime-checked via BoysAvx2Available(), which
-        # requires the FMA feature bit because the kernels are FMA chains.
-        #
-        # No contraction flag is added here: MSVC contracts only under /fp:fast,
-        # which is not what the measurement above runs under, so this flag set
-        # already carries the measured answer. /fp:contract is avoided for the
-        # reason the flag set is spelled this way at all - it is not accepted by
-        # every MSVC this library builds on.
-        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
-            COMPILE_OPTIONS "/arch:AVX2")
-    else()
-        # GCC does not imply F16C via -mavx2.
-        set(_boys_simd_flags "-mavx2;-mfma;-mf16c")
-        if (DEFINED BOYS_SCALAR_CONTRACTS)
-            if (BOYS_SCALAR_CONTRACTS)
-                list(APPEND _boys_simd_flags "-ffp-contract=fast")
-            else()
-                list(APPEND _boys_simd_flags "-ffp-contract=off")
+    # rounding, which the rest of the build's flags do not give it. That licence
+    # is not this flag set's to spend: measured on the two-build differential, a
+    # vector-tier unit built with the compiler's default contraction returns a
+    # last-bit-different value from the certified lane (29 rows gcc, 23 clang),
+    # while the same build with the pin returns the certified bits exactly
+    # (466 of 466 identical). A consumer that re-spells the flags itself, header
+    # only, owns that same pairing - docs/build-facts.md states the profile the
+    # figures belong to.
+    if (BOYS_ISA_AVX2)
+        if (MSVC)
+            # AVX2 intrinsics come with /arch:AVX2 (F16C included); no
+            # contraction flag is added because MSVC contracts only under
+            # /fp:fast, which is not what the measurement above runs under.
+            target_compile_options(boys PUBLIC /arch:AVX2)
+        else()
+            # GCC does not imply F16C via -mavx2.
+            target_compile_options(boys PUBLIC -mavx2 -mfma -mf16c)
+            if (DEFINED BOYS_SCALAR_CONTRACTS)
+                if (BOYS_SCALAR_CONTRACTS)
+                    target_compile_options(boys PUBLIC -ffp-contract=fast)
+                else()
+                    target_compile_options(boys PUBLIC -ffp-contract=off)
+                endif()
             endif()
         endif()
-        # Nothing added to the flag set on a cross-compiling configure, where no
-        # answer was measured: the set is then the intrinsics' again and the
-        # contract is the one the build states for every other translation unit,
-        # which a cross configure states as well - it is a flag and not a
-        # measurement, and the measurement is the one thing a cross configure
-        # cannot make.
-        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
-            COMPILE_OPTIONS "${_boys_simd_flags}")
-        unset(_boys_simd_flags)
+    else()
+        message(STATUS "boys: BOYS_ISA_AVX2=OFF - the whole tree compiles the "
+            "scalar tier, and the vector-tier-only test and benchmark targets "
+            "do not apply to it")
     endif()
 else()
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=0)
@@ -669,12 +657,7 @@ if (BOYS_BUILD_TESTS)
         # about, and every member of the device option space, held to the reason
         # its own field documents. The device arm of this file is compiled in by
         # the CUDA lane's target below; this is the host arm.
-        tests/boys_refusal_reason_test.cpp
-        # The defaults a consumer reaches by naming nothing, instantiated and linked.
-        # A default naming a combination the library cannot serve for every caller is
-        # invisible in the table and breaks every call site that names nothing, so it
-        # is caught here rather than by a broken build after a push.
-        tests/boys_defaults_link_test.cpp)
+        tests/boys_refusal_reason_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)
@@ -970,9 +953,9 @@ int main() {
     #     entry states, with the committed 45-digit grid as the reference.
     #
     #   boys-consumer-header-only  proves the definitions really are reachable
-    #     from the headers on the paths that stay off the vector tier: it links
-    #     NOTHING. Its meaning is the empty link line, so the target's link
-    #     libraries are asserted empty below rather than trusted.
+    #     from the headers alone, at either tier: it links NOTHING. Its meaning
+    #     is the empty link line, so the target's link libraries are asserted
+    #     empty below rather than trusted.
     #
     #   boys-consumer-defaults  is the shortcut's own check: the per-precision
     #     default each entry takes when the call site names no policy, written
@@ -1044,29 +1027,34 @@ int main() {
         BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
     boys_strict_warnings(boys-consumer-option-space)
 
-    # --- What an unnamed call resolves to is the library's ----------------------
+    # --- What an unnamed call resolves to, and who compiles it ------------------
     #
-    # A call site that names no policy links an entry the library compiled, so what a translation
-    # unit's own optimization level, target features and contraction setting do to the arithmetic
-    # stops at the header it reads. Three properties hold that up, and each is measured here
-    # rather than stated:
+    # A call site that names no policy compiles the entry where it is written: the default entries
+    # are inline in the headers, so a consumer that links no archive still compiles and links its
+    # call, and the consumer's own optimization level, target features and contraction setting are
+    # the consumer's to choose. An earlier architecture kept the entries out of line and the
+    # policy spellings out of the front door, and the owner ruled it out - the consumer compiles,
+    # and their flags are their choice - so the front door now reaches the kernel definitions and
+    # the gate below measures the new contract rather than stating it:
     #
-    #  1. A call that NAMES a policy compiles from boys/kernels.hpp and from no other header of
-    #     this library. Measured by compiling the call from the front door alone and requiring it
-    #     not to build: a declaration left in the front door would compile and fail at LINK, and
-    #     a promise the linker keeps is not the property. The control beside it compiles the same
-    #     call with the kernel header, so a probe that failed for its own reasons - a typo, a
-    #     missing include path - is caught rather than read as a refusal.
+    #  1. The front door alone carries a default call through compile AND link, with no archive on
+    #     the link line. That is the header-only consumer's first requirement, and it takes the
+    #     link step to measure: a header that declares an entry without defining it compiles, and
+    #     the failure arrives afterwards, where this probe looks for it.
     #
-    #  2. The entries belong to the seam the library was built with: the front door defines them
-    #     in a namespace named from the seam's digest, so a translation unit compiled against
-    #     another seam does not link against this library. Measured by linking one.
+    #  2. A call that NAMES a policy compiles from boys/kernels.hpp. That is the ambitious
+    #     consumer's requirement, and the control for the first probe: a probe that failed for its
+    #     own reasons - a typo, a missing include path, a standard the compiler was never handed -
+    #     fails here too, so a refusal is read from the pair rather than from one measurement.
     #
-    #  3. The entries' values do not move with the caller's flags. Measured by building one
-    #     program four ways and comparing the digests they print.
+    # Two statements the old comment made here are not made again, because the ruling moved their
+    # premise: the entries are no longer values the library froze under its own flags, and the
+    # seam no longer decides what links - an inline entry is satisfied by the translation unit
+    # that reads it. The two registrations below are re-scoped to that contract: the flag check
+    # pins one digest across the four profiles, the seam check each probe's own seam and rows.
     if (BOYS_BUILD_TESTS)
-        unset(BOYS_FRONT_DOOR_HOLDS_A_POLICY CACHE)
-        unset(BOYS_KERNELS_HEADER_COMPILES_THE_CALL CACHE)
+        unset(BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL CACHE)
+        unset(BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL CACHE)
         set(_boys_gate_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
         set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
         set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -1080,29 +1068,50 @@ int main() {
 #include <boys/boys.hpp>
 int main() {
     double out[33] = {};
-    return boys::BoysSingle<boys::EvalPolicy<>>(0, 1.0) == 0.0 && out[0] == 0.0;
+    boys::BoysAllOrders(0, 1.0, out);
+    return out[0] == 0.0;
 }
-" BOYS_FRONT_DOOR_HOLDS_A_POLICY)
+" BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
 
         set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
         check_cxx_source_compiles("
 #include <boys/kernels.hpp>
 int main() {
     double out[33] = {};
-    return boys::BoysSingle<boys::EvalPolicy<>>(0, 1.0) == 0.0 && out[0] == 0.0;
+    boys::BoysAllOrders<boys::EvalPolicy<>>(0, 1.0, out);
+    return out[0] == 0.0;
 }
-" BOYS_KERNELS_HEADER_COMPILES_THE_CALL)
+" BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
 
-        if (BOYS_FRONT_DOOR_HOLDS_A_POLICY OR NOT BOYS_KERNELS_HEADER_COMPILES_THE_CALL)
-            message(FATAL_ERROR
-                "boys: the front door must not compile a call that names a policy, and the kernel "
-                "header must. Compiling from boys/boys.hpp alone returned "
-                "${BOYS_FRONT_DOOR_HOLDS_A_POLICY}, compiling the same call from boys/kernels.hpp "
-                "returned ${BOYS_KERNELS_HEADER_COMPILES_THE_CALL}: the first must be false and "
-                "the second true, so that naming a policy is refused where it is written.")
+        # A failed check reads as the empty string and a passed one as 1, so the two findings are
+        # spelled as words before the message: a failure a reader has to decode from a blank is a
+        # failure reported badly.
+        if(BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
+            set(_boys_front_door "true")
+        else()
+            set(_boys_front_door "false")
         endif()
-        message(STATUS "boys: a call naming a policy compiles from boys/kernels.hpp and not from "
-            "the front door, measured by compiling it both ways")
+        if(BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+            set(_boys_kernels "true")
+        else()
+            set(_boys_kernels "false")
+        endif()
+        if(NOT BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
+                OR NOT BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+            message(FATAL_ERROR
+                "boys: a consumer that includes only boys/boys.hpp must compile AND link a "
+                "default call with no archive, and a consumer that includes boys/kernels.hpp "
+                "must compile a call that names a policy. Building boys::BoysAllOrders(0, 1.0, "
+                "out) from boys/boys.hpp alone returned ${_boys_front_door}; building the "
+                "named-policy call from boys/kernels.hpp returned ${_boys_kernels}. Both must be "
+                "true: the default entries are the consumer's to instantiate, so nothing a "
+                "consumer calls may be left for the archive to define.")
+        endif()
+        unset(_boys_front_door)
+        unset(_boys_kernels)
+        message(STATUS "boys: a default call compiles and links from boys/boys.hpp alone, with no "
+            "archive on the link line, and a call naming a policy compiles from boys/kernels.hpp, "
+            "measured by building both")
 
         unset(CMAKE_REQUIRED_FLAGS)
         unset(CMAKE_REQUIRED_INCLUDES)
@@ -1111,16 +1120,19 @@ int main() {
 
         if (MSVC)
             message(STATUS "boys: the flag-independence check is not built here — its variants "
-                "are -O2, -O3 -march=native with each contraction setting, and -O2 -mavx2 -mfma, "
-                "and none of them is a spell this compiler takes. The property is the library's "
-                "on either host; what is unmeasured on this one is the fourth reading of it.")
+                "are -O2, -O3, -O3 -march=native with contraction off, and -O2 -mavx2 -mfma "
+                "-mf16c, and none of them is a spell this compiler takes. The entries are the "
+                "caller's to compile under the ruling, and the four readings are one arithmetic "
+                "source seen through four sets of flags; the check's premise is stated at its "
+                "registration below.")
         else()
             find_package(Python3 COMPONENTS Interpreter QUIET)
-            set(_boys_flag_variants o2 fast nofast)
+            set(_boys_flag_variants o2 o3 native)
             if (BOYS_ARCH_X86_64)
-                # The fourth reading is the SIMD flag set, and -mavx2 -mfma are x86 spells: a
-                # non-x86 host has no such variant to build rather than a broken one to skip.
-                # The checker compares whatever it is given, so three readings are a check.
+                # The fourth reading is the SIMD flag set, and -mavx2 -mfma -mf16c are x86
+                # spells: a non-x86 host has no such variant to build rather than a broken one
+                # to skip. The checker compares whatever it is given, so three readings are a
+                # check.
                 list(APPEND _boys_flag_variants avx2)
             endif()
             set(_boys_flag_programs "")
@@ -1129,32 +1141,44 @@ int main() {
                     tests/boys_flag_independence.cpp)
                 target_link_libraries(boys-flag-independence-${variant} PRIVATE boys)
                 boys_strict_warnings(boys-flag-independence-${variant})
+                # The entries are the caller's to compile, so the four variants differ only in
+                # what the caller chose and never in contraction: every one carries the
+                # build's own -ffp-contract=off (inherited from the target's PUBLIC option, and
+                # spelled again where a level is named). A variant that varied contraction
+                # would read a different arithmetic and stop being a reading of this check.
                 if (variant STREQUAL "o2")
                     # Stated last on the command line, so it replaces the build type's own level
                     # rather than joining it: this variant is the one a caller gets from -O2.
                     set(_boys_variant_flags -O2)
-                elseif (variant STREQUAL "fast")
-                    set(_boys_variant_flags -O3 -march=native -ffp-contract=fast)
-                elseif (variant STREQUAL "nofast")
+                elseif (variant STREQUAL "o3")
+                    # The plain optimizer level a caller gets from -O3, so the two levels read
+                    # the same header arithmetic they will compile into their own unit.
+                    set(_boys_variant_flags -O3)
+                elseif (variant STREQUAL "native")
                     set(_boys_variant_flags -O3 -march=native -ffp-contract=off)
                 else()
-                    set(_boys_variant_flags -O2 -mavx2 -mfma)
+                    set(_boys_variant_flags -O2 -mavx2 -mfma -mf16c)
                 endif()
-                # The two -march=native variants can trip a clang diagnostic about the HOST
-                # CPU's own feature set - measured 2026-10-11 on CI's ubuntu-24.04 runner,
-                # "invalid feature combination: +avx10.1-256; will be promoted to
-                # avx10.1-512", an error under -Werror. What that says is a property of the
-                # runner's processor and of clang's feature table, never of this translation
-                # unit, which is what the variant exists to read; the suppression is scoped to
-                # the two native variants for that reason.
-                if (CMAKE_CXX_COMPILER_ID MATCHES "Clang"
-                        AND (variant STREQUAL "fast" OR variant STREQUAL "nofast"))
+                # The -march=native variant can trip a clang diagnostic about the HOST CPU's own
+                # feature set - measured 2026-10-11 on CI's ubuntu-24.04 runner, "invalid
+                # feature combination: +avx10.1-256; will be promoted to avx10.1-512", an error
+                # under -Werror. What that says is a property of the runner's processor and of
+                # clang's feature table, never of this translation unit, which is what the
+                # variant exists to read; the suppression is scoped to that variant for that
+                # reason.
+                if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND variant STREQUAL "native")
                     list(APPEND _boys_variant_flags -Wno-invalid-feature-combination)
                 endif()
                 target_compile_options(boys-flag-independence-${variant}
                     PRIVATE ${_boys_variant_flags})
                 list(APPEND _boys_flag_programs $<TARGET_FILE:boys-flag-independence-${variant}>)
             endforeach()
+            # The reading the four variants are held to: the entries are the caller's to compile,
+            # so the four agree because the arithmetic is one source and the ISA tiers are
+            # documented bit-equal to the scalar twins. A digest that differs across the variants
+            # is a finding to report, never something to weaken the check for; the profile the
+            # certified figures belong to is docs/build-facts.md's business rather than this
+            # check's.
             if (Python3_FOUND)
                 add_test(NAME boys-flag-independence
                     COMMAND ${Python3_EXECUTABLE}
@@ -1166,20 +1190,31 @@ int main() {
                     "not find")
             endif()
 
-            # The seam's half, at build time because it is a LINK: the same call, compiled
-            # against a namespace no library was built with, must not link this one, and the
-            # same call compiled against this build's own seam must. A configure-time probe
-            # cannot ask it - the archive it would link does not exist yet.
+            # The seam's half, at build time because it is a LINK: a translation unit that reads a
+            # seam compiles that seam's rows and says so. The tool compiles and links one probe
+            # twice with NO archive on the link line - the headers alone, which is the contract now
+            # that the default entries are inline - once against the committed table and once
+            # against a replaced one, and each run prints the seam it compiled into, the table it
+            # read and a digest of the default entries' bits over fixed points. What the check pins
+            # is that each probe prints the seam it was built for, that the two digests differ -
+            # the replaced rows moved the values - and that the replaced reading at F_3(1.25) is
+            # the value the replaced table prints. The refusal half the old text stated was a
+            # property of entries the library held: with the entries the caller's to compile, a
+            # translation unit reading another seam satisfies its own call, so that reading is gone
+            # and the reading above is the one this check carries.
+            #
+            # The replacement is the tuned fixture the example-transcript comment below quotes: it
+            # is copied into a directory searched before include/ and read under the defines a
+            # replaced configure carries, so the second probe really reads it. The value it is held
+            # to at F_3(1.25) is the fixture's own move, 0.055476132923077695 against the committed
+            # table's quoted 0.055476132923077584. Both seams are the tree's own files, so the
+            # reading is the same one on every leg; a build configured with BOYS_BUILD_DEFAULTS
+            # replaces neither, and its own seam is read by the suite's fixture pins and by the
+            # accuracy gate on that leg rather than here.
             if (Python3_FOUND)
-                if (BOYS_BUILD_DEFAULTS)
-                    set(_boys_own_seam "${BOYS_BUILD_DEFAULTS_SEAM_IDENT}")
-                else()
-                    set(_boys_own_seam "seam_committed")
-                endif()
-                # The tool compiles and links its probe itself, so it is handed this
-                # configuration's own flags: a library built with the sanitizers does not link a
-                # probe without them, and the control would read as a refusal this check is not
-                # about - measured on the CI sanitizer leg, which failed exactly that way.
+                # The tool compiles and links its probes itself, so it is handed this
+                # configuration's own flags: the probes then compile the way this build compiles,
+                # and the digests are this configuration's rather than the tool's.
                 set(_boys_seam_flags "")
                 foreach(_boys_seam_flag_var CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
                     separate_arguments(_boys_seam_flag_words UNIX_COMMAND
@@ -1193,13 +1228,14 @@ int main() {
                         "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_seam_identity.py" --check
                         --cxx "${CMAKE_CXX_COMPILER}"
                         "--std=-std=c++20"
-                        --include "${CMAKE_CURRENT_SOURCE_DIR}/include"
-                        --library "$<TARGET_FILE:boys>"
-                        --seam-ident "${_boys_own_seam}"
+                        "--include=${CMAKE_CURRENT_SOURCE_DIR}/include"
+                        --seam-ident seam_committed
+                        "--replacement=${CMAKE_CURRENT_SOURCE_DIR}/tests/build_defaults_tuned.hpp"
+                        "--replaced-value=0.055476132923077695"
                         ${_boys_seam_flags})
             else()
                 message(STATUS "boys: the seam-identity check is not registered — it compiles "
-                    "and links a call, which needs a Python interpreter this configure did not "
+                    "and links two calls, which needs a Python interpreter this configure did not "
                     "find")
             endif()
         endif()

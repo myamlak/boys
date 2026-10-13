@@ -1,21 +1,23 @@
 #pragma once
 
 /// \file kernels.hpp
-/// The entries of `boys/boys.hpp` as templates over the evaluation policy a caller names.
+/// The entries of `boys/boys.hpp` as templates over the evaluation policy a caller names, and
+/// the front door's own entries, defined inline at the end of this file at the policy this
+/// build's table carries for their class.
 ///
-/// A call that names no policy is resolved by the library: the plain declarations in the
-/// front door are compiled once, in the library's own translation unit and under the build's
-/// seam, so every consumer of a build links the same values for them. This header is the
-/// other half - the spelling for a caller that wants a combination the build does not carry
-/// as a default, and the one a translation unit that links no library at all has to use.
+/// A call that names no policy is not flattened into the library: the entry's body is inline
+/// here, so the caller's own translation unit instantiates it, at the same table row and from
+/// the same kernel a library build reads. Naming a policy is the other half - the spelling for
+/// a caller that wants a combination the build does not carry as a default, and the one a
+/// translation unit that links no library at all has to use.
 ///
 /// **Nothing here is declared in the front door.** Naming a policy without this header is a
 /// compile error at the call site rather than a promise the linker has to keep, which is the
 /// difference between one surface and two that agree until they do not.
 ///
-/// What this header costs is the kernel: the coefficient tables, the effective degrees and
-/// the bodies behind every entry. That is what a caller that names no policy does not pay
-/// for.
+/// What this header costs is the kernel: the coefficient tables, the effective degrees and the
+/// bodies behind every entry. A call that names no policy compiles those bodies too, at the
+/// row this build's table carries for its class.
 
 #include "boys/boys.hpp"
 
@@ -444,47 +446,6 @@ template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllNAt
 void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 #endif // BoysFp16
 
-/// \cond
-/// Hidden from the API reference: each of these is an instantiation of the entries
-/// declared above at the default policy, not an entry of its own. They are what
-/// the default call sites link against instead of compiling the kernel again in
-/// their own translation unit; a caller that names another policy compiles the
-/// combination it asks for from the definition below.
-///
-/// Declared only for the table this build carries. A build that supplies its own
-/// through BOYS_BUILD_DEFAULTS has its own policy types - the table is read by
-/// value, so a different row is a different instantiation with a different
-/// mangled name - and the library carries no definition for those. Declaring them
-/// here would promise a definition that does not exist and turn a working consumer
-/// build into an unresolved external.
-#if !defined(BOYS_BUILD_DEFAULTS_REPLACED)
-extern template double BoysSingle<>(int n, double x) noexcept;
-extern template void BoysAllOrders<>(
-    int nmax, double x, double* out) noexcept;
-extern template void BoysFixedN<>(
-    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept;
-extern template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, std::size_t* workspace) noexcept;
-extern template void BoysAllN<>(
-    int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept;
-extern template void BoysAllNAtOrders<>(
-    const int* n, const double* x, double* out, std::size_t count) noexcept;
-// The single-precision entries are not declared extern here: an extern promises a definition
-// elsewhere, and the library's fixed list of them (src/boys_orders_simd.cpp) need not hold the
-// one a call site selects from the table - declaring it anyway left four consumer targets
-// unresolved on gcc. Their definitions are in this header: a consumer instantiates what it names.
-
-#if BoysFp16
-extern template F16 BoysSingleF16<>(int n, F16 x) noexcept;
-extern template void BoysAllOrdersF16<>(
-    int nmax, F16 x, F16* out) noexcept;
-extern template Bf16 BoysSingleBf16<>(int n, Bf16 x) noexcept;
-extern template void BoysAllOrdersBf16<>(
-    int nmax, Bf16 x, Bf16* out) noexcept;
-#endif // BoysFp16
-#endif // !BOYS_BUILD_DEFAULTS_REPLACED
-/// \endcond
-
 } // namespace boys
 
 // The kernel behind the entries above, shipped as a header so that every policy a caller names
@@ -492,3 +453,167 @@ extern template void BoysAllOrdersBf16<>(
 // its definitions name the declarations above, and a declaration that follows a definition may
 // not carry a default argument.
 #include "boys/boys_impl.hpp"
+
+// The front door's entries, each defined at the policy this build's table carries for that
+// entry's class. The default instantiations are not suppressed: a consumer that names no
+// policy instantiates each body it calls in its own unit. The definitions sit below the
+// kernel because a body names a specialization, and the compiler resolves it where it is written.
+
+/// \cond
+namespace boys {
+inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
+
+inline double BoysSingle(int n, double x) noexcept {
+    return boys::BoysSingle<DefaultPolicy<Precision::kFp64, Shape::kSingle>>(n, x);
+}
+
+inline BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept {
+    return boys::BoysSingleChecked<DefaultPolicy<Precision::kFp64, Shape::kSingle>>(n, x, out);
+}
+
+inline void BoysAllOrders(int nmax, double x, double* out) noexcept {
+    return boys::BoysAllOrders<DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>(nmax, x, out);
+}
+
+inline void BoysFixedN(
+    int n, const double* x, double* out, std::size_t count, std::size_t stride) noexcept {
+    return boys::BoysFixedN<DefaultPolicy<Precision::kFp64, Shape::kFixedN>>(
+        n, x, out, count, stride);
+}
+
+inline void BoysAllN(int nmax,
+                     const double* x,
+                     double* out,
+                     std::size_t count,
+                     std::size_t* workspace) noexcept {
+    return boys::BoysAllN<DefaultPolicy<Precision::kFp64, Shape::kAllN>>(
+        nmax, x, out, count, workspace);
+}
+
+inline void BoysAllN(
+    int nmax, const double* x, double* out, std::size_t count, BoysSortedArgs) noexcept {
+    return boys::BoysAllN<DefaultPolicy<Precision::kFp64, Shape::kAllN>>(
+        nmax, x, out, count, BoysSortedArgs{});
+}
+
+inline void BoysAllNAtOrders(
+    const int* n, const double* x, double* out, std::size_t count) noexcept {
+    return boys::BoysAllNAtOrders<DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>(
+        n, x, out, count);
+}
+
+inline BoysStatus BoysAllOrdersChecked(int nmax, double x, double* out) noexcept {
+    return boys::BoysAllOrdersChecked<DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>(
+        nmax, x, out);
+}
+
+inline BoysStatus BoysFixedNChecked(int n,
+                                    const double* x,
+                                    double* out,
+                                    std::size_t count,
+                                    std::size_t stride,
+                                    std::size_t* badIndex) noexcept {
+    return boys::BoysFixedNChecked<DefaultPolicy<Precision::kFp64, Shape::kFixedN>>(
+        n, x, out, count, stride, badIndex);
+}
+
+inline BoysStatus BoysAllNChecked(int nmax,
+                                  const double* x,
+                                  double* out,
+                                  std::size_t count,
+                                  std::size_t* workspace,
+                                  std::size_t* badIndex) noexcept {
+    return boys::BoysAllNChecked<DefaultPolicy<Precision::kFp64, Shape::kAllN>>(
+        nmax, x, out, count, workspace, badIndex);
+}
+
+inline BoysStatus BoysAllNAtOrdersChecked(const int* n,
+                                          const double* x,
+                                          double* out,
+                                          std::size_t count,
+                                          std::size_t* badIndex) noexcept {
+    return boys::BoysAllNAtOrdersChecked<
+        DefaultPolicy<Precision::kFp64, Shape::kAllNAtOrders>>(n, x, out, count, badIndex);
+}
+
+inline float BoysSingleF32(int n, float x) noexcept {
+    return boys::BoysSingleF32<DefaultPolicy<Precision::kFp32, Shape::kSingle>>(n, x);
+}
+
+inline void BoysAllOrdersF32(int nmax, float x, float* out) noexcept {
+    return boys::BoysAllOrdersF32<DefaultPolicy<Precision::kFp32, Shape::kAllOrders>>(
+        nmax, x, out);
+}
+
+inline void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexcept {
+    return boys::BoysAllNF32<DefaultPolicy<Precision::kFp32, Shape::kAllN>>(nmax, x, out, count);
+}
+
+inline void BoysFixedNF32(
+    int n, const float* x, float* out, std::size_t count, std::size_t stride) noexcept {
+    return boys::BoysFixedNF32<DefaultPolicy<Precision::kFp32, Shape::kFixedN>>(
+        n, x, out, count, stride);
+}
+
+inline void BoysAllNAtOrdersF32(
+    const int* n, const float* x, float* out, std::size_t count) noexcept {
+    return boys::BoysAllNAtOrdersF32<DefaultPolicy<Precision::kFp32, Shape::kAllNAtOrders>>(
+        n, x, out, count);
+}
+
+#if BoysFp16
+
+inline F16 BoysSingleF16(int n, F16 x) noexcept {
+    return boys::BoysSingleF16<DefaultPolicy<Precision::kFp16, Shape::kSingle>>(n, x);
+}
+
+inline void BoysAllOrdersF16(int nmax, F16 x, F16* out) noexcept {
+    return boys::BoysAllOrdersF16<DefaultPolicy<Precision::kFp16, Shape::kAllOrders>>(nmax, x, out);
+}
+
+inline void BoysFixedNF16(
+    int n, const F16* x, F16* out, std::size_t count, std::size_t stride) noexcept {
+    return boys::BoysFixedNF16<DefaultPolicy<Precision::kFp16, Shape::kFixedN>>(
+        n, x, out, count, stride);
+}
+
+inline void BoysAllNF16(int nmax, const F16* x, F16* out, std::size_t count) noexcept {
+    return boys::BoysAllNF16<DefaultPolicy<Precision::kFp16, Shape::kAllN>>(nmax, x, out, count);
+}
+
+inline void BoysAllNAtOrdersF16(
+    const int* n, const F16* x, F16* out, std::size_t count) noexcept {
+    return boys::BoysAllNAtOrdersF16<DefaultPolicy<Precision::kFp16, Shape::kAllNAtOrders>>(
+        n, x, out, count);
+}
+
+inline Bf16 BoysSingleBf16(int n, Bf16 x) noexcept {
+    return boys::BoysSingleBf16<DefaultPolicy<Precision::kBf16, Shape::kSingle>>(n, x);
+}
+
+inline void BoysAllOrdersBf16(int nmax, Bf16 x, Bf16* out) noexcept {
+    return boys::BoysAllOrdersBf16<DefaultPolicy<Precision::kBf16, Shape::kAllOrders>>(
+        nmax, x, out);
+}
+
+inline void BoysFixedNBf16(
+    int n, const Bf16* x, Bf16* out, std::size_t count, std::size_t stride) noexcept {
+    return boys::BoysFixedNBf16<DefaultPolicy<Precision::kBf16, Shape::kFixedN>>(
+        n, x, out, count, stride);
+}
+
+inline void BoysAllNBf16(int nmax, const Bf16* x, Bf16* out, std::size_t count) noexcept {
+    return boys::BoysAllNBf16<DefaultPolicy<Precision::kBf16, Shape::kAllN>>(nmax, x, out, count);
+}
+
+inline void BoysAllNAtOrdersBf16(
+    const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept {
+    return boys::BoysAllNAtOrdersBf16<DefaultPolicy<Precision::kBf16, Shape::kAllNAtOrders>>(
+        n, x, out, count);
+}
+
+#endif // BoysFp16
+
+} // namespace BOYS_DETAIL_SEAM_NAMESPACE
+} // namespace boys
+/// \endcond

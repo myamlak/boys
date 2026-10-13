@@ -74,11 +74,24 @@ overload of each many-argument entry taking a `std::span`, so a container goes s
 nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
 passing a pointer and a count still reaches the pointer entry exactly.
 
-The entries a call site names no policy for are the library's own and need nothing beyond the two
-headers above: the build compiles one definition of each, so the flags a caller compiles with cannot
-reach their arithmetic. A caller that names a policy - `BoysAllOrders<Policy>` rather than
-`BoysAllOrders` - reaches those entries through `boys/kernels.hpp`, which `boys_span.hpp` carries
-already; `boys/boys_all.hpp` is that header with the transform lane and the option probe beside it.
+What a translation unit needs, by what it is for:
+
+| A unit that ... | Includes | What that brings |
+|---|---|---|
+| declares a wrapper, names a type, or holds an entry as a value | `boys/boys_decl.hpp` | every declaration - the types, the entries, the accuracy queries, the table a report reads - and no arithmetic |
+| calls an entry the default table answers for | `boys/boys.hpp` | the declarations, plus each default entry's own body inline at the row this build's table carries for its class: nothing else is needed, and no archive on the link line |
+| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state |
+| wants everything this library carries | `boys/boys_all.hpp` | the front door, plus the `std::span` overloads, the region-A transform lane and the option probe |
+| is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
+| is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
+
+The archive is still needed for the reporting queries - `BoysLaneContracts`, `BoysEvalSchemes`,
+`BoysEvalSchemeFits`, `BoysEvalSchemeDelivered`, `BoysPackAxes`, `BoysDivisionForms`,
+`BoysFarRepresentations`, `BoysRegionBExps`, `BoysFitGranularities`, `BoysFitRoutes`,
+`BoysFitRoutesF32`, `EvalSchemeName`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`,
+`QueryCombination`, `BoysAvx2Available` - and for the three entries the library defines out of
+line: `BoysAllOrdersWithRoute`, `BoysAllOrdersWithFarRepresentation`, `BoysSingleF32WithRoute`.
+Everything else a call site names compiles from the headers.
 
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF

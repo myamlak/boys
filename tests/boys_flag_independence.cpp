@@ -1,6 +1,6 @@
 // One digest of every default entry's bits, for the build to print from four sets of flags: the
-// entries are the library's, so the four must agree, and a digest that differs says the calling
-// unit's arithmetic reached them.
+// entries are the caller's to compile, and the four agree because the arithmetic is one source and
+// the ISA tiers are documented bit-equal to the scalar twins. A digest that differs is a finding.
 
 #include <boys/boys.hpp>
 
@@ -42,9 +42,9 @@ constexpr std::size_t kBatch = 64;
 
 /// The i-th argument: `i / 64`.
 ///
-/// Every argument is a multiple of 1/64 below 500, so it is exact in binary and every unit
-/// computes the same value for it. An argument whose own rounding moved with the flags would
-/// make this program measure its arithmetic in the place it is meant to measure the library's.
+/// Every argument is a multiple of 1/64 below 500, so it is exact in binary and every variant
+/// computes the same value for it. An argument whose own rounding moved with the flags would put
+/// a difference into the digest that the entries are not responsible for.
 ///
 /// \param index which argument, below the grid
 /// \returns the argument at that index

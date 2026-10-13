@@ -8,12 +8,13 @@ combinations a class can be instantiated at. **Nothing checked the bound.** A co
 library carries but states no figure for, and a combination whose stated figure the code does not
 keep, both read as fine to every check in ``tools/``.
 
-What a bound is, in this library's own words. ``BoysAccuracyGuaranteed`` (``include/boys/boys.hpp``)
-answers an ``AccuracyFigure`` for a combination of axes on a **lane**: ``value``, ``available``,
-``source`` (the sentence the figure was read under) and ``reason`` (why none is available, where
-none is). The figure is the lane's contract row plus the two terms a lane may carry beside it - the
-plain reciprocal's own rounding (``plainAdditive``) and the region-B exponential's contribution
-(``additive``, a term of the member the row names and answered only where that member is named).
+What a bound is, in this library's own words. ``BoysAccuracyGuaranteed``
+(``include/boys/boys_decl.hpp``) answers an ``AccuracyFigure`` for a combination of axes on a
+**lane**: ``value``, ``available``, ``source`` (the sentence the figure was read under) and
+``reason`` (why none is available, where none is). The figure is the lane's contract row plus the
+two terms a lane may carry beside it - the plain reciprocal's own rounding (``plainAdditive``) and
+the region-B exponential's contribution (``additive``, a term of the member the row names and
+answered only where that member is named).
 
 **It does not take a ``Shape``.** A class is a ``(device, precision, shape)`` triple and the
 guarantee is a ``(precision, five axes)`` query, so what the accessor can be asked is per-lane
@@ -779,7 +780,11 @@ def main() -> int:
         materialize(arguments.revision, tree)
 
     try:
-        header_path = tree / "include" / "boys" / "boys.hpp"
+        # The declarations, which the split of the front door put in `boys_decl.hpp`: the classes
+        # the table carries, the Shape enumerators' own documentation and the two enumerations are
+        # all declared there. `boys.hpp` is the calls header over it and declares none of them, so
+        # reading it here would read a file that does not state the figures this check holds.
+        header_path = tree / "include" / "boys" / "boys_decl.hpp"
 
         if not header_path.exists():
             print(f"check_combination_bounds: no header at {header_path}; the library was not "

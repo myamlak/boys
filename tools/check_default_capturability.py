@@ -20,8 +20,8 @@ as a default, is a defect; a class with no row at all is one too.
 
 WHAT IS READ, AND FROM WHERE. Nothing below is a list written into this file. The classes the
 seam's key reaches are read from the library's own two row lists (`BOYS_DEFAULT_POLICY_BUILD_ROWS`
-and `..._DEVICE_ROWS`, `boys/boys.hpp`), which state themselves as "the entries' own classes, read
-off the entries"; the entries' policy defaults corroborate the host half, and the device half is
+and `..._DEVICE_ROWS`, `boys/boys_decl.hpp`), which state themselves as "the entries' own
+classes, read off the entries"; the entries' policy defaults corroborate the host half, and the device
 corroborated against `DeviceOptionPrecision x DeviceOptionQuestion` (`boys_cuda_options.hpp`). The
 seam's rows come from `BOYS_BUILD_DEFAULT_ROWS`. The axes of a policy come from the parameter list
 of `StatedEvalPolicy` and the enumerators of each axis's own header, found by name over
@@ -35,7 +35,7 @@ THE HOLE THIS EXISTS TO NAME. The probe carries two mappings and they answer two
 half formats are one lane: one engine, whose entries are declared once under the fp16 name, with
 the bf16 entries being that engine and the other format's store. `ClassPrecisionOf` answers which
 class of the seam's own key a measured default is written into, and there the two half formats are
-two classes - `Precision::kFp16` and `Precision::kBf16` (`boys/boys.hpp`), each an entry's own
+two classes - `Precision::kFp16` and `Precision::kBf16` (`boys/boys_decl.hpp`), each an entry's own
 default. A fold in the first is the library's design and not a defect; a fold in the second is two
 measured classes resolving to one row, where only the row's own format can be the consumer's
 default and the other has nowhere to be written. This check reads the second fold off the probe's
@@ -78,11 +78,14 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INCLUDE = os.path.join(REPO, "include", "boys")
 
 SEAM_FILE = os.path.join(INCLUDE, "boys_build_defaults.hpp")
-BOYS_FILE = os.path.join(INCLUDE, "boys.hpp")
+# The declarations, where the split of the front door put the two key row lists and the row format
+# this file reads. `boys/boys.hpp` is the calls header over them and states neither.
+BOYS_FILE = os.path.join(INCLUDE, "boys_decl.hpp")
 PROBE_SRC = os.path.join(REPO, "src", "boys_probe.cpp")
 CUDA_FILE = os.path.join(INCLUDE, "boys_cuda.hpp")
 
-# The macro the seam's row list is written under, and the macro `boys.hpp` expands a row through.
+# The macro the seam's row list is written under, and the macro `boys_decl.hpp` expands a row
+# through.
 SEAM_ROWS_MACRO = "BOYS_BUILD_DEFAULT_ROWS"
 SEAM_ROW_MACRO = "BOYS_DEFAULT_POLICY_ROW"
 KEY_ROW_MACROS = (
@@ -463,8 +466,8 @@ def constant_value(name: str) -> str:
 def key_rows() -> list[tuple[str, str, str]]:
     """The seam's key as the library states it: the classes its entries reach, list by list.
 
-    `boys.hpp` writes the host's classes out where the seam carries no row list, and says of them
-    that they are "the entries' own classes, read off the entries" - so this is the library's own
+    `boys_decl.hpp` writes the host's classes out where the seam carries no row list, and says of
+    them that they are "the entries' own classes, read off the entries" - so this is the library's own
     statement of the key rather than a second list beside the entries, and the device half's nine
     are written out the same way.
     """
@@ -775,7 +778,7 @@ def main() -> int:
         REPO = os.path.abspath(args.root)
         INCLUDE = os.path.join(REPO, "include", "boys")
         SEAM_FILE = os.path.join(INCLUDE, "boys_build_defaults.hpp")
-        BOYS_FILE = os.path.join(INCLUDE, "boys.hpp")
+        BOYS_FILE = os.path.join(INCLUDE, "boys_decl.hpp")
         PROBE_SRC = os.path.join(REPO, "src", "boys_probe.cpp")
         CUDA_FILE = os.path.join(INCLUDE, "boys_cuda.hpp")
 
@@ -837,7 +840,7 @@ def main() -> int:
     print("check_default_capturability: " + f"{len(set(read_files))} file(s) read: "
           + ", ".join(sorted(os.path.relpath(p, REPO) for p in set(read_files) if p)))
     print()
-    print(f"THE SEAM'S KEY, as boys.hpp states it: {len(host_key)} host class(es), "
+    print(f"THE SEAM'S KEY, as boys_decl.hpp states it: {len(host_key)} host class(es), "
           f"{len(device_key_rows)} device class(es)")
     print(f"  host   {len(host_key):2d}  {', '.join(sorted({k[1] for k in host_key}))}"
           f"  x  {', '.join(sorted({k[2] for k in host_key}))}")
@@ -877,7 +880,7 @@ def main() -> int:
 
     if not cells_named:
         failures.append(f"the row format's cells could not be read from {SEAM_ROW_MACRO} in "
-                        "boys.hpp, so nothing below is held to the format it writes")
+                        "boys_decl.hpp, so nothing below is held to the format it writes")
     else:
         axis_cells = len(cells_named) - 3 - PROVENANCE_CELLS
         print(f"THE ROW FORMAT, as {SEAM_ROW_MACRO} takes it: {len(cells_named)} cell(s) - "

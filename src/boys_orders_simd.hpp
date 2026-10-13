@@ -1,38 +1,17 @@
 #pragma once
 
-// The across-orders packed lane: one argument's orders in a single pass, four orders to a vector.
-// It is the companion of the across-arguments lane in boys_simd.cpp, not a replacement: that lane
-// vectorises four ARGUMENTS of one order, this one four ORDERS of one argument - the shape
-// BoysAllOrders asks for. Private to the library, reachable through the orders axis entries.
+// The across-orders packed lane's measurement entries: the reference reading the installed path
+// (boys/boys_orders_lanes.hpp) keeps out of line, because their value is what the option probe
+// measures against the entries a consumer compiles. Private to the library, declared here and
+// defined in boys_orders_simd.cpp, over the closure and OrdersScheme that path declares.
 
 #include "boys/backend.hpp"
+#include "boys/boys.hpp"
+#include "boys/boys_orders_lanes.hpp"
 
 #include <cstddef>
 
 namespace boys::detail {
-
-/// How the across-orders lane sums a stored fit.
-///
-/// The axis and the scheme are separate choices, and the lane offers the
-/// combinations so that the two can be told apart by measurement: every entry
-/// here sums the SAME stored fits, in the same vector lanes, and differs only
-/// in the summation.
-enum class OrdersScheme {
-    /// The certified scheme, summed exactly as boys_impl.hpp's ClenshawSplit
-    /// sums it, with the four orders' coefficients gathered a step at a time.
-    kSplitClenshaw,
-    /// The direct sum: the Chebyshev series term by term, T_k by the forward
-    /// recurrence. Two multiply-adds per coefficient against the split
-    /// Clenshaw's one, and no dependence between the terms.
-    kDirectSum,
-    /// Horner over the monomial form of the same fit, the second certified
-    /// scheme: one multiply-add per stored coefficient.
-    kHorner,
-    /// One past the last scheme this enumeration names, and not a scheme: the
-    /// bound a check reads to walk the enumerators above and prove it has named
-    /// every one of them.
-    kCount,
-};
 
 /// Fills out[l * stride] with F_l(x) for l = 0..nmax, by the named scheme.
 ///
@@ -110,14 +89,9 @@ void BoysAllOrdersF32Simd(
 void BoysAllOrdersF32SimdComposed(
     OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept;
 
-// The two entries above are the reference rung's reading, where every fit is
-// read whole. A relaxed rung is the same lane reading the same fits at the
-// degrees a truncation criterion certifies, which is a table rather than a
-// body, so the rung reaches the lane through BoysAllOrdersF32Packed<...> below.
-
-/// The entry the public orders axis dispatches to on the single-precision
-/// engines, BoysAllOrdersF32Packed, is declared in boys/boys_impl.hpp with the
-/// double lane's sibling and defined here: one declaration, where the entries
-/// that call it are.
+// The two entries above are the reference rung's reading, where every fit is read whole. A relaxed
+// rung is the same lane reading the same fits at the degrees a truncation criterion certifies - a
+// table rather than a body - so the rung reaches the lane through the pair the public orders axis
+// dispatches to: boys_orders_lanes.hpp's BoysAllOrdersPacked and BoysAllOrdersF32Packed.
 
 } // namespace boys::detail

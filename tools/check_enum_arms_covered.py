@@ -35,17 +35,19 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 
 # The enumeration, and the file that declares it, as paths under --root.
 ENUMS = {
-    "OrdersScheme": "src/boys_orders_simd.hpp",
+    "OrdersScheme": "include/boys/boys_orders_lanes.hpp",
 }
 
 # Every file a switch over it can appear in: the library, the probe, the headers a consumer
-# compiles, and the tests that dispatch on a scheme the way a consumer does.
+# compiles, and the tests that dispatch on a scheme the way a consumer does. The declarations
+# moved to `boys_decl.hpp` when the front door was split, so that is the header read here.
 SCAN = (
     "src/boys.cpp",
     "src/boys_orders_simd.cpp",
     "src/boys_probe.cpp",
-    "include/boys/boys.hpp",
+    "include/boys/boys_decl.hpp",
     "include/boys/boys_impl.hpp",
+    "include/boys/boys_orders_lanes.hpp",
     "tests/consumer_option_space.cpp",
 )
 

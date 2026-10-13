@@ -146,11 +146,11 @@ UNARMED = {
         "verdict the Test step has already reached"
     ),
     "check_seam_identity.py": (
-        "armed with check_flag_independence.py and for the same reason: it compiles and LINKS a "
-        "call against the library this leg has built (boys-seam-identity), so its input is an "
-        "artifact of the Build step rather than text of this tree. It is listed here rather than "
-        "armed as a step because a step that ran before the build would read nothing and report "
-        "the refusal it is looking for"
+        "armed with check_flag_independence.py and for the same reason: it compiles and LINKS its "
+        "two probes itself (boys-seam-identity), so its input is an artifact of the Build step "
+        "rather than text of this tree - no archive is on either link line, and each probe prints "
+        "the seam it read. It is listed here rather than armed as a step because a step that ran "
+        "before the build would read nothing"
     ),
 }
 

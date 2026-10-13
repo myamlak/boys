@@ -173,9 +173,10 @@ REPO = pathlib.Path(__file__).resolve().parent.parent
 RUN = REPO / "tests" / "data" / "boys_accuracy_gate_run.txt"
 GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 
-# The headers a library fact is read from. `boys.hpp` is on this list for what it
-# declares - the Shape and Precision enumerations and every entry's own class - and the
-# other two for the axes they own; `boys_build_defaults.hpp` for the class list, and
+# The headers a library fact is read from. The Shape and Precision enumerations and every
+# entry's own class are declared in `boys_decl.hpp`, and `boys.hpp` is the front door that
+# carries it; `kernels.hpp` and `accuracy.hpp` for the axes they own;
+# `boys_build_defaults.hpp` for the class list, and
 # `src/boys.cpp` for the tables and the figures the accessor answers from. The last two
 # are the device surface, read for the one fact the device lanes need and no other table
 # carries: the region-B member each launched entry runs, which is the entry's own and not
@@ -184,6 +185,7 @@ GATE = REPO / "tests" / "boys_accuracy_gate.cpp"
 # reads them for the same reason and finds no arm of the block's naming one.
 LIBRARY = (
     "include/boys/boys.hpp",
+    "include/boys/boys_decl.hpp",
     "include/boys/kernels.hpp",
     "include/boys/accuracy.hpp",
     "include/boys/backend.hpp",
@@ -194,10 +196,11 @@ LIBRARY = (
 )
 
 # A revision read by a recorded run predates whatever the tree has grown since, so a path it
-# does not carry is read as empty rather than refused. Only the kernel header is optional, and
-# it is the one file the entries have moved between: a revision that predates it declares them
-# in the front door, which is on the list anyway.
-OPTIONAL = ("include/boys/kernels.hpp",)
+# does not carry is read as empty rather than refused. Two headers are optional, and they are
+# the two the declarations have moved between: a revision that predates the kernel header
+# declares the policy-taking entries in the front door, and one that predates the declaration
+# header declares the whole surface there - which is on the list anyway.
+OPTIONAL = ("include/boys/boys_decl.hpp", "include/boys/kernels.hpp")
 
 REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
 
@@ -469,7 +472,9 @@ class Library:
 
             self.text[path] = out
 
-        self.header = self.text["include/boys/boys.hpp"] + self.text["include/boys/kernels.hpp"]
+        self.header = (self.text["include/boys/boys.hpp"]
+                       + self.text["include/boys/boys_decl.hpp"]
+                       + self.text["include/boys/kernels.hpp"])
         self.accuracy = self.text["include/boys/accuracy.hpp"]
         self.backend = self.text["include/boys/backend.hpp"]
         self.defaults = self.text["include/boys/boys_build_defaults.hpp"]

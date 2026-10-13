@@ -25,7 +25,7 @@ boundaries are `kX0 = 11.899848152108484` and `kX1 = 28.98933773882074`, both co
 | Region | Interval | What it is | The file that implements it | The test that holds it |
 |---|---|---|---|---|
 | A | `[0, kX0)` | Per-order piecewise Chebyshev fits, summed by a split Clenshaw recurrence or by Horner. Its top part — the **extended band** — is one fit of its own read by upward recursion, dispatched per order at the tier thresholds | Piece lookup and summation: `include/boys/boys_impl.hpp` (`RegionAValue`, `ChebyshevFit`, `ClenshawSplit`, `FitSum`, `RegionBExtendedSeed`). The stored fits: `include/boys/boys_coefficients.hpp` (generated). The partitions: `ShippedRegionAPartition`, `NarrowRegionAPartition` and the `UniformFit` specializations, all in `boys_impl.hpp` | `tests/boys_accuracy_test.cpp` (per-region budgets on the grid), `tests/boys_across_orders_test.cpp` (the packed-orders lane), `tests/boys_transform_test.cpp` (the transform lane), `tests/boys_accuracy_gate.cpp` (every documented bound) |
-| A, vector tier | as above | The same fits evaluated four arguments or four orders to a register, and the AVX2 arithmetic behind them | `src/boys_simd.cpp` (across arguments), `src/boys_orders_simd.cpp` with `src/boys_orders_simd.hpp` (across orders; its cells are declared `extern template` in `boys_impl.hpp` and defined here), `src/boys_backend_simd.hpp` (the 4-wide double arithmetic) | `tests/boys_across_orders_test.cpp`, `tests/boys_orders_f32_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
+| A, vector tier | as above | The same fits evaluated four arguments or four orders to a register, and the AVX2 arithmetic behind them | The lanes a caller's own unit compiles: `include/boys/boys_arguments_lanes.hpp` (across arguments), `include/boys/boys_orders_lanes.hpp` (across orders), `include/boys/boys_backend_simd.hpp` (the 4-wide double arithmetic). The measurement-only lanes stay out of line: `src/boys_simd.cpp` (regions B and C, the half-format lanes, the backend append) and `src/boys_orders_simd.cpp` with `src/boys_orders_simd.hpp` (the across-orders measurement entries) | `tests/boys_across_orders_test.cpp`, `tests/boys_orders_f32_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
 | B | `[kX0, kX1)` | One `F_0` fit plus upward recursion; the exponential that seeds it is an axis | `include/boys/boys_impl.hpp` (`ShippedRegionBSeed`, `NarrowRegionBSeed`, `RegionBHalfExp`, `UpwardStep`); the seed's coefficients in `boys_coefficients.hpp` | `tests/boys_accuracy_test.cpp`, `tests/boys_boundary_test.cpp` |
 | C | `[kX1, inf)` | The asymptotic form `1/2 sqrt(pi/x)` plus upward recursion; no stored fit | `include/boys/boys_impl.hpp` (`kBoysHalfSqrtPi`, `BoysAllNBodyRegionC`), the vector tier in `src/boys_simd.cpp` (`BoysRegionCSimd`) | `tests/boys_accuracy_test.cpp`, `tests/boys_half_native_test.cpp` |
 | Which region one argument takes | — | The dispatch itself: zero, tabulated, extended, middle, asymptotic | `include/boys/boys_impl.hpp`, `BoysPath` and `BoysClassifyPath` | the region-boundary cases in `tests/boys_accuracy_test.cpp` and `tests/boys_boundary_test.cpp` |
@@ -39,22 +39,26 @@ fits and emits the boundaries and degrees.
 
 A *lane* is an entry plus the arithmetic behind it; a *bound* is the error ceiling that lane
 guarantees, and it always describes one lane. A fit or a combination is **certified** when the
-library carries it and the accuracy gate holds it to a published bound. Five
-precision families carry host entries - double, float, fp16 I/O, bf16 I/O and the native packed
-half - and the device lane adds four `Precision` members of its own. Every entry is declared twice:
-as a plain function in `include/boys/boys.hpp`, which is the spelling a call site that names no
-policy reaches, and as a template over an evaluation policy in `include/boys/kernels.hpp`, which is
-the spelling a caller that names one reaches. The bodies are in `include/boys/boys_impl.hpp`; the
-entries a call site names no policy for are defined once, in `src/boys_defaults.cpp`, and the rest
-are instantiated out of line in `src/boys.cpp`, `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`.
+library carries it and the accuracy gate holds it to a published bound. Five precision families
+carry host entries - double, float, fp16 I/O, bf16 I/O and the native packed half - and the device
+lane adds four `Precision` members of its own. Every entry is declared twice: as a plain function in
+`include/boys/boys_decl.hpp`, the header of declarations alone, which `include/boys/boys.hpp`
+carries to a call site that names no policy; and as a template over an evaluation policy in
+`include/boys/kernels.hpp`, which is the spelling a caller that names one reaches. The bodies are
+in `include/boys/boys_impl.hpp`, and both spellings compile the kernel in the caller's own
+translation unit: the plain entry is defined inline at the policy this build's table carries for
+its class, so a call that names no policy is the table's row compiled where it is called.
 
-**Two headers rather than one, and the compiler is what keeps them apart.** The front door does not
-declare the policy-taking spelling at all, so a call that names a policy from a translation unit
-that read only the front door is refused where it is written rather than promised to the linker.
-The reason is a measurement: a value an entry returns depends on the arithmetic the translation
-unit compiles it with, so an unnamed call has to be resolved by the library and not by its caller -
-`include/boys/boys.hpp` states it, and `CMakeLists.txt` measures both directions of it at configure
-time.
+**One front door, and the table it reads.** The front door is the declarations - `boys_decl.hpp`,
+the types, the entries and the queries - plus the default entries' inline bodies; it carries the
+policy-taking entries at its end, so the two spellings are one surface: a call that names a policy
+names the combination it wants, and a call that names none compiles the row this build's table
+carries for its class. The
+plain spelling exists because a value an entry returns depends on the arithmetic the translation
+unit compiles it with; which row that arithmetic comes from is therefore a property of the build,
+carried as source. `include/boys/boys_build_defaults.hpp` states it, and `CMakeLists.txt` measures
+the contract at configure time: a default call builds from the front door alone, and a call naming
+a policy builds from the kernel header.
 
 | Lane | `Precision` member | Entry points | What it is | The test that holds it |
 |---|---|---|---|---|
@@ -62,7 +66,7 @@ time.
 | float | `kFp32` | `BoysSingleF32`, `BoysSingleF32WithRoute`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32`, `BoysAllNAtOrdersF32` | scalar fp32; the batch forms seed in double | `tests/boys_accuracy_test.cpp`, `tests/boys_orders_f32_test.cpp` |
 | fp16 I/O | `kFp16` | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16` | 16-bit storage around the float engine; types in `include/boys/f16.hpp` | `tests/f16_test.cpp`, `tests/boys_accuracy_test.cpp` |
 | bf16 I/O | `kBf16` | `BoysSingleBf16`, `BoysAllOrdersBf16` | the same engine and budget, stored in this format | `tests/f16_test.cpp`, `tests/boys_accuracy_test.cpp` |
-| native packed half | none — a lane with entries and no `Precision` member | `BoysAllOrdersHalf2`, `BoysAllNF16Native` | region C's ladder in packed binary16, two arguments to a register, results scaled by `2^15`; the arithmetic is defined by `include/boys/half2.hpp` and the bodies are in `src/boys_half_native.cpp` | `tests/boys_half_native_test.cpp` |
+| native packed half | none — a lane with entries and no `Precision` member | `BoysAllOrdersHalf2`, `BoysAllNF16Native` | region C's ladder in packed binary16, two arguments to a register, results scaled by `2^15`; the arithmetic is defined by `include/boys/half2.hpp` and the bodies in `include/boys/boys_impl.hpp` (`HalfNativeLadder`) | `tests/boys_half_native_test.cpp` |
 | CUDA, host-launched | `kFp64Device`, `kFp32Device`, `kFp16Device`, `kBf16Device` | `boys::BoysCuda::SingleF64`, `AllOrdersF64`, `AllNF64` and the f32 and f16 siblings, `InitializeTables` | device arrays with an opaque stream handle; declared in `include/boys/boys_cuda.hpp` | `tests/boys_cuda_test.cpp`, `tests/boys_cuda_route_test.cpp`, `tests/boys_cuda_accuracy_gate.cpp` |
 | CUDA, device-callable | as above | `boys::BoysDeviceSingleF64`, `BoysDeviceAllOrdersF64`, `BoysDeviceAllNF64`, `BoysDeviceEachOrderF64` and the f32 and fp16 siblings | the same arithmetic inside the caller's own kernel; declared in `include/boys/boys_cuda_device.hpp` | `tests/boys_accuracy_gate_fast_device.cu`, `tests/boys_cuda_device_demo.cu`, `tests/consumer_cuda_defaults.cu` |
 
@@ -86,12 +90,12 @@ and no call site names it.
 | Axis | The enumeration | The file that defines it | Where it is read | The test that holds it |
 |---|---|---|---|---|
 | fit route | `FitRoute` | `include/boys/accuracy.hpp` | `RouteFit` and the route tables in `include/boys/boys_impl.hpp`; the stored fits in `boys_coefficients.hpp` | `tests/boys_accuracy_test.cpp`, `tests/consumer_option_space.cpp` |
-| evaluation scheme | `EvalScheme` | `include/boys/accuracy.hpp` | `ChebyshevValue` and `FitSum` in `boys_impl.hpp`; the across-orders lane has its own summation enumeration, `OrdersScheme`, in `src/boys_orders_simd.hpp` | `tests/boys_across_orders_test.cpp`, `tests/consumer_option_space.cpp`, `tools/check_enum_arms_covered.py` (over `OrdersScheme`, whose switches must name every member) |
+| evaluation scheme | `EvalScheme` | `include/boys/accuracy.hpp` | `ChebyshevValue` and `FitSum` in `boys_impl.hpp`; the across-orders lane has its own summation enumeration, `OrdersScheme`, in `include/boys/boys_orders_lanes.hpp` | `tests/boys_across_orders_test.cpp`, `tests/consumer_option_space.cpp`, `tools/check_enum_arms_covered.py` (over `OrdersScheme`, whose switches must name every member) |
 | region-B exponential | `RegionBExp` | `include/boys/accuracy.hpp` | `RegionBHalfExp` and `RegionBHalfExpF32` in `boys_impl.hpp`; the device's own bodies in `include/boys/boys_cuda_arithmetic.hpp` | `tests/boys_accuracy_test.cpp`, `tests/boys_cuda_accuracy_gate.cpp` (the device sweep over both members), `tests/consumer_option_space.cpp` |
 | fit granularity | `FitGranularity` | `include/boys/accuracy.hpp` | the partitions and `FitAnswersPartition` in `boys_impl.hpp`; the per-piece rows in `boys_coefficients.hpp` | `tests/boys_fixture_pins_test.cpp`, the `build_defaults_uniform` tree built by CI, `tools/check_class_combinations.py` |
 | division form | `DivisionForm` | `include/boys/accuracy.hpp` | `DivideExact`, `DividePlain`, `DivideByReciprocal`, `DivideStep` in `boys_impl.hpp` | `tests/build_defaults_division_form.hpp` (the fixture that moves it on the host), `tests/boys_cuda_test.cpp` (all three on the device), `tools/check_combination_bounds.py` |
-| packing axis | `PackAxis` | `include/boys/backend.hpp` | the vector lanes in `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`. The device's reading of the same question is `DevicePacking` in `include/boys/boys_cuda_options.hpp`, which adds the `kNotApplicable` member a one-order entry states | `tests/boys_across_orders_test.cpp`, `tools/check_host_entry_bijection.py` |
-| multiply-add route (the build's, not a call-site one) | `MulAddRoute` | `include/boys/backend.hpp` | the named arithmetic backends in `src/boys_backend_simd.hpp` and `src/boys_backend_registry.hpp`; the device's is `include/boys/boys_cuda_muladd.hpp` | `tests/boys_backend_test.cpp`, `tests/boys_muladd_route_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
+| packing axis | `PackAxis` | `include/boys/accuracy.hpp` | the vector lanes in `include/boys/boys_arguments_lanes.hpp` and `include/boys/boys_orders_lanes.hpp`. The device's reading of the same question is `DevicePacking` in `include/boys/boys_cuda_options.hpp`, which adds the `kNotApplicable` member a one-order entry states | `tests/boys_across_orders_test.cpp`, `tools/check_host_entry_bijection.py` |
+| multiply-add route (the build's, not a call-site one) | `MulAddRoute` | `include/boys/accuracy.hpp` | the named arithmetic backends in `include/boys/boys_backend_simd.hpp`, appended to the table through `src/boys_backend_registry.hpp`; the device's is `include/boys/boys_cuda_muladd.hpp` | `tests/boys_backend_test.cpp`, `tests/boys_muladd_route_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
 
 **A call that names no policy resolves to the build-defaults seam**,
 `include/boys/boys_build_defaults.hpp`: seven names — five for a host class and two for a device
@@ -106,13 +110,13 @@ it is filled from are in the seam file.
 
 | Piece | File | Compiled by | The test that holds it |
 |---|---|---|---|
-| The front door: the entries a call site names no policy for, the policy table, and the tables a report reads | `include/boys/boys.hpp` | the library, for the entries; the host compiler, for the queries | `tests/consumer_defaults.cpp`, `tools/check_flag_independence.py` (four builds of one translation unit with one digest), `tools/check_seam_identity.py` (the linker's half) |
+| The front door: the entries a call site names no policy for, the policy table, and the tables a report reads | `include/boys/boys.hpp` | the host compiler, for the entries and the table; the library, for the report queries | `tests/consumer_defaults.cpp`, `tools/check_flag_independence.py` (four builds of one translation unit with one digest), `tools/check_seam_identity.py` (the linker's half) |
 | The policy-taking entries, one template per entry per class | `include/boys/kernels.hpp` | the host compiler | `tests/consumer_header_only.cpp` (a translation unit that links no library at all), `tests/boys_test.cpp` |
 | Everything the library carries, in one include | `include/boys/boys_all.hpp` | the host compiler | `tests/consumer_umbrella.cpp` (a translation unit whose only library include is this header, exercising the documented surface) |
 | The host implementation: regions, recurrences, entry bodies | `include/boys/boys_impl.hpp` | the host compiler | `tests/boys_accuracy_test.cpp`, `tests/boys_across_orders_test.cpp` |
 | The scalar instantiations and the library's own reports (`BoysFitRoutes`, `BoysEvalSchemes`, `BoysPackAxes`, `BoysFitGranularities`, `BoysDivisionForms`, `BoysRegionBExps`, `BoysLaneContracts`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`, `QueryCombination`) | `src/boys.cpp` | the host compiler | `tests/boys_accuracy_gate.cpp` (the bound it publishes for each lane), `tests/consumer_defaults_match_docs.cpp` (the default policy table a document states) |
-| The CUDA host-side class, CUDA-header-free | `include/boys/boys_cuda.hpp` | the host compiler | `tests/boys_cuda_test.cpp`, `tests/consumer_cuda_defaults_host.cpp` |
-| The CUDA status layer, the option rows and `BoysDeviceOptions()` | `src/boys_cuda.cpp` | the host compiler | `tests/boys_cuda_probe_test.cpp` (the space and its closure), `tools/check_device_entry_bijection.py` |
+| The CUDA host-side class, CUDA-header-free, with its entries' bodies | `include/boys/boys_cuda.hpp` | the host compiler | `tests/boys_cuda_test.cpp`, `tests/consumer_cuda_defaults_host.cpp` |
+| The CUDA option rows and `BoysDeviceOptions()` | `src/boys_cuda.cpp` | the host compiler | `tests/boys_cuda_probe_test.cpp` (the space and its closure), `tools/check_device_entry_bijection.py` |
 | The CUDA kernels and the table upload | `src/boys_cuda.cu` | nvcc | `tests/boys_cuda_accuracy_gate.cpp`, `tests/boys_cuda_test.cpp` |
 | The device-callable entries and the arithmetic they run | `include/boys/boys_cuda_device.hpp`, `include/boys/boys_cuda_arithmetic.hpp` | nvcc | `tests/boys_accuracy_gate_fast_device.cu`, `tests/boys_cuda_device_demo.cu` |
 | The handle a caller passes, and the lanes its tables are cut into | `include/boys/boys_device_tables.hpp` | both | `tests/boys_cuda_route_test.cu`, `tests/boys_build_defaults_test.cpp` |
@@ -138,7 +142,7 @@ top so a translation unit that includes it alone still compiles: the same contin
 `boys_impl.hpp` is to `boys.hpp`. Two checkers hold the two lists to each other:
 `tools/check_device_entry_bijection.py` reads the rows against the members the class declares, and
 `tools/check_device_booked_surface.py` reads those members against the bodies the class's own
-translation unit defines.
+header defines.
 
 For a reader who comes to `boys_cuda_policy.hpp` expecting a table: it carries none. It has no
 array of rows, no accessor returning rows and no count constant — the option space's rows are in
@@ -166,7 +170,7 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 | The platform table inside `docs/specification.md` | `tools/gen_platform_table.py`, from the workflow and `.github/required-checks.txt` | run it with no flag | its own `--check` |
 | The row region inside `docs/build-facts.md` | `tools/gen_build_facts.py` | `--record <file>` with a captured probe row; it merges the row in and re-renders the document | its own `--check`, which also refuses a table holding no CI leg's row |
 | `.github/option-matrix.json` | `tools/gen_option_matrix.py`, from the library's own declarations | run it with no flag | its own `--check`, in both directions |
-| The `DeviceEntryArithmeticOf` block in `include/boys/boys_cuda_options.hpp` | `tools/gen_entry_aliases.py`, from the entries' own bodies | run it with no flag | its own `--check` |
+| The `DeviceEntryArithmeticOf` block in `include/boys/boys_cuda_options.hpp` | `tools/gen_entry_aliases.py`, from the entries' own bodies in `include/boys/boys_cuda.hpp` | run it with no flag | its own `--check` |
 | `tests/data/boys_accuracy_gate_run.txt` | a run of `boys-accuracy-gate`, kept as a file | build the gate, run it, write its output there | `tools/check_recorded_run.py` (is it this tree's run) and `tools/check_bound_transcripts.py` (do the documents quote it) |
 | `tests/data/boys_option_probe_report.txt` | a run of `boys-option-probe` | build the driver, run it, write its output there | `tools/check_class_combinations.py --report`, `tools/combination_matrix.py` |
 | `tests/data/boys_device_probe_report.txt` | a run of `boys-device-probe` on a machine with a card | as above | `tools/status.py` and the device checkers that read it |
@@ -205,7 +209,7 @@ registered.
 | The kernel contract suite | the per-region accuracy budgets on the committed grid, the C surface, the region boundaries, the fp16/bf16 conversion contract, the across-orders and transform lanes, the backend and multiply-add route contracts, the build-defaults seam | `boys-tests` |
 | The gate | every documented per-lane, per-region bound, re-measured against the committed 45-digit grid | `boys-accuracy-gate` (run with `--strict`) |
 | The standalone boundary check | the recursion boundary, compiled outside the library's own targets and run over the committed grid | `boys-boundary-standalone` |
-| The consumer checks | that a translation unit including only `<boys/boys.hpp>` reaches the whole documented surface, that one naming what the library does not pre-instantiate links nothing while it stays off the vector tier, that the defaults a call naming nothing compiles are the documented ones, that every combination the space serves has a name a caller can write | `boys-consumer-umbrella`, `boys-consumer-header-only`, `boys-consumer-defaults`, `boys-consumer-defaults-match-docs`, `boys-consumer-option-space` |
+| The consumer checks | that a translation unit including only `<boys/boys.hpp>` reaches the whole documented surface, that one naming a policy outside the build's default rows links nothing, that the defaults a call naming nothing compiles are the documented ones, that every combination the space serves has a name a caller can write | `boys-consumer-umbrella`, `boys-consumer-header-only`, `boys-consumer-defaults`, `boys-consumer-defaults-match-docs`, `boys-consumer-option-space` |
 | The defaults report | what this build's unnamed calls resolve to, class by class, read from the table the build carries | `boys-defaults` |
 | The dispatch assertion | that `BoysAvx2Available()` reports what the architecture requires, so a wrong CPUID bit cannot leave the vector tier silently dead behind a green run | `boys-avx2-probe` (built only when `BOYS_EXPECT_AVX2` is supplied) |
 | The build facts | this build's own row, against the row `docs/build-facts.md` records for the leg | `boys-build-facts` |

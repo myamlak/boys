@@ -59,6 +59,15 @@ the same call is two different costs:
 - **`runtime.avx2`** is the library's own `BoysAvx2Available()` on the machine the row ran on: 1 where
   the AVX2 tier runs, 0 where the entry points dispatch to the scalar lanes.
 
+The profile the certified figures belong to is one flag set: `-std=c++20`, the optimization level the
+leg states (`config` in each row), `-mavx2 -mfma -mf16c`, and the contraction pin `-ffp-contract=off`
+with `BOYS_SCALAR_CONTRACTS=0`, plus `BoysFp16=1` and `BOYS_SIMD_X86=1` defined. A consumer that
+re-spells these flags itself, header-only, owns that same pairing, and the pin is the member easiest
+to lose in the re-spelling: a vector-tier unit compiled with the compiler's default contraction
+returns a last-bit-different value from the certified lane (29 rows under gcc, 23 under clang), while
+the same build with the pin returns the certified bits on every row of the differential (466 of 466
+identical).
+
 This page claims no speed for anything. It records the facts a cost decision depends on. Which route
 wins on a given build and machine is a question for a measurement taken on that machine.
 

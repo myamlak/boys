@@ -39,9 +39,11 @@ What is read, and from where:
   * declared - `include/boys/boys_cuda.hpp` (`static BoysStatus`) and
     `include/boys/boys_cuda_device.hpp` (`__device__ BoysDeviceStatus`), the class and the
     device half that answer the two spellings;
-  * defined - `src/boys_cuda.cpp` for the launched surface, and the device header itself for
-    the in-kernel one, which is header-only: there a declaration and a body are one statement,
-    so a name is defined exactly when its declaration opens a brace rather than ending in one.
+  * defined - `include/boys/boys_cuda.hpp` for the launched surface: the entries are defined in
+    the class's own header, so a translation unit that includes it carries the bodies; and the
+    device header itself for the in-kernel one, which is header-only: there a declaration and a
+    body are one statement, so a name is defined exactly when its declaration opens a brace
+    rather than ending in one.
 
 **A device name is an alias and not a second function.** `BoysDevice<X>` is the in-kernel
 spelling of an entry, so it is compared against the device header's own declarations and the
@@ -50,9 +52,11 @@ each other.
 
 **The template rule is read from the class's own signature**, as the bijection tool reads its
 own: a booked name whose declaration carries a template header is one whose body emits no
-symbol until an instantiation names it, so an explicit instantiation of it is required beside
-the body. Nothing is compiled and no symbol table is consulted - the two facts are read from
-the text, at one revision, which is what makes the check runnable everywhere the suite is.
+symbol until an instantiation names it, so a body that sits in a translation unit requires an
+explicit instantiation beside it; a body the class's own header defines requires none, because
+every translation unit that includes the header instantiates the template itself. Nothing is
+compiled and no symbol table is consulted - the two facts are read from the text, at one
+revision, which is what makes the check runnable everywhere the suite is.
 
 Usage:
 
@@ -74,10 +78,11 @@ OPTIONS = REPO / "include" / "boys" / "boys_cuda_options.hpp"
 HEADER = REPO / "include" / "boys" / "boys_cuda.hpp"
 DEVICE_HEADER = REPO / "include" / "boys" / "boys_cuda_device.hpp"
 ROWS = REPO / "src" / "boys_cuda.cpp"
-# The translation unit the device class's own bodies are in. One file, because the class has one
-# implementation file; `--source` reads a body side from elsewhere, which is how a body moved to a
-# sibling file is shown to be found rather than reported missing.
-SOURCES = [ROWS]
+# Where the device class's own bodies are read: the class header, which defines the entries, and
+# the translation unit that carries the option table's side. `--source` reads a body side from
+# elsewhere, which is how a body moved to a sibling file is shown to be found rather than reported
+# missing.
+SOURCES = [ROWS, HEADER]
 
 # A row of the enumeration that names the surface it books: `kName, ///< BoysCuda::Name at ...` or
 # `kName, ///< BoysDeviceName, ...`. The first enumerator carries an explicit `= 0`, which this
@@ -261,6 +266,7 @@ def main() -> int:
     templates = templated_names(args.header)
 
     body_text = {path: path.read_text(encoding="utf-8", errors="replace") for path in bodies}
+    header_text = args.header.read_text(encoding="utf-8", errors="replace")
     device_text = args.device_header.read_text(encoding="utf-8", errors="replace")
     instantiated = {name for path, text in body_text.items()
                     for name in INSTANTIATION.findall(text)}
@@ -283,7 +289,8 @@ def main() -> int:
             if not has_body:
                 undefined.append((booking, "no body defines it in "
                                            + ", ".join(str(path) for path in bodies)))
-            elif name in templates and name not in instantiated:
+            elif (name in templates and name not in instantiated
+                  and not defined_here(name, LAUNCHED_BODY, header_text)):
                 undefined.append((booking, "its body is a template in a translation unit and no "
                                            "explicit instantiation names it, so the definition "
                                            "emits no symbol"))

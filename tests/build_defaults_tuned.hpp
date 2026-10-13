@@ -21,10 +21,10 @@
 // instantiates the single-order entry at EvalPolicy<> - which is the answer and not a default.
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 
-// Moved: one reciprocal per divisor and one product per step, in place of the refined form's quotient.
+// Moved: a reciprocal per divisor and a product per step, in place of the refined form's quotient.
 // Which form is cheapest is the host's property, so all three are carried and ranked by the option
-// probe; the two not named here are instantiated on every packed lane anyway - boys/boys_impl.hpp's
-// BOYS_ORD_* blocks and src/boys_orders_simd.cpp's BOYS_ORDERS_*_INSTANTIATIONS.
+// probe; the form is a template argument of the policy, so the two not named here are instantiated
+// where a cell names them - tests/boys_muladd_route_test.cpp sweeps each packed cell at all three.
 #define BOYS_BUILD_DEFAULT_DIVISION_FORM DivisionForm::kPlainReciprocal
 
 // Moved: kCoarsest, the partition the certified lanes are defined by, in place of the committed

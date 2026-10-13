@@ -22,9 +22,9 @@
 // path, and those five files are the library's sources, so renaming one does not retire the probe.
 #if __has_include("boys.cpp") ||                                                                   \
                   __has_include("boys_simd.cpp") ||                                                \
-                                __has_include("boys_transform.cpp") ||                             \
+                                __has_include("boys_orders_simd.cpp") ||                           \
                                               __has_include("boys_c.cpp") ||                       \
-                                                            __has_include("boys_half_native.cpp")
+                                                            __has_include("boys_probe.cpp")
 #error                                                                                             \
     "this consumer check is compiled with src/ on its include path; it does not prove that a consumer can build against the public headers alone"
 #endif

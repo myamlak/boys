@@ -120,19 +120,6 @@ hours back, because that is when they can find something: regenerate, commit the
 record together, and the next round is cheap again. `--check --rederive` forces the byte-for-byte
 comparison whatever the record says.
 
-The packed orders lane is a template instantiated once per cell. Its cells are written out twice: as
-`extern template` declarations in `include/boys/boys_impl.hpp`, and as definitions in
-`src/boys_orders_simd.cpp`. A cell in one list and not the other fails silently, so the two are
-compared cell by cell:
-
-```bash
-python3 tools/check_orders_packed_cells.py --check
-```
-
-Run it after touching either list. It compares the two lists to each other, never to the option
-space. So it cannot see a class of cell that neither list names; that one reaches you as an
-unresolved external at link time, named.
-
 Ratios, shares, margins and percentages that the documents state over their own numbers are checked
 against the numbers the same sentence prints:
 

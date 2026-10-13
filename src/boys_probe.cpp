@@ -1720,7 +1720,10 @@ constexpr bool ClassDeclared(OptionPrecision precision, OptionProbeShape shape) 
 }
 
 /// The arithmetic of one precision as this build's table names it: the packed
-/// arithmetic when the vector tier is live, the scalar arithmetic otherwise.
+/// arithmetic when this translation unit is compiled at the vector tier, the
+/// scalar arithmetic otherwise. The tier is the compiling unit's own flag set
+/// (BOYS_ISA_AVX2_FMA), not a machine fact: the packed backend exists in this
+/// program exactly when the unit that would run it carries the tier.
 ///
 /// \returns the table entry, or nullptr when the table carries neither, which
 ///          is how a build without that precision's arithmetic offers none of
@@ -1729,7 +1732,11 @@ const backend::BackendInfo* ResolveArithmetic(std::span<const backend::BackendIn
                                               bool fp64) {
     const char* packed = fp64 ? kPackedFp64Name : kPackedFp32Name;
     const char* scalar = fp64 ? backend::ScalarFp64::kName : backend::ScalarFp32::kName;
-    const char* wanted = BoysAvx2Available() ? packed : scalar;
+#if BOYS_ISA_AVX2_FMA
+    const char* wanted = packed;
+#else
+    const char* wanted = scalar;
+#endif
 
     for (const backend::BackendInfo& entry : table)
     {

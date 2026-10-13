@@ -1254,10 +1254,10 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
         CompareDeviceWithHost<NarrowRatPolicy>(
             ref, grid, narrowRatHornerOut, narrowRatHornerHost);
 
-        // The narrow partition under the rational route on the orders axis, the last of the route's four
-        // shapes. The host lane carries it: its packed entry takes the route and the partition as template
-        // arguments, and boys_orders_simd.cpp instantiates that pair for both schemes
-        // (BOYS_ORDERS_NARROW_RATIONAL_INSTANTIATIONS). Rows are read at their own policy, like every shape.
+        // The narrow partition under the rational route on the orders axis, the last of the route's
+        // four shapes. The host lane carries it: its packed entry (boys/boys_orders_lanes.hpp,
+        // BoysAllOrdersPacked) takes the route and the partition as template arguments; a policy
+        // naming the pair instantiates it. Rows are read at their own policy, like every shape.
         const int bothRatHost = routeHostClaim(
             DeviceRow(boys::DeviceEntry::kAllOrdersF64NarrowOrdersRat).name, "narrow orders rat");
         const int bothRatHornerHost = routeHostClaim(

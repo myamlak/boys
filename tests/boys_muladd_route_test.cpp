@@ -356,7 +356,7 @@ TEST(BoysMulAddRouteScalar, RegionAFitBodyDeliversTheReportedRoute) {
 // --- The across-arguments packed lane's region-A body ------------------------
 
 /// The lane's own region-A kernel, at a route a test names: the mapped argument
-/// in the packed lanes' form (boys_simd.cpp: RegionAClenshaw - one multiply-add
+/// in the packed lanes' form (boys/boys_arguments_lanes.hpp: RegionAClenshaw - one multiply-add
 /// of the backend's route, not the scaled division the scalar lane forms it
 /// with), then the certified split Clenshaw over the piece.
 template <MulAddRoute kForcedRoute>
@@ -412,7 +412,7 @@ TEST(BoysMulAddRouteArguments, RegionABodyDeliversTheReportedRoute) {
 // --- The across-orders packed lane -------------------------------------------
 
 /// The shipped table's geometry at one argument, as the lane's shipped body
-/// reads it (src/boys_orders_simd.cpp: OrdersBody): order 0's piece, the offset
+/// reads it (boys/boys_orders_lanes.hpp: OrdersBody): order 0's piece, the offset
 /// stride between one order's pieces and the next's, and the mapped argument in
 /// the lane's own form.
 struct ShippedOrdersGeometry {
@@ -450,12 +450,12 @@ bool OrderSitsInAGroup(int order, int nmax) noexcept {
     return order - (order % 4) + 3 <= nmax;
 }
 
-/// The degree the lane reads one order's fit at (src/boys_orders_simd.cpp:
+/// The degree the lane reads one order's fit at (boys/boys_orders_lanes.hpp:
 /// GroupDegree, over StoredDegree): a grouped order at the largest of its
 /// group's four stored degrees, a tail order at the lane's own. The four are
 /// the same number for a table whose orders share a piece degree, which the
 /// sweep checks rather than assumes - the lane's own premise,
-/// src/boys_orders_simd.cpp: PiecesShareShape.
+/// boys/boys_orders_lanes.hpp: PiecesShareShape.
 int ReadDegree(const ShippedOrdersGeometry& geometry, int order, int nmax) noexcept {
     if (!OrderSitsInAGroup(order, nmax))
     {
@@ -498,7 +498,7 @@ double OrdersLaneFitAtRoute(MulAddRoute route, int order, int nmax, const Shippe
     return detail::FitSum<kScheme, RouteStep<MulAddRoute::kSeparate, double>>(cheb, mono, deg, g.t);
 }
 
-/// The direct sum (src/boys_orders_simd.cpp: ChebyshevDirectSum), which no
+/// The direct sum (boys/boys_orders_lanes.hpp: ChebyshevDirectSum), which no
 /// library body sums: the Chebyshev series term by term, T_k by the forward
 /// recurrence, written here so that the scheme the lane serves has a reference
 /// at a named route. It is a transcription onto scalars, and the sweep is what
@@ -801,7 +801,7 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
 
 // --- The across-orders lane, single precision ---------------------------------
 
-/// The float lane's own cover is cut per order (boys_orders_simd.cpp:
+/// The float lane's own cover is cut per order (boys/boys_impl.hpp:
 /// FindPieceF32), so one argument lands in a different piece in each of its
 /// eight lanes; each order's value is its own piece's fit at its own mapped
 /// argument and its own stored degree, which is what the group's masked read at
@@ -1028,7 +1028,7 @@ float RationalUniformAtRouteF32(const detail::FlatPointF32& at, int order) noexc
 /// The order from which the rational route's own fits are what the lane reads:
 /// the route hands an order over at that order's own end of region A, and the
 /// ends are non-decreasing in the order, so the orders the route answers are a
-/// prefix (boys_orders_simd.cpp: RationalOrdersBody).
+/// prefix (boys/boys_orders_lanes.hpp: RationalOrdersBody).
 int ServedOrders(int nmax, double x) noexcept {
     int served = 0;
 
@@ -1041,7 +1041,7 @@ int ServedOrders(int nmax, double x) noexcept {
 }
 
 /// The degree a group of four orders is read at: the largest of the four lanes'
-/// own, which is the lane's group rule (boys_orders_simd.cpp: GroupDegree) and is
+/// own, which is the lane's group rule (boys/boys_orders_lanes.hpp: GroupDegree) and is
 /// not the same number as the degree any one lane was certified at. The lane
 /// states it is free to read above a lane's own cut, so the same order can carry
 /// one value in a whole group and another in a tail - which is why the reading
@@ -1064,14 +1064,14 @@ int GroupDegreeOf(const Degrees& degrees, int own, FlatAt flat_of_lane) noexcept
 }
 
 /// The narrow partition's piece index for one order, which is what its group
-/// degree rule looks its four lanes up by (boys_orders_simd.cpp: NarrowGeometry).
+/// degree rule looks its four lanes up by (boys/boys_orders_lanes.hpp: NarrowGeometry).
 std::size_t NarrowFlatOf(int order, double x) noexcept {
     return static_cast<std::size_t>(&detail::FindNarrowAPiece(order, x) -
                                     detail::kNarrowAPieces.data());
 }
 
 /// Which of a route body's two readings one order takes, and whether it is read
-/// with its group: the rule boys_orders_simd.cpp's RationalOrdersBody and
+/// with its group: the rule boys/boys_orders_lanes.hpp's RationalOrdersBody and
 /// NarrowRationalOrdersBody share - a whole group below the handover is the
 /// route's own pair, a whole group at or above it is the partition's fit at the
 /// group's degree, and a group the handover falls inside, and the tail, are read
@@ -1178,7 +1178,7 @@ double PackedOrderAtRoute(MulAddRoute route, int order, int nmax, double x) {
             }
 
             // The route's body maps both of its readings with the plain form
-            // above (boys_orders_simd.cpp: RationalOrdersBody), not with the
+            // above (boys/boys_orders_lanes.hpp: RationalOrdersBody), not with the
             // shipped body's fused one - the two differ in the last bit at some
             // arguments, and this branch reads what that body reads.
             return PackedFitAtRoute<kScheme>(route,

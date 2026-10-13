@@ -133,66 +133,65 @@ struct ProductModeInfo {
 /// \returns the modes, with their bounds and their certifications
 ///
 /// \ingroup boys
-std::span<const ProductModeInfo> BoysProductModes() noexcept;
+inline std::span<const ProductModeInfo> BoysProductModes() noexcept {
+    // The bounds and the floors are the header's preamble figures, and the
+    // certification column says which of them a card can be held to. The
+    // single-pass floors are worst measurements, rounded up.
+    static const ProductModeInfo kRows[] = {
+        {ProductMode::kFp64,
+         "fp64",
+         ModeCertification::kCertified,
+         "an fp64 accumulator: an ordinary IEEE double sum",
+         1,
+         1e-15,
+         0.0,
+         1.110e-16},
+        {ProductMode::kTf32x3,
+         "3xtf32",
+         ModeCertification::kUncertified,
+         "an fp32 accumulator, round-to-nearest with a full roll-over",
+         2,
+         1e-15,
+         2.5e-7,
+         1.916e-07},
+        {ProductMode::kBf16x6,
+         "6xbf16",
+         ModeCertification::kUncertified,
+         "an fp32 accumulator, round-to-nearest with a full roll-over",
+         3,
+         1e-15,
+         2.5e-7,
+         1.946e-07},
+        {ProductMode::kTf32,
+         "tf32",
+         ModeCertification::kUncertified,
+         "an fp32 accumulator, round-to-nearest with a full roll-over",
+         1,
+         1e-15,
+         5e-4,
+         4.4184e-04},
+        {ProductMode::kBf16,
+         "bf16",
+         ModeCertification::kUncertified,
+         "an fp32 accumulator, round-to-nearest with a full roll-over",
+         1,
+         1e-15,
+         3e-3,
+         2.7893e-03},
+        {ProductMode::kFp16,
+         "fp16",
+         ModeCertification::kUncertified,
+         "an fp32 accumulator, round-to-nearest with a full roll-over",
+         1,
+         1e-15,
+         5e-4,
+         4.4184e-04},
+    };
 
-/// F_0(x[i]) through F_nmax(x[i]) for a batch of arguments, region A, evaluated
-/// as one matrix product per band in the named mode's arithmetic.
-///
-/// The arguments are one band's: the caller states which, and every argument
-/// must lie in it. The coefficient matrix is the band's, so a batch that mixes
-/// the bands is two calls; the entry does not sort, group, classify or fall back.
-///
-/// A caller can check the precondition without knowing the tables: membership is
-/// \c x < kRegionA1Edge for kA1 and \c kRegionA1Edge <= x < kRegionAEnd for kA2.
-///
-/// Layout: order-major planes, out[k * count + i] = F_k(x[i]) - all F_0
-/// contiguous, then all F_1, and so on, the layout the all-orders batch entry
-/// on the rest of this surface uses. The output holds count * (nmax + 1)
-/// doubles.
-///
-/// Accuracy: the named mode's own bound, a per-(order, argument) bound over the
-/// whole band. The modes below \c kFp64 are an idealisation of an fp32 tensor
-/// core's accumulator.
-///
-/// Threading: single-threaded and pure, like every entry in this library. The
-/// entry allocates nothing and touches no shared state.
-///
-/// \tparam kMode the mode whose arithmetic the product is evaluated in; see
-///              ProductMode
-/// \param band  which band every argument of the call lies in
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     array of count arguments, each inside `band`
-/// \param out   receives count * (nmax + 1) doubles, out[k * count + i] = F_k(x[i])
-/// \param count number of arguments; may be 0 (no writes)
-///
-/// \pre x and out must hold count and count * (nmax + 1) doubles respectively,
-///      and must not overlap. Every x[i] must lie in `band`.
-///
-/// \ingroup boys
-template <ProductMode kMode>
-void BoysRegionAProduct(RegionABand band,
-                        int nmax,
-                        const double* x,
-                        double* out,
-                        std::size_t count) noexcept;
+    return std::span<const ProductModeInfo>(kRows);
+}
 
 /// \cond
-// Explicit instantiations of the entry above, hidden
-// from the API reference: a default call site links against these instead of
-// compiling the kernel in its own translation unit.
-extern template void BoysRegionAProduct<ProductMode::kFp64>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kTf32x3>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kBf16x6>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kTf32>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kBf16>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-extern template void BoysRegionAProduct<ProductMode::kFp16>(
-    RegionABand band, int nmax, const double* x, double* out, std::size_t count) noexcept;
-
 // The kernel behind the entry declared above, defined here so that every
 // multiplier a caller names is instantiable at the call site.
 namespace detail {
