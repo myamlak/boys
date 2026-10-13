@@ -105,9 +105,9 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 2d7a483
+accuracy gate, revision d5d9016
 accuracy gate, version 4.0.0
-accuracy gate, inputs src=284253d78a871bb3,include=55937c58bcf00fdf,gate=61d8b6b2c66568f6,grid=d966805d6247bfbc,cmake=5ee31a2f51007aa1
+accuracy gate, inputs src=3deacbc0234eb583,include=6a1b0c6922cb27d0,gate=61d8b6b2c66568f6,grid=d966805d6247bfbc,cmake=5ee31a2f51007aa1
   reference: /mnt/c/Users/myaml/dev/_boys-ci9d5f043/tests/data/boys_accuracy_gate_reference.csv (1796 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
