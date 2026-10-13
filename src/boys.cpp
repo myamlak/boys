@@ -24,13 +24,10 @@ const char* BuildDefaultsSeamIdentity() noexcept {
 #endif
 }
 
-// The tier predicate. Defined here, out of line, because the entry is the library's: a consumer
-// that includes the front door alone and links the library - tests/consumer_umbrella.cpp and
-// tests/boys_avx2_probe.cpp are both written that way - reaches this copy. The library's own
-// callers read detail::Avx2Available(), which is inline, so the argument path pays no call.
-// The answer is this build's tier AND the machine's, which is what the entry's contract states:
-// the tier is the compiling unit's flag set, and under the one-flag-set contract this unit's
-// answer is the program's.
+// The tier predicate, defined out of line because the entry is the library's: a consumer that
+// links the library reaches this copy, and the library's own callers read the inline detail one.
+// The answer is this build's tier AND the machine's, as the entry's contract states - the tier
+// is the compiling unit's own flags, one flag set per program.
 bool BoysAvx2Available() noexcept {
     return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
 }

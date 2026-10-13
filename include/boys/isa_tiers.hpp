@@ -53,16 +53,10 @@
 
 #endif
 
-// The AVX2 + FMA tier's flag set, as a single question a body can ask. AVX2 alone does not
-// answer it: the packed lanes are FMA chains and enter the fused instruction unguarded, so a
-// target that has one without the other is the scalar tier and not a third case.
-//
-// One flag set, asked in each compiler's own spelling of it. GCC and Clang define __AVX2__ with
-// __FMA__; an MSVC driver's /arch:AVX2 carries the fused multiply-add and the half conversions
-// with AVX2, and cl 19.x defines __AVX2__ for it and neither __FMA__ nor _M_AVX2 (measured,
-// /std:c++20 /O2). _M_AVX2 is read where a toolset defines it for that same switch: asking for
-// it alone reads as the scalar tier on cl, which is how a whole MSVC build once compiled the
-// scalar lane under a vector flag set.
+// The AVX2 + FMA tier's flag set, as one question a body can ask. AVX2 alone does not answer it:
+// the packed lanes enter the fused instruction unguarded, so a target with one and not the other
+// is the scalar tier. One flag set, in each driver's spelling: GCC and Clang define __AVX2__ with
+// __FMA__; cl 19.x defines __AVX2__ alone for /arch:AVX2 (measured), so there that macro answers.
 #if !defined(BOYS_ISA_AVX2_FMA)
 #if (defined(__AVX2__) && defined(__FMA__)) || (defined(_MSC_VER) && defined(__AVX2__)) || \
     defined(_M_AVX2)

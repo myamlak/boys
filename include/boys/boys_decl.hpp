@@ -1584,11 +1584,10 @@ BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, s
 /// \ingroup boys
 constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 {
-    // The scheme the lane's own recurrence is, named rather than read from the
-    // default: the lane serves one summation, and the default is a value a
-    // measurement may move. And the tier this build carries: a translation unit
-    // compiled at the scalar tier has no packed lane, so its entries' region-A
-    // runs are the scalar body's under every scheme.
+    // The scheme the lane's own recurrence is, named and not read from the default
+    // - the lane serves one summation - and the tier this build carries: a unit at
+    // the scalar tier has no packed lane, so its region-A runs are the scalar
+    // body's under every scheme.
     return BOYS_ISA_AVX2_FMA != 0 && scheme == EvalScheme::kSplitClenshaw;
 }
 
