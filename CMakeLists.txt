@@ -432,18 +432,31 @@ unset(_boys_contract_saved_flags)
 unset(_boys_contract_flags)
 endif()
 
+# One build fact, two carriers: the tier flags and the measured contraction answer
+# are properties of the PROGRAM, and two targets carry translation units of one
+# program - `boys` (the host library) and `boys-cuda` (the device lane, a target of
+# its own because it needs the toolkit). An interface target carries both facts
+# once and each library links it, so neither can be built at one tier beside the
+# other's other tier - which the guard in include/boys/isa_tiers.hpp refuses at a
+# program's start-up rather than letting the linker merge one body silently.
+add_library(boys-tier INTERFACE)
+# An interface target has no translation units of its own to warn about; what it
+# needs is the audit's bookkeeping, which boys_strict_warnings cannot give it (it
+# sets PRIVATE options). The property is set directly, for the same reason.
+set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS boys-tier)
+
 # 1 and 0 are the two measured answers and both are defined, so a reader asks the
 # value rather than whether the name exists. Neither is defined where no answer
 # was measured: a build that has not measured contraction does not get to assert
 # the claims the answer decides, and the tri-state is what keeps it from
 # inheriting the one that would be wrong rather than the one that claims least.
 if (BOYS_SCALAR_CONTRACTS)
-    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=1)
+    target_compile_definitions(boys-tier INTERFACE BOYS_SCALAR_CONTRACTS=1)
     message(STATUS "boys: this target contracts a bare product-plus-add (one rounding) — "
         "the scalar lanes' two multiply-add routes are one arithmetic here, and the "
         "claims a build carries are compiled against that answer.")
 elseif (NOT CMAKE_CROSSCOMPILING)
-    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=0)
+    target_compile_definitions(boys-tier INTERFACE BOYS_SCALAR_CONTRACTS=0)
     message(STATUS "boys: this target does not contract a bare product-plus-add (two "
         "roundings) — the scalar lanes' two routes are two arithmetics here, and the "
         "claims a build carries are compiled against that answer.")
@@ -451,6 +464,7 @@ else()
     message(STATUS "boys: contraction is not measured in a cross-compiling configure — "
         "no claims are compiled against it and BoysBackends() reports it at run time.")
 endif()
+target_link_libraries(boys PUBLIC boys-tier)
 
 # --- Architecture gate (the AVX2 tier is x86_64-only) ------------------------
 # The probe is a configure-time compiler check rather than a lookup on
@@ -504,17 +518,32 @@ if (BOYS_ARCH_X86_64)
             # AVX2 intrinsics come with /arch:AVX2 (F16C included); no
             # contraction flag is added because MSVC contracts only under
             # /fp:fast, which is not what the measurement above runs under.
-            target_compile_options(boys PUBLIC /arch:AVX2)
+            target_compile_options(boys-tier INTERFACE /arch:AVX2)
+            # The CUDA language does not take the C++ flag set: nvcc hands its own
+            # switches to the host pass, so a translation unit compiled by nvcc
+            # would build its shared inline bodies at the scalar tier beside the
+            # C++ units' vector ones - a mixed program, which the tier guard in
+            # include/boys/isa_tiers.hpp refuses at start-up (measured here: the
+            # CUDA-on gate aborted on exactly that). The flags travel to the host
+            # pass through -Xcompiler, one spelling per driver.
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/arch:AVX2>)
         else()
             # GCC does not imply F16C via -mavx2.
-            target_compile_options(boys PUBLIC -mavx2 -mfma -mf16c)
+            target_compile_options(boys-tier INTERFACE -mavx2 -mfma -mf16c)
             if (DEFINED BOYS_SCALAR_CONTRACTS)
                 if (BOYS_SCALAR_CONTRACTS)
-                    target_compile_options(boys PUBLIC -ffp-contract=fast)
+                    target_compile_options(boys-tier INTERFACE -ffp-contract=fast)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=fast>)
                 else()
-                    target_compile_options(boys PUBLIC -ffp-contract=off)
+                    target_compile_options(boys-tier INTERFACE -ffp-contract=off)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=off>)
                 endif()
             endif()
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-mavx2,-mfma,-mf16c>)
         endif()
     else()
         message(STATUS "boys: BOYS_ISA_AVX2=OFF - the whole tree compiles the "
@@ -1496,6 +1525,10 @@ if (BUILD_CUDA)
         src/boys_cuda.cu
         src/boys_cuda_probe.cpp
         src/boys_cuda_probe_kernels.cu)
+    # The tier and the measured contraction answer: this target's units link into
+    # the same programs as `boys`'s (the gate links both), so it carries the one
+    # flag set the program is built at, contract define included.
+    target_link_libraries(boys-cuda PUBLIC boys-tier)
     # The CUDA driver targets below compile C++ translation units that include
     # CUDA headers (tests/boys_cuda_test.cpp, tests/boys_cuda_accuracy_gate.cpp
     # and the default check's host half). nvcc finds its own headers wherever the
@@ -1925,7 +1958,7 @@ if (BOYS_TOP_LEVEL)
 
     set(boysInstallCMakeDir "${CMAKE_INSTALL_LIBDIR}/cmake/boys")
 
-    install(TARGETS boys
+    install(TARGETS boys boys-tier
         EXPORT boysTargets
         ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
