@@ -6472,7 +6472,8 @@ int main(int argc, char** argv) {
     sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
     sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
 
-    std::printf("\naccuracy gate, version %s\n", boys::kVersionString);
+    std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
+    std::printf("accuracy gate, version %s\n", boys::kVersionString);
     std::printf("accuracy gate, inputs %s\n", BoysGateInputs);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 reference.c_str(),

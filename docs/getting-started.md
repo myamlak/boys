@@ -342,19 +342,19 @@ documented at 5.5e-14:
 
 | the class's question | the fastest measured entry | ns per argument | options the run could not place behind it |
 |---|---|---|---|
-| F_n(x) for one order at one argument, one call per order — `BoysSingle` | `single-fp64` | 185.11 | 0 |
-| F_0..F_n(x) at one argument, one ladder call — `BoysAllOrders` | `batch-plain-reciprocal-accurate-fp64` | 43.08 | 4 |
-| F_n(x_i) at one order over the array — `BoysFixedN` | `fixed-n-fp64` | 398.15 | 1 |
-| F_0..F_nmax(x) at every argument, one call — `BoysAllN` | `all-n-batch-plain-reciprocal-fp64-sorted` | 52.04 | 14 |
-| ...each argument at its own top order — `BoysAllNAtOrders` | `all-n-at-orders-batch-refined-reciprocal-fast-fp64` | 77.46 | 7 |
+| F_n(x) for one order at one argument, one call per order — `BoysSingle` | `single-batch-rational-minimax-fast-fp64` | 127.09 | 8 |
+| F_0..F_n(x) at one argument, one ladder call — `BoysAllOrders` | `batch-plain-reciprocal-accurate-fp64` | 35.71 | 5 |
+| F_n(x_i) at one order over the array — `BoysFixedN` | `fixed-n-fp64` | 337.34 | 1 |
+| F_0..F_nmax(x) at every argument, one call — `BoysAllN` | `all-n-batch-plain-reciprocal-fast-fp64-sorted` | 47.73 | 14 |
+| ...each argument at its own top order — `BoysAllNAtOrders` | `all-n-at-orders-batch-exact-division-fast-fp64` | 73.90 | 11 |
 
 **A nanosecond figure describes the machine, the build and the run it was taken on, and not the
 design.** It moves with the processor, the clock, the flags, and with what else the machine was doing
 while the round ran — which is why the probe compares paired inside a round rather than across runs.
 What carries from one host to another is the shape of the answer: which entries sit together at the
-top, and how long the tail behind them is. Read the last column beside the third: 43.08 ns per
-argument is the head of a class whose next four entries the run could not separate from it, and
-77.46 the head of one whose next seven it could not.
+top, and how long the tail behind them is. Read the last column beside the third: 35.71 ns per
+argument is the head of a class whose next five entries the run could not separate from it, and
+127.09 the head of one whose next eight it could not.
 
 **Each class is ranked inside itself, and nothing here is ranked across two of them.** A class is one
 precision and one question shape, and different shapes hand back a different number of values, so the

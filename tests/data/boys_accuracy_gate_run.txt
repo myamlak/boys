@@ -8,7 +8,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
+verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
 
 the certified fit routes, measured:
   one row per route and region. 'reported' is the worst error the generator
@@ -43,10 +43,10 @@ the certified fit routes, measured:
   float chebyshev B        11        F0        8184    3.14497e-08    2.57248e-08        1.5e-07    0       12.4151
   float rational B         6         F0        8184    7.50229e-08    4.34509e-08        1.5e-07    0         18.77
   rows whose stored count disagrees with the table the kernel reads: 0
-  cells where naming the default route or a route outside the enumeration
-  differed from the default entry: 0
-  cells outside a rational row's interval that naming the rational route
-  changed: 0; inside one: 10579
+  cells where naming this build's default route or a route outside the
+  enumeration differed from the default entry: 0
+  cells outside the non-default route's own rows that naming it changed:
+  0; inside one: 10579
   cells of the routes' sweep where the value is at or below the format's
   own floor: 0
 
@@ -105,8 +105,9 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
+accuracy gate, revision 2d7a483
 accuracy gate, version 4.0.0
-accuracy gate, inputs src=369ffe6138dc5074,include=f507cb3acee09a46,gate=0f62ec2af03b2f4e,grid=d966805d6247bfbc,cmake=4d8e38e21fa1743f
+accuracy gate, inputs src=284253d78a871bb3,include=55937c58bcf00fdf,gate=61d8b6b2c66568f6,grid=d966805d6247bfbc,cmake=5ee31a2f51007aa1
   reference: /mnt/c/Users/myaml/dev/_boys-ci9d5f043/tests/data/boys_accuracy_gate_reference.csv (1796 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -115,9 +116,9 @@ per-lane, per-region: delivered error / documented bound
   double single            band         13497    13497  2.34e-16 / 1e-13         0.00234 (n=19, x=7.95248)        0        0
   double single            B             8184     8184  2.39e-16 / 1e-13         0.00239 (n=32, x=13.7422)        0        0
   double single            C            29766    25989  9.99e-15 / 1e-13         0.0999 (n=32, x=29.0412)     3777     3777
-  double batch             all-orders    59268    55491  9.99e-15 / 1e-13         0.0999 (n=32, x=29.0412)     3777     3777
+  double batch             all-orders    59268    55491  2.72e-15 / 1e-13         0.0272 (n=32, x=29.1189)     3777     3777
   double batch             fixed-n      59268    55491  9.99e-15 / 1e-13         0.0999 (n=32, x=29.0412)     3777     3777
-  double batch             all-n       118536   110982  9.99e-15 / 1e-13         0.0999 (n=32, x=29.0412)     7554     7554
+  double batch             all-n       118536   110982  2.72e-15 / 1e-13         0.0272 (n=32, x=29.1189)     7554     7554
   double batch             all-n at-orders    89933    85046  9.99e-15 / 1e-13         0.0999 (n=32, x=29.0412)     4887     4887
   float single             all          59268    24828  8.3e-08 / 2.38e-07       0.195 (n=0, x=2.08827)      34440    17791
   float batch              all          59268    24828  6.17e-07 / 2.38e-07      0.701 (n=0, x=9.74055)      34440    17791
@@ -428,9 +429,9 @@ the certified fit routes, each with one verdict:
       include/boys/boys.hpp (BoysSingleF32WithRoute, BoysFitRoutesF32)
       4 route row(s), 58938 cell(s) of the committed reference grid, each compared against the bound its own row states, 0 of them over it; worst delivered 1.01669e-07 at n=0, x=0.189421; the worst cell of each row is printed beside the table above
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
-  [verified at this revision] BoysFitRoutesF32's rows are true of the tables this revision ships, and a route value this build does not serve evaluates the default entry
+  [verified at this revision] BoysFitRoutesF32's rows are true of the tables this revision ships, a route value this build does not serve evaluates the default entry, and the route this build does not default to changes a value only inside the intervals its own rows name
       include/boys/boys.hpp (FitRouteInfo), include/boys/boys_coefficients.hpp
-      0 row(s) whose stored count disagrees with the table the kernel reads; 0 cell(s) where naming the default route or a value outside the enumeration differed from the default entry; 0 cell(s) outside a rational row's interval that naming the rational route changed
+      0 row(s) whose stored count disagrees with the table the kernel reads; 0 cell(s) where naming this build's default route or a value outside the enumeration differed from the default entry; 0 cell(s) outside the non-default route's own rows that naming it changed
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] the float lane's single-order entry delivers, at every policy it accepts and at every order over the interval that policy's fits serve, no worse than the bar the lane publishes, and no worse than the figure the generated header publishes for the fit that policy reads there by more than a tenth of that bar
       include/boys/boys.hpp, BoysSingleF32; include/boys/boys_coefficients.hpp, kRegionAFitChebDelivered, kRegionAFitChebDeliveredHorner and kRegionAFitRatDelivered with the three region-B figures beside them
