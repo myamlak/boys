@@ -223,7 +223,7 @@ recorded=2026-10-02
 boys.build-facts/1
 leg=linux-x86 gcc Release
 config=Release
-cpu.model=INTEL(R) XEON(R) PLATINUM 8573C
+cpu.model=AMD EPYC 9V45 96-Core Processor
 cpu.model.source=cpuid
 cpu.logical=4
 os=linux
@@ -256,11 +256,11 @@ backend.avx2-fp32.contracts=0
 contract.this-tu.fp64=0
 contract.this-tu.fp32=0
 runtime.avx2=1
-fma.route=out-of-line-call
-fma.route.symbols=fma,fmaf
+fma.route=no-call
+fma.route.symbols=none
 fma.route.artifact=libboys.a
 fma.route.tool=nm
-recorded=2026-10-02
+recorded=2026-10-13
 ```
 
 #### `linux-x86 gcc Debug` — runner label `ubuntu-latest`

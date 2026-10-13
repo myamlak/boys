@@ -117,11 +117,14 @@ REACHED = (
     ("which had a plurality", "vote"),
 )
 
-# A row of a seam: the three key cells and the first three policy cells, which share one line of
-# the macro. The budget is read from here because it is a property of the lane and not of a row.
+# A row of a seam: the three key cells and the first three policy cells. The budget is read from
+# here because it is a property of the lane and not of a row. A cell separator tolerates the row's
+# own backslash continuation: a row whose cells wrap before the budget is one row still, and a run
+# states cells in whatever width it wrote them.
+CELL_SEP = r",\s*(?:\\\n\s*)?"
 SEAM_ROW = re.compile(
-    r"^\s*X\((kHost|kDevice), (k\w+), (k\w+), (FitRoute::\w+), (EvalScheme::\w+), "
-    r"(BoysBudget::\w+),",
+    rf"^\s*X\((kHost|kDevice){CELL_SEP}(k\w+){CELL_SEP}(k\w+){CELL_SEP}(FitRoute::\w+){CELL_SEP}"
+    rf"(EvalScheme::\w+){CELL_SEP}(BoysBudget::\w+),",
     re.MULTILINE,
 )
 
@@ -320,6 +323,17 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
                  names[host[4]], host_exp[1]]
         body.append(marker)
         body.append(row_text(device, precision, shape, cells, "RowBasis::kChosen", ""))
+
+    # Every class the seam keys leaves a row, and the read-back is what proves it: a row the
+    # writer wrote and the reader cannot see is a class the replacement drops, and that class's
+    # calls do not resolve in the build the round trip is about.
+    written = seam_rows("".join(body))
+    written_keys = {(device, precision, shape) for device, precision, shape, _budget in written}
+    dropped = [row[:3] for row in rows if row[:3] not in written_keys]
+
+    if dropped:
+        die("the emitted seam carries no row for " + ", ".join(" ".join(key) for key in dropped) +
+            " - a class the replacement drops is a class its calls cannot resolve")
 
     text = SEAM_PROSE
 

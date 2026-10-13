@@ -965,6 +965,8 @@ double UniformSingleOrder(int n, double x) noexcept {
 template <typename Policy>
 double FlatSingleOrder(int n, double x) noexcept {
 #if BOYS_ISA_AVX2_FMA
+    // Branches of one `if constexpr`, not an early return: this build refuses the
+    // unreachable-code warning.
     if constexpr (Policy::kRoute == FitRoute::kChebyshev)
     {
         const FlatPoint at = FlatLocate(x);
@@ -976,9 +978,13 @@ double FlatSingleOrder(int n, double x) noexcept {
                                            detail::kFlatMonoCoeffs.data() + base,
                                            detail::kFlatDegs[at.iv], at.t);
     }
-#endif
-
+    else
+    {
+        return UniformSingleOrder<Policy>(n, x);
+    }
+#else
     return UniformSingleOrder<Policy>(n, x);
+#endif
 }
 
 // The far region's stored representation: a fit of the scaled H_n = 2 F_n x^(n+1/2)/Gamma(n+1/2) -
