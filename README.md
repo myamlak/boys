@@ -241,8 +241,9 @@ ladder
 route's high-order intervals. Each holds the ladder-scaled bound, at a worst measured `0.12` and
 `0.48` of it.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
-values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger
-of `2^-22 · F_n(x)` and the `1.5e-7` it already published. The
+values of order one leaves about `1e-7` behind whatever the value is, so that lane states the
+larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the
+plain-reciprocal form. The
 [accuracy contract](docs/specification.md#accuracy-contract) names the two combinations, the figure
 each holds at its worst cell, and the command that measures the bound on your machine.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
