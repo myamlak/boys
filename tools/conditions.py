@@ -135,8 +135,9 @@ CONDITIONS = [
     {
         "n": 5,
         "title": "CI green on the final revision",
-        "cmd": ["gh", "pr", "checks", "8", "--repo", "myamlak/boys"],
-        "covers": "the checks GitHub ran on the pull request's current head",
+        "cmd": ["gh", "pr", "checks", "--repo", "myamlak/boys"],
+        "covers": "the checks GitHub ran on the current head of the pull request the branch "
+                  "checked out here has open in myamlak/boys",
         "does_not_cover": "the device path: every leg sets BUILD_CUDA=OFF and the device bounds are a "
                           "documented local gate",
         "timeout": 120,
@@ -147,8 +148,8 @@ CONDITIONS = [
         "title": "No documented claim the code contradicts",
         "cmd": [PY, "tools/check_doc_arithmetic.py", "--strict"],
         "covers": "every arithmetic claim in the documentation that this tool can derive",
-        "does_not_cover": "a claim of sameness, identity or mechanism - which is the class that has "
-                          "produced the two confirmed false claims found this week",
+        "does_not_cover": "a claim of sameness, identity or mechanism - the class every false "
+                          "claim found in this tree has belonged to",
         "timeout": 300,
     },
     {
