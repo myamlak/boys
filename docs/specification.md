@@ -30,7 +30,7 @@ needs it.
 B binds above the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the
 float ones. Below it the returned value is subnormal or zero, the format's own floor is what
 answers there, and no accuracy is claimed. To reproduce a figure: read the grid's `value` column
-(`tests/data/boys_accuracy_gate_reference.csv`, 59,268 cells), call the entry at the same `(n, x)`,
+(`tests/data/boys_accuracy_gate_reference.csv`, 59,301 cells), call the entry at the same `(n, x)`,
 and take the largest `|delivered − value| / |value|` over the cells whose `|value|` is above the
 lane's floor. The gate does exactly this and prints the ratio beside every row.
 
