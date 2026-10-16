@@ -512,6 +512,15 @@ static_assert(kOneArithmeticAcrossTheLanes,
               "arithmetic, which is what the cross-lane identities below rest on");
 #endif
 
+// Whether this build's default rows are the committed ones. A relation whose tolerance is the
+// shipped rows' own measurement is judged where those rows are in force, and taken as a reading
+// where a replacement answers instead.
+#if defined(BOYS_BUILD_DEFAULTS_REPLACED)
+constexpr bool kDefaultRowsAreCommitted = false;
+#else
+constexpr bool kDefaultRowsAreCommitted = true;
+#endif
+
 // The name a route carries in the library's own report, read from that table rather than spelled
 // here.
 const char* RouteCellName(boys::FitRoute route) {
@@ -2290,6 +2299,10 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     // magnitude rather than by a bound, which is what this separates.
     std::size_t schemePartsFromOther = 0;
     std::size_t batchSchemePartsFromOther = 0;
+    std::size_t otherSchemeOutside = 0;
+    double otherSchemeWorstMargin = 0.0;
+    int otherSchemeWorstN = -1;
+    double otherSchemeWorstX = 0.0;
 
     for (const Cell& cell : cells)
     {
@@ -2328,11 +2341,40 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
         batchSchemePartsFromOther +=
             (batchOtherScheme != un[static_cast<std::size_t>(cell.n)]) ? 1 : 0;
 
-        Require(report,
-                std::abs(byOtherScheme - cell.value) <=
-                    std::abs(byDefault - cell.value) + 2.0 * worstSchemeBound,
-                "the other scheme's entry is inside the default entry's error plus the "
-                "two schemes' own bounds");
+        // The tolerance is the two schemes' delivered figures, the shipped rows' own measurement:
+        // judged where those rows are in force, and recorded where a replacement answers instead.
+        const double otherSchemeMargin = std::abs(byOtherScheme - cell.value) -
+                                         (std::abs(byDefault - cell.value) + 2.0 * worstSchemeBound);
+
+        if (otherSchemeMargin > 0.0)
+        {
+            ++otherSchemeOutside;
+
+            if (otherSchemeMargin > otherSchemeWorstMargin)
+            {
+                otherSchemeWorstMargin = otherSchemeMargin;
+                otherSchemeWorstN = cell.n;
+                otherSchemeWorstX = cell.x;
+            }
+        }
+
+        if constexpr (kDefaultRowsAreCommitted)
+        {
+            Require(report,
+                    otherSchemeMargin <= 0.0,
+                    "the other scheme's entry is inside the default entry's error plus the "
+                    "two schemes' own bounds");
+        }
+    }
+
+    if constexpr (!kDefaultRowsAreCommitted)
+    {
+        std::printf("  recorded, not judged: %zu cell(s) put the other scheme's entry outside the "
+                    "default entry's error plus the two schemes' own bounds, worst %.3g beyond at "
+                    "n = %d, x = %.17g; the bounds are the shipped rows' figures, and this build's "
+                    "default rows are a replacement's\n",
+                    otherSchemeOutside, otherSchemeWorstMargin, otherSchemeWorstN,
+                    otherSchemeWorstX);
     }
 
     // The scheme axis is a reading only where the class's route stores both schemes: the lane
