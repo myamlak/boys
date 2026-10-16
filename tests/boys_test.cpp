@@ -1063,15 +1063,11 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
         }
     }
 
-    // Region C from where the entry this lane is compared against reaches it: the scalar single
-    // answers every argument at or above the join its own partition stops at - x1 for the per-order
-    // partitions, the grid's join where the row is uniform - and the grid's tables cover the fitted
-    // domain whole, so the comparison runs over the region-C kernel's domain from that join upward.
-    constexpr double kEntryRegionCJoin =
-        boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>::kGranularity ==
-                boys::FitGranularity::kUniform
-            ? boys::detail::kFlatHi
-            : boys::detail::kX1;
+    // Region C from where the entry this lane is compared against reaches it: every partition's
+    // fitted band stops at the grid's own top, kFlatHi - below it the scalar single answers from
+    // the fit, above it from the far ladder the lane runs - so the comparison starts there rather
+    // than at the join the narrower bands stopped at before the grid arrived.
+    constexpr double kEntryRegionCJoin = boys::detail::kFlatHi;
 
     std::uniform_real_distribution<double> xdC(kEntryRegionCJoin, 60.0);
 
