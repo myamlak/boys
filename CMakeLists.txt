@@ -129,6 +129,10 @@ set_property(DIRECTORY PROPERTY BOYS_STRICT_TARGETS "")
 
 if (BUILD_CUDA)
     enable_language(CUDA)
+    # The runtime target the device lane's public interface carries (CUDA::cudart):
+    # enabling the language names the compiler, not the runtime's imported targets,
+    # and the export hands one of them to every consumer of the lane.
+    find_package(CUDAToolkit REQUIRED)
     set(CMAKE_CUDA_STANDARD 20)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -1626,10 +1630,17 @@ if (BUILD_CUDA)
         src/boys_cuda.cu
         src/boys_cuda_probe.cpp
         src/boys_cuda_probe_kernels.cu)
+    # The alias every other target here carries, so a consumer's link line reads
+    # boys::boys-cuda as the host targets read boys::boys - and so the export
+    # below has a namespaced name to hand out like the others.
+    add_library(boys::boys-cuda ALIAS boys-cuda)
     # The tier and the measured contraction answer: this target's units link into
     # the same programs as `boys`'s (the gate links both), so it carries the one
     # flag set the program is built at, contract define included.
-    target_link_libraries(boys-cuda PUBLIC boys-tier)
+    # The runtime rides the interface with the include path that reads it: a host-only
+    # consumer links this archive and needs cudart's symbols and headers, and the
+    # installed package answers both through the component's CUDAToolkit.
+    target_link_libraries(boys-cuda PUBLIC boys-tier CUDA::cudart)
     # The CUDA driver targets below compile C++ translation units that include
     # CUDA headers (tests/boys_cuda_test.cpp, tests/boys_cuda_accuracy_gate.cpp
     # and the default check's host half). nvcc finds its own headers wherever the
@@ -1638,9 +1649,23 @@ if (BUILD_CUDA)
     # path, so the toolkit's include directories - which CMake reports once the
     # CUDA language above is enabled - are named here, PUBLIC, because what links
     # this library is what reads them.
+    # Wrapped, so this target exports like the host two do: the interface a package
+    # consumer reads spells include/ (their own install), the toolkit's directories
+    # are this configure's (an installed consumer's come from find_dependency), and
+    # src/ is private and travels nowhere. Each toolkit directory is wrapped on its
+    # own: one generator expression around the list drops the first entry's leading
+    # slash and resolves it against this source directory instead.
+    set(_boysCudaToolkitIncludes "")
+    foreach (_boysCudaToolkitDir IN LISTS CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
+        list(APPEND _boysCudaToolkitIncludes "$<BUILD_INTERFACE:${_boysCudaToolkitDir}>")
+    endforeach()
     target_include_directories(boys-cuda
-        PUBLIC include ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+            ${_boysCudaToolkitIncludes}
         PRIVATE src)
+    unset(_boysCudaToolkitIncludes)
     if (BOYS_BUILD_DEFAULTS_DIR)
         # A build's defaults are one seam and not a host half: the device lane's
         # rows are read from the same list (boys_cuda_options.hpp) and the device
@@ -1658,7 +1683,7 @@ if (BUILD_CUDA)
         # above is PUBLIC - a consumer's own .cu reaches the headers either way,
         # and boys_cuda.hpp includes boys.hpp, so both lanes are answered by the
         # one accessor (include/boys/version.hpp, BuildDefaultsSeamIdentity()).
-        target_include_directories(boys-cuda BEFORE PUBLIC "${BOYS_BUILD_DEFAULTS_DIR}")
+        target_include_directories(boys-cuda BEFORE PUBLIC "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
         target_compile_definitions(boys-cuda PUBLIC
             BOYS_BUILD_DEFAULTS_REPLACED=1
             BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
@@ -2057,6 +2082,17 @@ if (BOYS_TOP_LEVEL)
         LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
         RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
 
+    # The device lane ships in the same package when it was built: a consumer
+    # whose configure chose the CUDA path reaches it through the same
+    # find_package call, under the component that asks for a toolkit.
+    if (BUILD_CUDA)
+        install(TARGETS boys-cuda
+            EXPORT boysTargets
+            ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    endif()
+
     # The whole directory, not a pattern list: every header under include/boys is
     # public, and a list would silently drop the next one it was not told about.
     # `include` is spelled, not taken from CMAKE_INSTALL_INCLUDEDIR, so the
@@ -2078,6 +2114,14 @@ if (BOYS_TOP_LEVEL)
         FILE boysTargets.cmake
         NAMESPACE boys::
         DESTINATION "${boysInstallCMakeDir}")
+
+    # Read into the config by configure_package_config_file below: whether this package
+    # carries the device component its find_package answers for.
+    if (BUILD_CUDA)
+        set(BOYS_CONFIG_HAS_CUDA TRUE)
+    else()
+        set(BOYS_CONFIG_HAS_CUDA FALSE)
+    endif()
 
     configure_package_config_file(cmake/boysConfig.cmake.in
         "${CMAKE_CURRENT_BINARY_DIR}/boysConfig.cmake"

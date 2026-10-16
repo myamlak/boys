@@ -1,5 +1,16 @@
 @PACKAGE_INIT@
 
+# The device target is present exactly where this package was built with it, and
+# its imported link line names the toolkit's targets - which only a consumer that
+# asks for the component has. A CPU-only find_package is not made to install CUDA
+# for it; one that asks as find_package(boys COMPONENTS cuda) is answered whether
+# this package carries the lane, and a required component it lacks fails here.
+set(boys_cuda_FOUND @BOYS_CONFIG_HAS_CUDA@)
+if (boys_cuda_FOUND AND "cuda" IN_LIST boys_FIND_COMPONENTS)
+    include(CMakeFindDependencyMacro)
+    find_dependency(CUDAToolkit)
+endif()
+
 include("${CMAKE_CURRENT_LIST_DIR}/boysTargets.cmake")
 
 check_required_components(boys)
