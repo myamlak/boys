@@ -104,7 +104,10 @@ or, against a tree you have already built:
 
 `-DBoysFp16=1` and the tier flags are the ones the recipe above put on the library, and
 `docs/build-facts.md` states the profile they spell. Every entry is compiled where it is called,
-so a unit that leaves either out builds a program the headers refuse at start-up.
+so a unit that leaves either out builds a program the headers refuse at start-up in a program that
+links the archive. The refusal is a disagreement between two announcements and needs both: the
+archive's own units are the second one, and a program built from the headers alone makes the one
+announcement and runs.
 
 ```
 F_3(1.25)  = 0.055476132923076911
@@ -179,7 +182,8 @@ option is a cache variable the parent sets before `add_subdirectory`.
 
 Outside CMake the flags are yours to spell, and `docs/build-facts.md` states the profile the
 figures belong to. A unit compiled with the other reading of the fp16 seam or of the tier builds a
-program the headers refuse at start-up.
+program the headers refuse at start-up in a program that links the archive, and one that runs
+against the headers alone.
 
     c++ -std=c++20 -DBoysFp16=1 -I include try.cpp -o try     # the headers alone, no archive
 
