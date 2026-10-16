@@ -390,7 +390,7 @@ By what you want, not by what the library calls things:
 | F_n at every argument of an array | `BoysFixedN` | when the order is fixed and the arguments vary; takes an output stride |
 | F_0..F_nmax at every argument of an array | `BoysAllN` | the batch shape of an integral engine; the arguments may arrive in any order |
 | ...with each argument's own top order | `BoysAllNAtOrders` | a shell-quartet batch, where no argument is padded to a common order |
-| ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}` | skips the internal sort when your loop already produces a non-decreasing array |
+| ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}`, pointer form only | skips the internal sort when your loop already produces a non-decreasing array |
 | ...when the arguments are not known to be in domain | `BoysSingleChecked`, `BoysAllOrdersChecked`, `BoysFixedNChecked`, `BoysAllNChecked`, `BoysAllNAtOrdersChecked` | the checked twin of every double entry above; it refuses with a status rather than answering |
 | any of the above in single precision | `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32`, `BoysAllNAtOrdersF32` | when the rest of your kernel is `float` |
 | half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16` | 16-bit I/O around the single-precision engine |
