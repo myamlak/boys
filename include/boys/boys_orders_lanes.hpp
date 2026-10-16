@@ -485,11 +485,8 @@ inline void StoreGroup(double* out, int l, std::size_t stride, __m256d value) no
 /// the walk below goes on with - one sqrt a call, the region's own prologue either way - and
 /// the walk takes up at order \c kFarRecurOrders + 1 with its registers seeded from that
 /// state: lane 1 of the group kFarRecurOrders..+3, at the running power \c h^4 the walk's own
-/// schedule gives that order. A request that reaches that group's last lane forms the group in
-/// one store, its other lanes the walk's own terms, and restores lane 0 to the recurrence's
-/// value; a shorter one steps the lanes scalar. Orders above the cut are the walk's values bit
-/// for bit, orders up to it the recurrence's, and the axis's low orders are the per-order lane's
-/// own.
+/// schedule gives that order. Orders above the cut are the walk's values bit for bit, orders
+/// up to it the recurrence's, and the axis's low orders are the per-order lane's own.
 ///
 /// No branch guards the powers' underflow, here as in the walk: \c h^32 leaves the normal range
 /// above x = 2.06e9 and flushes to true zero above x = 6.48e9, where the largest order's value is
@@ -499,12 +496,6 @@ inline void StoreGroup(double* out, int l, std::size_t stride, __m256d value) no
 /// \param x      argument, kX1 <= x
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
-///
-/// The body is compiled unoptimized under MSVC, as the recurrence it steps from is: the arm64
-/// back end crashes (C1001, at /O2) while optimizing the pair. Other compilers are untouched.
-#if defined(_MSC_VER)
-#pragma optimize("", off)
-#endif
 inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out) noexcept {
     // The lane is entered past the cut: a request that stops there is answered by the recurrence
     // in FarLadderRun before its dispatch.
@@ -523,51 +514,37 @@ inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, doub
     const double w[4] = {kBoysHalfSqrtPi * r, kBoysHalfSqrtPi * (r * h), kBoysHalfSqrtPi * (r * h2),
                          kBoysHalfSqrtPi * (r * (h2 * h))};
 
-    // The walk from order kFarRecurOrders + 1. A request that stops inside that group steps its
-    // lanes scalar, one store an order; one that reaches the group's last lane covers it whole -
-    // its lanes past the cut are the terms the scalar step would form one by one, and lane 0 is
-    // the recurrence's order kFarRecurOrders, already written, restored after the group's store.
+    // The walk from order kFarRecurOrders + 1: the tail of the group that order sits in (its
+    // lanes past the cut), then whole groups from the next multiple of four. The power is the
+    // walk's own h^4 at the cut's group and advances as its own p does.
     double p = h4;
     int l = kFarRecurOrders + 1;
 
-    if (nmax < kFarRecurOrders + 4)
-    {
-        for (; l <= nmax && (l & 3) != 0; ++l)
-        {
-            out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
-        }
-
-        return;
-    }
-
-    const __m256d wv = _mm256_loadu_pd(w);
-    const double fCut = out[static_cast<std::size_t>(kFarRecurOrders) * stride];
-
-    StoreGroup(out, kFarRecurOrders, stride,
-               _mm256_mul_pd(_mm256_mul_pd(wv, _mm256_load_pd(kDoubleFactorial + kFarRecurOrders)),
-                             _mm256_set1_pd(p)));
-    out[static_cast<std::size_t>(kFarRecurOrders) * stride] = fCut;
-
-    // The power is the walk's own h^4 at the group the cut sits in and advances as its own p does.
-    p *= h4;
-    l = kFarRecurOrders + 4;
-
-    // Four orders a group, advanced by the walk's own h4; the orders left over are the walk's.
-    for (; l + 3 <= nmax; l += 4)
-    {
-        const __m256d a = _mm256_load_pd(kDoubleFactorial + l);
-        StoreGroup(out, l, stride, _mm256_mul_pd(_mm256_mul_pd(wv, a), _mm256_set1_pd(p)));
-        p *= h4;
-    }
-
-    for (; l <= nmax; ++l)
+    for (; l <= nmax && (l & 3) != 0; ++l)
     {
         out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
     }
+
+    if (l <= nmax)
+    {
+        p *= h4;
+
+        const __m256d wv = _mm256_loadu_pd(w);
+
+        // Four orders a group, advanced by the walk's own h4; the orders left over are the walk's.
+        for (; l + 3 <= nmax; l += 4)
+        {
+            const __m256d a = _mm256_load_pd(kDoubleFactorial + l);
+            StoreGroup(out, l, stride, _mm256_mul_pd(_mm256_mul_pd(wv, a), _mm256_set1_pd(p)));
+            p *= h4;
+        }
+
+        for (; l <= nmax; ++l)
+        {
+            out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
+        }
+    }
 }
-#if defined(_MSC_VER)
-#pragma optimize("", on)
-#endif
 
 template <backend::MulAddRoute kMulAddRoute,
           OrdersScheme kScheme,

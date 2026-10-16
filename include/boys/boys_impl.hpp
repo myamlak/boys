@@ -1368,17 +1368,10 @@ inline constexpr int kFarRecurOrders = 4;
 /// against the ladder over the far region's stream, the largest divergence scaled by \c F_0 is
 /// 7.9e-19, five orders of magnitude under the 1e-13 the region publishes.
 ///
-/// The body is compiled unoptimized under MSVC: the arm64 back end crashes (C1001, at /O2) while
-/// optimizing it, and a prologue that costs a few cycles more is cheaper than a build that does
-/// not finish. Every other compiler is untouched, and the values are the same either way.
-///
 /// \param nmax   highest order, 0..kFarRecurOrders
 /// \param r      the seed quotient 1/sqrt(x), kX1 <= x, formed by the caller
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
-#if defined(_MSC_VER)
-#pragma optimize("", off)
-#endif
 inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
                                        double* out) noexcept {
     assert(nmax >= 0 && nmax <= kFarRecurOrders);
@@ -1394,47 +1387,14 @@ inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
     const double h = 0.5 * (r * r);
     const double step = 2.0 * h;
     double c = h;
-    double* p = out + stride;
 
-    // The orders in line for a runtime nmax: a request that stops before the last ones never
-    // reaches their terms, and each carries the same two multiplies the loop stepped - the store's
-    // address advanced by the stride instead of an index. Same terms, same order, same roundings.
-    f = f * c;
-    *p = f;
-
-    if (nmax == 1)
+    for (int m = 1; m <= nmax; ++m)
     {
-        return;
+        f = f * c;
+        out[static_cast<std::size_t>(m) * stride] = f;
+        c = c + step;
     }
-
-    c = c + step;
-    p += stride;
-    f = f * c;
-    *p = f;
-
-    if (nmax == 2)
-    {
-        return;
-    }
-
-    c = c + step;
-    p += stride;
-    f = f * c;
-    *p = f;
-
-    if (nmax == 3)
-    {
-        return;
-    }
-
-    c = c + step;
-    p += stride;
-    f = f * c;
-    *p = f;
 }
-#if defined(_MSC_VER)
-#pragma optimize("", on)
-#endif
 
 /// The recurrence at the caller's own argument: forms the seed quotient and defers to the core
 /// above. A caller about to walk the region hands the core its own \c r instead, so the pair
