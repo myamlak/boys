@@ -85,10 +85,10 @@
 /// The figures are the shipped build's: a build whose default rows are
 /// replaced (-DBOYS_BUILD_DEFAULTS) delivers what its own rows were measured
 /// to deliver, and its figures are the option probe's report. Two
-/// combinations the option space offers hold the absolute figure these lanes
-/// published before the relative one rather than the relative figure alone -
-/// the lean partition's extended-band ladder and the rational-minimax route's
-/// high-order intervals - and docs/specification.md names both.
+/// combinations the option space offers hold the bound's ladder-scaled arm
+/// and not a figure read against F_n(x) - the lean partition's extended-band
+/// ladder and the rational-minimax route's high-order intervals, at worst
+/// 0.12 and 0.48 of the bound - and docs/specification.md names both.
 ///
 /// Region C has no stored fit and its rows carry that arithmetic's own figure.
 /// A lane whose figure is not one number carries the difference as an additive
@@ -1298,7 +1298,7 @@ BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract - the
 /// \c "double batch" row of the table in the file preamble:
-/// |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) per value, the
+/// |F̂ − F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) per value, the
 /// lane's ladder-scaled figure, in every
 /// region.
 ///
@@ -1319,8 +1319,8 @@ BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
 void BoysAllOrders(int nmax, double x, double* out) noexcept;
 
 /// F_n(x_i) for an array of arguments at one fixed order n, double precision;
-/// |F - F| <= B_region per value (the BoysSingle per-region contract, region
-/// table in the file preamble).
+/// |F̂ − F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) per value (the
+/// BoysSingle contract, table in the file preamble).
 ///
 /// The batch shape of integral-engine inner loops that group shell pairs by
 /// angular momentum: each element needs exactly one order, so no unused
