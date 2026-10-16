@@ -142,10 +142,10 @@ BoysRegion RegionOf(double x) {
 
 enum class LaneKind : std::uint8_t { kDoubleSingle, kDoubleBatch, kFloatSingle, kFloatBatch };
 
-// The asserted bound at a cell, `rung` being F_0(x) there (gGrid.Value(0, x)): the double lanes'
-// published figure, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), which F falling with the
-// order makes the rung's arm. The fits' per-region budgets are the generator's certification of
-// the stored tables, not the assertion: a min() would hold a call to a bar no caller was promised.
+// The asserted bound at a cell, `rung` being F_0(x) there (a grid x reads the grid's F_0
+// column, RungAt carries off-grid draws): the double lanes' published figure, the larger of
+// 1e-13 * F_n(x) and 1e-13 * F_0(x), which F falling with the order makes the rung's arm.
+// The fits' budgets certify the tables, not the assertion: a min() holds no caller's promise.
 double RegionBound(LaneKind lane, double rung) {
     switch (lane)
     {
@@ -159,6 +159,14 @@ double RegionBound(LaneKind lane, double rung) {
     }
 
     return 0.0; // unreachable
+}
+
+// The rung F_0(x) at an argument the committed grid does not carry, which the fuzz draws:
+// sqrt(pi)/(2 sqrt(x)) * erf(sqrt(x)), the truth the bound is defined against. Its own double
+// rounding is ~1e-16 relative, nothing against a 1e-13-scale budget.
+double RungAt(double x) {
+    const double root = std::sqrt(x);
+    return 0.886226925452758014 * std::erf(root) / root;
 }
 
 // The policy the float batch entry's unnamed call compiles: the fp32 all-orders class's row. The
@@ -673,8 +681,9 @@ void CheckSingleBatchAgree() {
         for (int k = 0; k <= nmax; ++k)
         {
             const double single = BoysSingle(k, x);
-            const double bound = RegionBound(LaneKind::kDoubleSingle, gGrid.Value(0, x)) +
-                                 RegionBound(LaneKind::kDoubleBatch, gGrid.Value(0, x));
+            const double rung = RungAt(x);
+            const double bound = RegionBound(LaneKind::kDoubleSingle, rung) +
+                                 RegionBound(LaneKind::kDoubleBatch, rung);
             EXPECT_LE(std::abs(batch[static_cast<std::size_t>(k)] - single), bound)
                 << "n=" << k << " x=" << x;
         }

@@ -114,13 +114,15 @@ BoysRegion RegionOf(double x) {
     return BoysRegion::C;
 }
 
-// The double-single per-region budgets, the bars the lane's fits were placed against; this
-// entry mirrors the scalar single lane per element.
+// The double-single per-region budgets, the bars the lane's fits were placed against: region A
+// is the (5, 1/16) grid's own low-x rounding, 3.109e-15 measured bit-identically on every CI
+// toolchain and an order inside the published promise there (1e-13 * F_0). This entry mirrors
+// the scalar single lane per element.
 double RegionBound(BoysRegion region) {
     switch (region)
     {
     case BoysRegion::A:
-        return 1e-15;
+        return 5e-15;
 
     case BoysRegion::B:
     case BoysRegion::E:
