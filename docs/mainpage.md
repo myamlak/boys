@@ -266,7 +266,9 @@ report prints how many of its comparisons were bit-for-bit equal.
 
 ### Checking these figures
 
-The measurement is in this tree. Build it and run it:
+The measurement is in this tree. Build it and run it — the gate is a target of the test suite, so
+the configure that produces it wants `-DBOYS_BUILD_TESTS=ON` and the vendored googletest beside the
+tree:
 
     cmake --build <build> --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
