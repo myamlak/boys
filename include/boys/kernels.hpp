@@ -7,9 +7,8 @@
 ///
 /// A call that names no policy is not flattened into the library: the entry's body is inline
 /// here, so the caller's own translation unit instantiates it, at the same table row and from
-/// the same kernel a library build reads. Naming a policy is the other half - the spelling for
-/// a caller that wants a combination the build does not carry as a default, and the one a
-/// translation unit that links no library at all has to use.
+/// the same kernel a library build reads. Naming a policy is the other half: the spelling for
+/// a caller that wants a combination the build does not carry as a default.
 ///
 /// **Nothing here is declared in the front door.** Naming a policy without this header is a
 /// compile error at the call site rather than a promise the linker has to keep, which is the
