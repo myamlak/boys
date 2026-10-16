@@ -710,6 +710,13 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 LaneCellDifferences().c_str());
         }
 
+        // The cross-class bar. Where the seam answers the two classes with one row the two entries
+        // are one arithmetic, and the single lane's budget is the exact bar the identity below is
+        // the tight form of. Where it answers them differently, each entry is inside its own
+        // class's documented budget of the value - both classes document these per-region
+        // budgets - so the two differ by at most the two budgets summed.
+        constexpr double kCrossBudgets = kOneArithmeticAcrossTheLanes ? 1.0 : 2.0;
+
         for (const double x : DistinctArgs(cells))
         {
             double all[boys::kMaxBoysOrder + 1] = {};
@@ -744,7 +751,7 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
 
                 const double singleValue = Single(cell.n, x);
 
-                if (std::abs(plain - singleValue) > SingleBound(cell.x))
+                if (std::abs(plain - singleValue) > kCrossBudgets * SingleBound(cell.x))
                 {
                     ++outsideBound;
                 }
@@ -777,13 +784,13 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
             std::fill(std::begin(strided), std::end(strided), kUnwritten);
             FixedN(3, two, strided, 2, 3);
             Require(report,
-                    std::abs(strided[0] - one) <= SingleBound(x),
+                    std::abs(strided[0] - one) <= kCrossBudgets * SingleBound(x),
                     "a stride of 3 writes the first value inside the single lane's bound");
             Require(report,
                     strided[1] == kUnwritten && strided[2] == kUnwritten,
                     "a stride of 3 leaves the padding between values untouched");
             Require(report,
-                    std::abs(strided[3] - other) <= SingleBound(two[1]),
+                    std::abs(strided[3] - other) <= kCrossBudgets * SingleBound(two[1]),
                     "a stride of 3 writes the second value inside the single lane's bound");
 
             if constexpr (kOneArithmeticAcrossTheLanes)
