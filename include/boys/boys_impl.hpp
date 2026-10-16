@@ -1387,13 +1387,43 @@ inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
     const double h = 0.5 * (r * r);
     const double step = 2.0 * h;
     double c = h;
+    double* p = out + stride;
 
-    for (int m = 1; m <= nmax; ++m)
+    // The orders in line for a runtime nmax: a request that stops before the last ones never
+    // reaches their terms, and each carries the same two multiplies the loop stepped - the store's
+    // address advanced by the stride instead of an index. Same terms, same order, same roundings.
+    f = f * c;
+    *p = f;
+
+    if (nmax == 1)
     {
-        f = f * c;
-        out[static_cast<std::size_t>(m) * stride] = f;
-        c = c + step;
+        return;
     }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
+
+    if (nmax == 2)
+    {
+        return;
+    }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
+
+    if (nmax == 3)
+    {
+        return;
+    }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
 }
 
 /// The recurrence at the caller's own argument: forms the seed quotient and defers to the core
