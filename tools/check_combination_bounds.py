@@ -137,15 +137,13 @@ DEFINES = ["BoysFp16=1"]
 MSVC_DEFINE = "/D"
 POSIX_DEFINE = "-D"
 
-# The flags the build file gives these two translation units, and the reason it gives them: the
-# AVX2/FMA/F16C intrinsics `src/boys_simd.cpp` carries behind `BOYS_SIMD_X86` are refused by the
-# ELF tools without the flags that licence them ("target specific option mismatch"), while the
-# MSVC spelling of the same set is `/arch:AVX2`. The build file states the set through a variable
-# and pins a scalar-contract flag onto it under a configure-time decision; what this driver needs
-# is the intrinsics' half, and the arithmetic it does not pin moves no number here - every figure
-# this check reads is the accessor's table and no F_n is evaluated in it.
-SIMD_SOURCES = ("src/boys_simd.cpp", "src/boys_orders_simd.cpp")
-SIMD_FLAGS = ("-mavx2", "-mfma", "-mf16c")
+# The tier flags, and why this program carries none. `isa_tiers.hpp` states the rule this driver
+# is a program under: every translation unit of a program is compiled with one flag set, the
+# library's own included, and a program that carries two is refused at start-up rather than
+# linked silently. So the library's sources and this driver are all compiled the way the MSVC
+# spelling below already compiles them - no tier flags, the scalar tier, a supported lane and
+# not a degradation. No figure moves with the tier: every figure this check reads is the
+# accessor's table and no F_n is evaluated in it.
 
 # The paths the driver is compiled against, and the two records it is held to. `src/` is taken
 # whole, and `CMakeLists.txt` with it, because the library's source list is read from its target
@@ -627,20 +625,11 @@ def run_driver(tree: pathlib.Path, classes: list[tuple[str, str, str]], sources:
                    f'{definitions(MSVC_DEFINE)} "{driver}" {" ".join(sources)} /Fe:driver.exe\n')
         produced = tree / "driver.exe"
     else:
-        # One flag set per invocation is all the ELF tools take, so the sources that carry the
-        # intrinsics' flags are compiled in an invocation of their own and the rest without them.
-        plain = [source for source in sources if source not in SIMD_SOURCES]
-        groups = ((plain, ()), (tuple(s for s in SIMD_SOURCES if s in sources), SIMD_FLAGS))
+        # Every translation unit carries the same flag set - none - as the rule above states.
         commands = []
-
-        for group, flags in groups:
-            if not group:
-                continue
-
-            commands.append(f'{compiler()} -std=c++23 -O0 -I include {definitions(POSIX_DEFINE)} '
-                            f'{" ".join(flags)} -c {" ".join(group)}')
-
         objects = [pathlib.Path(source).with_suffix(".o").name for source in sources]
+        commands.append(f'{compiler()} -std=c++23 -O0 -I include {definitions(POSIX_DEFINE)} '
+                        f'-c {" ".join(sources)}')
         commands.append(f'{compiler()} -std=c++23 -O0 -I include {definitions(POSIX_DEFINE)} '
                         f'-c "{driver}"')
         commands.append(f'{compiler()} {pathlib.Path(driver).with_suffix(".o").name} '
