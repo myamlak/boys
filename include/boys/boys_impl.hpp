@@ -1368,10 +1368,17 @@ inline constexpr int kFarRecurOrders = 4;
 /// against the ladder over the far region's stream, the largest divergence scaled by \c F_0 is
 /// 7.9e-19, five orders of magnitude under the 1e-13 the region publishes.
 ///
+/// The body stays out of its callers' instantiations under MSVC: the arm64 back end crashes
+/// (C1001, at /O2) on the inlined form of it, and a call an order's prologue pays for is cheaper
+/// than a build that does not finish. The values are the same either way.
+///
 /// \param nmax   highest order, 0..kFarRecurOrders
 /// \param r      the seed quotient 1/sqrt(x), kX1 <= x, formed by the caller
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
 inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
                                        double* out) noexcept {
     assert(nmax >= 0 && nmax <= kFarRecurOrders);
