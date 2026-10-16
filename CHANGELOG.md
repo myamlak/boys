@@ -1,6 +1,6 @@
 # Changelog
 
-What changed between released versions of this library, newest first. The version this tree is
+What changed between released versions of this library, newest first. The version this tree carries
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
@@ -11,8 +11,8 @@ in a sentence, and `boys::VersionString()` answers it at run time.
 and `1e-13 · F_0(x)`. Releases before 4.0.0 carried one absolute figure for the whole range,
 `5.5e-14`, instead. The change breaks a caller who pinned on that figure, and the new form is not
 uniform read against the returned value: the value is held to `1e-13` of `F_n(x)` below the
-region-C boundary and again above `x ≈ 93` at `n = 32`, and in between the bound is a fraction of
-the value that reaches 140 % at the worst cell, `n = 32, x = 31`. The float lane states the larger
+region-C boundary and again above `x ≈ 93` at `n = 32`, and in between the error reaches 140 % of
+the value at the worst cell, `n = 32, x = 31`. The float lane states the larger
 of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the plain-reciprocal form;
 the half lanes keep their own figures. `docs/specification.md#accuracy-contract` is the contract,
 lane by lane, and it names the two combinations that hold the wider arm rather than the figure read
