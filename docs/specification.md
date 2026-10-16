@@ -67,12 +67,13 @@ cannot be judged against — the double lane's published figure and the far-repr
 figures — and prints their readings rather than a verdict, and `boys-tests` takes the same reading
 of its far-representation bars.
 
-**Two combinations of the double lane hold the wider arm of the bound and not the relative one.**
-The bound above is the one the lanes' own entries hold, with margin: the double entries'
-worst relative error over the gate's grid is 9.99e-15 of F_n(x), a full order below the relative
-arm, at n = 32,
-x = 29.0412. Two
-families of cells are held by the bound's wider arm and not by the relative one:
+**Two combinations of the double lane hold the bound's ladder-scaled arm and not a figure read
+against `F_n(x)`.** The bound above is the one the lanes' own entries hold, with margin: the gate's
+recorded run puts the double lane's worst delivered error at `0.288` of it, at `n = 32, x = 31`. The
+same cell is the worst the tree's own reference grid holds read against the value — a delivered
+error of 1.396 · F_32(31) — and the grid's worst below the region-C boundary,
+`x = 28.98933773882074`, is 3.496e-14 of `F_n(x)`. Two families of cells are held by the
+ladder-scaled arm and not by a figure read against `F_n(x)`:
 
 | Family | What it holds | The cell it is worst at |
 |---|---|---|
