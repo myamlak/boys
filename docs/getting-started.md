@@ -22,12 +22,14 @@ them where a guarantee is involved. It does not restate them.
 
 Each example is also a program you can compile on its own against an already-built tree:
 
-    c++ -std=c++20 -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
+    c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off \
+        -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
 
-The headers need C++20, and the compile line above is all they ask for. The build in the
-block before it is the contributor's: it compiles the test suite as well, which wants C++23. On
-Windows with the Visual Studio generator the library lands in `build/Release/`. The CMake route above
-is the one that finds it without flags.
+The headers need C++20, and the compile line above is all they ask for: `-DBoysFp16=1` and the
+tier flags are the ones the build above put on the library, and `docs/build-facts.md` states the
+profile they spell. The build in the block before it is the contributor's: it compiles the test
+suite as well, which wants C++23. On Windows with the Visual Studio generator the library lands in
+`build/Release/`. The CMake route above is the one that finds it without flags.
 
 ---
 
@@ -83,13 +85,14 @@ const double f = boys::BoysSingle(n, x);
     guaranteed error <= 5.5e-14  (from throughout, every region)
     BoysAllOrders agrees to 0
 
-The second line is the whole accuracy story in one figure: **the answer is within 5.5e-14 of the true
-F_3(1.25)**. It is not an estimate of the error somebody observed. It is the bound the library
-guarantees for this call, read out of the library at run time rather than typed into a document. The
-phrase in parentheses after it says how far that figure reaches. The arguments are cut into
-regions, and this is the lane's bound over every one of them. If your calculation needs an error below
-that, see [I need to know what the library guarantees before I rely on
-it](#i-need-to-know-what-the-library-guarantees-before-i-rely-on-it).
+The second line is the lane's own figure, read out of the library at run time rather than typed into a
+document: the lane's runs measured at most that error, and the phrase in parentheses says how far the
+figure reaches — the row is the lane's, over every region. **The guarantee this release publishes is
+the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`** — a fraction of the value rather than one figure
+for the whole range ([the specification](specification.md), "Accuracy contract") — and since F falls
+with the order, the arm scaled by the ladder's first rung is the wider one wherever the order's own
+value is tiny. If your calculation needs an error below the figure it prints, see [what the library
+guarantees](#what-the-library-guarantees).
 
 **Next:** `BoysSingle` computes each order on its own, so reach for the ladder below if you need more
 than one. It is the same call an integral code makes.
@@ -219,7 +222,8 @@ boys::BoysAllOrders<Named>(nmax, x, named_ladder);
     4   0.015602172536926782     0.015602172536926787
     worst disagreement: 6.9e-18 (guaranteed error <= 5.5e-14)
 
-The two agree here to within 6.9e-18, far inside the 5.5e-14 guarantee, and that is expected rather
+The two agree here to within 6.9e-18, far inside the 5.5e-14 the lane prints, and that is expected
+rather
 than a coincidence: the settings select how the same approximation is summed, not what is
 approximated, so they part company only in the last bits — three of the five lines above differ
 there. The places to change a setting are the ones where they do **not** agree. Finding those on your
@@ -237,7 +241,7 @@ run time](#what-you-can-and-cannot-choose-at-run-time).
 
 ---
 
-## I need to know what the library guarantees before I rely on it {#i-need-to-know-what-the-library-guarantees-before-i-rely-on-it}
+## What the library guarantees {#what-the-library-guarantees}
 
 `examples/06_what_it_guarantees.cpp` — ask with your tolerance and get a verdict, rather than
 comparing a table by eye.
@@ -392,13 +396,13 @@ The complete list, with every overload and the arithmetic behind it, is the entr
 
 ## What you can and cannot choose at run time {#what-you-can-and-cannot-choose-at-run-time}
 
-The settings that select an evaluation fall into two kinds. Two can be named by a value the program
+The settings that select an evaluation fall into two kinds. One can be named by a value the program
 computes. The rest can only be named where the call is compiled:
 
 | Setting | Can you name it at run time? | How |
 |---|---|---|
-| which stored fit serves the interval | **yes** | `BoysAllOrdersWithRoute`, `BoysSingleF32WithRoute` |
-| how the coefficients are summed | **yes** | the `(route, scheme)` overload of `BoysAllOrdersWithRoute` — the ladder shape; the float lane's single-order entry takes a route and no scheme |
+| which stored fit serves the interval | no | template argument only - `BoysAllOrdersWithRoute<kRoute>` on the ladder shape, `BoysSingleF32WithRoute<kRoute>` on the float lane's single |
+| how the coefficients are summed | **yes** | the scheme-carrying overload of `BoysAllOrdersWithRoute` takes it as a value - the ladder shape; the float lane's single-order entry takes a route and no scheme |
 | the internal precision budget | no | template argument only — `EvalPolicy`'s third parameter |
 | the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `EvalPolicy`'s fourth parameter |
 | how finely the fitted interval is cut | no | template argument only — `EvalPolicy`'s fifth parameter |

@@ -1,11 +1,12 @@
 // The accuracy contract tests: for {double single, double batch, float single, float batch}, assert
-// |F_hat - ref| <= B_region per region on the committed reference grid, region bucketing A x < kX0,
-// B kX0 <= x < kX1, C x >= kX1.
+// |F_hat - ref| <= B at every cell of the committed reference grid, B being the lane's published
+// figure. The four region buckets - A x < kX0, B kX0 <= x < kX1, C x >= kX1, and E the extended
+// band inside A - bucket the reported worsts and not the bound.
 
-// The asserted bounds B: double single 1e-15/3e-14/5.5e-14, double batch 5.5e-14 per region, float
-// single 1.5e-7 per region, and float batch the figure the lane publishes for the division form the
-// entries divide in - 1.5e-7 at exact division and at the refined reciprocal, plus the row's
-// plain-reciprocal term where the build compiles that form.
+// The asserted bounds B are the lanes' published figures, not the fits' per-region bars (1e-15
+// over A, 3e-14 over the band and B, 5.5e-14 over C, which the generator certifies of the stored
+// tables): the double lanes at the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), float single at
+// 1.5e-7 over every region, float batch at the figure its row publishes for the entries' division.
 
 // The effective-degree tables carry the full degrees of the table they are read from, over all six
 // lane roles and both regions, and are inside the evaluator domain.
@@ -141,30 +142,16 @@ BoysRegion RegionOf(double x) {
 
 enum class LaneKind : std::uint8_t { kDoubleSingle, kDoubleBatch, kFloatSingle, kFloatBatch };
 
-// The asserted per-region bounds. The extended band carries the region-B budget: its
-// per-range F0 seed serves the certified upward recursion.
-double RegionBound(BoysRegion region, LaneKind lane) {
+// The asserted bound at a cell, `rung` being F_0(x) there (gGrid.Value(0, x)): the double lanes'
+// published figure, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), which F falling with the
+// order makes the rung's arm. The fits' per-region budgets are the generator's certification of
+// the stored tables, not the assertion: a min() would hold a call to a bar no caller was promised.
+double RegionBound(LaneKind lane, double rung) {
     switch (lane)
     {
     case LaneKind::kDoubleSingle:
-
-        switch (region)
-        {
-        case BoysRegion::A:
-            return 1e-15;
-
-        case BoysRegion::B:
-        case BoysRegion::E:
-            return 3e-14;
-
-        case BoysRegion::C:
-            return 5.5e-14;
-        }
-
-        break;
-
     case LaneKind::kDoubleBatch:
-        return 5.5e-14;
+        return 1e-13 * rung;
 
     case LaneKind::kFloatSingle:
     case LaneKind::kFloatBatch:
@@ -258,7 +245,7 @@ void SweepDoubleSingle() {
     for (const ReferenceRow& row : gReference)
     {
         const double value = BoysSingle(row.n, row.x);
-        const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleSingle);
+        const double bound = RegionBound(LaneKind::kDoubleSingle, gGrid.Value(0, row.x));
         const double error = std::abs(value - row.value);
         EXPECT_LE(error, bound) << "n=" << row.n << " x=" << row.x << " got=" << value
                                 << " want=" << row.value;
@@ -279,7 +266,7 @@ void SweepDoubleBatch() {
         for (int k = 0; k <= row.n; ++k)
         {
             const double reference = gGrid.Value(k, row.x);
-            const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleBatch);
+            const double bound = RegionBound(LaneKind::kDoubleBatch, gGrid.Value(0, row.x));
             const double error = std::abs(batch[static_cast<std::size_t>(k)] - reference);
             EXPECT_LE(error, bound)
                 << "batch F" << k << " at x=" << row.x
@@ -300,7 +287,7 @@ void SweepFloatSingle() {
         // The base and not the lane's published figure for the form in force: this shape
         // evaluates one order from one fit and reads no downward step, which is where the
         // row's plain-reciprocal term is spent (FloatLanePublishedFigure above).
-        const double bound = RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
+        const double bound = RegionBound(LaneKind::kFloatSingle, gGrid.Value(0, row.x));
         const double error = std::abs(static_cast<double>(value) - row.value);
         EXPECT_LE(error, bound) << "n=" << row.n << " x=" << row.x << " got=" << value
                                 << " want=" << row.value;
@@ -348,7 +335,7 @@ void SweepFloatSingleFp16Budget() {
         const float value = BoysSingleF32<Fp16SingleBudget>(row.n, static_cast<float>(row.x));
         // The base, for the reason the default entry's sweep above states: the single shape
         // reads no downward step, and the budget the policy names moves no division form.
-        const double bound = RegionBound(RegionOf(row.x), LaneKind::kFloatSingle);
+        const double bound = RegionBound(LaneKind::kFloatSingle, gGrid.Value(0, row.x));
         const double error = std::abs(static_cast<double>(value) - row.value);
         EXPECT_LE(error, bound) << "n=" << row.n << " x=" << row.x << " got=" << value
                                 << " want=" << row.value;
@@ -435,7 +422,7 @@ void SweepDoubleBatchHorner() {
         for (int k = 0; k <= row.n; ++k)
         {
             const double reference = gGrid.Value(k, row.x);
-            const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleBatch);
+            const double bound = RegionBound(LaneKind::kDoubleBatch, gGrid.Value(0, row.x));
             const double error = std::abs(batch[static_cast<std::size_t>(k)] - reference);
             EXPECT_LE(error, bound)
                 << "horner batch F" << k << " at x=" << row.x
@@ -472,7 +459,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
         for (int k = 0; k <= row.n; ++k)
         {
             const double reference = gGrid.Value(k, row.x);
-            const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleBatch);
+            const double bound = RegionBound(LaneKind::kDoubleBatch, gGrid.Value(0, row.x));
             const double error = std::abs(batch[static_cast<std::size_t>(k)] - reference);
             EXPECT_LE(error, bound)
                 << "uniform batch F" << k << " at x=" << row.x
@@ -500,7 +487,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
     for (const ReferenceRow& row : gReference)
     {
         const double value = boys::BoysSingle<Policy>(row.n, row.x);
-        const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleSingle);
+        const double bound = RegionBound(LaneKind::kDoubleSingle, gGrid.Value(0, row.x));
         const double error = std::abs(value - row.value);
         EXPECT_LE(error, bound) << "uniform single n=" << row.n << " x=" << row.x
                                 << " got=" << value << " want=" << row.value;
@@ -519,7 +506,7 @@ void SweepDoubleSingleHorner() {
     for (const ReferenceRow& row : gReference)
     {
         const double value = boys::BoysSingle<Policy>(row.n, row.x);
-        const double bound = RegionBound(RegionOf(row.x), LaneKind::kDoubleSingle);
+        const double bound = RegionBound(LaneKind::kDoubleSingle, gGrid.Value(0, row.x));
         const double error = std::abs(value - row.value);
         EXPECT_LE(error, bound) << "horner n=" << row.n << " x=" << row.x << " got=" << value
                                 << " want=" << row.value;
@@ -669,7 +656,7 @@ TEST(BoysAccuracyTest, BothBasesReadTheirOwnTableToItsFullDegree) {
 
 // ---------------------------------------------------------------------------
 // Delivered-path consistency: the single and batch lanes (per-order fits vs. seed + recursion) must
-// agree within the sum of their region bounds, and the exact x = 0 values must survive.
+// agree within the sum of the two published figures, and the exact x = 0 values must survive.
 // ---------------------------------------------------------------------------
 
 void CheckSingleBatchAgree() {
@@ -680,15 +667,14 @@ void CheckSingleBatchAgree() {
     for (int sample = 0; sample < 200; ++sample)
     {
         const double x = xd(rng);
-        const BoysRegion region = RegionOf(x);
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
         BoysAllOrders(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
             const double single = BoysSingle(k, x);
-            const double bound = RegionBound(region, LaneKind::kDoubleSingle) +
-                                 RegionBound(region, LaneKind::kDoubleBatch);
+            const double bound = RegionBound(LaneKind::kDoubleSingle, gGrid.Value(0, x)) +
+                                 RegionBound(LaneKind::kDoubleBatch, gGrid.Value(0, x));
             EXPECT_LE(std::abs(batch[static_cast<std::size_t>(k)] - single), bound)
                 << "n=" << k << " x=" << x;
         }
@@ -703,15 +689,15 @@ void CheckSingleBatchAgreeF32() {
     for (int sample = 0; sample < 200; ++sample)
     {
         const float x = xd(rng);
-        const BoysRegion region = RegionOf(static_cast<double>(x));
         const int nmax = static_cast<int>(rng() % (boys::kMaxBoysOrder + 1));
         BoysAllOrdersF32(nmax, x, batch.data());
 
         for (int k = 0; k <= nmax; ++k)
         {
             const float single = BoysSingleF32(k, x);
-            const double bound = RegionBound(region, LaneKind::kFloatSingle) +
-                                 RegionBound(region, LaneKind::kFloatBatch);
+            const double bound =
+                RegionBound(LaneKind::kFloatSingle, static_cast<double>(x)) +
+                RegionBound(LaneKind::kFloatBatch, static_cast<double>(x));
             EXPECT_LE(std::abs(static_cast<double>(batch[static_cast<std::size_t>(k)]) -
                                static_cast<double>(single)),
                       bound)

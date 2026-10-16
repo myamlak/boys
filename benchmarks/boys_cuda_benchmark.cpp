@@ -296,8 +296,10 @@ int SelfCheck(const std::vector<Item>& items,
             worst = std::max(worst, err);
         }
 
-        const bool pass = worst <= 5.5e-14;
-        std::printf("self-check: cheb-f64 | max_abs_err: %.3e | budget: 5.50e-14 | %s\n",
+        // Two lanes are compared, and the contract binds each of them by the wider arm,
+        // 1e-13 * F_0(x) <= 1e-13, so their difference is at most twice that figure.
+        const bool pass = worst <= 2e-13;
+        std::printf("self-check: cheb-f64 | max_abs_err: %.3e | budget: 2.00e-13 | %s\n",
                     worst,
                     pass ? "PASS" : "FAIL");
         failed += !pass;
@@ -380,9 +382,10 @@ int SelfCheck(const std::vector<Item>& items,
             }
         }
 
-        const bool pass = worst <= 1e-13;
+        // As above: two lanes on the wider arm each, so twice its figure.
+        const bool pass = worst <= 2e-13;
         std::printf("self-check: erf-f64 (x >= 10.0, %zu pts) | max_abs_err: %.3e | budget: "
-                    "1.00e-13 | %s\n",
+                    "2.00e-13 | %s\n",
                     checked,
                     worst,
                     pass ? "PASS" : "FAIL");

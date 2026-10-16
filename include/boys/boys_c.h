@@ -8,7 +8,8 @@
  * arguments.
  *
  * B is the bound of the lane an entry reaches, at the one accuracy this library
- * carries: the error of a returned value is at or below **1e-13 times F_n(x)**
+ * carries: the error of a returned value is at or below **the larger of 1e-13 times F_n(x) and
+ * 1e-13 times F_0(x)**
  * over the whole of x >= 0, above the format's smallest normal, and the
  * single-precision entries carry **the larger of 2^-22 · F_n(x) and 1.5e-7**
  * instead, that lane's arithmetic being binary32 and holding an absolute floor (its

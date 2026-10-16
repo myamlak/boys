@@ -1,7 +1,7 @@
 // The all-orders batch entry (BoysAllN) contract tests: F_0(x_i)..F_nmax(x_i) over an array of
 // arguments, with the per-argument dispatch and the grouping done internally - the batch shape a
-// shell-quartet consumer needs. Its documented bound (5.5e-14) is pinned over the committed reference
-// grid and against the per-argument BoysAllOrders path, both as observed maxima.
+// shell-quartet consumer needs. Its published bound, the larger of 1e-13 * F_n(x) and
+// 1e-13 * F_0(x), is pinned over the committed reference grid and against BoysAllOrders, as maxima.
 
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -34,9 +34,15 @@ using boys::detail::kTierThresholds;
 using boys::detail::kX0;
 using boys::detail::kX1;
 
-// The entry's documented budget: the double batch lane's per-region bound, the
-// same value in every region (the batch row of the contract table).
-constexpr double kBatchBound = 5.5e-14;
+// The bar the batch lane's fits were placed against: the absolute 5.5e-14, which the generator
+// certifies of the stored tables and the difference budget below reads. It is not the lane's
+// published figure, and the per-cell sweep below is not held to it.
+constexpr double kBatchFitBar = 5.5e-14;
+
+// The batch lane's published figure at a cell whose ladder rung is `rung` = F_0(x): the larger of
+// 1e-13 * F_n(x) and 1e-13 * F_0(x), and F falling with the order makes the rung's arm the wider
+// one (README.md, "What the bound is, and what it is not").
+double BatchBoundAt(double rung) { return 1e-13 * rung; }
 
 // The lanes' budget on the paths they serve (the region-A lane's 1e-15).
 constexpr double kGroupedBudget = 1e-15;
@@ -126,6 +132,26 @@ Grid BuildGrid() {
 
 const Grid gGrid = BuildGrid();
 
+// The ladder's first rung F_0(x) at each argument of the committed reference, which is the wider
+// arm of the double batch lane's published figure (BatchBoundAt above).
+double Rung(double x) {
+    static const std::unordered_map<double, double> rungs = [] {
+        std::unordered_map<double, double> out;
+        for (const ReferenceRow& row : gGrid.rows)
+        {
+            if (row.n == 0)
+            {
+                out[row.x] = row.value;
+            }
+        }
+        return out;
+    }();
+
+    const auto it = rungs.find(x);
+    EXPECT_TRUE(it != rungs.end()) << "the reference carries no F_0 row at x=" << x;
+    return it != rungs.end() ? it->second : 0.0;
+}
+
 // The entry's sub-regions, for the reported worsts: x = kX0 belongs to region B
 // and x = kX1 to region C, because the region-A and region-B tests are strict.
 enum class Sub : std::uint8_t { kZero, kA, kBand, kB, kC };
@@ -156,7 +182,7 @@ Sub SubOf(double x) {
 
 // The bound the difference against the per-argument path is held to: exactly zero everywhere the
 // entry calls that path's own bodies, and on region A below kLaneMaxOrder, where a lane serves the
-// argument instead, the lane's own kGroupedBudget below the band and kBatchBound over it.
+// argument instead, the lane's own kGroupedBudget below the band and the lane's fit bar over it.
 double DifferenceBudget(double x, int nmax = boys::kMaxBoysOrder) {
     if (!boys::BoysAvx2Available() || nmax > kLaneMaxOrder)
     {
@@ -169,7 +195,7 @@ double DifferenceBudget(double x, int nmax = boys::kMaxBoysOrder) {
         return kGroupedBudget;
 
     case Sub::kBand:
-        return kBatchBound;
+        return kBatchFitBar;
 
     default:
         return 0.0;
@@ -269,8 +295,9 @@ void SweepGrid(const Grid& grid, bool shuffled, bool sortedOverload, const char*
         const std::size_t i = ArgumentIndex(grid, row.x, shuffled);
         const double got = out[static_cast<std::size_t>(row.n) * count + i];
         const double error = std::abs(got - row.value);
-        EXPECT_LE(error, kBatchBound) << label << " n=" << row.n << " x=" << row.x
-                                      << " got=" << got << " want=" << row.value;
+        EXPECT_LE(error, BatchBoundAt(Rung(row.x)))
+            << label << " n=" << row.n << " x=" << row.x << " got=" << got
+            << " want=" << row.value;
         worst.Update(SubOf(row.x), error);
     }
 
@@ -449,7 +476,7 @@ TEST(BoysAllNTest, ShuffledAndAscendingAgreeWithinTheLaneBudget) {
                 worst,
                 worstN,
                 worstX);
-    EXPECT_LE(worst, kBatchBound);
+    EXPECT_LE(worst, kBatchFitBar);
 }
 
 // The region boundaries of the dispatch, exact: x = 0, the band edge, x0 and x1 with

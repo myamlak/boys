@@ -9,9 +9,10 @@ that was corrected says so in its own comment ("the two things wrong with them r
 step with the term region C drops").
 
 The drifting numbers are NOT what went unseen. Every one of those bodies passes its published bound, and it
-passes it comfortably, because the bound is ABSOLUTE: at n = 32, x = 500 the value is 2.3e-31 and the bound
-is 5.5e-14, which is 1.2e39 times it. A bound that large cannot separate two arithmetics, so a per-path
-value test - the instrument that was prototyped first - reports green on the whole defect class.
+passes it comfortably, because the figure is stated against the ladder's first rung: at n = 32, x = 500 the
+value is 4.45e-54 and the bound is 1e-13 * F_0(500) = 3.96e-15, which is 8.9e38 times it. A bound that large
+cannot separate two arithmetics, so a per-path value test - the instrument that was prototyped first - reports
+green on the whole defect class.
 
 What went unseen is that thirteen bodies were never LISTED. That is an inventory failure, and this is the
 inventory: every body that evaluates a Boys value is enumerated from the source, and each one must appear
@@ -986,10 +987,11 @@ def check(root: pathlib.Path, table_path: pathlib.Path, verbose: bool
     if findings:
         print()
         print("check_paths_declared: a body that evaluates a Boys value must declare the bar it is held "
-              "to and the site that holds it there. Every bound this library publishes is ABSOLUTE, and "
-              "an absolute bound at large argument is vacuous - at n = 32, x = 500 the value is 2.3e-31 "
-              "against a 5.5e-14 bar. A value test therefore reports green on an arithmetic that has "
-              "drifted; the inventory is what does not.", file=sys.stderr)
+              "to and the site that holds it there. The figure this library publishes is stated "
+              "against the ladder's first rung, and at large argument that reading is vacuous - at "
+              "n = 32, x = 500 the value is 4.45e-54 against a 1e-13 * F_0(500) = 3.96e-15 bar. A "
+              "value test therefore reports green on an arithmetic that has drifted; the inventory "
+              "is what does not.", file=sys.stderr)
         print(file=sys.stderr)
 
         for finding in findings:

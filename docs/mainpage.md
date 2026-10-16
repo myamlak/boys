@@ -78,7 +78,7 @@ that shape, what it adds.
 | Entry point | Lane |
 |---|---|
 | \ref boys::BoysSingle, \ref boys::BoysAllOrders | scalar fp64, single argument / order batch F_0..F_nmax |
-| \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval. A caller holding a route and a scheme as values names both there instead of in the entry's policy |
+| \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval. The route is the entry's template argument named where the call is compiled, and its second overload takes the scheme as a value instead of naming it in the entry's policy |
 | \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided. Takes a fit route through its policy |
 | \ref boys::BoysAllN, \ref boys::BoysAllNAtOrders | fp64, all orders over an array of arguments, order-major planes. `BoysAllN` takes one top order for the batch and classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array). `BoysAllNAtOrders` takes each argument's own top order, with no padding of the arguments to a common order, and evaluates the per-argument body at each of them; that is the shape a shell-quartet batch has. Both take a fit route through their policy, and `BoysAllN` also takes a packing axis |
 | \ref boys::BoysSingleF32, \ref boys::BoysSingleF32WithRoute, \ref boys::BoysFitRoutesF32, \ref boys::BoysAllOrdersF32, \ref boys::BoysFixedNF32, \ref boys::BoysAllNF32, \ref boys::BoysAllNAtOrdersF32 | scalar fp32; the batch forms seed in double. \ref boys::BoysSingleF32WithRoute is \ref boys::BoysSingleF32 with one thing changed: which fit supplies the lane's region-A and region-B seeds. It carries the lane's own two fit routes (\ref boys::FitRoute), and \ref boys::BoysFitRoutesF32 reports each one's interval, its stored count and the error it delivers. The entries also take the \ref boys::EvalPolicy the double lane's take, so both routes and both schemes are reachable as template arguments. `BoysAllNF32` is the float lane's \ref boys::BoysAllN — one top order for the batch, order-major planes — and `BoysFixedNF32` and `BoysAllNAtOrdersF32` are its \ref boys::BoysFixedN and \ref boys::BoysAllNAtOrders, which write one order over an array of arguments, strided, and each argument's own top order into those same planes |
@@ -181,12 +181,16 @@ above are the surface.
 
 ## Accuracy contract
 
-The bound is **relative**: |F̂_n(x) − F_n(x)| ≤ B · F_n(x), for every supported n, x and lane.
+The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
+n, x and lane.
 
-**B is a fraction of the value, so a small value is held to a small error.** B binds above the lane
-format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the float ones — below which
-the return is subnormal or zero, the format's own floor is what answers there, and no accuracy is
-claimed. Every figure below holds for **all** x ≥ 0:
+**Both arms are a fraction of the value, so a small value is held to a small error.** Since F is
+decreasing in the order, the wider arm at a cell is the one scaled by the ladder's first rung,
+`F_0(x)`, and the bound binds by that arm wherever the order's own value is tiny. Until this release
+it instead carried a constant floor, `5.5e-14`, which the second arm replaces. The bound holds above
+the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the float ones — below
+which the return is subnormal or zero, the format's own floor is what answers there, and no accuracy
+is claimed. Every figure below holds for **all** x ≥ 0:
 
 *Single* is the entry that answers for one order at one argument; *batch* is the entries that answer
 a whole call at once, and the two rows carrying those labels are both the double lane. The rows
@@ -196,12 +200,12 @@ budgets each lane's fits were cut against.
 
 | Lane | Error bound |
 |---|---|
-| double single | ≤ 1e-13 · F_n(x) — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
-| double batch, whether the top order is the batch's or each argument's | ≤ 1e-13 · F_n(x) |
+| double single | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
+| double batch, whether the top order is the batch's or each argument's | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` |
 | float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32, and the absolute figure it published before the relative one is the floor under it |
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is looser than the floor the float lane's figure keeps |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
-| CUDA fp64 | ≤ 1e-13 · F_n(x) — the same contract as the CPU double lanes |
+| CUDA fp64 | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the same contract as the CPU double lanes |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
@@ -233,7 +237,7 @@ route — measured on MSVC x64 Release:
 
 | lane | region | fused route | separate route | figure |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 1e-13 · F_n(x) |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) |
 | float, single | all arguments | 6.36e-08 | 7.49e-08 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
 

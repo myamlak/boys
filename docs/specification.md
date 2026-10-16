@@ -8,13 +8,22 @@ defined on the documentation's landing page, together with the full API referenc
 
 ## Accuracy contract
 
-The bound is **relative**: |F̂_n(x) − F_n(x)| ≤ B · F_n(x), for every supported n, x and lane.
+The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
+n, x and lane. The form is relative — a fraction of a value, not one figure for the whole range —
+and since F is decreasing in the order, the wider arm at a cell is the one scaled by the ladder's
+first rung, `F_0(x)`. Until this release the bound instead carried a constant floor, `5.5e-14`,
+which the second arm replaces: the same kind of rescue, scaled by the ladder's own first value
+rather than by a fixed number.
 
 **B is a fraction of the value, so a small value is held to a small error.** The form this contract
 had before was absolute — one figure for the whole range, whatever the value — and it judged every
-cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 —
-an error of 4.94e-14, inside the absolute 5.5e-14 and 0.897 of it, so that form passed the cell.
-Read relative to F, the same cell is **2.55 times the true value**. That is what the relative form
+cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane of that revision
+returned 6.87e-14 —
+an error of 4.94e-14, inside the absolute figure of the day, 5.5e-14, and 0.897 of it, so that form
+passed the cell.
+Read relative to F, the same cell is **2.55 times the true value**. The ladder-scaled bound holds
+there (the fitted grid serves that argument, its hi-bound being 31.0). That is what the relative
+form
 binds and the absolute form did not: a budget spent where the value is tiny is spent where nothing
 needs it.
 
@@ -32,12 +41,12 @@ tighter regions sit inside its published figure rather than beside it. Every fig
 
 | Lane | Error bound |
 |---|---|
-| double single | ≤ 1e-13 · F_n(x) — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
-| double batch, whether the top order is the batch's or each argument's | ≤ 1e-13 · F_n(x) |
+| double single | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
+| double batch, whether the top order is the batch's or each argument's | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` |
 | float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is the looser of the two figures wherever the float lane's relative figure falls below it |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
-| CUDA fp64 | ≤ 1e-13 · F_n(x) — the same contract as the CPU double lanes |
+| CUDA fp64 | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the same contract as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
@@ -56,20 +65,21 @@ cannot be judged against — the double lane's published figure and the far-repr
 figures — and prints their readings rather than a verdict, and `boys-tests` takes the same reading
 of its far-representation bars.
 
-**Two combinations of the double lane are under the figure, and the bound carries a floor for
-them.** The figure above is the one the lanes' own entries hold, with margin: the double entries'
-worst relative error over the gate's grid is 9.99e-15, a full order below the figure, at n = 32,
+**Two combinations of the double lane hold the wider arm of the bound and not the relative one.**
+The bound above is the one the lanes' own entries hold, with margin: the double entries'
+worst relative error over the gate's grid is 9.99e-15 of F_n(x), a full order below the relative
+arm, at n = 32,
 x = 29.0412. Two
-families of cells hold instead the absolute figure the double lane published before it, and that
-figure is what the bound keeps as its floor:
+families of cells are held by the bound's wider arm and not by the relative one:
 
 | Family | What it holds | The cell it is worst at |
 |---|---|---|
-| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves | `5.5e-14` absolute | the ladder's cell, n = 32, x = 10.7836: 1.44e-08 · F_n(x) = 6.73e-15 absolute; a fit's cell, n = 8, x = 2.1613: 2.07e-13 · F_n(x) |
-| the rational-minimax route's high-order intervals | `5.5e-14` absolute | n = 32, x = 11.6879: 1.32e-11 · F_n(x) = 2.59e-18 absolute |
+| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves | the ladder-scaled bound, `0.12` of it at worst | the ladder's cell, n = 32, x = 10.7846; the documented cell n = 32, x = 10.7836 delivers 3.93e-09 · F_n(x), and a fit's cell, n = 8, x = 2.1613, delivers 6.68e-14 · F_n(x) |
+| the rational-minimax route's high-order intervals | the ladder-scaled bound, `0.48` of it at worst | n = 2, x = 10.7936; the documented cell n = 32, x = 11.6879 delivers 4.69e-09 · F_n(x) |
 
-So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 5.5e-14**, and it is
-the absolute arm, not the relative one, that binds at the cells above; the float lane's row states
+So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x)**, and
+it is the wider arm, not the relative one, that the cells above need - measured at worst `0.12` and
+`0.48` of the bound over the grid that carries them; the float lane's row states
 the same union with its own two figures. Two changes, one per family, would raise each to the
 relative figure. The first: an order whose value is far below its region's seed is carried up the
 recurrence by the gain [boys_impl.hpp](../include/boys/boys_impl.hpp) states (`2 T(N, x) t / F_N` is
@@ -145,7 +155,7 @@ revision:
 
 | lane | region | fused route | separate route | figure |
 |---|---|---|---|---|
-| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | 1e-13 · F_n(x) |
+| double, single | 1.0855 ≤ x < 11.8998 | 3.22e-15 | 4.63e-15 | the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) |
 | float, single | all arguments | 6.36e-08 | 7.49e-08 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | the larger of 2^-22 · F_n(x) and 1.5e-7 |
 
@@ -271,9 +281,10 @@ combinations, **192 combinations, each reachable as a name**. Naming one costs n
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those axes are not call arguments. All of them are named and all of them are evaluated by
 `tests/consumer_option_space.cpp`, which prints the counts per precision.
-A caller holding a route and a scheme as values names both at the call instead:
-`BoysAllOrdersWithRoute(route, scheme, nmax, x, out)` on the ladder shape. The single-order
-float shape takes a route and no scheme — `BoysSingleF32WithRoute(route, n, x)` — so a scheme
+A caller holding a route and a scheme as values names the route where the call is compiled and the
+scheme at the call instead:
+`BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)` on the ladder shape. The single-order
+float shape takes a route and no scheme — `BoysSingleF32WithRoute<kRoute>(n, x)` — so a scheme
 there is a template argument rather than a call argument.
 
 **A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
@@ -343,12 +354,13 @@ and ended `PASS: every documented claim met at this revision`.
 The gate's region labels are the ones above: `A` is the part of the double lane's range below
 x = 1.0855252345349333, `band` is the rest of the range below x = 11.899848152108484, and `B` and
 `C` are the two regions beyond that. The `Bound claimed` column carries the figure the gate judged
-each row against at that revision: the double lane's published relative figure, `1e-13 · F_n(x)`,
-the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, and the half lanes' `1.5e-7` plus one
-half-ULP. The per-region absolute budgets the lane's fits were placed against (`≤ 1e-15` on `A`,
-`≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
-[lane-contract.md](lane-contract.md); the contract above states the one relative figure the lane
-holds to over all four.
+each row against at that revision: the double lane's published figure, the larger of `1e-13 · F_n(x)`
+and `1e-13 · F_0(x)`, the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, and the half lanes'
+`1.5e-7` plus one half-ULP. The per-region absolute budgets the lane's fits were placed against
+(`≤ 1e-15` on `A`, `≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
+[lane-contract.md](lane-contract.md), and they are cut against the absolute figures the lanes
+published before this release; the contract above states the one figure the lane holds to over all
+four, in the ladder-scaled form.
 
 ### Arguments outside the documented domain
 
@@ -376,9 +388,10 @@ the entry runs the default route and returns its values bit for bit, so the lane
 returning something the caller did not ask for. **No speed is claimed for either route.**
 
 The route composes with the evaluation scheme into one `EvalPolicy`, which every templated
-double-precision entry takes. A caller holding a route and a scheme as values names both at the call
-instead on the ladder shape: `BoysAllOrdersWithRoute(route, scheme, nmax, x, out)`. The float
-lane's single-order shape takes a route and no scheme, `BoysSingleF32WithRoute(route, n, x)` — a
+double-precision entry takes. The route entry itself names the route where the call is compiled and
+takes the scheme as a value:
+`BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)`. The float
+lane's single-order shape takes a route and no scheme, `BoysSingleF32WithRoute<kRoute>(n, x)` — a
 scheme there is the `EvalPolicy` below.
 
 [lane-contract.md](lane-contract.md#the-two-fit-routes) carries this in full: the table of
@@ -389,12 +402,12 @@ buys the interval's values and not a recursion seed.
 #### The float lane's routes
 
 The float lane's region-A table and its region-B seed are its own, and they come in the same two
-routes. They are selected at run time with `BoysSingleF32WithRoute`, which is `BoysSingleF32` with
+routes. They are selected with `BoysSingleF32WithRoute`, which is `BoysSingleF32` with
 one thing changed — which fit supplies the lane's region-A seed and its region-B seed — and
 `BoysFitRoutesF32()` reports them the way `BoysFitRoutes()` reports the double lane's. Region C holds
 no coefficient under either route, so naming one there changes nothing.
 
-**The same choice is open at compile time, and there it carries the scheme as well.** The lane's
+**The same choice is open through a policy as well, and there it carries the scheme too.** The lane's
 entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
 the first two template arguments instead of calling `BoysSingleF32WithRoute`. Both fields are read:
 the route selects which family supplies the lane's fits, and the scheme selects which of
@@ -592,8 +605,8 @@ rational route over the narrow partition: its region-A pieces, its region-B
 seed and the batch entry read through it — each judged against the bar the published table holds for
 the cell it ran in, with the worst cell named. Those three rational rows
 read 2.21663e-14 against the region's 3e-14, 4.12448e-14 against the seed's 5e-14 and 5e-14 against
-the batch lane's 5.5e-14, which are the gate's own measured rows for those fits, on the run's
-multiply-add route. The figures the generated header publishes for the two fitted rows are
+the batch lane's pre-move figure, the absolute 5.5e-14 those rows are still judged at — the gate's
+own measured rows for those fits, on the run's multiply-add route. The figures the generated header publishes for the two fitted rows are
 2.42365e-14 over region A and 4.09566e-14 over region B, the same under both multiply-add routes,
 and both are inside their bars as well. The block reports the trade above and the 4125493 of 5710087
 axis cells (72.2%) that can discriminate, the rest carrying a bound at least as large as the value
@@ -655,12 +668,16 @@ reads it at run time through `boys::VersionString()`, or as the constants `boys:
 `boys/boys.hpp`).
 
 **The accuracy promise is why this release is a major one.** A lane's bound is stated as a multiple
-of the value the call returns - `1e-13 · F_n(x)`, in `lane-contract.md` - where the lane published
-an absolute figure, 5.5e-14, before it. The change is what one promise means in another currency:
-the two figures agree where the value is about half, the new form is the stricter of the two below
-that and the looser above it, and near the top of the range, where the value is close to 1, it
-permits about twice the absolute error the figure did. A published guarantee that a consumer pinned
-on changed, which is a break, and the version carries it.
+of a value the call returns - the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, in
+`lane-contract.md` - where the lane carried a constant floor of its own, the absolute 5.5e-14,
+before it. The change is what one promise means in another currency. The second arm is the one the
+floor becomes: both rescue a cell whose own order's value has fallen below the figure, and the
+ladder's first rung scales that rescue to the cell rather than fixing it, so the two agree where
+`F_0(x)` is 0.55, at x about 2.46, and the ladder-scaled form is the stricter of the two beyond it.
+Read against the relative arm rather than the floor, the ladder-scaled form is the looser of the
+two wherever the ladder's first rung exceeds the cell's own value, and near the top of the range,
+where the value is close to 1, it permits about twice the absolute error the constant did. A
+published guarantee that a consumer pinned on changed, which is a break, and the version carries it.
 
 The version badge at the top of this file shows the latest *release tag*. It names the same version
 when a release is cut, and can be older than the tree you are reading.

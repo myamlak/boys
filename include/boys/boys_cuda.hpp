@@ -374,8 +374,9 @@ public:
     static BoysStatus AllNF32WithPolicy(
         int nmax, const double* x, float* out, std::size_t count, void* stream);
 
-    /// F_n(x[i]) in double precision, |F̂ − F| <= 1e-13 · F_n(x) — the host double
-    /// lane's documented figure, over the whole of x >= 0 (the per-region figures
+    /// F_n(x[i]) in double precision, |F̂ − F| <= the larger of 1e-13 · F_n(x) and
+    /// 1e-13 · F_0(x) — the host double lane's documented bound, over the whole of
+    /// x >= 0 (the per-region figures
     /// those entries' fits are cut against, 5.5e-14 among them, are absolute bars
     /// and are not this bound).
     ///
@@ -896,7 +897,9 @@ public:
     /// two carry a figure each and nothing substitutes one for the other
     /// (`RegionBExp`, boys/accuracy.hpp).
     ///
-    /// The figure is the lane's own, \c 1e-13 \c of \c F_n(x): this lane's fast member is the host's reduced-
+    /// The figure is the lane's own, the larger of \c 1e-13 \c of \c F_n(x) \c and \c 1e-13 \c of
+    /// \c F_0(x):
+    /// this lane's fast member is the host's reduced-
     /// argument polynomial ported rather than re-derived, and the host's own documentation of that
     /// member is that its relative error sits inside the ladder's requirement below the member's
     /// cut and that no published figure moves at it. The float lane's `+ 8e-8` is that lane's fast
@@ -1658,7 +1661,8 @@ public:
     /// F_0(x[i])..F_nmax(x[i]) at one common nmax, double precision — the
     /// uniform-order batch: many arguments, all nmax + 1 orders each, the
     /// layout AllNF32 documents and the bound the CPU lane's BoysAllN
-    /// documents, |F_hat - F| <= 1e-13 · F_n(x) (the host double lane's figure,
+    /// documents, |F_hat - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x)
+    /// (the host double lane's bound,
     /// the same in every region).
     ///
     /// \pre x[i - 1] <= x[i] for every i in [1, count) — the ordering contract

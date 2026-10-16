@@ -33,15 +33,15 @@ constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (Boy
 #endif
 
 // The documented form of each entry, beside the number the device gate audits it at. The form is
-// the contract the entry publishes - a fraction of F_n(x) on the double and float lanes
-// (boys_cuda.hpp) - and the number is an absolute bar, the wide end of the figures that lane's
-// fits are cut against (5.5e-14 over the double lanes, 1.5e-7 over the float lane's two).
-constexpr const char* kFormF64 = "1e-13 * F_n(x)";
+// the contract the entry publishes - the larger of a fraction of F_n(x) and the same fraction of
+// F_0(x) on the double lanes, a fraction of F_n(x) on the float ones (boys_cuda.hpp) - and the
+// number is an absolute bar, the wide end of the figures each lane's fits are cut against.
+constexpr const char* kFormF64 = "the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x)";
 // The double lane reads the fast member at the lane's own figure: the device's double fast member
 // carries its own fit and cut (boys_cuda_arithmetic.hpp, DeviceRegionBExp) and its error, measured
 // at this lane's own routes - 5.295e-16 separate, 5.282e-16 fused - sits inside the ladder's
 // requirement (3.892e-14 at kX0), so no published figure moves on that lane.
-constexpr const char* kFormF64Fast = "1e-13 * F_n(x)";
+constexpr const char* kFormF64Fast = "the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x)";
 constexpr const char* kFormF32 =
     "2^-22 * F_n(x), or 1.5e-7 where that is the larger";
 constexpr const char* kFormF32Fast =

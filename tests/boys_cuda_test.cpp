@@ -24,7 +24,11 @@
 namespace {
 
 constexpr std::size_t kCount = 1u << 16;
-constexpr double kDoubleTolerance = 5.5e-14;
+// Cross-lane agreement bar for the double lanes: each of the two is within the lane's published
+// figure of the truth - the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) (README.md, "What the bound
+// is, and what it is not") - so a difference between them is within twice the wider arm, and that is
+// at most 2e-13 over the whole domain. Flat, because each sweep below asserts its own worst.
+constexpr double kDoubleTolerance = 2e-13;
 // Cross-lane budget: the CPU lane is validated <= 1.5e-7 against the reference grid, and
 // the default CUDA lane holds the same 1.5e-7, so GPU-vs-CPU agreement on the default path
 // holds within ~3e-7, stated at 3.5e-7. It covers the default path only, not the single
@@ -193,10 +197,10 @@ TEST(BoysCudaTest, SingleF32ExpOptionIsCertifiedAtTheRegionBBoundary) {
 
     ASSERT_EQ(boys::BoysCuda::InitializeTables(), boys::BoysStatus::kSuccess);
 
-    // The first float of region B, where the two options separate and the
-    // recurrence's condition number peaks (7.6e4 at this order): F_32(x) is itself
-    // at the level of a seed error there and the ladder amplifies it by that factor.
-    // The double lane is the reference, its own error below 5.5e-14, six orders under.
+    // The first float of region B, where the two options separate and the recurrence's condition
+    // number peaks (7.6e4 at this order): F_32(x) is itself at the level of a seed error there and
+    // the ladder amplifies it by that factor. The double lane is the reference, its own error
+    // within the lane's published figure, six orders under.
     const int n = boys::kMaxBoysOrder;
     const double x = static_cast<double>(static_cast<float>(boys::detail::kX0));
     std::vector<double> reference(static_cast<std::size_t>(n) + 1);

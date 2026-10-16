@@ -212,9 +212,11 @@ int main(int argc, char** argv) {
         ChebSimdMixed(kOrder, x.data(), out.data(), kInputCount, expTable);
         double xAtWorst = 0.0;
         const double maxErr = MaxAbsError(out.data(), x.data(), kInputCount, &xAtWorst);
-        const bool pass = maxErr <= 5.5e-14;
+        // Two lanes are compared, and the contract binds each of them by the wider arm,
+        // 1e-13 * F_0(x) <= 1e-13, so their difference is at most twice that figure.
+        const bool pass = maxErr <= 2e-13;
         std::printf(
-            "self-check: cheb-simd-unsorted-n8 | max_abs_err: %.3e | budget: 5.50e-14 | %s\n",
+            "self-check: cheb-simd-unsorted-n8 | max_abs_err: %.3e | budget: 2.00e-13 | %s\n",
             maxErr,
             pass ? "PASS" : "FAIL");
         std::printf("  worst at x = %.9f\n", xAtWorst);

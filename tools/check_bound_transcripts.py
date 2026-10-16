@@ -195,11 +195,17 @@ BOUND = re.compile(
 # The relative form the contract is stated in: `<sign> 1e-13 <dot> F`, the figure
 # times the value rather than a figure of its own. The float lane's bar is written
 # as the power it is, `2^-22`, because that is the format fact and not a decimal
-# that happens to equal it; both spellings read to the same number.
+# that happens to equal it; both spellings read to the same number. The double
+# lanes write the ladder-scaled form now - `the larger of `1e-13 <dot> F_n(x)` and
+# `1e-13 <dot> F_0(x)`` - so the leading phrase and the second arm are read with
+# the first, which is the same figure at both rungs and leaves the set unmoved.
 RELATIVE = re.compile(
-    r"≤\s*"
+    r"≤\s*(?:the\s+larger\s+of\s*`?\s*)?"
     r"(?:(?P<num>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(?P<base>\d+)\^(?P<exp>-?\d+))"
-    r"\s*[·*]\s*F(?:_n\(x\)|\(x\))?"
+    r"\s*[·*]\s*`?\s*F(?:_n\(x\)|_0\(x\)|\(x\))?`?"
+    r"(?:\s*`?\s*(?:,|\band\b)\s*`?\s*"
+    r"(?:(?P<num2>\d+(?:\.\d+)?(?:[eE][-+]?\d+)?)|(?P<base2>\d+)\^(?P<exp2>-?\d+))"
+    r"\s*[·*]\s*`?\s*F(?:_n\(x\)|_0\(x\)|\(x\))?`?)?"
 )
 # The additive form, `m<dot>1.5e-7 + 8e-8`, which the specification's fast device row
 # and the library's own additive member both state. A trailing `+ 1/2 ULP`
@@ -444,8 +450,10 @@ class Uncovered:
 # ---------------------------------------------------------------------------
 TIES = (
     # The double lanes' figures are the contract's own form: the error against
-    # the value, one figure over the whole domain, and the four region constants
-    # carry it because a report still reads a cell region by region. The
+    # the value, one figure over the whole domain - 1e-13 at both rungs of the
+    # ladder-scaled spelling the cells now write, which is one figure as a set -
+    # and the four region constants carry it because a report still reads a cell
+    # region by region. The
     # header's four columns are therefore the same cell four times, and the
     # contract rows carry it once.
     #
@@ -523,17 +531,18 @@ LIBRARY_TIES = (
 LIBRARY_GAPS = (
     LibraryGap(
         "fp64",
-        "the row states 5.5e-14 over the whole domain, and the contract's double figure is now "
-        "1e-13 of the value: the two bound the same lane in different forms, so no comparison of "
-        "them says anything. The row moves with the library's own statements - BoysLaneContracts() "
+        "the row states 5.5e-14 over the whole domain, and the contract's double figure is now the "
+        "ladder-scaled one, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x): the two bound the same "
+        "lane in different forms, so no comparison of them says anything. The row moves with the "
+        "library's own statements - BoysLaneContracts() "
         "is read by the option probe, and its report is tests/data/, re-made centrally at the "
         "freeze - and until then the document row `double batch` is held by the gate's constants",
     ),
     LibraryGap(
         "fp64-device",
-        "as the fp64 row above: 5.5e-14 against the same lane's relative 1e-13, stated by the CUDA "
-        "surface's own entries. No constant of this gate states a device figure, so the document "
-        "row `CUDA fp64` is declared in UNCOVERED until the library's rows move",
+        "as the fp64 row above: 5.5e-14 against the same lane's ladder-scaled 1e-13, stated by the "
+        "CUDA surface's own entries. No constant of this gate states a device figure, so the "
+        "document row `CUDA fp64` is declared in UNCOVERED until the library's rows move",
     ),
     LibraryGap(
         "fp32",
@@ -583,7 +592,7 @@ PRINTED_RUN_REASON = (
 
 # Why the two device contract rows that carry a moved figure are held by nothing.
 DEVICE_ROW_REASON = (
-    "the lane's figure has moved to the contract's relative form and the device lane's own "
+    "the lane's figure has moved to the contract's ladder-scaled form and the device lane's own "
     "statements have not: the library's row for it is declared a gap in LIBRARY_GAPS, and the "
     "device gate (tests/boys_cuda_accuracy_gate.cpp) carries its own constants for this lane, "
     "in the pre-move absolute form, which this check does not read. No constant of the gate it "
@@ -897,11 +906,11 @@ def region_row(table: Table, region_column: int, lane: str, region: str) -> Row:
     return hits[0]
 
 
-def relative_value(match: re.Match[str]) -> float:
-    """The figure a relative spelling states, whichever of the two ways it is written."""
-    if match.group("num") is not None:
-        return float(match.group("num"))
-    return float(int(match.group("base")) ** int(match.group("exp")))
+def relative_value(match: re.Match[str], arm: str = "") -> float:
+    """The figure one arm of a relative spelling states, whichever way it is written."""
+    if match.group(f"num{arm}") is not None:
+        return float(match.group(f"num{arm}"))
+    return float(int(match.group(f"base{arm}")) ** int(match.group(f"exp{arm}")))
 
 
 def uncovered_target(
@@ -949,6 +958,14 @@ def figures_in(text: str) -> list[tuple[float, str, str]]:
     masked = list(text)
     for match in RELATIVE.finditer(text):
         found.append((relative_value(match), "relative", match.group(0)))
+        # The ladder-scaled spelling's second arm is a figure of its own only if it
+        # differs from the first: the double lanes state the same 1e-13 at both
+        # rungs, and a cell that stated a different figure at the second rung would
+        # be publishing one no constant of the gate ties.
+        if match.group("num2") is not None or match.group("base2") is not None:
+            second = relative_value(match, "2")
+            if second != relative_value(match):
+                found.append((second, "relative", match.group(0)))
         # The additive a lane states beside a relative figure - the plain
         # reciprocal's own term on the float lanes - is written after it, in the
         # same cell, and is read from the text rather than the masked copy.

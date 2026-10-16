@@ -775,10 +775,10 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
         BoysAllOrdersF32<DPlain>(kNmax, x, fPlain.data());
         BoysAllOrdersF32<DRefined>(kNmax, x, fRefined.data());
 
-        // The reference this lane's plain form is measured against: the double lane at the same argument,
-        // whose own published figure is 5.5e-14 - five to six digits inside the bar the single lane is read
-        // at, so a difference between the two is this lane's error and not the reference's. The argument is
-        // the float one widened, not the double the sweep walked in with, so the float's own rounding is out.
+        // The reference this lane's plain form is measured against: the double lane at the same
+        // argument, whose own figure is at most 1e-13 of the value there - five to six digits
+        // inside the bar this lane is read at, so a difference is this lane's error and not the
+        // reference's. The argument is the float widened, not the double the sweep walked in with.
         BoysAllOrders<DExact>(kNmax, static_cast<double>(x), dReference.data());
 
         for (int n = 0; n <= kNmax; ++n) {

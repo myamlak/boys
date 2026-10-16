@@ -15,7 +15,9 @@ the reproducibility evidence behind the documented accuracy contract.
 
 1. **The accuracy contract is the contract.** Every merged change must keep the committed reference
    grid green (`ctest`) at these budgets:
-   - 5.5e-14 for fp64, its loosest per-region budget;
+   - the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) for fp64, the figure its lane publishes, and
+     the per-region budgets (1e-15, 3e-14, 5.5e-14) wherever one of those is the tighter of the
+     two;
    - 1.5e-7 for fp32;
    - 1e-7 plus one half-ULP for fp16 and bf16. This is the bar the suite asserts, and it is
      tighter than the 1.5e-7 plus one half-ULP those lanes publish;

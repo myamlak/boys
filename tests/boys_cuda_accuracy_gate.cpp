@@ -77,10 +77,10 @@ const boys::DeviceOptionInfo& DeviceRow(boys::DeviceEntry entry,
     std::abort();
 }
 
-// README's accuracy contract: "CUDA fp64 | the same budgets as the CPU double lanes". The CPU
-// double single lane holds per-region cells (1e-15 below the region-A edge, 3e-14 through the
-// extended band and region B, 5.5e-14 in region C) and the batch lane publishes one, 5.5e-14.
-// Three are transcribed below - the report carries one figure per option - and the rest are the report's own.
+// README's accuracy contract: "CUDA fp64 | the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) - the
+// same contract as the CPU double lanes". The CPU double single lane holds per-region cells
+// (1e-15 below the region-A edge, 3e-14 through the extended band and region B, the ladder-scaled
+// figure in region C); three are transcribed below and the rest are the report's own.
 constexpr double kBoundSingleA = 1e-15;
 constexpr double kBoundSingleBand = 3e-14;
 constexpr double kBoundSingleB = 3e-14;

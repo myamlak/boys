@@ -208,8 +208,9 @@ std::vector<double> DistinctArgs(const std::vector<Cell>& cells) {
 
 // --- the documented bounds --------------------------------------------------
 
-/// The bound is the lane's and not the combination's, so the named policy is judged against the
-/// same figures the default policy's entry documents.
+/// The figures are the lane's and not the combination's, so the named policy is judged
+/// against the same per-region budgets the lane documents: the bars its fits were placed
+/// against, and not the ladder-scaled figure the lane publishes.
 double SingleBound(double x) {
     if (x < 1.0855)
     {

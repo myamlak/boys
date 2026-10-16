@@ -57,7 +57,8 @@ enum class TailBasis {
     kMonomial,
 };
 
-/// Region-A asserted budget of the role (the m = 1 contract).
+/// Region-A asserted fit budget of the role (the m = 1 tables' own bar, not the
+/// lane's accuracy contract).
 constexpr double RegionABudget(BoysRole role) noexcept {
     switch (role)
     {
@@ -76,7 +77,8 @@ constexpr double RegionABudget(BoysRole role) noexcept {
     return 0.0; // unreachable
 }
 
-/// Region-B asserted budget of the role (the m = 1 contract).
+/// Region-B asserted fit budget of the role (the m = 1 tables' own bar, not the
+/// lane's accuracy contract).
 constexpr double RegionBBudget(BoysRole role) noexcept {
     switch (role)
     {
@@ -614,8 +616,9 @@ constexpr auto RegionBDegrees() noexcept {
 /// The amplification each region's cut pays is the path's own: region A reads one
 /// piece per order and nothing amplifies the cut, so A = 1 rather than the batch
 /// role's w(b); region B reads its seed at order 0 and carries it up, so its cut
-/// pays the shipped table's A_B(n). The budget is the batch role's at both, since
-/// the tier the rung is named by documents m * 5.5e-14 in every region.
+/// pays the shipped table's A_B(n). The budget is the batch role's at both: that
+/// role's fits are cut at 5.5e-14 over every region, and m = 1 is the only
+/// multiplier this library carries.
 struct RationalRegionAPairs {
     std::array<int, std::size(kPieces)> num{};
     std::array<int, std::size(kPieces)> den{};

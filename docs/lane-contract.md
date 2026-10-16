@@ -76,10 +76,12 @@ only the largest arguments.
 
 ## double
 
-**At most 1e-13 of the value, everywhere.** One figure over the whole of x ≥ 0: the error of a
-returned value is at or below `1e-13 · F_n(x)`, for both the single-argument and the batch form,
-above the smallest normal double. The figure was an absolute 5.5e-14 until this release, and the
-number was too small where F is small and too large where F is large.
+**At most 1e-13 of the value, or of the ladder's first rung where that is the wider.** One figure
+over the whole of x ≥ 0: the error of a returned value is at or below the larger of `1e-13 · F_n(x)`
+and `1e-13 · F_0(x)`, for both the single-argument and the batch form, above the smallest normal
+double. Since F is decreasing in the order, the second arm is the wider one and the arm the bound
+binds by wherever the order's own value is tiny. The figure was the absolute 5.5e-14 until this
+release, and the number was too small where F is small and too large where F is large.
 
 **That figure is the shipped build's.** It is a claim about the choices
 [boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries, and the accuracy gate is
@@ -97,8 +99,8 @@ verdict, and `boys-tests` takes the same reading of its far-representation bars.
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
 the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
-figure the lane published as its absolute bound. The route table below prints them beside what each
-route delivers.
+absolute figure the lane published before this release, and the figure its row still carries in
+`BoysLaneContracts()` below. The route table below prints them beside what each route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
 that shows. A batch call answers every order to nmax at once, so no per-order figure bounds it:
@@ -124,7 +126,7 @@ truncation and on some pieces smaller than it.
 
 ## The two fit routes
 
-The double lane's fits come in two routes, chosen per call with `BoysAllOrdersWithRoute` and
+The double lane's fits come in two routes, chosen at the call site with `BoysAllOrdersWithRoute` and
 reported by `BoysFitRoutes()`. A route is a way of serving a region, and the two
 hold the same bar over the same interval.
 
@@ -194,8 +196,9 @@ route's rows cover, and naming the default changes nothing.
 every order, and judged against the named route's own bar for the region the argument falls in —
 113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
 route's, not the entry's: the route's region-A row promises the region's 3e-14 bar, where the lane's
-published figure is 1e-13 · F_n(x) — tighter than that bar wherever F_n(x) is below 0.3, and looser
-above it — and the entry holds the route's bar over the region, including the arguments below the
+published figure is the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) — tighter than that bar wherever
+F_0(x) is below 0.3, and looser above it — and the entry holds the route's bar over the region,
+including the arguments below the
 route's own selector where the shipped lane answers.
 
 ## Interval granularity: how narrowly the fitted domain is cut
@@ -459,10 +462,11 @@ is `BoysSingleF32` with the fits that supply the lane's region-A seed and region
 instead of fixed, and `BoysFitRoutesF32` reports them. The measured column is the gate's own sweep of
 the committed reference, every order and every sample of the row's interval.
 
-**The same two routes are open at compile time, on the policy, and there the scheme comes with
-them.** The lane's `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
+**The same two routes are open on the policy, and there the scheme comes with them.** The lane's
+`BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
 `BoysAllNAtOrdersF32` take the `EvalPolicy` the double lane's entries take, so the route is a
-template argument as well as a run-time selector, and the scheme — the choice between the Chebyshev
+template argument there as it is on `BoysSingleF32WithRoute`, and the scheme — the choice between the
+Chebyshev
 table and the monomial form of the same fits — is offered beside it. Every pair this lane stores is
 carried, and the gate measures the single and all-orders entries with a policy, ten rows each, one
 per policy for each region the policy's fits serve — the six the lane shipped, plus the narrow
@@ -726,12 +730,13 @@ library on another compiler is a second measurement rather than a confirmation o
 | float, single | all arguments | 6.36e-08 | 7.49e-08 | 1.5e-07 |
 | float, batch | all arguments | 1.08e-07 | 1.08e-07 | 1.5e-07 |
 
-**No lane is held back on the fused route.** Every scalar lane holds its published bound at both
-routes, so the alternative is offered everywhere and no lane's figure is withdrawn. The float single
-entry is the one that moves furthest, from 0.424 of its bound to 0.499: a rise of 0.075 of a bound
-that is 1.5e-7 and nothing else, which leaves 0.501 of it in hand. The band row is the other one that
-moves, from 0.107 of its bound to 0.154. The closest figure in this table is region C's 0.909 of its
-5.5e-14, which no route moves.
+**No lane is held back on the fused route.** Every scalar lane holds the route's own bar at both
+routes — the table's last column is the route's bar and not the lane's published figure, which is
+stated in the lane's own section above — so the alternative is offered everywhere and no lane's figure
+is withdrawn. The float single entry is the one that moves furthest, from 0.424 of its bound to 0.499:
+a rise of 0.075 of a bound that is 1.5e-7 and nothing else, which leaves 0.501 of it in hand. The band
+row is the other one that moves, from 0.107 of its bound to 0.154. The closest figure in this table is
+region C's 0.909 of the route's 5.5e-14, which no route moves.
 
 **Where a lane does not move, the reason differs.** Above x = 28.98933773882074 the closed form
 reads no coefficient the route selects, and the one refinement its recurrence takes is written with
@@ -1399,12 +1404,12 @@ the bound is here.
 
 | Lane | The bound one value carries | The term that sits beside that bound | Named |
 |---|---|---|---|
-| double | `1e-13 · F_n(x)` | — | `Precision::kFp64` |
+| double | the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` | — | `Precision::kFp64` |
 | float | the larger of `2^-22 · F_n(x)` and 1.5e-7 | plus 1e-7 in the plain-reciprocal form | `Precision::kFp32` |
 | half, fp16 | 1.5e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; the format's digit is 2^-11 | `Precision::kFp16` |
 | half, bfloat16 | 1.5e-7 | the same term, in this format's own digit — 2^-8 = 3.90625e-03, the coarser of the two | `Precision::kBf16` |
 | float on a device | the larger of `2^-22 · F_n(x)` and 1.5e-7 | plus 8e-8 under the fast region-B exponential | `Precision::kFp32Device` |
-| double on a device | `1e-13 · F_n(x)` | — | `Precision::kFp64Device` |
+| double on a device | the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` | — | `Precision::kFp64Device` |
 | half on a device | 1e-7 | plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum; and, under the plain reciprocal, its own 1e-7 beside that base and beside the same half-digit term — 1e-7 + 1e-7 = 2e-7 — because at a subnormal result that form's rounding leaves the base | `Precision::kFp16Device` |
 | bfloat16 on a device | 1e-7 | the same base at this store's own digit — 2^-8 = 3.90625e-03, the coarser of the half lane's two — and the plain reciprocal's 1e-7 beside it, which is the fp16-device lane's own measurement of that form on the bodies this store runs | `Precision::kBf16Device` |
 
@@ -1420,7 +1425,8 @@ bf16 entry that names no policy is answered by the bf16 row.
 
 The device's four lanes are four rows and not one: each is its own precision of the CUDA surface
 (`boys/boys_device_tables.hpp`, `BoysDeviceLane`), and the figures above are the ones those lanes'
-own entries publish — `boys/boys_cuda.hpp` states `1e-13 · F_n(x)` for the double entries,
+own entries publish — `boys/boys_cuda.hpp` states the larger of `1e-13 · F_n(x)` and
+`1e-13 · F_0(x)` for the double entries,
 the larger of `2^-22 · F_n(x)` and 1.5e-7, plus its fast member's 8e-8, for the float ones, and `1e-7 + ½ ULP` for the half
 ones, which is tighter than the host half lane's base plus ½ ULP because the device's half lane is
 not the host's, and it states its own measured base rather than borrowing the host's.
