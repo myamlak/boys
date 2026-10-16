@@ -11,7 +11,7 @@ defined on the documentation's landing page, together with the full API referenc
 The bound at a cell is **`1e-13 · F_0(x)`**, for every supported n, x and lane: the ladder's first
 rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
 the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. Until
-this release the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
+4.0.0 the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
 replaces: the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
 number.
 
@@ -365,7 +365,7 @@ and `1e-13 · F_0(x)`, the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, a
 `1.5e-7` plus one half-ULP. The per-region absolute budgets the lane's fits were placed against
 (`≤ 1e-15` on `A`, `≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
 [lane-contract.md](lane-contract.md), and they are cut against the absolute figures the lanes
-published before this release; the contract above states the one figure the lane holds to over all
+published before 4.0.0; the contract above states the one figure the lane holds to over all
 four, in the ladder-scaled form.
 
 ### Arguments outside the documented domain
@@ -673,7 +673,7 @@ reads it at run time through `boys::VersionString()`, or as the constants `boys:
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).
 
-**The accuracy promise is why this release is a major one.** A lane's bound is stated as a multiple
+**The accuracy promise is why 4.0.0 is a major one.** A lane's bound is stated as a multiple
 of a value the call returns - the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, in
 `lane-contract.md` - where the lane carried a constant floor of its own, the absolute 5.5e-14,
 before it. The change is what one promise means in another currency. The second arm is the one the

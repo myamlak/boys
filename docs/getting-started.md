@@ -90,8 +90,8 @@ const double f = boys::BoysSingle(n, x);
 
 The second line is the lane's own figure, read out of the library at run time rather than typed into a
 document: the lane's runs measured at most that error, and the phrase in parentheses says how far the
-figure reaches — the row is the lane's, over every region. **The guarantee this release publishes is
-the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`** — a fraction of the value rather than one figure
+figure reaches — the row is the lane's, over every region. **The guarantee is the larger of
+`1e-13 · F_n(x)` and `1e-13 · F_0(x)`** — a fraction of the value rather than one figure
 for the whole range ([the specification](specification.md), "Accuracy contract") — and since F falls
 with the order, the arm scaled by the ladder's first rung is the wider one wherever the order's own
 value is tiny. If your calculation needs an error below the figure it prints, see [what the library

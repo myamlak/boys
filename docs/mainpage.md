@@ -189,7 +189,7 @@ never the wider one.
 The bound binds by that arm wherever the order's own value is tiny, and the returned `F_n` is held to
 `1e-13` of its own value only below the region-C boundary, `x = 28.98933773882074`, and again above
 `x ≈ 93` at `n = 32`; in between the bound is up to 140 % of the value, at the worst cell
-`n = 32, x = 31`. Until this release it instead carried a constant floor, `5.5e-14`, which the
+`n = 32, x = 31`. Until 4.0.0 it instead carried a constant floor, `5.5e-14`, which the
 ladder-scaled figure replaces. The bound holds above the lane format's smallest normal — 2^-1022 for
 the double lanes, 2^-126 for the float ones — below which the return is subnormal or zero, the
 format's own floor is what answers there, and no accuracy is claimed. Every figure below holds for

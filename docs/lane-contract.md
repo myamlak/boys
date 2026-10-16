@@ -99,7 +99,7 @@ verdict, and `boys-tests` takes the same reading of its far-representation bars.
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
 the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
-absolute figure the lane published before this release, and the figure its row still carries in
+absolute figure the lane published before 4.0.0, and the figure its row still carries in
 `BoysLaneContracts()` below. The route table below prints them beside what each route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
@@ -443,7 +443,7 @@ numbers as narrow ones.
 plain-reciprocal form.** The value-proportional figure is this lane's own bar — 2^-22, about
 2.38e-7 — and not the double lane's 1e-13 scaled down for the format. The lane's arithmetic is
 binary32 and has an absolute floor, so the figure the lane publishes is the larger of its relative
-arm and that floor: the 1.5e-7 it published as an absolute bound until this release stays as the
+arm and that floor: the 1.5e-7 it published as an absolute bound until 4.0.0 stays as the
 floor under the relative one. A call answered by the plain reciprocal rather than by an exact
 division adds 1e-7 to the error of the returned value, and the two forms are certified separately.
 
