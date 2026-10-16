@@ -341,10 +341,10 @@ contract, and read the delivered column beside it the same way:
 
 | Lane | Region | Worst delivered | Bound claimed |
 |---|---|---|---|
-| double single | A | 2.45e-16 | 1e-13 |
-| double single | band | 2.34e-16 | 1e-13 |
-| double single | B | 2.39e-16 | 1e-13 |
-| double single | C | 9.99e-15 | 1e-13 |
+| double single | A | 3.11e-15 | 1e-13 |
+| double single | band | 1.68e-15 | 1e-13 |
+| double single | B | 2.21e-16 | 1e-13 |
+| double single | C | 1.4 | 4.85 |
 | float single | all | 8.3e-08 | 2.38e-07 |
 | fp16 store-half | single | 0.000122 | 0.000122 |
 | bf16 store-half | single | 0.000976 | 0.000977 |

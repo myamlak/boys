@@ -78,7 +78,11 @@ gets credited at a member nothing read:
     option table (``BoysDeviceOptions()``, src/boys_cuda.cpp), reached through the
     enumerator's own documentation of the C++ name it is
     (include/boys/boys_cuda_options.hpp). So a device lane's cells are counted at the
-    members the entries the gate's block arms that lane with run. They are *not* counted at
+    members the entries the gate's block arms that lane with run. An arm arms its lane with
+    the entry it names, so both ways the block names an entry are read: a mapper function
+    the block calls, whose body states the entry, and a spelling at the arm itself
+    (``boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>``), which states the entry where
+    the arm read it. They are *not* counted at
     the member the lane's contract row publishes its term beside the base under: that
     member is where the term belongs and not where the entry is, and on fp32-device the two
     differ - the row's 8e-8 term is under the fast member, 2.3e-07, and the launched
@@ -1286,9 +1290,15 @@ def cross_entries(gate_text: str) -> tuple[list[str], list[str]]:
     block = gate_text[opening.start():limit]
     host = sorted({match.group(1) for match in HOST_ENTRY.finditer(block)})
 
-    # The device arms reach their entries through the mapper functions the block calls,
-    # whose bodies are outside it: read the names those functions return.
-    device: list[str] = []
+    # A device arm reaches its entry one of two ways and both are the block's own: through a
+    # mapper function the block calls - whose body is outside the block, so the names it
+    # returns are read where they are written - or by spelling the entry at the arm itself,
+    # `&boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>`. The second kind is an arm's entry
+    # as much as the first, so the block's own spellings are read beside the mappers'
+    # returns: an arm that needs no mapper names its entry where it stands, and a read of the
+    # mappers alone loses that entry, leaving the lane the arm measured credited at nothing.
+    device: list[str] = [match.group(1) for match in DEVICE_ENTRY.finditer(block)]
+
     for mapper in sorted({m.group(1) for m in re.finditer(r"\b(GateDeviceEntry[A-Za-z0-9_]*)", block)}):
         where = gate_text.find(f"constexpr auto {mapper}(")
 
@@ -1601,22 +1611,29 @@ def main() -> int:
             continue
 
         spelled = spelled_members.get(name, set())
-        members = spelled & names if spelled else names
 
-        if spelled and not members:
-            misspelled_devices.append(f"{name} at {', '.join(sorted(spelled))}")
-            continue
+        # A name the table carries at more than one member is one entry at two rows - the
+        # f32 single entry is one name at two rows - and an arm that reaches one of them
+        # states which by its own spelling: the bare name is the entry's default, and the
+        # build states that default as a seam rather than as a value, so a name whose arms
+        # state nothing is not credited at either member. A name the table carries once is
+        # its member without a spelling: the bare arm reaches the only row the name has.
+        if not spelled:
+            if len(names) > 1:
+                ambiguous_devices.append(f"{name} ({', '.join(sorted(names))})")
+                continue
 
-        # A name the table carries at more than one member is an entry that IS its member -
-        # the f32 single entry is one name at two rows - and an arm that names it reaches one
-        # of them, which the arm's own spelling states and its bare name does not: the bare
-        # name is the entry's default, and the build states that default as a seam rather
-        # than as a value. Crediting both would be a credit for a member a particular
-        # arm may never have run, which is the credit this whole read exists to close.
-        if len(members) > 1:
-            ambiguous_devices.append(f"{name} ({', '.join(sorted(names))})")
-            continue
+            members = names
+        else:
+            members = spelled & names
 
+            if not members:
+                misspelled_devices.append(f"{name} at {', '.join(sorted(spelled))}")
+                continue
+
+        # A name whose arms state some of its members is credited at those: each arm's own
+        # spelling says which member it ran, so the credit is for members an arm read. The
+        # members no arm states stay uncredited, and the gap report counts them.
         for member in sorted(members):
             if member not in device_members.setdefault(lane, []):
                 device_members[lane].append(member)

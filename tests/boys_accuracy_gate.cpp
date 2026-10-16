@@ -1626,43 +1626,6 @@ constexpr auto GateDeviceEntryBf16(boys::FitRoute route,
 }
 #endif // BOYS_GATE_FP16
 
-/// The launched entry the fast member of the float device lane is measured through.
-///
-/// The region-B exponential is not a policy argument on a device lane: the launched
-/// entries are distinct functions and the option table states the member each one
-/// runs (DeviceOptionInfo::regionBExp, boys/boys_cuda_options.hpp). The option table
-/// carries the float lane's all-orders family at \c RegionBExp::kAccurate - so
-/// the cross's arms above read that member and no other - and carries the lane's
-/// \c RegionBExp::kFast at one entry of its own, the single-order launch
-/// (`kSingleF32Fast`, whose C++ name is `BoysCuda::SingleF32` at that member). The
-/// double lane's table carries no row at \c kFast in either group,
-/// and the arm below names that member rather than judging it at the other member's
-/// figure.
-///
-/// The four parameters are accepted and unused so that this entry is reached through
-/// the same call shape as the family above: the fast member's launch reads one ladder
-/// of the lane's own, and the axes the cross crosses select the fits the accurate
-/// member's family is cut from, so the cell a caller asks about does not move it.
-///
-/// \param route     the member's fit route, which selects no part of this entry
-/// \param scheme    the member's summation, which selects no part of this entry
-/// \param partition the member's partition, which selects no part of this entry
-/// \param axis      the member's packing axis, which selects no part of this entry
-///
-/// \returns the launched entry the float lane runs at \c RegionBExp::kFast
-constexpr auto GateDeviceEntryFast(boys::FitRoute route,
-                                   boys::EvalScheme scheme,
-                                   boys::FitGranularity partition,
-                                   boys::PackAxis axis) noexcept
-    -> boys::BoysStatus (*)(const int*, const double*, float*, std::size_t, void*,
-                            boys::DivisionForm) {
-    (void)route;
-    (void)scheme;
-    (void)partition;
-    (void)axis;
-
-    return &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>;
-}
 
 /// The double lane's launched entry at the other region-B exponential: its own fast
 /// member, whose name is the lane's (`BoysCuda::SingleF64Fast`, boys/boys_cuda.hpp,
@@ -12301,13 +12264,16 @@ int main(int argc, char** argv) {
     {
         if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp32Device)])
         {
+            // Both members of this lane's single-order class are spelled out at the arm: the
+            // float lane's single entry is one name the device table carries at two members,
+            // and a bare name states neither, so the reader that credits the run's coverage
+            // cannot place these cells at a member from a helper call. The fast member's arm
+            // is the launched entry the lane runs at that member, written where the credit is
+            // read.
             combDeviceSingleMember.template operator()<double, float>(
                 static_cast<int>(boys::Precision::kFp32Device),
                 "BoysCuda::SingleF32<RegionBExp::kFast>",
-                GateDeviceEntryFast(boys::FitRoute::kChebyshev,
-                                    boys::EvalScheme::kSplitClenshaw,
-                                    boys::FitGranularity::kCoarsest,
-                                    boys::PackAxis::kArguments),
+                &boys::BoysCuda::SingleF32<boys::RegionBExp::kFast>,
                 ref.xf,
                 ref.vf,
                 false,
@@ -13516,11 +13482,11 @@ int main(int argc, char** argv) {
                     "  Shape::kAllOrders - and each of the three is measured by an arm of this\n"
                     "  run, at each region-B member its lane's table carries a launched row for:\n"
                     "  Shape::kAllOrders through the launched all-orders family its route- and\n"
-                    "  packing-selected name reaches (boys::BoysCuda::AllOrdersF32<...> and the\n"
+                    "  packing-selected name reaches (BoysCuda::AllOrdersF32 and the\n"
                     "  other lanes' beside them), and Shape::kSingle and Shape::kAllN through the\n"
-                    "  lanes' own single-order and batch entries - boys::BoysCuda::SingleF32<...>\n"
-                    "  and its Fast member, boys::BoysCuda::SingleF64, boys::BoysCuda::AllNF32,\n"
-                    "  boys::BoysCuda::AllNF64 and the other lanes' beside them. The batch\n"
+                    "  lanes' own single-order and batch entries - BoysCuda::SingleF32\n"
+                    "  and its Fast member, BoysCuda::SingleF64, BoysCuda::AllNF32,\n"
+                    "  BoysCuda::AllNF64 and the other lanes' beside them. The batch\n"
                     "  entry's contract asks for non-decreasing arguments, which this gate's grid\n"
                     "  is not: the all-N arms sort the arguments for the launch and read every\n"
                     "  cell back at the rank its own argument landed at. The half lanes are\n"

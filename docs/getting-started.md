@@ -346,19 +346,19 @@ documented at 5.5e-14:
 
 | the class's question | the fastest measured entry | ns per argument | options the run could not place behind it |
 |---|---|---|---|
-| F_n(x) for one order at one argument, one call per order — `BoysSingle` | `single-batch-rational-minimax-split-clenshaw-fp64` | 128.39 | 10 |
-| F_0..F_n(x) at one argument, one ladder call — `BoysAllOrders` | `batch-plain-reciprocal-accurate-fp64` | 36.60 | 4 |
-| F_n(x_i) at one order over the array — `BoysFixedN` | `fixed-n-fp64` | 339.27 | 1 |
-| F_0..F_nmax(x) at every argument, one call — `BoysAllN` | `all-n-batch-plain-reciprocal-fast-fp64-sorted` | 49.31 | 11 |
-| ...each argument at its own top order — `BoysAllNAtOrders` | `all-n-at-orders-batch-refined-reciprocal-fast-fp64` | 77.15 | 11 |
+| F_n(x) for one order at one argument, one call per order — `BoysSingle` | `single-batch-split-clenshaw-exact-division-fp64` | 59.89 | 4 |
+| F_0..F_n(x) at one argument, one ladder call — `BoysAllOrders` | `batch-accurate-fp64` | 31.21 | 9 |
+| F_n(x_i) at one order over the array — `BoysFixedN` | `fixed-n-fp64` | 232.46 | 4 |
+| F_0..F_nmax(x) at every argument, one call — `BoysAllN` | `all-n-batch-split-clenshaw-refined-reciprocal-fp64-sorted` | 47.42 | 21 |
+| ...each argument at its own top order — `BoysAllNAtOrders` | `all-n-at-orders-batch-split-clenshaw-exact-division-fast-fp64` | 75.59 | 18 |
 
 **A nanosecond figure describes the machine, the build and the run it was taken on, and not the
 design.** It moves with the processor, the clock, the flags, and with what else the machine was doing
 while the round ran — which is why the probe compares paired inside a round rather than across runs.
 What carries from one host to another is the shape of the answer: which entries sit together at the
-top, and how long the tail behind them is. Read the last column beside the third: 36.60 ns per
-argument is the head of a class whose next four entries the run could not separate from it, and
-128.39 the head of one whose next ten it could not.
+top, and how long the tail behind them is. Read the last column beside the third: 31.21 ns per
+argument is the head of a class whose next nine entries the run could not separate from it, and
+59.89 the head of one whose next four it could not.
 
 **Each class is ranked inside itself, and nothing here is ranked across two of them.** A class is one
 precision and one question shape, and different shapes hand back a different number of values, so the
@@ -368,7 +368,7 @@ table is five readings of one lane rather than a ranking of the five calls again
 above](#i-want-every-order-over-many-arguments) says the batch entry groups the arguments once for the
 whole call rather than a ladder at a time. The committed run does not separate that grouping: it ranks
 the options inside one question shape. So its batch row here — the head of 288 measured combinations,
-with 11 the run could not place behind it — is the choice *within* the batch shape, and its ladder row
+with 21 the run could not place behind it — is the choice *within* the batch shape, and its ladder row
 is the choice inside the ladder shape above. Read the grouping sentence as what the call does, and
 take the cost of grouping from a workload of your own rather than from this table.
 
