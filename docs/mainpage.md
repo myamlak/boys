@@ -268,8 +268,8 @@ The measurement is in this tree. Build it and run it:
     cmake --build <build> --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
-It sweeps the documented entries over the committed reference grid (33 orders × 1796 arguments,
-59,268 points) and prints, lane by lane and region by region, the worst error the lane delivered
+It sweeps the documented entries over the committed reference grid (33 orders × 1797 arguments,
+59,301 points) and prints, lane by lane and region by region, the worst error the lane delivered
 beside the bound it claims. The run ends in `PASS: every documented claim met at this revision`, or
 in the numbers of the claims that did not hold and a non-zero status. `--per-order` extends the
 comparison to every order, and `--probe n x` prints one cell from every lane for one argument.

@@ -6,7 +6,7 @@ your first call. The words it uses — *lane*, *region*, *route*, *scheme*, *axi
 defined on the documentation's landing page, together with the full API reference:
 <https://myamlak.github.io/boys/>.
 
-## Accuracy contract
+## Accuracy contract {#accuracy-contract}
 
 The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
 n, x and lane. The form is relative — a fraction of a value, not one figure for the whole range —
@@ -93,7 +93,7 @@ step, the plain reciprocal rounds twice, and the refined reciprocal recovers the
 rounding from the plain product.
 
 On the **double** lane the three deliver one figure. Over the accuracy gate's reference grid,
-59268 cells per form, the plain reciprocal leaves region A, region B and region
+59301 cells per form, the plain reciprocal leaves region A, region B and region
 C where exact division has them and moves the extended band's worst absolute error from 3.22e-15 to
 6.73e-15 — a factor of 2.1 (6.73e-15 / 3.22e-15), at the one region where the axis costs the double
 lane anything, and
@@ -310,8 +310,8 @@ Every figure above is measured, and the measurement is in this tree. Build the g
     cmake --build build --target boys-accuracy-gate
     ./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
-It sweeps the documented entries over the committed reference grid — 33 orders × 1796 arguments,
-59,268 points — and prints, lane by lane and region by region, the worst error the lane delivered
+It sweeps the documented entries over the committed reference grid — 33 orders × 1797 arguments,
+59,301 points — and prints, lane by lane and region by region, the worst error the lane delivered
 beside the bound it claims. `--per-order` adds the same comparison order by order, naming the cells
 the bound actually binds on; `--probe n x` prints one cell from every lane for one argument.
 

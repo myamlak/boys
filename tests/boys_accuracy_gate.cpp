@@ -14791,9 +14791,9 @@ int main(int argc, char** argv) {
                     "and against its own figure, over the region's own\nreference grid. Every "
                     "other book reaches the far region through a lane's default entry,\nwhich "
                     "names one arm, so an arm no default names had no row anywhere in this file "
-                    "until\nthis one. The grid carries the two bands the gate's own grid does "
-                    "not: no far argument\nbelow 29.85319827456517 and none at 117, which is "
-                    "where the table's span ends\n");
+                    "until\nthis one. The grid resolves the two bands the gate's own step does not: "
+                    "the top's own\nband, kFlatHi to 32, and the table's span end, 116 to 117, "
+                    "which is where it ends\n");
         std::printf("  arithmetic in force for scalar-fp64: %s (the route each row's figure is "
                     "read at)\n",
                     boys::backend::MulAddRouteName(farRoute));
