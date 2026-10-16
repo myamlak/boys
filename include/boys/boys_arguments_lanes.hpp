@@ -127,6 +127,11 @@ void StoreLanes(int order, std::size_t stride, double* const* cols, __m256d f) n
 // as two multiplies against the table entry, lane for lane. The order steps in fours and the last
 // group of three or fewer terms takes the same registers at the running power - the scalar loop's
 // own cut - so the four arguments are the scalar body's four values bit for bit.
+
+// The low orders are the recurrence's, four arguments of it at once: the scalar recurrence's own
+// steps in vectors, so the lane is still the scalar body's at every bit - FarLadderRun answers the
+// same orders through BoysFarRecurLowOrders, and this is that body lane for lane. Every request
+// takes it; past the cut the walk resumes at the running power the walk's own schedule gives (h^4).
 template <DivisionForm kForm, bool kContiguous>
 void FarLadderLanesAt(int nmax,
                       const double* x,
@@ -135,8 +140,38 @@ void FarLadderLanesAt(int nmax,
     static_cast<void>(kForm); // the ladder's one division is the seed's closed form, as in the body
 
     const __m256d xv = _mm256_loadu_pd(x);
+
     const __m256d r = _mm256_div_pd(_mm256_set1_pd(1.0), _mm256_sqrt_pd(xv));
+    __m256d f = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), r);
+    StoreLanes<kContiguous>(0, stride, cols, f);
+
+    if (nmax == 0)
+    {
+        return;
+    }
+
+    // The recurrence answers the orders up to kFarRecurOrders - every request's, the short ones
+    // whole - in the scalar body's own steps, vector for vector.
     const __m256d h = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_mul_pd(r, r));
+    const __m256d step = _mm256_add_pd(h, h);
+    const int low = (nmax <= kFarRecurOrders) ? nmax : kFarRecurOrders;
+    __m256d c = h;
+
+    for (int m = 1; m <= low; ++m)
+    {
+        f = _mm256_mul_pd(f, c);
+        StoreLanes<kContiguous>(m, stride, cols, f);
+        c = _mm256_add_pd(c, step);
+    }
+
+    if (nmax <= kFarRecurOrders)
+    {
+        return;
+    }
+
+    // The walk from order kFarRecurOrders + 1, its running power seeded from the recurrence's
+    // state: that order is lane 1 of the group kFarRecurOrders..+3 and the group's power is h^4,
+    // so the orders above the cut are the walk's own bit for bit.
     const __m256d h2 = _mm256_mul_pd(h, h);
     const __m256d h3 = _mm256_mul_pd(h2, h);
     const __m256d h4 = _mm256_mul_pd(h2, h2);
@@ -146,31 +181,43 @@ void FarLadderLanesAt(int nmax,
     const __m256d w3 = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_mul_pd(r, h3));
     const __m256d w[4] = {w0, w1, w2, w3};
 
-    __m256d p = _mm256_set1_pd(1.0);
-    int l = 0;
+    __m256d p = h4;
+    int l = kFarRecurOrders + 1;
 
-    for (; l + 4 <= nmax + 1; l += 4)
-    {
-        StoreLanes<kContiguous>(
-            l + 0, stride, cols,
-            _mm256_mul_pd(_mm256_mul_pd(w0, _mm256_set1_pd(kDoubleFactorial[l + 0])), p));
-        StoreLanes<kContiguous>(
-            l + 1, stride, cols,
-            _mm256_mul_pd(_mm256_mul_pd(w1, _mm256_set1_pd(kDoubleFactorial[l + 1])), p));
-        StoreLanes<kContiguous>(
-            l + 2, stride, cols,
-            _mm256_mul_pd(_mm256_mul_pd(w2, _mm256_set1_pd(kDoubleFactorial[l + 2])), p));
-        StoreLanes<kContiguous>(
-            l + 3, stride, cols,
-            _mm256_mul_pd(_mm256_mul_pd(w3, _mm256_set1_pd(kDoubleFactorial[l + 3])), p));
-        p = _mm256_mul_pd(p, h4);
-    }
-
-    for (; l <= nmax; ++l)
+    for (; l <= nmax && (l & 3) != 0; ++l)
     {
         StoreLanes<kContiguous>(
             l, stride, cols,
             _mm256_mul_pd(_mm256_mul_pd(w[l & 3], _mm256_set1_pd(kDoubleFactorial[l])), p));
+    }
+
+    if (l <= nmax)
+    {
+        p = _mm256_mul_pd(p, h4);
+
+        for (; l + 4 <= nmax + 1; l += 4)
+        {
+            StoreLanes<kContiguous>(
+                l + 0, stride, cols,
+                _mm256_mul_pd(_mm256_mul_pd(w0, _mm256_set1_pd(kDoubleFactorial[l + 0])), p));
+            StoreLanes<kContiguous>(
+                l + 1, stride, cols,
+                _mm256_mul_pd(_mm256_mul_pd(w1, _mm256_set1_pd(kDoubleFactorial[l + 1])), p));
+            StoreLanes<kContiguous>(
+                l + 2, stride, cols,
+                _mm256_mul_pd(_mm256_mul_pd(w2, _mm256_set1_pd(kDoubleFactorial[l + 2])), p));
+            StoreLanes<kContiguous>(
+                l + 3, stride, cols,
+                _mm256_mul_pd(_mm256_mul_pd(w3, _mm256_set1_pd(kDoubleFactorial[l + 3])), p));
+            p = _mm256_mul_pd(p, h4);
+        }
+
+        for (; l <= nmax; ++l)
+        {
+            StoreLanes<kContiguous>(
+                l, stride, cols,
+                _mm256_mul_pd(_mm256_mul_pd(w[l & 3], _mm256_set1_pd(kDoubleFactorial[l])), p));
+        }
     }
 }
 

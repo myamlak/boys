@@ -480,42 +480,55 @@ inline void StoreGroup(double* out, int l, std::size_t stride, __m256d value) no
 /// register store a group, and a strided caller the same values at one store an order, which is
 /// that layout's price where no scatter exists.
 ///
-/// The prologue forms only what the orders read, the small-n cells' own waste: w[l] for \c l <= nmax
-/// (one entry at n = 0), h from order 1, h^2 from order 2, and h^4 only from \c nmax = 4 on, where a
-/// second group or a tail past order 3 first reads it; at \c nmax = 3 the one group still advances
-/// \c p by that 0.0, a value no order reads. The guards pick which quantities exist, never how one
-/// is formed, so every live order is still made of the walk's own arithmetic.
+/// The lane shares the cut with the scalar run: the orders up to \c kFarRecurOrders are the
+/// recurrence's, written by this lane's own call to \c BoysFarRecurLowOrdersFromR at the \c r
+/// the walk below goes on with - one sqrt a call, the region's own prologue either way - and
+/// the walk takes up at order \c kFarRecurOrders + 1 with its registers seeded from that
+/// state: lane 1 of the group kFarRecurOrders..+3, at the running power \c h^4 the walk's own
+/// schedule gives that order. Orders above the cut are the walk's values bit for bit, orders
+/// up to it the recurrence's, and the axis's low orders are the per-order lane's own.
 ///
 /// No branch guards the powers' underflow, here as in the walk: \c h^32 leaves the normal range
 /// above x = 2.06e9 and flushes to true zero above x = 6.48e9, where the largest order's value is
 /// below 7.7e-285 - under every figure the far region publishes.
 ///
-/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param nmax   highest order, kFarRecurOrders + 1..kMaxBoysOrder
 /// \param x      argument, kX1 <= x
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
 inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out) noexcept {
-    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+    // The lane is entered past the cut: a request that stops there is answered by the recurrence
+    // in FarLadderRun before its dispatch.
+    assert(nmax > kFarRecurOrders && nmax <= kMaxBoysOrder);
 
+    // The orders up to the cut, through the scalar body the per-order lane runs - at the r this
+    // lane goes on to walk with, so the pair pays one sqrt, not two.
     const double r = 1.0 / std::sqrt(x);
+    BoysFarRecurLowOrdersFromR(kFarRecurOrders, r, stride, out);
 
-    // The prologue forms only what the orders read: w[l] for l <= nmax, h from order 1, h^2 from
-    // order 2, h^4 from a second group. The guards hide work no order reads; every live value is
-    // formed by the walk's own expression over the walk's own operands, so the values stay the
-    // walk's bit for bit.
-    const double h = (nmax >= 1) ? 0.5 * (r * r) : 0.0;
-    const double h2 = (nmax >= 2) ? h * h : 0.0;
-    const double h4 = (nmax >= 4) ? h2 * h2 : 0.0;
-    const double w[4] = {kBoysHalfSqrtPi * r,
-                         (nmax >= 1) ? kBoysHalfSqrtPi * (r * h) : 0.0,
-                         (nmax >= 2) ? kBoysHalfSqrtPi * (r * h2) : 0.0,
-                         (nmax >= 3) ? kBoysHalfSqrtPi * (r * (h2 * h)) : 0.0};
+    // The walk's quantities, formed unguarded: nmax is past the cut, so every order this body
+    // answers reads them all.
+    const double h = 0.5 * (r * r);
+    const double h2 = h * h;
+    const double h4 = h2 * h2;
+    const double w[4] = {kBoysHalfSqrtPi * r, kBoysHalfSqrtPi * (r * h), kBoysHalfSqrtPi * (r * h2),
+                         kBoysHalfSqrtPi * (r * (h2 * h))};
 
-    double p = 1.0;
-    int l = 0;
+    // The walk from order kFarRecurOrders + 1: the tail of the group that order sits in (its
+    // lanes past the cut), then whole groups from the next multiple of four. The power is the
+    // walk's own h^4 at the cut's group and advances as its own p does.
+    double p = h4;
+    int l = kFarRecurOrders + 1;
 
-    if (nmax >= 3)
+    for (; l <= nmax && (l & 3) != 0; ++l)
     {
+        out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
+    }
+
+    if (l <= nmax)
+    {
+        p *= h4;
+
         const __m256d wv = _mm256_loadu_pd(w);
 
         // Four orders a group, advanced by the walk's own h4; the orders left over are the walk's.
@@ -525,11 +538,11 @@ inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, doub
             StoreGroup(out, l, stride, _mm256_mul_pd(_mm256_mul_pd(wv, a), _mm256_set1_pd(p)));
             p *= h4;
         }
-    }
 
-    for (; l <= nmax; ++l)
-    {
-        out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
+        for (; l <= nmax; ++l)
+        {
+            out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
+        }
     }
 }
 

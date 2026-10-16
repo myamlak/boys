@@ -37,6 +37,18 @@
       ]
     },
     {
+      "id": "host.double.far.recurrence-core",
+      "body": "include/boys/boys_impl.hpp::BoysFarRecurLowOrdersFromR",
+      "bar": [
+        "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
+        "include/boys/boys_decl.hpp :: BoysAllOrdersWithFarRepresentation"
+      ],
+      "verified_by": [
+        "tests/boys_across_orders_test.cpp :: BoysAcrossOrders.TheUniformGridOnTheAxisIsThePerOrderLaneBitForBit",
+        "tests/boys_test.cpp :: BoysTest.FarRepresentationArmsAreNotSubstituted"
+      ]
+    },
+    {
       "id": "host.double.all-orders",
       "body": "include/boys/boys_impl.hpp::AllOrdersBody",
       "bar": [

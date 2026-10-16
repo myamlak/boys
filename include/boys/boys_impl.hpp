@@ -1353,6 +1353,61 @@ alignas(32) inline constexpr double kDoubleFactorial[kMaxBoysOrder + 1] = {
     1.1227557528557138e+44, // 63!!
 };
 
+// The highest order the far region answers with the upward recurrence instead of the ladder's
+// independent terms. The two bodies' cost was measured to cross here: on the argument stream the
+// far region is timed over, the recurrence is the cheaper body at every order up to this one and
+// the ladder's are cheaper from n = 16 on, so the four lowest orders take it, in every request.
+inline constexpr int kFarRecurOrders = 4;
+
+/// The far region's orders up to \c kFarRecurOrders, stepped as a recurrence: the same terms
+/// \c F_m = F_0 A[m] h^m, taken \c F_{m+1} = F_m (2m + 1) h from the value the ladder seeds with.
+///
+/// The stepper \c (2m + 1) h rides an add chain of its own, so one term costs one multiply on the
+/// dependent chain where the ladder pays a table read and two multiplies an order and forms a
+/// power every four. The values are the ladder's to within a rounding of the seed: measured
+/// against the ladder over the far region's stream, the largest divergence scaled by \c F_0 is
+/// 7.9e-19, five orders of magnitude under the 1e-13 the region publishes.
+///
+/// \param nmax   highest order, 0..kFarRecurOrders
+/// \param r      the seed quotient 1/sqrt(x), kX1 <= x, formed by the caller
+/// \param stride distance between two orders in \c out
+/// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
+                                       double* out) noexcept {
+    assert(nmax >= 0 && nmax <= kFarRecurOrders);
+
+    double f = kBoysHalfSqrtPi * r;
+    out[0] = f;
+
+    if (nmax == 0)
+    {
+        return;
+    }
+
+    const double h = 0.5 * (r * r);
+    const double step = 2.0 * h;
+    double c = h;
+
+    for (int m = 1; m <= nmax; ++m)
+    {
+        f = f * c;
+        out[static_cast<std::size_t>(m) * stride] = f;
+        c = c + step;
+    }
+}
+
+/// The recurrence at the caller's own argument: forms the seed quotient and defers to the core
+/// above. A caller about to walk the region hands the core its own \c r instead, so the pair
+/// pays one sqrt with the walk, not two.
+///
+/// \param nmax   highest order, 0..kFarRecurOrders
+/// \param x      argument, kX1 <= x
+/// \param stride distance between two orders in \c out
+/// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+inline void BoysFarRecurLowOrders(int nmax, double x, std::size_t stride, double* out) noexcept {
+    BoysFarRecurLowOrdersFromR(nmax, 1.0 / std::sqrt(x), stride, out);
+}
+
 #if BOYS_ISA_AVX2_FMA
 // The far ladder's four-orders lane, defined by boys/boys_orders_lanes.hpp (included at the bottom
 // of this header at the tier this unit's flags name). The run below hands it its contiguous call,
@@ -1381,6 +1436,14 @@ void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out
 /// is also why \c FarRepresentation::kCorrectedSeed pays for the reading that holds
 /// the figure across the region, keeping the recurrence above.
 ///
+/// The orders above \c kFarRecurOrders are this walk's and the ones up to it the
+/// recurrence's (\c BoysFarRecurLowOrders), whose own doc states the crossing - in every
+/// request, not only the short ones. A request that reaches past the cut is answered by
+/// both bodies: the recurrence's orders first, then the walk from order kFarRecurOrders + 1
+/// with its registers seeded from that state, so the request's low orders are the per-order
+/// lane's own values bit for bit and its high orders the values a walk from order zero
+/// writes, bit for bit.
+///
 /// The order's power of h is carried in fours: \c w holds \c F_0 h^q for q = 0..3 and
 /// \c p the running \c h^(4j), so a term is two multiplies and one table read.
 ///
@@ -1393,6 +1456,16 @@ void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
 inline void FarLadderRun(int nmax, double x, std::size_t stride, double* out) noexcept {
+    // The lowest orders are the recurrence's, \c kFarRecurOrders of them, in every request: one
+    // that stops at the cut is answered by the recurrence alone and a longer one by the
+    // recurrence first and the walk above the cut, so both call shapes stay each other's values
+    // at every order.
+    if (nmax <= kFarRecurOrders)
+    {
+        BoysFarRecurLowOrders(nmax, x, stride, out);
+        return;
+    }
+
 #if BOYS_ISA_AVX2_FMA
     // The contiguous call is the four-orders lane's: one vector holds four orders' terms, the
     // same two multiplies an order, and every per-argument entry calls with stride 1. The
@@ -1404,20 +1477,25 @@ inline void FarLadderRun(int nmax, double x, std::size_t stride, double* out) no
     }
 #endif
 
-    // One division, and it is not a step of a chain: the seed's closed form is what the
-    // division form's own scope leaves outside the axis, and the reciprocal is what
-    // carries h as well.
+    // The recurrence answers the orders up to the cut here too, this body's own call of it at
+    // this request's own r, so its low orders are the per-order lane's own values bit for bit.
     const double r = 1.0 / std::sqrt(x);
+    BoysFarRecurLowOrdersFromR(kFarRecurOrders, r, stride, out);
+
+    // The walk from order kFarRecurOrders + 1 on, its registers seeded from the recurrence's
+    // state: that order is lane 1 of the group kFarRecurOrders..+3, whose running power is h^4,
+    // so above the cut every order is the value a walk from order zero writes - and the walk's
+    // division is its own: sqrt(2 * h) and f / kBoysHalfSqrtPi are other roundings of r.
     const double h = 0.5 * (r * r);
     const double h2 = h * h;
     const double h4 = h2 * h2;
     const double w[4] = {kBoysHalfSqrtPi * r, kBoysHalfSqrtPi * (r * h), kBoysHalfSqrtPi * (r * h2),
                          kBoysHalfSqrtPi * (r * (h2 * h))};
 
-    double p = 1.0;
-    int q = 0;
+    double p = h4;
+    int q = (kFarRecurOrders + 1) & 3;
 
-    for (int l = 0; l <= nmax; ++l)
+    for (int l = kFarRecurOrders + 1; l <= nmax; ++l)
     {
         out[static_cast<std::size_t>(l) * stride] = (w[q] * kDoubleFactorial[l]) * p;
 

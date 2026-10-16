@@ -192,9 +192,9 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
 }
 
 // No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy
-// and runs the region C body at face value, four arguments at a time: F_n = F_0 A[n] h^m in the
-// product form the scalar body writes. Nothing here is a second arithmetic, so above the grid's
-// end the lane returns BoysSingle's value at every bit.
+// and runs the region C body at face value, four arguments at a time: the low orders are the
+// entry's own recurrence (BoysFarRecurLowOrders) in vectors, the rest the body's product form,
+// no second arithmetic either way - the lane returns BoysSingle's value bit for bit.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
@@ -206,6 +206,28 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
     {
         const __m256d xv = _mm256_loadu_pd(x + i);
         const __m256d r = _mm256_div_pd(_mm256_set1_pd(1.0), _mm256_sqrt_pd(xv));
+
+        if (n <= kFarRecurOrders)
+        {
+            __m256d f = _mm256_mul_pd(f0, r);
+
+            if (n >= 1)
+            {
+                const __m256d h = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_mul_pd(r, r));
+                const __m256d step = _mm256_add_pd(h, h);
+                __m256d c = h;
+
+                for (int m = 1; m <= n; ++m)
+                {
+                    f = _mm256_mul_pd(f, c);
+                    c = _mm256_add_pd(c, step);
+                }
+            }
+
+            _mm256_storeu_pd(out + i, f);
+            continue;
+        }
+
         const __m256d h = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_mul_pd(r, r));
         const __m256d h2 = _mm256_mul_pd(h, h);
         const __m256d h4 = _mm256_mul_pd(h2, h2);
