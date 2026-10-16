@@ -4194,10 +4194,16 @@ inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double*
     }
 }
 
-// The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
-// ARGUMENTS at once - the arguments axis, since the ladder's terms are consumed in the order.
-// Arithmetic for arithmetic with the scalar body, so its test is equality and not a bound.
-// boys_arguments_lanes.hpp owns both tiers' bodies.
+/// The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
+/// ARGUMENTS at once - the arguments axis, since the ladder's terms are consumed in the order.
+/// Arithmetic for arithmetic with the scalar body, so its test is equality and not a bound.
+/// boys_arguments_lanes.hpp owns both tiers' bodies.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      the four arguments, each at or above kX1
+/// \param stride distance between two orders in each column
+/// \param cols   the four columns the run writes into
+/// \param form   the division form the tier's bodies step in
 void BoysFarLadderLanes(int nmax,
                         const double* x,
                         std::size_t stride,
