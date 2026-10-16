@@ -30,11 +30,14 @@ WARN_FORMAT            = "$file:$line: $text"
 
 # Preprocessor: the fp16/bf16 API entries are guarded by #if BoysFp16 -
 # without the define Doxygen evaluates the guard to 0 and whole entries are
-# invisible to the gate (a vacuous zero-warning pass).
+# invisible to the gate (a vacuous zero-warning pass). DOXYGEN_SHOULD_SKIP_THIS
+# is the other direction: the CUDA launch seam's prototype block is internal ABI,
+# documented at the entries of boys_cuda.hpp that call it, and the header guards
+# it with this name so the gate does not demand seventy restatements of one fact.
 ENABLE_PREPROCESSING   = YES
 MACRO_EXPANSION        = YES
 EXPAND_ONLY_PREDEF     = YES
-PREDEFINED             = BoysFp16=1
+PREDEFINED             = BoysFp16=1 DOXYGEN_SHOULD_SKIP_THIS
 
 # Inputs: the public headers, scanned recursively; the README becomes the
 # front page of the published docs.

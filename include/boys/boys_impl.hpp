@@ -3934,6 +3934,10 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 /// polynomial table and which summation the shipped route's fits are read with, the route which region-A
 /// fits the lane carries, the accuracy multiplier the degree a fit is read at, and the partition the
 /// table those fits are cut into.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    the argument
+/// \param out  receives \c nmax + 1 values, one per order
 template <EvalScheme kScheme = kDefaultEvalScheme,
           FitRoute kRoute = kDefaultFitRoute,
           FitGranularity kGranularity = kDefaultFitGranularity,

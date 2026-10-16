@@ -2311,10 +2311,14 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
 
 namespace boys::detail {
 
-// The orders axis's float entry on a target without the vector tier: the same certified
-// scalar single lane the packed bodies fall back to, at the policy the axis names. The
-// partition and the division form are part of the policy and not only of the body that
-// reads it, so both are parameters here as on the vector tier's entry.
+/// The orders axis's float entry on a target without the vector tier: the same certified
+/// scalar single lane the packed bodies fall back to, at the policy the axis names. The
+/// partition and the division form are part of the policy and not only of the body that
+/// reads it, so both are parameters here as on the vector tier's entry.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    the argument
+/// \param out  receives \c nmax + 1 values, one per order
 template <EvalScheme kScheme, FitRoute kRoute, BoysBudget kBudget,
           FitGranularity kGranularity, DivisionForm kForm>
 void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
@@ -2327,9 +2331,13 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     }
 }
 
-// The orders axis's double entry on a target without the vector tier: the same
-// certified scalar single lane the packed bodies fall back to, at the policy
-// the axis names.
+/// The orders axis's double entry on a target without the vector tier: the same
+/// certified scalar single lane the packed bodies fall back to, at the policy
+/// the axis names.
+///
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    the argument
+/// \param out  receives \c nmax + 1 values, one per order
 template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity,

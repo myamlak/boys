@@ -13,9 +13,22 @@
 
 #include <cstddef>
 
+// The seam's ABI, one prototype per launcher the .cu exports: internal by design, the
+// documented surface being the entries of boys_cuda.hpp that call them through the launch
+// helpers below. Doxygen skips the block (DOXYGEN_SHOULD_SKIP_THIS, set in the Doxyfile);
+// a compiler sees it always.
+#ifndef DOXYGEN_SHOULD_SKIP_THIS
 extern "C" {
+/// Uploads this library's tables to the device; the entries call it once per context.
+/// \return a launch code: 0, or the failure the upload reported
 int BoysCudaUploadTables();
+/// The device addresses of the uploaded tables, for a caller that reads them directly.
+/// \param out receives the addresses
+/// \return a launch code: 0, or the failure the upload reported
 int BoysCudaDeviceTableAddresses(void** out);
+/// The device addresses of the tables' tail half, where the two are stored apart.
+/// \param out receives the addresses
+/// \return a launch code: 0, or the failure the upload reported
 int BoysCudaDeviceTableAddressesTail(void** out);
 int BoysCudaLaunchSingleF32(
     int form, const int* n, const double* x, float* out, std::size_t count, void* stream);
@@ -242,14 +255,18 @@ int BoysCudaLaunchEachOrderF16Fast(
     int form, const int* n, const void* x, const int* offset, void* out, std::size_t count,
     void* stream);
 #endif
-}
+} // extern "C"
+#endif // DOXYGEN_SHOULD_SKIP_THIS
 
 namespace boys {
 namespace detail {
 
-// code == 1 is the internal table-layout error; every other nonzero code is a
-// cudaError_t from the launch or the sync. The status enum carries no payload -
-// callers diagnose device failures through the CUDA runtime's own reporting.
+/// code == 1 is the internal table-layout error; every other nonzero code is a
+/// cudaError_t from the launch or the sync. The status enum carries no payload -
+/// callers diagnose device failures through the CUDA runtime's own reporting.
+///
+/// \param code the code the launcher returned
+/// \return kSuccess for code 0; kDeviceError otherwise
 inline BoysStatus FromLaunchCode(int code) {
     if (code == 0)
     {
@@ -259,8 +276,11 @@ inline BoysStatus FromLaunchCode(int code) {
     return BoysStatus::kDeviceError;
 }
 
-// The uniform-order entries' one host-visible scalar: the order array of the
-// per-element entries cannot be checked without a device copy, this can.
+/// The uniform-order entries' one host-visible scalar: the order array of the
+/// per-element entries cannot be checked without a device copy, this can.
+///
+/// \param nmax the highest order the call names
+/// \return kSuccess in range; kInvalidArgument otherwise
 inline BoysStatus CheckOrder(int nmax) {
     if (nmax < 0 || nmax > kMaxBoysOrder)
     {
@@ -270,9 +290,12 @@ inline BoysStatus CheckOrder(int nmax) {
     return BoysStatus::kSuccess;
 }
 
-// The division form a caller may name. One kernel holds one division (the launch picks
-// the instantiation; a kernel never branches on it), so a value outside the three has no
-// kernel to select and is refused here, before anything is launched.
+/// The division form a caller may name. One kernel holds one division (the launch picks
+/// the instantiation; a kernel never branches on it), so a value outside the three has no
+/// kernel to select and is refused here, before anything is launched.
+///
+/// \param form the division form the call names
+/// \return kSuccess for the three forms; kInvalidArgument otherwise
 inline BoysStatus CheckDivisionForm(DivisionForm form) {
     switch (form)
     {
@@ -285,11 +308,20 @@ inline BoysStatus CheckDivisionForm(DivisionForm form) {
     return BoysStatus::kInvalidArgument;
 }
 
-// Shared launch path for every entry: the form check, the count == 0 no-op (a zero-block
-// launch is a CUDA error, an empty batch is a success that writes nothing) and the one
-// status mapping. Order is either entry's first argument; the form is the division the
-// launched kernel is built with, and the launcher takes it as its own first argument.
+/// Shared launch path for every entry: the form check, the count == 0 no-op (a zero-block
+/// launch is a CUDA error, an empty batch is a success that writes nothing) and the one
+/// status mapping. Order is either entry's first argument; the form is the division the
+/// launched kernel is built with, and the launcher takes it as its own first argument.
 template <typename Launcher, typename Order, typename X, typename Value>
+///
+/// \param launcher the entry's device launcher
+/// \param order the order, or the per-element order array
+/// \param x the arguments on the device
+/// \param out the output on the device
+/// \param count number of arguments
+/// \param stream the CUDA stream, or null for the default
+/// \param form the division form the launched kernel is built with
+/// \return the form check or the launcher status, the launch code mapped
 inline BoysStatus RunLaunch(Launcher launcher,
                             Order order,
                             X x,
@@ -312,11 +344,21 @@ inline BoysStatus RunLaunch(Launcher launcher,
     return FromLaunchCode(launcher(static_cast<int>(form), order, x, out, count, stream));
 }
 
-// The each-order shape's form of the same seam: one more argument than RunLaunch, because the
-// ladders land at the caller's offsets rather than at planes the launcher derives. The checks,
-// the empty-batch case and the launch-code reading are RunLaunch's, so a caller sees the same
-// answers from either shape.
+/// The each-order shape's form of the same seam: one more argument than RunLaunch, because the
+/// ladders land at the caller's offsets rather than at planes the launcher derives. The checks,
+/// the empty-batch case and the launch-code reading are RunLaunch's, so a caller sees the same
+/// answers from either shape.
 template <typename Launcher, typename Order, typename X, typename Value>
+///
+/// \param launcher the entry's device launcher
+/// \param order the order, or the per-element order array
+/// \param x the arguments on the device
+/// \param offset each ladder's element offset on the device
+/// \param out the output on the device
+/// \param count number of arguments
+/// \param stream the CUDA stream, or null for the default
+/// \param form the division form the launched kernel is built with
+/// \return the form check or the launcher status, the launch code mapped
 inline BoysStatus RunLaunchOffset(Launcher launcher,
                                   Order order,
                                   X x,

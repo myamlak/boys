@@ -3884,11 +3884,51 @@ public:
 // than crossing a library boundary: the bodies are the ones src/boys_cuda.cpp held, unchanged,
 // and the launch seam they run on is boys_cuda_launch.hpp. The five names are that header's
 // helpers, which those unchanged bodies call unqualified.
+
+/// The division form a call may name: one kernel holds one division, and a value outside
+/// the three is refused here, before anything is launched.
+///
+/// \param form the division form the call names
+/// \return kSuccess for the three forms; kInvalidArgument otherwise
 using detail::CheckDivisionForm;
+/// The uniform-order entries' one host-visible scalar: the order array of the per-element
+/// entries cannot be checked without a device copy, this can.
+///
+/// \param nmax the highest order the call names
+/// \return kSuccess in range; kInvalidArgument otherwise
 using detail::CheckOrder;
+/// The status mapping: code 1 is the internal table-layout error and every other nonzero
+/// code is a cudaError_t from the launch or the sync.
+///
+/// \param code the code the launcher returned
+/// \return kSuccess for code 0; kDeviceError otherwise
 using detail::FromLaunchCode;
+/// The shared launch path: the form check, the empty-batch no-op and the one status
+/// mapping.
+///
+/// \param launcher the entry's device launcher
+/// \param order    the order, or the per-element order array
+/// \param x        the arguments on the device
+/// \param out      the output on the device
+/// \param count    number of arguments
+/// \param stream   the CUDA stream, or null for the default
+/// \param form     the division form the launched kernel is built with
+/// \return the form check's or the launcher's status, the launch code mapped
 using detail::RunLaunch;
+/// The each-order shape's form of the same launch path: one more argument than RunLaunch,
+/// because the ladders land at the caller's offsets.
+///
+/// \param launcher the entry's device launcher
+/// \param order    the order, or the per-element order array
+/// \param x        the arguments on the device
+/// \param offset   each ladder's element offset on the device
+/// \param out      the output on the device
+/// \param count    number of arguments
+/// \param stream   the CUDA stream, or null for the default
+/// \param form     the division form the launched kernel is built with
+/// \return the form check's or the launcher's status, the launch code mapped
 using detail::RunLaunchOffset;
+
 
 // ---------------------------------------------------------------------------
 // the entries

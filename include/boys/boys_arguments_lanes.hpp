@@ -64,6 +64,13 @@ inline __m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexc
 }
 
 
+/// The region-A lane at the vector tier: four arguments at once, the per-argument body's own
+/// arithmetic lane for lane.
+///
+/// \param n     the order
+/// \param x     the caller's arguments
+/// \param out   receives one value per argument
+/// \param count number of arguments
 inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -312,6 +319,16 @@ void FarRunAt(int nmax,
     FarRunDirect<kForm>(nmax, x, index, out, count, begin, end);
 }
 
+/// The far ladder's lane at the vector tier: one ladder per lane of an AVX2 double register,
+/// four of the run's arguments at once, and the same arithmetic as the scalar body (its test
+/// is equality, not a bound). The scalar-tier definition below is that body, one column at a
+/// time: the tier's body is the translation unit's own.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      the four arguments, each at or above kX1
+/// \param stride distance between two orders in each column
+/// \param cols   the four columns the run writes into
+/// \param form   the division form the tier's bodies step in
 inline void BoysFarLadderLanes(int nmax,
                         const double* x,
                         std::size_t stride,
@@ -402,6 +419,13 @@ inline void BoysFarLadderRun(int nmax,
 
 namespace boys::detail {
 
+/// The region-A lane at the scalar tier: the per-argument body, one argument at a time - the
+/// body the vector tier's tails run and all a non-x86 target has.
+///
+/// \param n     the order
+/// \param x     the caller's arguments
+/// \param out   receives one value per argument
+/// \param count number of arguments
 inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -411,10 +435,15 @@ inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t cou
     }
 }
 
-// The far ladder's lane at the scalar tier: the region's certified scalar body, one column at a
-// time. It is the body the entry's own scalar path runs, at the same arguments and the same
-// stride, so the lane returns the values the entry returns - the host's AVX2 being present or
-// absent says nothing about which tier this translation unit was compiled at.
+/// The far ladder's lane at the scalar tier: the region's certified scalar body, one column
+/// at a time, the same body the entry's own scalar path runs - the host's AVX2 being present
+/// or absent says nothing about which tier this translation unit was compiled at.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      the four arguments, each at or above kX1
+/// \param stride distance between two orders in each column
+/// \param cols   the four columns the run writes into
+/// \param form   the division form the tier's bodies step in
 inline void BoysFarLadderLanes(int nmax,
                         const double* x,
                         std::size_t stride,
@@ -441,9 +470,18 @@ inline void BoysFarLadderLanes(int nmax,
     }
 }
 
-// The far run's kernel at the scalar tier: the region's certified scalar body, one argument of
-// the run at a time, in the caller's own planes. It is the body the entry's scalar path runs, so
-// the kernel returns what the entry returns.
+/// The far run's kernel at the scalar tier: the region's certified scalar body, one argument
+/// of the run at a time, in the caller's own planes - the body the entry's scalar path runs,
+/// so the kernel returns what the entry returns.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      the caller's argument array
+/// \param index  the run's positions, or null for a consecutive run
+/// \param out    the planes the run writes into
+/// \param count  values per plane
+/// \param begin  first run position, inclusive
+/// \param end    last run position, exclusive
+/// \param form   the division form the body steps in
 inline void BoysFarLadderRun(int nmax,
                       const double* x,
                       const std::size_t* index,

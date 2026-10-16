@@ -55,6 +55,8 @@
 // the packed lanes enter the fused instruction unguarded, so a target with one and not the other
 // is the scalar tier. One flag set, in each driver's spelling: GCC and Clang define __AVX2__ with
 // __FMA__; cl 19.x defines __AVX2__ alone for /arch:AVX2 (measured), so there that macro answers.
+
+/// This translation unit's AVX2 + FMA tier: \c 1 on the vector tier, \c 0 on the scalar one.
 #if !defined(BOYS_ISA_AVX2_FMA)
 #if (defined(__AVX2__) && defined(__FMA__)) || (defined(_MSC_VER) && defined(__AVX2__)) || \
     defined(_M_AVX2)
@@ -71,6 +73,8 @@
 // The fp16 seam is the same kind of per-translation-unit choice as an ISA tier - the entries it
 // gates are added to the surface, not switched at run time - so it is registered beside them
 // and a program that carries both readings of it is refused for the same reason.
+
+/// This translation unit's fp16 seam: \c 1 where the seam is open, \c 0 where it is closed.
 #if BoysFp16
 #define BOYS_FP16_AXIS 1
 #else
@@ -139,6 +143,8 @@ inline bool DetectAvx2() noexcept {
 /// answers one argument at a time pays a load rather than a call. One function-local static, so
 /// it is one object across every translation unit. boys/boys.hpp declares the entry of this name
 /// that a consumer calls; src/boys.cpp defines it.
+///
+/// \returns \c true when the processor carries AVX2, FMA and the OS state that enables them
 inline bool Avx2Available() noexcept {
     static const bool available = DetectAvx2();
     return available;
@@ -152,7 +158,7 @@ namespace tier_guard {
 /// One program's announced tiers, one field per axis. A field left at kUnannounced has heard
 /// from no translation unit yet.
 struct Registry {
-    static constexpr int kUnannounced = -1;
+    static constexpr int kUnannounced = -1; ///< the value before any translation unit has announced
 
     int isa = kUnannounced; ///< BOYS_ISA_AVX2_FMA, as a translation unit announced it
     int fp16 = kUnannounced; ///< the fp16 seam, as a translation unit announced it
@@ -160,23 +166,37 @@ struct Registry {
 
 /// The one registry in the program: the function is inline, so its function-local static is the
 /// same object in every translation unit.
+///
+/// \returns the program's one registry
 inline Registry& Announced() noexcept {
     static Registry registry;
     return registry;
 }
 
 /// The AVX2 + FMA tier's profile as its own flag set spells it.
+///
+/// \param tier the announced \c BOYS_ISA_AVX2_FMA value
+///
+/// \returns a string literal naming that flag set, for the refusal's own line
 inline const char* IsaProfile(int tier) noexcept {
     return tier != 0 ? "AVX2+FMA (BOYS_ISA_AVX2_FMA=1)" : "scalar (BOYS_ISA_AVX2_FMA=0)";
 }
 
 /// The fp16 seam's profile as its own flag set spells it.
+///
+/// \param seam the announced fp16 seam value
+///
+/// \returns a string literal naming that flag set, for the refusal's own line
 inline const char* Fp16Profile(int seam) noexcept {
     return seam != 0 ? "the fp16 seam open (BoysFp16=1)" : "the fp16 seam closed (BoysFp16=0)";
 }
 
 /// Refuses a program whose translation units were not compiled alike: one line naming the two
 /// profiles and the axis they disagree on, then an abort.
+///
+/// \param axis   the axis the two translation units disagree on
+/// \param mine   the profile this translation unit announced
+/// \param theirs the profile an earlier one announced
 [[noreturn]] inline void MixedTiers(const char* axis,
                                     const char* mine,
                                     const char* theirs) noexcept {
@@ -192,6 +212,9 @@ inline const char* Fp16Profile(int seam) noexcept {
 /// Announces this translation unit's two axes, refusing a program that announced both readings
 /// of either. Announcing a value that is already registered is the common case - a program's
 /// translation units are compiled alike - and costs a comparison.
+///
+/// \param isa  this unit's \c BOYS_ISA_AVX2_FMA value
+/// \param fp16 this unit's fp16 seam value
 inline void RegisterTier(int isa, int fp16) noexcept {
     Registry& registry = Announced();
 
@@ -215,8 +238,12 @@ inline void RegisterTier(int isa, int fp16) noexcept {
 /// One translation unit's announcement, made before main: the tier this unit's flags name, in a
 /// variable of its own - internal linkage, so every translation unit has one and every one of
 /// them runs.
+///
+/// \tparam kIsaTier  \c BOYS_ISA_AVX2_FMA as this unit reads it
+/// \tparam kFp16Seam \c BOYS_FP16_AXIS as this unit reads it
 template <int kIsaTier, int kFp16Seam>
 struct TierProbe {
+    /// Announces this translation unit's two axes once, before main.
     TierProbe() noexcept { RegisterTier(kIsaTier, kFp16Seam); }
 };
 

@@ -473,6 +473,8 @@ template <Precision kLane> constexpr void RequireRecordedArithmetic() noexcept {
 /// A call that moved the division form or the region-B member names an entry the
 /// sweeps were not taken at, and its delivered figure is its own measurement
 /// rather than the cell's; the bound is stated there and no delivered figure is.
+///
+/// \returns the class's figure, or one whose \c reason says why none is delivered
 template <Precision kPrecision, Shape kShape, bool kDefaultCell>
 constexpr AccuracyFigure DeliveredFigureHere() noexcept {
     AccuracyFigure figure;
@@ -527,6 +529,8 @@ constexpr AccuracyFigure DeliveredFigureHere() noexcept {
 
 /// What the delivered figure covers: the region of the argument range the
 /// record's row names, empty where no figure is stated.
+///
+/// \returns the region as text, and \c "" where no figure is stated
 template <Precision kPrecision, Shape kShape, bool kDefaultCell>
 constexpr const char* DeliveredScopeHere() noexcept {
     if constexpr (!kRouteInForceKnownHere || !kDefaultCell || kPrecision == Precision::kFp16 ||

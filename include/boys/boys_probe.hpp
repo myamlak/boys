@@ -780,9 +780,9 @@ struct OptionProbeRefinement {
     /// separate within the time it was given.
     bool budgetSpent = false;
 
-    /// Wall seconds the stage spent, and the budget it was given.
+    /// Wall seconds the stage spent.
     double secondsSpent = 0.0;
-    double budgetSeconds = 0.0;
+    double budgetSeconds = 0.0; ///< the budget it was given, in wall seconds
 
     /// The rows this stage's last wave could not place behind its leader, its
     /// leader first: the tie set the deterministic tie-break is applied to.
@@ -1024,33 +1024,21 @@ struct OptionProbeReport {
     /// carries exactly the clock, the caches and the visit order the ordering
     /// itself is subject to, and it is the only measurement on the run that can say
     /// how much of a lead is real.
-    ///
-    /// \c aaMedian is the middle of those ratios over the run's rounds - 1.000 is a
-    /// perfectly repeatable measurement - and \c aaLo and \c aaHi are the band they
-    /// fell in. \c aaSpread is that band's width as a fraction of a cost.
     int aaRounds = 0;
-    double aaMedian = 0.0;
-    double aaLo = 0.0;
-    double aaHi = 0.0;
-    double aaSpread = 0.0;
+    double aaMedian = 0.0; ///< the middle of those ratios, 1.000 where the run repeats
+    double aaLo = 0.0;     ///< the low end of the band they fell in
+    double aaHi = 0.0;     ///< the high end of that band
+    double aaSpread = 0.0; ///< that band's width, as a fraction of a cost
 
-    /// Where this run's wall time went, in seconds, as the four things a run
+    /// Where this run's wall time went, in seconds, as the five things a run
     /// spends it on. **The map and not an estimate**: each is accumulated at the
     /// region that spends it, so a change to the protocol can be priced before it
     /// is made rather than measured by running it.
-    ///
-    /// \c screeningSeconds is the timed grid of passes and rounds - the payload,
-    /// and normally the whole of the cost; \c racingSeconds is every class's racing
-    /// stage; \c calibrationSeconds is the quiet window, the background windows,
-    /// the canary's runs between rounds and the per-option unit calibration; and
-    /// \c accountingSeconds is everything outside the clock that is not one of
-    /// those - the warm-up pass, the accuracy walk, the far representations and the
-    /// report's own construction.
-    double screeningSeconds = 0.0;
-    double racingSeconds = 0.0;
-    double unitCalibrationSeconds = 0.0;
-    double instrumentSeconds = 0.0;
-    double accountingSeconds = 0.0;
+    double screeningSeconds = 0.0;       ///< the timed grid of passes and rounds, normally the whole cost
+    double racingSeconds = 0.0;          ///< every class's racing stage
+    double unitCalibrationSeconds = 0.0; ///< the per-option unit calibration
+    double instrumentSeconds = 0.0;      ///< the quiet windows and the canary's runs between rounds
+    double accountingSeconds = 0.0;      ///< everything outside the clock that is none of the above
 
     /// Wall seconds the whole run took, as the clock read it: the sum above plus
     /// the probe's own bookkeeping.
