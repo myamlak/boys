@@ -122,7 +122,12 @@ WHAT IT READS AND WHAT IT DOES NOT
 The library's facts are read at the revision the recorded run names, through
 ``git show <revision>:<path>`` - never out of the working tree, which other work may hold
 open - so the constants this check compares against are the ones the recorded run was
-produced from. The gate's own source is read from the working tree, which is where the
+produced from. One case reads the working tree instead and says so in its output: a run
+whose revision this clone cannot resolve, which happens when the recording branch was
+squash-merged and its commits left the default branch's history. That is a fact about the
+merge and not about the tree, and the record's content digests
+(``tools/check_recorded_run.py``, its own required check) are what bind the record to the
+tree in that case. The gate's own source is read from the working tree, which is where the
 gate this run records lives; a gate edited since the run is a finding the run's own
 revision line carries and ``tools/check_recorded_run.py`` is the check for it.
 
@@ -459,20 +464,36 @@ def git(*args: str) -> tuple[int, str, str]:
 
 
 class Library:
-    """The library's facts, read from one revision's files and never from the working tree."""
+    """The library's facts, read from one revision's files and never from the working tree.
 
-    def __init__(self, revision: str) -> None:
+    The one exception is a revision this clone cannot resolve - a run recorded on a branch
+    that was squash-merged names a commit no clone of the default branch carries - where the
+    working tree is read instead and the caller says so. That is safe because the record's
+    content digests are what bind it to the tree (`check_recorded_run.py` gates them
+    separately): a working tree whose digests disagree with the run is already red there, so
+    this read only ever sees the tree the record's own digests describe.
+    """
+
+    def __init__(self, revision: str | None) -> None:
         self.revision = revision
         self.text: dict[str, str] = {}
 
         for path in LIBRARY:
-            status, out, error = git("show", f"{revision}:{path}")
+            if revision is None:
+                try:
+                    out = (REPO / path).read_text(encoding="utf-8", errors="replace")
+                    status, error = 0, ""
+                except OSError as problem:
+                    out, status, error = "", 1, str(problem)
+            else:
+                status, out, error = git("show", f"{revision}:{path}")
 
             if status != 0:
                 if path in OPTIONAL:
                     self.text[path] = ""
                     continue
-                raise LookupError(f"{revision}:{path} could not be read: {error or 'no reason given'}")
+                raise LookupError(f"{revision or 'the working tree'}:{path} could not be read: "
+                                  f"{error or 'no reason given'}")
 
             self.text[path] = out
 
@@ -1500,14 +1521,23 @@ def main() -> int:
     status, resolved, error = git("rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
 
     if status != 0 or not resolved.strip():
-        print(f"\nSTALE: the run names revision {revision} and this repository cannot resolve it"
-              + (f" ({error})" if error else ""))
-        return 1
-
-    print(f"  library read at: {revision} (the revision the run names)")
+        # A run recorded on a branch that was squash-merged names a commit no clone of the
+        # default branch carries. That is a fact about the merge and not about the tree, so it
+        # is not a finding: the library is read from the working tree instead, and the record's
+        # content digests - gated by check_recorded_run.py - are what hold the two together.
+        print(f"\nNOTE: the run names revision {revision}, which this clone cannot resolve"
+              + (f" ({error})" if error else "")
+              + " - a branch commit a squash merge left out of the default branch's history."
+              + "\n      The library is read from the working tree; the run's content digests"
+              + " (check_recorded_run.py) are what bind the record to it.")
+        print("  library read at: the working tree (the run's revision is not in this clone)")
+        library_revision = None
+    else:
+        print(f"  library read at: {revision} (the revision the run names)")
+        library_revision = revision
 
     try:
-        library = Library(revision)
+        library = Library(library_revision)
     except LookupError as problem:
         print(f"\nSTALE: {problem}")
         return 1
