@@ -1368,16 +1368,16 @@ inline constexpr int kFarRecurOrders = 4;
 /// against the ladder over the far region's stream, the largest divergence scaled by \c F_0 is
 /// 7.9e-19, five orders of magnitude under the 1e-13 the region publishes.
 ///
-/// The body stays out of its callers' instantiations under MSVC: the arm64 back end crashes
-/// (C1001, at /O2) on the inlined form of it, and a call an order's prologue pays for is cheaper
-/// than a build that does not finish. The values are the same either way.
+/// The body is compiled unoptimized under MSVC: the arm64 back end crashes (C1001, at /O2) while
+/// optimizing it, and a prologue that costs a few cycles more is cheaper than a build that does
+/// not finish. Every other compiler is untouched, and the values are the same either way.
 ///
 /// \param nmax   highest order, 0..kFarRecurOrders
 /// \param r      the seed quotient 1/sqrt(x), kX1 <= x, formed by the caller
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
 #if defined(_MSC_VER)
-__declspec(noinline)
+#pragma optimize("", off)
 #endif
 inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
                                        double* out) noexcept {
@@ -1432,6 +1432,9 @@ inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
     f = f * c;
     *p = f;
 }
+#if defined(_MSC_VER)
+#pragma optimize("", on)
+#endif
 
 /// The recurrence at the caller's own argument: forms the seed quotient and defers to the core
 /// above. A caller about to walk the region hands the core its own \c r instead, so the pair

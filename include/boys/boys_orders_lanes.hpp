@@ -499,6 +499,12 @@ inline void StoreGroup(double* out, int l, std::size_t stride, __m256d value) no
 /// \param x      argument, kX1 <= x
 /// \param stride distance between two orders in \c out
 /// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+///
+/// The body is compiled unoptimized under MSVC, as the recurrence it steps from is: the arm64
+/// back end crashes (C1001, at /O2) while optimizing the pair. Other compilers are untouched.
+#if defined(_MSC_VER)
+#pragma optimize("", off)
+#endif
 inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out) noexcept {
     // The lane is entered past the cut: a request that stops there is answered by the recurrence
     // in FarLadderRun before its dispatch.
@@ -559,6 +565,9 @@ inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, doub
         out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
     }
 }
+#if defined(_MSC_VER)
+#pragma optimize("", on)
+#endif
 
 template <backend::MulAddRoute kMulAddRoute,
           OrdersScheme kScheme,
