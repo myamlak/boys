@@ -178,7 +178,7 @@ suite too: the suite's accuracy gate names the half entries through a policy on 
 so a configure that asks for both is refused rather than half-built. In a submodule, the same
 option is a cache variable the parent sets before `add_subdirectory`.
 
-    cmake --build build --target boys-option-probe     # measures your host; see the guide
+    cmake --build build --target boys-option-probe     # needs the test suite (-DBOYS_BUILD_TESTS=ON); see the guide
 
 Outside CMake the flags are yours to spell, and `docs/build-facts.md` states the profile the
 figures belong to. A unit compiled with the other reading of the fp16 seam or of the tier builds a
