@@ -1154,10 +1154,21 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
         << "a wave lengthened the passes, which the factor does not do";
     EXPECT_GE(stage.rounds, report.options.rounds)
         << "a wave was shorter than the protocol it races";
-    EXPECT_LE(stage.rounds,
-              std::max(report.options.rounds, boys::kProbeMinimumPairedRounds) *
-                  report.options.refinementFactor * report.options.refinementFactor)
-        << "the waves ran away from the protocol: the factor is applied once per wave";
+
+    // How many waves a tie needs is the runner's to say: each wave re-races the pool the one before
+    // left and stops on a pool it settled, a pool that stopped moving or the budget, so a noisy
+    // machine is the machine that runs more of them. What the protocol fixes is the law between the
+    // waves, so the last wave's length is read by equality against the waves this run actually took.
+    const int opening = std::max(report.options.rounds, boys::kProbeMinimumPairedRounds);
+    int expected = opening;
+
+    for (int wave = 1; wave < stage.runs; ++wave) {
+        expected *= report.options.refinementFactor;
+    }
+
+    EXPECT_EQ(stage.rounds, expected)
+        << "the last wave is not the first " << opening << " round(s) grown by the factor "
+        << report.options.refinementFactor << " once per wave after the first";
 
     // Every leader is one of the options that were re-measured, and the winner
     // is one of the leaders: the vote counts the waves it ran.
@@ -1282,12 +1293,33 @@ TEST(ProbeTest, EveryTimedUnitIsBroughtToTheTargetLength) {
 
     ASSERT_EQ(names.size(), 2u) << "the run's own book did not offer two options to pick from";
 
+    // The target is a length and not a number: the protocol owes a unit brought to the length it was
+    // given, whatever this clock says a call costs. The length is therefore read off this machine - a
+    // pass with no target times each option's whole call once - and set well above the cheapest of
+    // them. A fixed 0.2 ms would instead be a premise about the runner, and a slow one fails it.
+    ProbeOptions bare = Timed();
+    bare.only = names;
+    const OptionProbeReport ground = boys::RunOptionProbe(bare);
+    double cheapestCallMs = std::numeric_limits<double>::max();
+
+    for (const OptionProbeMeasurement& measurement : ground.measurements) {
+        if (measurement.measured) {
+            cheapestCallMs = std::min(cheapestCallMs, measurement.nsPerArgument *
+                                                          static_cast<double>(bare.count) / 1e6);
+        }
+    }
+
+    ASSERT_LT(cheapestCallMs, std::numeric_limits<double>::max())
+        << "the free pass priced no option to set a target above";
+    ASSERT_GT(cheapestCallMs, 0.0) << "the free pass priced an option at nothing";
+
+    const double targetMs = 8.0 * cheapestCallMs;
     ProbeOptions options = Timed();
     options.only = names;
-    options.unitTargetMs = 0.2;
+    options.unitTargetMs = targetMs;
     const OptionProbeReport report = boys::RunOptionProbe(options);
 
-    EXPECT_DOUBLE_EQ(report.options.unitTargetMs, 0.2);
+    EXPECT_DOUBLE_EQ(report.options.unitTargetMs, targetMs);
 
     std::size_t measured = 0;
     int most = 0;
@@ -1299,16 +1331,27 @@ TEST(ProbeTest, EveryTimedUnitIsBroughtToTheTargetLength) {
 
         EXPECT_GE(measurement.repeats, 1) << measurement.name << " was timed no times";
         most = std::max(most, measurement.repeats);
+
+        // The unit this row's figure was read over. The calibration prices a call from one timed
+        // call, so the unit is held to a quarter of the target: that is the factor by which that
+        // one reading can be descheduled before the count it chose becomes a short reading.
+        const double unitMs = measurement.repeats * measurement.nsPerArgument *
+                              static_cast<double>(report.options.count) / 1e6;
+        EXPECT_GE(unitMs, targetMs / 4.0)
+            << measurement.name << " was timed over a unit far shorter than its target";
         ++measured;
     }
 
     EXPECT_EQ(measured, 2u);
-    EXPECT_GT(most, 1) << "no option was repeated, so a unit shorter than the target was timed "
-                          "anyway and the calibration reached no figure";
+    EXPECT_GT(most, 1) << "the target was set above this machine's own call cost, so the option "
+                          "whose whole call is shorter than it must have been repeated";
 
     const std::string text = boys::FormatOptionProbe(report);
     EXPECT_NE(text.find("unit length:"), std::string::npos) << "the report states no unit target";
-    EXPECT_NE(text.find("0.200 ms"), std::string::npos) << "the report states another target";
+
+    char printedTarget[32];
+    std::snprintf(printedTarget, sizeof(printedTarget), "%.3f ms", report.options.unitTargetMs);
+    EXPECT_NE(text.find(printedTarget), std::string::npos) << "the report states another target";
     EXPECT_NE(text.find("rep"), std::string::npos) << "the per-option repeat count is not printed";
 
     // The A/A self-pair, which is taken inside every round whatever the unit length is: two
