@@ -121,9 +121,10 @@ F_0(30)    = 0.16180215937964007
 F_6(30)    = 3.6049669032736188e-08
 ```
 
-The three `OFF`s are there so this builds the library and nothing else, which needs no compiler past
-C++20 — the suite and the benchmark drivers are the targets that want C++23, and each is behind one
-of those flags. Drop them to build all three as well; that is the contributor's build.
+The three `OFF`s are there so this builds the library and nothing else — the option probe and the C
+linkage surface are units of the archive itself and not targets beside it — which needs no compiler
+past C++20: the suite and the benchmark drivers are the targets that want C++23, and each is behind
+one of those flags. Drop them to build all three as well; that is the contributor's build.
 
 On Windows with the Visual Studio generator the library lands in `build/Release/`. This program is
 [`examples/00_first_call.cpp`](examples/00_first_call.cpp); the contributor's build compiles it and
