@@ -122,12 +122,12 @@ __device__ int dNarrowRatBDenDeg32[detail::f32::kNarrowRatBPiecesCountF32];
 // pieces, edges, counts and stored degrees stay the Chebyshev lanes' own. All of it global
 // memory: the double lane's Chebyshev pool and the float lane's tables already fill the bank.
 __device__ double dMonoCoeffs[kMaxCoeffs];
-__device__ double dMonoBcoeffs[24];
+__device__ double dMonoBcoeffs[detail::kBDeg + 1];
 // The float lane's coarsest pool in the other basis, the reading Lane32MonoFull makes of what
 // Lane64MonoFull reads here. The same offsets as the Chebyshev pool above, so the pieces, edges,
 // degrees and counts stay the float lane's own.
 __device__ float dMonoCoeffs32[kMaxCoeffs];
-__device__ float dMonoBcoeffs32[24];
+__device__ float dMonoBcoeffs32[detail::f32::kBDeg + 1];
 __device__ double dNarrowAMonoCoeffs[kNarrowCoeffsTotal];
 __device__ double dNarrowBMonoCoeffs[detail::kNarrowBPieces * (detail::kNarrowBDeg + 1)];
 
