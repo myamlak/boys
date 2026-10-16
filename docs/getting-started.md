@@ -200,9 +200,11 @@ name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kCoa
 interval into pieces of different widths and carry a different number of pieces; **both meet the same
 published error bound.** Choosing the wrong one changes the work, not the accuracy. It costs you
 nothing visible: both compile, both run, both are correct, so you would never find out you had picked
-backwards. `kNarrow` is what a call site that names no partition reads. `kCoarsest` is what the program
-below names. If you have not measured a preference, name no policy at all and take the default. The
-bound the library publishes is the lane's, and no partition moves it.
+backwards. `kNarrow` is the seam's own name — what the policy `EvalPolicy<>` resolves to — and not
+the partition a call site that names no policy reads: that one is its class's row, and every double
+row in this build carries `kUniform`. `kCoarsest` is what the program below names. If you have not
+measured a preference, name no policy at all and take the default. The bound the library publishes
+is the lane's, and no partition moves it.
 
 `examples/05_policy.cpp` — a policy is named in the template argument list, never constructed. The
 values below are the program's own ladder, at the one argument and the one top order it sets for
