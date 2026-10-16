@@ -226,9 +226,9 @@ served by the fitted grid — whose hi-bound is 31.0 in this build — and the l
 holds at every cell of it, at `0.288` of the bound at worst.
 
 **Two combinations hold the wider figure rather than the one read against `F_n(x)`.** The double
-entries hold the
-ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of the span it
-serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations the option
+entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of
+the span it serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations
+the option
 space offers do not hold the bound read against `F_n(x)` alone: a lean partition's extended-band
 ladder
 (`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax
