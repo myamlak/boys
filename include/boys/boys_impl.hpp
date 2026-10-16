@@ -3365,8 +3365,10 @@ double SingleOrder(int n, double x) noexcept {
 
     // One order of the far ladder, read where the ladder writes it: the buffer is the run's own
     // shape at the widest order and the term asked for is one of its entries, so the order is
-    // answered by the same arithmetic every other order of this argument is.
+    // answered by the same arithmetic every other order of this argument is. The write below is
+    // the reader's guarantee: the run defines every entry it is asked for.
     double ladder[kMaxBoysOrder + 1];
+    ladder[n] = 0.0;
     FarLadderRun(n, x, 1, ladder);
 
     return ladder[n];
