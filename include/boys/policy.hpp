@@ -347,7 +347,7 @@ concept EvalPolicyLike = requires {
 ///
 /// Each name is \c EvalPolicy<> at one lane's budget: the point the build's seam
 /// header names, and never a class's row. A caller may write
-/// \c BoysSingle<1.0, DefaultPolicyFp64> to name that point explicitly, and it is
+/// \c BoysSingle<DefaultPolicyFp64>(n, x) to name that point explicitly, and it is
 /// the call a call site that named no policy gets exactly where the table's row for
 /// that class carries the combination this point composes - not the same
 /// instantiation in general. The four differ in the budget alone:
