@@ -181,16 +181,19 @@ above are the surface.
 
 ## Accuracy contract
 
-The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
-n, x and lane.
+The bound at a cell is **`1e-13 · F_0(x)`**, for every supported n, x and lane: the ladder's first
+rung scaled by `1e-13`. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the pair is
+never the wider one.
 
-**Both arms are a fraction of the value, so a small value is held to a small error.** Since F is
-decreasing in the order, the wider arm at a cell is the one scaled by the ladder's first rung,
-`F_0(x)`, and the bound binds by that arm wherever the order's own value is tiny. Until this release
-it instead carried a constant floor, `5.5e-14`, which the second arm replaces. The bound holds above
-the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the float ones — below
-which the return is subnormal or zero, the format's own floor is what answers there, and no accuracy
-is claimed. Every figure below holds for **all** x ≥ 0:
+**The figure is a fraction of the ladder's first rung, so read against the value it is not uniform.**
+The bound binds by that arm wherever the order's own value is tiny, and the returned `F_n` is held to
+`1e-13` of its own value only below the region-C boundary, `x = 28.98933773882074`, and again above
+`x ≈ 93` at `n = 32`; in between the bound is up to 140 % of the value, at the worst cell
+`n = 32, x = 31`. Until this release it instead carried a constant floor, `5.5e-14`, which the
+ladder-scaled figure replaces. The bound holds above the lane format's smallest normal — 2^-1022 for
+the double lanes, 2^-126 for the float ones — below which the return is subnormal or zero, the
+format's own floor is what answers there, and no accuracy is claimed. Every figure below holds for
+**all** x ≥ 0:
 
 *Single* is the entry that answers for one order at one argument; *batch* is the entries that answer
 a whole call at once, and the two rows carrying those labels are both the double lane. The rows

@@ -8,24 +8,26 @@ defined on the documentation's landing page, together with the full API referenc
 
 ## Accuracy contract {#accuracy-contract}
 
-The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
-n, x and lane. The form is relative — a fraction of a value, not one figure for the whole range —
-and since F is decreasing in the order, the wider arm at a cell is the one scaled by the ladder's
-first rung, `F_0(x)`. Until this release the bound instead carried a constant floor, `5.5e-14`,
-which the second arm replaces: the same kind of rescue, scaled by the ladder's own first value
-rather than by a fixed number.
+The bound at a cell is **`1e-13 · F_0(x)`**, for every supported n, x and lane: the ladder's first
+rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
+the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. Until
+this release the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
+replaces: the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
+number.
 
-**B is a fraction of the value, so a small value is held to a small error.** The form this contract
-had before was absolute — one figure for the whole range, whatever the value — and it judged every
-cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane of that revision
-returned 6.87e-14 —
-an error of 4.94e-14, inside the absolute figure of the day, 5.5e-14, and 0.897 of it, so that form
-passed the cell.
-Read relative to F, the same cell is **2.55 times the true value**. The ladder-scaled bound holds
-there (the fitted grid serves that argument, its hi-bound being 31.0). That is what the relative
-form
-binds and the absolute form did not: a budget spent where the value is tiny is spent where nothing
-needs it.
+**B is a fraction of the ladder's first rung, so read against the value it is not uniform.** The form
+this contract had before was absolute — one figure for the whole range, whatever the value — and it
+judged every cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane of that
+revision returned 6.87e-14 — an error of 4.94e-14, inside the absolute figure of the day, 5.5e-14,
+and 0.897 of it, so that form passed the cell. Read relative to F, the same cell is **2.55 times the
+true value**. The ladder-scaled bound holds there (the fitted grid serves that argument, its hi-bound
+being 31.0). That is what the ladder-scaled form binds and the absolute form did not: a budget spent
+where the value is tiny is spent where nothing needs it. What the same form does not give is a figure
+the returned value holds to in its own right: on the committed grid the double entries' delivered
+error is 3.496e-14 of `F_n(x)` at the worst cell below the region-C boundary,
+`x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again above `x ≈ 93`;
+between those, the bound is a larger fraction of the value, up to 140 % of it at the worst cell,
+`n = 32, x = 31`.
 
 B binds above the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the
 float ones. Below it the returned value is subnormal or zero, the format's own floor is what

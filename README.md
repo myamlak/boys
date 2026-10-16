@@ -208,19 +208,25 @@ The complete list, with every overload, is the entry-point table in the
 device call looks like, what you must allocate and pass, what the library refuses and why that is a
 feature, and how to read the bound you got.
 
-**What the bound is, and what it is not.** For the shipped build the guarantee is **relative**: the
-error of a returned value is at or below **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**,
-for every `n <= 32` and every `x >= 0`. F is decreasing in the order, so the second figure is the
-wider of the two and the arm that binds wherever the order's own value is tiny. The bound holds above
-the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
-subnormal or zero and no accuracy is claimed. Until this release the guarantee instead carried a
-constant floor, `5.5e-14`, and where F is small the two figures disagree: at
+**What the bound is, and what it is not.** For every `n <= 32` and every `x >= 0` the error of a
+returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not
+the value the caller asked for. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the
+pair is never the wider one, and where the order's own value is tiny the figure the bound is stated
+in is a large part of it. Read against `F_n(x)`'s own value the bound is therefore not uniform: on
+the committed grid the delivered error is 3.496e-14 of `F_n(x)` at the worst cell below the
+region-C boundary, `x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again
+above `x ≈ 93`; in between, the bound costs the value accuracy, and at the worst cell there,
+`n = 32, x = 31`, the returned value is wrong by 140 % of its own. The bound holds above the lane
+format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is subnormal
+or zero and no accuracy is claimed. Until this release the guarantee instead carried a constant
+floor, `5.5e-14`, and where F is small the two figures disagree: at
 `n = 32, x = 29`, F is 1.93e-14 and the lane of the day returned 6.87e-14 — an error of 4.94e-14,
 inside the floor of the day, and **2.55 times the true value** read relative to F. That argument is
-served by the fitted grid — whose hi-bound is 31.0 in this build — and the relative figure holds
-there.
+served by the fitted grid — whose hi-bound is 31.0 in this build — and the ladder-scaled figure
+holds at every cell of it, at `0.288` of the bound at worst.
 
-**Two combinations hold the wider figure rather than the relative one.** The double entries hold the
+**Two combinations hold the wider figure rather than the one read against `F_n(x)`.** The double
+entries hold the
 ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of the span it
 serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations the option
 space offers do not hold the bound read against `F_n(x)` alone: a lean partition's extended-band
