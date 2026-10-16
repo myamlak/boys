@@ -117,8 +117,9 @@ void Require(Report& report, bool ok, const char* what) {
     }
 }
 
-/// Count one bit-for-bit comparison of an entry's exact form.
-void Compare(Report& report, bool holds) {
+/// Count one bit-for-bit comparison of an entry's exact form; a seam whose two class rows carry
+/// different arithmetics compiles every call of it out.
+[[maybe_unused]] void Compare(Report& report, bool holds) {
     ++report.exactCompared;
     report.exactHeld += holds ? 1 : 0;
 }
@@ -525,6 +526,14 @@ const char* RouteCellName(boys::FitRoute route) {
     return "unknown";
 }
 
+/// Whether the two class rows answer a cell differently. Read through parameters: where a seam
+/// gives the two classes one row, the two spellings resolve to one type and comparing them
+/// directly is a self-comparison the strict warnings refuse.
+template <typename Enum>
+constexpr bool Differs(Enum fixedN, Enum single) noexcept {
+    return fixedN != single;
+}
+
 /// The cells the two rows differ in, as "axis: fixed-order vs single": what a seam that answers
 /// the two classes with two arithmetics leaves to report where an identity was not judged. Every
 /// call site is a branch a seam with one arithmetic discards, so the committed header leaves it
@@ -545,30 +554,30 @@ const char* RouteCellName(boys::FitRoute route) {
         text += single;
     };
 
-    if (FixedNClass::kRoute != SingleClass::kRoute)
+    if (Differs(FixedNClass::kRoute, SingleClass::kRoute))
     {
         note("fit route", RouteCellName(FixedNClass::kRoute), RouteCellName(SingleClass::kRoute));
     }
 
-    if (FixedNClass::kScheme != SingleClass::kScheme)
+    if (Differs(FixedNClass::kScheme, SingleClass::kScheme))
     {
         note("scheme", boys::EvalSchemeName(FixedNClass::kScheme),
              boys::EvalSchemeName(SingleClass::kScheme));
     }
 
-    if (FixedNClass::kGranularity != SingleClass::kGranularity)
+    if (Differs(FixedNClass::kGranularity, SingleClass::kGranularity))
     {
         note("partition", boys::GranularityName(FixedNClass::kGranularity),
              boys::GranularityName(SingleClass::kGranularity));
     }
 
-    if (FixedNClass::kDivision != SingleClass::kDivision)
+    if (Differs(FixedNClass::kDivision, SingleClass::kDivision))
     {
         note("division form", boys::DivisionFormName(FixedNClass::kDivision),
              boys::DivisionFormName(SingleClass::kDivision));
     }
 
-    if (kRegionBExpReachesAValue && FixedNClass::kRegionBExp != SingleClass::kRegionBExp)
+    if (kRegionBExpReachesAValue && Differs(FixedNClass::kRegionBExp, SingleClass::kRegionBExp))
     {
         note("region-B exponential", boys::RegionBExpName(FixedNClass::kRegionBExp),
              boys::RegionBExpName(SingleClass::kRegionBExp));
