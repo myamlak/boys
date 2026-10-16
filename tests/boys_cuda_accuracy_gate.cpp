@@ -5968,9 +5968,106 @@ std::size_t SurveyLaunchedSurface(const Reference& ref,
     return unarmed;
 }
 
+/// One device-callable row this run reaches through its launched twin's arm, in the report's names.
+struct TwinReach {
+    std::string lane; ///< the device row, as the report names it
+    std::string twin; ///< the launched row whose arm reaches it
+};
+
+std::vector<TwinReach>& TwinReaches() {
+    static std::vector<TwinReach> reaches;
+    return reaches;
+}
+
+/// Whether two rows of the report are one arithmetic reached two ways.
+///
+/// What a row computes is the tuple below: precision, shape, question, region-B exponential, lane,
+/// and the bar and the form its own row states. The axis member is not compared, because it says
+/// which member of a family a row is an example of, and a device row varies the region-B
+/// exponential where its launched twin varies the family's own axis.
+bool SameArithmetic(const boys::DeviceOptionInfo& a, const boys::DeviceOptionInfo& b) {
+    const bool form = (a.boundForm == nullptr || b.boundForm == nullptr)
+                          ? a.boundForm == b.boundForm
+                          : std::strcmp(a.boundForm, b.boundForm) == 0;
+
+    return a.precision == b.precision && a.shape == b.shape && a.question == b.question &&
+           a.regionBExp == b.regionBExp && a.lane == b.lane && a.bound == b.bound && form;
+}
+
+/// Whether the arm table reaches a launched row.
+bool ArmReachesEntry(boys::DeviceEntry entry) {
+    for (const LaunchedArm& arm : kLaunchedArms)
+    {
+        if (arm.entry == entry)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/// Register a claim, with no verdict, for every served device-callable row no claim names whose
+/// launched twin the arm table reaches at the same arithmetic.
+///
+/// The caller's handle and the queue's entry of one option are one arithmetic reached two ways, and
+/// the arm above measured the twin, so the row rides the twin's cells rather than no cells at all:
+/// a claim names it and the coverage names the twin that reaches it. A row whose twin no arm
+/// reaches, or whose twin states another tuple, is left unclaimed on purpose - the coverage names
+/// the row itself then, which is where a row nothing reaches belongs.
+void RegisterRowsReachedThroughTheirTwin() {
+    for (const boys::DeviceOptionInfo& row : boys::BoysDeviceOptions())
+    {
+        if (!row.built || row.group != boys::DeviceOptionGroup::kDeviceCallable)
+        {
+            continue;
+        }
+
+        const std::string lane = row.name;
+
+        if (lane.rfind("device-", 0) != 0)
+        {
+            continue;
+        }
+
+        bool claimed = false;
+
+        for (const Accum& a : Claims())
+        {
+            claimed = claimed || a.lane == lane || a.lane.rfind(lane + " ", 0) == 0;
+        }
+
+        if (claimed)
+        {
+            continue;
+        }
+
+        const std::string twinName = lane.substr(std::strlen("device-"));
+        const boys::DeviceOptionInfo* twin = nullptr;
+
+        for (const boys::DeviceOptionInfo& other : boys::BoysDeviceOptions())
+        {
+            if (other.built && other.group == boys::DeviceOptionGroup::kLaunched &&
+                twinName == other.name)
+            {
+                twin = &other;
+                break;
+            }
+        }
+
+        if (twin == nullptr || !ArmReachesEntry(twin->entry) || !SameArithmetic(row, *twin))
+        {
+            continue;
+        }
+
+        AddClaim(lane.c_str(), "A..C", row.bound, false);
+        TwinReaches().push_back(TwinReach{lane, twin->name});
+    }
+}
+
 // The coverage, and the two books' one number: the claims name rows the library's report carries,
-// so an option certified by nothing and a claim for an unreported row are caught, and the fp16
-// bound the report and the reference book both state is compared here.
+// so an option certified by nothing and a claim for an unreported row are caught, the fp16 bound
+// both books state is compared here, and a row reached through a launched twin is named below.
 // ---------------------------------------------------------------------------
 std::size_t ReportDeviceOptionCoverage() {
     char fp16Report[32];
@@ -6060,6 +6157,20 @@ std::size_t ReportDeviceOptionCoverage() {
     }
 
     std::printf("\n");
+
+    if (!TwinReaches().empty())
+    {
+        std::printf("    %zu of them are the caller's handle of an option whose launched twin an "
+                    "arm above\n    measured: registered at the row's own bar with no verdict "
+                    "of their own, and reached\n    through the twin's cells rather than "
+                    "through cells of the handle.\n",
+                    TwinReaches().size());
+
+        for (const TwinReach& reach : TwinReaches())
+        {
+            std::printf("      %-58s reached by %s\n", reach.lane.c_str(), reach.twin.c_str());
+        }
+    }
 
     return uncovered + orphans.size() + (std::abs(kBoundHalfRow - kBoundHalfBase) > 0.0 ? 1u : 0u);
 }
@@ -6186,6 +6297,10 @@ int main(int argc, char** argv) {
     // them measured is counted rather than measured twice.
     ProveLaunchErrorBites();
     const std::size_t launchedUnarmed = SurveyLaunchedSurface(ref, grid, sorted);
+
+    // Every section that measures a device row has run by here, so the register below holds only
+    // the rows none of them claimed - a row one of them measured keeps its verdict, not a twin's.
+    RegisterRowsReachedThroughTheirTwin();
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
