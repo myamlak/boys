@@ -1389,13 +1389,10 @@ inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
     double c = h;
 
 #if BOYS_ISA_AVX2_FMA
-    // The orders in line for a runtime nmax: a request that stops before the last ones never
-    // reaches their terms, and each carries the same two multiplies the loop stepped - the store's
-    // address advanced by the stride instead of an index. Same terms, same order, same roundings.
-    //
-    // The unrolled prologue is the vector tier's: the arm64 unit MSVC builds is a scalar-tier
-    // unit, and its back end crashes (C1001) on this body where the counted loop below compiles,
-    // so that tier keeps the loop. Both bodies step the same multiplies in the same order.
+    // The orders in line for a runtime nmax, each carrying the same two multiplies the loop
+    // stepped - the store's address advanced by the stride, same terms, order and roundings.
+    // The vector tier's own body: the scalar tier keeps the loop below, which the arm64 unit
+    // MSVC builds compiles where this body crashes its back end (C1001, at /O2).
     double* p = out + stride;
 
     f = f * c;

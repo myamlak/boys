@@ -710,11 +710,10 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                 LaneCellDifferences().c_str());
         }
 
-        // The cross-class bar. Where the seam answers the two classes with one row the two entries
-        // are one arithmetic, and the single lane's budget is the exact bar the identity below is
-        // the tight form of. Where it answers them differently, each entry is inside its own
-        // class's documented budget of the value - both classes document these per-region
-        // budgets - so the two differ by at most the two budgets summed.
+        // The cross-class bar: one class's budget where the seam answers the two classes with
+        // one row (the identity below is the tight form of it), and the two budgets summed where
+        // it answers them differently - each entry is inside its own class's documented budget,
+        // so the two differ by at most the two.
         constexpr double kCrossBudgets = kOneArithmeticAcrossTheLanes ? 1.0 : 2.0;
 
         for (const double x : DistinctArgs(cells))
