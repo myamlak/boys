@@ -12,8 +12,9 @@ cmake_minimum_required(VERSION 3.25)
 # target that needs the CUDA toolkit (device pins are a documented local
 # gate — CI has no GPU leg and never builds it). No PCH in this tree.
 #
-# Consumers add this tree with add_subdirectory and link boys::boys: the
-# library's only requirement is C++20;
+# Consumers add this tree with add_subdirectory and link boys::boys, or boys::boys-tier
+# for the headers alone with no archive on the link line: the library's only requirement
+# is C++20;
 # propagated through the target; tests/benchmarks are OFF unless this tree
 # is the top-level project (or the consumer opts in), and a missing
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
@@ -51,6 +52,19 @@ set(boysExamples
 option(BUILD_CUDA
     "Build the CUDA lane (needs the CUDA toolkit; CI compiles it and runs no kernel, so the device figures stay a local gate)"
     OFF)
+
+# Two of the library's translation units answer a surface a calculation does not call: the C
+# linkage surface and the option probe (one instantiation per cell of the option space, which is
+# what makes its report an account of the space). Each is a member of `boys` when its option is
+# ON, and a consumer that asks for neither compiles neither - a submodule consumer's default,
+# since only the top-level build carries the suite, the examples and the recorded runs that reach
+# them.
+option(BOYS_BUILD_C_API
+    "Build the C linkage surface (src/boys_c.cpp) into the library"
+    ${BOYS_TOP_LEVEL})
+option(BOYS_BUILD_PROBE
+    "Build the option probe (src/boys_probe.cpp) into the library"
+    ${BOYS_TOP_LEVEL})
 
 # Warnings in this tree's own code are build failures. ON by default: a gate
 # that is off until someone opts in is not a gate, and a consumer embedding
@@ -154,13 +168,31 @@ endif()
 # The headers need >= C++20; the
 # requirement is propagated through the target, so consumers need no
 # global standard flags.
-add_library(boys
+#
+# The seam is a build's to close: every half entry sits behind `#if BoysFp16`, so OFF compiles a
+# smaller surface rather than a different arithmetic - the float lanes the half entries share an
+# engine with are untouched. ON is the shipped surface, and the profile the certified figures
+# belong to (docs/build-facts.md).
+option(BOYS_FP16_SEAM
+    "Compile the half/bfloat entries into the surface (BoysFp16=1); OFF closes the seam across \
+the whole tree and refuses a build that also asks for the test suite, which names those entries"
+    ON)
+
+# The library's members, with the two optional units behind their options. One list, because a
+# source cannot be taken back out of a target once it has been named in it.
+set(boysLibrarySources
     src/boys.cpp
-    src/boys_c.cpp
     src/boys_defaults.cpp
     src/boys_orders_simd.cpp
-    src/boys_probe.cpp
     src/boys_simd.cpp)
+if (BOYS_BUILD_C_API)
+    list(APPEND boysLibrarySources src/boys_c.cpp)
+endif()
+if (BOYS_BUILD_PROBE)
+    list(APPEND boysLibrarySources src/boys_probe.cpp)
+endif()
+add_library(boys ${boysLibrarySources})
+unset(boysLibrarySources)
 add_library(boys::boys ALIAS boys)
 # Two spellings of one directory: the source tree's absolute path for a consumer
 # that adds this tree, and `include` relative to the install prefix for the
@@ -171,7 +203,9 @@ target_include_directories(boys
         $<INSTALL_INTERFACE:include>
     PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
-target_compile_definitions(boys PUBLIC BoysFp16=1)
+if (BOYS_FP16_SEAM)
+    target_compile_definitions(boys PUBLIC BoysFp16=1)
+endif()
 boys_strict_warnings(boys)
 
 # The option probe's own translation unit carries one instantiation per cell of
@@ -185,7 +219,7 @@ boys_strict_warnings(boys)
 # the target, because nothing else here comes near the limit and a flag spread
 # over targets that do not need it is a fact about the build nobody can trace back
 # to a measurement.
-if (MSVC)
+if (MSVC AND BOYS_BUILD_PROBE)
     set_source_files_properties(src/boys_probe.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
 endif()
 
@@ -360,7 +394,6 @@ endif()
 # measuring a different build than the one it ships.
 string(APPEND CMAKE_CXX_FLAGS " ${_boys_contract_option}")
 target_compile_options(boys PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_boys_contract_option}>")
-unset(_boys_contract_option)
 
 # --- What this target does with a bare product-plus-add ----------------------
 # Whether `a * b + c` written bare rounds once or twice follows from the target
@@ -440,10 +473,37 @@ endif()
 # other's other tier - which the guard in include/boys/isa_tiers.hpp refuses at a
 # program's start-up rather than letting the linker merge one body silently.
 add_library(boys-tier INTERFACE)
+# One name for the link line on both routes: the installed package hands this target out as
+# boys::boys-tier through its namespace, and an add_subdirectory consumer reaches the same
+# spelling through this alias rather than the bare target name (`boys` has its own above).
+add_library(boys::boys-tier ALIAS boys-tier)
 # An interface target has no translation units of its own to warn about; what it
 # needs is the audit's bookkeeping, which boys_strict_warnings cannot give it (it
 # sets PRIVATE options). The property is set directly, for the same reason.
 set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS boys-tier)
+
+# This target is also the headers-only consumer's whole interface: the include
+# path, the C++20 floor, the fp16 seam and the contraction pin are the rest of
+# what a unit is compiled with, so a target that links this one alone compiles
+# the arithmetic the library was built at, with no archive on its link line
+# (README.md, "Consuming as a submodule"). `boys` spells the include path and
+# the standard out again because the header-only consumer check reads both off
+# the library target itself.
+target_include_directories(boys-tier
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+target_compile_features(boys-tier INTERFACE cxx_std_20)
+if (BOYS_FP16_SEAM)
+    target_compile_definitions(boys-tier INTERFACE BoysFp16=1)
+endif()
+# The contraction pin the section above states on `boys`, stated again on the
+# target a headers-only consumer links: its units compile the entries' own
+# steps, and a target whose fused step is in the baseline (aarch64) contracts a
+# bare product-plus-add at the compiler's default.
+target_compile_options(boys-tier INTERFACE
+    "$<$<COMPILE_LANGUAGE:CXX>:${_boys_contract_option}>")
+unset(_boys_contract_option)
 
 # 1 and 0 are the two measured answers and both are defined, so a reader asks the
 # value rather than whether the name exists. Neither is defined where no answer
@@ -616,12 +676,18 @@ endif()
 # than naming content it did not read. An interpreter that is here and a read that fails is the
 # opposite case and stops the configure, for the reason the revision read above does: a record
 # that cannot date itself is refused by the checker after the run, when the run is spent.
+#
+# The read is this tree's own: the two cells land in the stamp of the accuracy gate's record and
+# the option probe's report, and both programs are registered under BOYS_BUILD_TESTS. So the
+# recorder runs where this tree is top-level, and a consumer's configure runs neither the tool nor
+# its FATAL - both cells read "unknown", the fallback a tree without an interpreter already
+# carries, and no target of a consumer's build reads them.
 find_package(Python3 COMPONENTS Interpreter QUIET)
 foreach(_boys_record IN ITEMS probe gate)
     string(TOUPPER "${_boys_record}" _boys_RECORD)
     set(BOYS_${_boys_RECORD}_INPUTS "unknown")
 
-    if(Python3_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py")
+    if(BOYS_TOP_LEVEL AND Python3_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py")
         execute_process(
             COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py"
                     --inputs ${_boys_record} --root "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -654,6 +720,29 @@ foreach(_boys_record IN ITEMS probe gate)
     unset(_boys_status)
     unset(_boys_output)
 endforeach()
+
+# --- Feature pairs a build cannot split -------------------------------------
+# The suite, the examples and the option probe's drivers call the surfaces the three options above
+# can leave out, so a configure that asks for a driver and not for the surface it calls is refused
+# here, with both options named, rather than by a link error after a build.
+if (BOYS_BUILD_TESTS AND NOT BOYS_BUILD_C_API)
+    message(FATAL_ERROR "boys: BOYS_BUILD_TESTS builds tests/boys_c_test.cpp, which calls the C "
+        "linkage surface; set BOYS_BUILD_C_API=ON, or BOYS_BUILD_TESTS=OFF.")
+endif()
+if (BOYS_BUILD_TESTS AND NOT BOYS_BUILD_PROBE)
+    message(FATAL_ERROR "boys: BOYS_BUILD_TESTS builds tests/boys_probe_test.cpp and the "
+        "boys-option-probe driver, which call the option probe; set BOYS_BUILD_PROBE=ON, or "
+        "BOYS_BUILD_TESTS=OFF.")
+endif()
+if (BUILD_EXAMPLES AND NOT BOYS_BUILD_PROBE)
+    message(FATAL_ERROR "boys: BUILD_EXAMPLES builds examples/07_option_probe.cpp, which calls "
+        "the option probe; set BOYS_BUILD_PROBE=ON, or BUILD_EXAMPLES=OFF.")
+endif()
+if (BOYS_BUILD_TESTS AND NOT BOYS_FP16_SEAM)
+    message(FATAL_ERROR "boys: the test suite builds tests/boys_accuracy_gate.cpp, which names "
+        "the half entries through a policy on a path it does not guard; set BOYS_FP16_SEAM=ON, "
+        "or BOYS_BUILD_TESTS=OFF.")
+endif()
 
 # --- Tests (gtest; the reference grid is located via BoysDataDir) -----------
 if (BOYS_BUILD_TESTS)
@@ -1563,7 +1652,9 @@ if (BUILD_CUDA)
             BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
             BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
     endif()
-    target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
+    # The fp16 seam and the C++20 floor are carried by the tier target this one links, as the tier
+    # and the contraction answer are: they are the program's facts, and this lane is one of its
+    # units.
     # The multiply-add route is one build fact with two lanes behind it, and
     # this is the device's half: the kernels' translation unit reads the same
     # selection the host's does, so a build that selected the separate route
@@ -1575,10 +1666,6 @@ if (BUILD_CUDA)
     if (BOYS_MULADD_SEPARATE)
         target_compile_definitions(boys-cuda PUBLIC BOYS_MULADD_SEPARATE=1)
     endif()
-    # Stated because this target links nothing that carries a standard into it:
-    # without it the host TU compiles at the compiler's default (C++14 on
-    # MSVC) and the library's headers do not build.
-    target_compile_features(boys-cuda PRIVATE cxx_std_20)
     # The probe's report states the toolkit that compiled these kernels and the
     # architectures they were compiled for. Both are configure-time facts, so
     # they are passed as text: nothing at run time can recover what nvcc was
@@ -1762,7 +1849,6 @@ if (BUILD_BENCHMARKS)
     add_executable(boys-benchmark benchmarks/boys_benchmark.cpp)
     target_link_libraries(boys-benchmark PRIVATE boys benchmark::benchmark)
     target_include_directories(boys-benchmark PRIVATE src)
-    target_compile_definitions(boys-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-benchmark)
 
@@ -1772,7 +1858,6 @@ if (BUILD_BENCHMARKS)
     # the file preamble). Portable: it calls no intrinsics of its own.
     add_executable(boys-all-n-benchmark benchmarks/boys_all_n_benchmark.cpp)
     target_link_libraries(boys-all-n-benchmark PRIVATE boys)
-    target_compile_definitions(boys-all-n-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-all-n-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-all-n-benchmark)
 
@@ -1784,7 +1869,6 @@ if (BUILD_BENCHMARKS)
         benchmarks/boys_across_orders_benchmark.cpp)
     target_link_libraries(boys-across-orders-benchmark PRIVATE boys)
     target_include_directories(boys-across-orders-benchmark PRIVATE src)
-    target_compile_definitions(boys-across-orders-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-across-orders-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-across-orders-benchmark)
 
@@ -1795,7 +1879,6 @@ if (BUILD_BENCHMARKS)
     # harness; the accuracy gate is what reads the same entry for accuracy.
     add_executable(boys-transform-benchmark benchmarks/boys_transform_benchmark.cpp)
     target_link_libraries(boys-transform-benchmark PRIVATE boys)
-    target_compile_definitions(boys-transform-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-transform-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-transform-benchmark)
 
@@ -1808,7 +1891,6 @@ if (BUILD_BENCHMARKS)
             benchmarks/boys_unsorted_simd_benchmark.cpp)
         target_link_libraries(boys-unsorted-simd-benchmark PRIVATE boys)
         target_include_directories(boys-unsorted-simd-benchmark PRIVATE src)
-        target_compile_definitions(boys-unsorted-simd-benchmark PRIVATE BoysFp16=1)
         target_compile_features(boys-unsorted-simd-benchmark PRIVATE cxx_std_23)
         boys_strict_warnings(boys-unsorted-simd-benchmark)
         # The mixed per-vector kernel compiles AVX2 intrinsics in its own TU -
@@ -1836,7 +1918,6 @@ if (BUILD_BENCHMARKS)
             benchmarks/boys_cuda_benchmark_kernels.hpp)
         target_include_directories(boys-cuda-benchmark PRIVATE include src)
         target_link_libraries(boys-cuda-benchmark PRIVATE boys-cuda boys)
-        target_compile_definitions(boys-cuda-benchmark PRIVATE BoysFp16=1)
         boys_strict_warnings(boys-cuda-benchmark)
 
         # The device option probe's driver: argument parsing and printing only.

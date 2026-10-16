@@ -12,11 +12,9 @@
 ///
 /// ## The macros
 ///
-/// \c BOYS_ISA_AVX2_FMA and \c BOYS_ISA_F16C are 0 or 1 and are derived from the compiler's own
-/// predefines. A consumer may define either one before including any header of this library to
-/// answer it directly, which is what a test that wants the other tier of a build asks for. The
-/// two are separate because F16C is not implied by AVX2 on GCC and Clang; MSVC's `/arch:AVX2`
-/// permits both, so both read 1 there.
+/// \c BOYS_ISA_AVX2_FMA is 0 or 1 and is derived from the compiler's own predefines. A consumer
+/// may define it before including any header of this library to answer it directly, which is what
+/// a test that wants the other tier of a build asks for.
 ///
 /// ## What no flags means
 ///
@@ -66,20 +64,8 @@
 #endif
 #endif
 
-// The F16C tier's flag set: the AVX2 tier's, plus the half-precision conversions. F16C is not
-// implied by -mavx2 on GCC and Clang, so there it is asked separately; an MSVC driver's
-// /arch:AVX2 permits it and defines no macro of its own for it, so there the AVX2 arm answers.
-#if !defined(BOYS_ISA_F16C)
-#if (defined(__AVX2__) && defined(__FMA__) && defined(__F16C__)) || \
-    (defined(_MSC_VER) && defined(__AVX2__)) || defined(_M_AVX2)
-#define BOYS_ISA_F16C 1
-#else
-#define BOYS_ISA_F16C 0
-#endif
-#endif
-
-#if (BOYS_ISA_AVX2_FMA != 0 && BOYS_ISA_AVX2_FMA != 1) || (BOYS_ISA_F16C != 0 && BOYS_ISA_F16C != 1)
-#error "BOYS_ISA_AVX2_FMA and BOYS_ISA_F16C are 0 or 1; a consumer overriding one states which"
+#if (BOYS_ISA_AVX2_FMA != 0 && BOYS_ISA_AVX2_FMA != 1)
+#error "BOYS_ISA_AVX2_FMA is 0 or 1; a consumer overriding it states which"
 #endif
 
 // The fp16 seam is the same kind of per-translation-unit choice as an ISA tier - the entries it

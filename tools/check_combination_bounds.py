@@ -174,6 +174,13 @@ ORDERS_AXIS = "kOrders"
 # than written here, so a source added to the target is linked by this check without an edit.
 LIBRARY = re.compile(r"add_library\(\s*boys\s+(.*?)\)", re.S)
 
+# The list may be held in a variable - `add_library(boys ${boysLibrarySources})` - because two of
+# its members are optional and the options that carry them are branches. The variable's members are
+# its `set(...)` call and every `list(APPEND ...)` call, read branch and all: this check builds the
+# library as the tree's own top-level configure declares it, where both options are ON.
+LIBRARY_SET = re.compile(r"^\s*set\(\s*boysLibrarySources\s+(.*?)\)\s*$", re.S | re.M)
+LIBRARY_APPEND = re.compile(r"list\(APPEND\s+boysLibrarySources\s+([^)]*)\)")
+
 # A class of the default-policy table: `X(kPrecision, kShape)` inside one of the two row lists.
 CLASS_ROW = re.compile(r"X\(\s*(k[A-Za-z0-9]+)\s*,\s*(k[A-Za-z0-9]+)\s*\)")
 HOST_ROWS = re.compile(r"#define\s+BOYS_DEFAULT_POLICY_BUILD_ROWS\(X\)(.*)$", re.M)
@@ -281,13 +288,21 @@ def library_sources(tree: pathlib.Path) -> list[str]:
         raise SystemExit(f"check_combination_bounds: no CMakeLists.txt at {cmake}, so the "
                          "library's own source list cannot be read")
 
-    match = LIBRARY.search(cmake.read_text(encoding="utf-8", errors="replace"))
+    text = cmake.read_text(encoding="utf-8", errors="replace")
+    match = LIBRARY.search(text)
 
     if match is None:
         raise SystemExit("check_combination_bounds: CMakeLists.txt declares no `add_library(boys "
                          "...)`, so the library's own source list cannot be read")
 
     sources = match.group(1).split()
+
+    if sources == ["${boysLibrarySources}"]:
+        variables = LIBRARY_SET.search(text)
+        sources = variables.group(1).split() if variables else []
+
+        for appended in LIBRARY_APPEND.finditer(text):
+            sources += appended.group(1).split()
 
     if not sources:
         raise SystemExit("check_combination_bounds: `add_library(boys ...)` names no source")

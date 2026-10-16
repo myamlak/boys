@@ -89,8 +89,7 @@ The archive is still needed for the reporting queries - `BoysLaneContracts`, `Bo
 `BoysEvalSchemeFits`, `BoysEvalSchemeDelivered`, `BoysPackAxes`, `BoysDivisionForms`,
 `BoysFarRepresentations`, `BoysRegionBExps`, `BoysFitGranularities`, `BoysFitRoutes`,
 `BoysFitRoutesF32`, `EvalSchemeName`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`,
-`QueryCombination`, `BoysAvx2Available` - and for the three entries the library defines out of
-line: `BoysAllOrdersWithRoute`, `BoysAllOrdersWithFarRepresentation`, `BoysSingleF32WithRoute`.
+`QueryCombination`, `BoysAvx2Available` - and for the C ABI surface, `boys/boys_c.h`.
 Everything else a call site names compiles from the headers.
 
     git clone https://github.com/myamlak/boys.git && cd boys
@@ -99,8 +98,13 @@ Everything else a call site names compiles from the headers.
 
 or, against a tree you have already built:
 
-    c++ -std=c++20 -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
+    c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off \
+        -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
     ./try
+
+`-DBoysFp16=1` and the tier flags are the ones the recipe above put on the library, and
+`docs/build-facts.md` states the profile they spell. Every entry is compiled where it is called,
+so a unit that leaves either out builds a program the headers refuse at start-up.
 
 ```
 F_3(1.25)  = 0.055476132923077584
@@ -129,6 +133,56 @@ guarantees before you rely on it, and how to find out which of the available opt
 your machine. Every figure in it is the
 output of a program in [`examples/`](examples/), so you can reproduce any of them.
 
+## Consuming as a submodule
+
+As a submodule, this tree builds the library and nothing else: the test suite, the examples and the
+benchmark drivers are OFF unless this tree is the top-level project, and so are the archive's two
+optional units - the C linkage surface and the option probe.
+
+    git submodule add https://github.com/myamlak/boys external/boys
+
+```cmake
+add_subdirectory(external/boys boys)
+target_link_libraries(app PRIVATE boys::boys)
+```
+
+`boys::boys` hands your translation units everything the library was built with: the include
+directory, C++20, the tier flags, the contraction answer and the fp16 seam. For the calculations
+alone, with no archive on the link line, link `boys::boys-tier` instead - the same interface, and
+the entries' bodies come inline from the headers.
+
+Installed, after a top-level build and `cmake --install`:
+
+```cmake
+find_package(boys REQUIRED)
+target_link_libraries(app PRIVATE boys::boys)     # or boys::boys-tier, for the headers alone
+```
+
+Each optional, named one at a time:
+
+    cmake -S . -B build -DBOYS_ISA_AVX2=OFF                          # the portable scalar tier
+    cmake -S . -B build -DBOYS_FP16_SEAM=OFF -DBOYS_BUILD_TESTS=OFF  # no half/bfloat entries
+    cmake -S . -B build -DBOYS_MULADD_SEPARATE=ON                    # the two-rounding multiply-add route
+    cmake -S . -B build -DBOYS_BUILD_C_API=ON                        # the C linkage surface, in the archive
+    cmake -S . -B build -DBOYS_BUILD_PROBE=ON                        # the option probe, in the archive
+    cmake -S . -B build -DBOYS_BUILD_DEFAULTS=my_seam.hpp            # your own default choices
+    cmake -S . -B build -DBOYS_WERROR=OFF                            # drop -Werror
+    cmake -S . -B build -DBUILD_CUDA=ON                              # the device lane
+    cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+
+`BOYS_FP16_SEAM=OFF` closes the seam across the whole tree, which is why its line drops the test
+suite too: the suite's accuracy gate names the half entries through a policy on an unguarded path,
+so a configure that asks for both is refused rather than half-built. In a submodule, the same
+option is a cache variable the parent sets before `add_subdirectory`.
+
+    cmake --build build --target boys-option-probe     # measures your host; see the guide
+
+Outside CMake the flags are yours to spell, and `docs/build-facts.md` states the profile the
+figures belong to. A unit compiled with the other reading of the fp16 seam or of the tier builds a
+program the headers refuse at start-up.
+
+    c++ -std=c++20 -DBoysFp16=1 -I include try.cpp -o try     # the headers alone, no archive
+
 ## Which entry do I call?
 
 By what you want, not by what the library calls things:
@@ -155,26 +209,30 @@ device call looks like, what you must allocate and pass, what the library refuse
 feature, and how to read the bound you got.
 
 **What the bound is, and what it is not.** For the shipped build the guarantee is **relative**: the
-error of a returned value is at or below **1e-13 · F_n(x)**, for every `n <= 32` and every
-`x >= 0`. The bound holds above the lane format's smallest normal, 2^-1022 in double and 2^-126 in
-float; below that the return is subnormal or zero and no accuracy is claimed. The figure was an
-absolute `5.5e-14` until this release, and where F is small the two figures disagree: at
-`n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
-absolute figure of the day, and **2.55 times the true value** read relative to F.
+error of a returned value is at or below **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**,
+for every `n <= 32` and every `x >= 0`. F is decreasing in the order, so the second figure is the
+wider of the two and the arm that binds wherever the order's own value is tiny. The bound holds above
+the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
+subnormal or zero and no accuracy is claimed. Until this release the guarantee instead carried a
+constant floor, `5.5e-14`, and where F is small the two figures disagree: at
+`n = 32, x = 29`, F is 1.93e-14 and the lane of the day returned 6.87e-14 — an error of 4.94e-14,
+inside the floor of the day, and **2.55 times the true value** read relative to F. That argument is
+served by the fitted grid — whose hi-bound is 31.0 in this build — and the relative figure holds
+there.
 
-**The figure has a floor, and two combinations are bounded by the floor instead.** The relative
-figure is the one the shipped entries hold, with an order of margin: the double entries deliver at
-worst `9.99e-15 · F_n(x)`, a tenth of it, and the worst cell is `n = 32, x = 29.04`. Two
-combinations the option space offers do not hold the relative figure alone yet, and hold the absolute
-figure these lanes published before it: a lean partition's extended-band ladder
+**Two combinations hold the wider figure rather than the relative one.** The double entries hold the
+ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of the span it
+serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations the option
+space offers do not hold the bound read against `F_n(x)` alone: a lean partition's extended-band
+ladder
 (`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax
-route's high-order intervals.
+route's high-order intervals. Each holds the ladder-scaled bound, at a worst measured `0.12` and
+`0.48` of it.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
 values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger
-of `2^-22 · F_n(x)` and the `1.5e-7` it already published. So the bound is **the larger of
-`1e-13 · F_n(x)` and the lane's absolute figure** — `5.5e-14` in double, `1.5e-7` in float. The
+of `2^-22 · F_n(x)` and the `1.5e-7` it already published. The
 [accuracy contract](docs/specification.md#accuracy-contract) names the two combinations, the figure
-each holds at its worst cell, and what raises them to the relative one.
+each holds at its worst cell, and the command that measures the bound on your machine.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
 undefined, and a release build faults on `x < 0` or on a `NaN` anywhere in a batch, while `n > 32`
 answers a wrong number with no diagnostic. The five double entries each have a `*Checked` twin —
