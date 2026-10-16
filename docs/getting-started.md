@@ -438,11 +438,12 @@ is for, if you would rather pay the cost where you can see it than inside your f
 ## What you do not pay for
 
 A call that names no policy is resolved entirely at compile time. It compiles to
-that one call — no run-time dispatch, no branch on an axis, nothing to predict. **The library has
-already compiled that specialization into its own archive**, so your translation unit links against
-it instead of instantiating the kernel a second time. An unnamed call therefore costs you neither
-run-time selection nor template-instantiation time. Naming another policy is
-what instantiates the version you asked for, in your translation unit.
+that one call — no run-time dispatch, no branch on an axis, nothing to predict. **The body is
+inline**, at the row this build's table carries for the entry's class: your translation unit
+instantiates it, nothing else is needed, and no archive stands on the link line for the calculation.
+An unnamed call therefore costs you no run-time selection, and one instantiation rather than a
+choice among many. Naming another policy is what instantiates the version you asked for, in your
+translation unit.
 
 ## Where the specification lives
 
