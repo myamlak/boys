@@ -70,9 +70,9 @@ int main()
 ```
 
 `boys/boys_span.hpp` is the one header a C++ caller needs beyond `boys/boys.hpp`: it adds an
-overload of each many-argument entry taking a `std::span`, so a container goes straight in. It costs
-nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
-passing a pointer and a count still reaches the pointer entry exactly.
+overload taking a `std::span` of each of the double lane's four array entries, so a container goes
+straight in. It costs nothing - the overload forwards to the entry and both spellings compile to
+the same call - and a call passing a pointer and a count still reaches the pointer entry exactly.
 
 What a translation unit needs, by what it is for:
 
