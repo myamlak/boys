@@ -3468,6 +3468,18 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
         // fits, either partition of the shipped route's, any rung, any of the three division forms, the
         // five choices reaching the lane as its template arguments. The form is one of them because the
         // lane hands the orders it does not pack to the scalar single lane, whose recurrence steps divide.
+        if constexpr (Policy::kGranularity == FitGranularity::kUniform)
+        {
+            // Above kFlatHi the uniform partition has one answer whatever the scheme, route and
+            // form: the packed arm's own predicate sends x > kFlatHi through the certified scalar
+            // orders lane into this same ladder, so the ladder is read here and the packed body's
+            // prologue and its classification are not paid on the far body's low orders.
+            if (x > kFlatHi)
+            {
+                FarLadderRun(nmax, x, 1, out);
+                return;
+            }
+        }
         BoysAllOrdersPacked<Policy::kScheme,
                             Policy::kRoute,
                             Policy::kGranularity,
