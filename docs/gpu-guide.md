@@ -457,7 +457,7 @@ gives for the host — see the option-probe section of `docs/getting-started.md`
 cheapest is a property of the card and not of the library.
 
     cmake -S . -B build-cuda -DBUILD_CUDA=ON
-    cmake --build build-cuda --target boys-device-probe
+    cmake --build build-cuda --target boys-device-probe   # needs -DBUILD_CUDA=ON, -DBUILD_BENCHMARKS=ON
     ./build-cuda/Release/boys-device-probe     # the config directory is your generator's
 
 `boys::RunDeviceOptionProbe` takes a `boys::DeviceProbeOptions` — whose `device` field is the
@@ -489,7 +489,7 @@ ranking taken on another part is not evidence about yours.
 `boys-cuda-accuracy-gate` is where the device lane's figures come from, and its own file comment
 gives the command:
 
-    cmake --build <build> --config Release --target boys-cuda-accuracy-gate
+    cmake --build <build> --config Release --target boys-cuda-accuracy-gate   # needs -DBUILD_CUDA=ON, -DBOYS_BUILD_TESTS=ON
     <build>/Release/boys-cuda-accuracy-gate [--reference <grid.csv>]
                                             [--digit-reference <grid.csv>]
 
@@ -525,7 +525,7 @@ fused intrinsic and the separate step is "a product rounded once and then summed
 has anything left to fuse". That the delivered arithmetic is the named one is measured, not asserted
 — `boys-cuda-route-tests` holds each route to its own reference, bit for bit, over a fixed value set:
 
-    cmake --build <build> --target boys-cuda-route-tests   # needs -DBUILD_CUDA=ON
+    cmake --build <build> --target boys-cuda-route-tests   # needs -DBUILD_CUDA=ON, -DBOYS_BUILD_TESTS=ON
     <build>/Release/boys-cuda-route-tests
 
 ## What this page does not state, and why
