@@ -2240,37 +2240,6 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
                 return;
             }
 
-            // The near grid's low orders are hoisted the way the far ones are: below nmax = 3
-            // the body computes its classification and one ScalarFit per order and nothing else,
-            // so its frame and its loop are the whole difference. The fits below are that body's
-            // own call - same table, order stride, degree and scheme - so the values are its own.
-            if (nmax <= 2)
-            {
-                const FlatPoint at = FlatLocate(x);
-                const double* const rows =
-                    ((OrdersSchemeOf(kScheme) == OrdersScheme::kHorner) ? kFlatMonoCoeffs
-                                                                        : kFlatCoeffs)
-                        .data() +
-                    at.block;
-
-                out[0] = ScalarFit<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
-                                   kFlatDeg>(rows, kFlatDeg, at.t);
-
-                if (nmax >= 1)
-                {
-                    out[1] = ScalarFit<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
-                                       kFlatDeg>(rows + kFlatDeg + 1, kFlatDeg, at.t);
-                }
-
-                if (nmax >= 2)
-                {
-                    out[2] = ScalarFit<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
-                                       kFlatDeg>(rows + 2 * (kFlatDeg + 1), kFlatDeg, at.t);
-                }
-
-                return;
-            }
-
             UniformOrdersBody<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme)>(
                 nmax, x, out, 1);
         }
