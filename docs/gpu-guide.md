@@ -287,6 +287,15 @@ The `capacity` parameter on the ladder shape is the same idea from the other sid
 of values your array actually holds, so an order your array cannot receive is reported rather than
 written past the end.
 
+**A runnable consumer of these entries is in the tree.** `tests/boys_cuda_device_demo.cu` includes
+the public device header and the CUDA runtime and nothing of the library's implementation — it is
+what a consumer's own translation unit is — and it carries one kernel per public entry, each shaped
+like a fused integral kernel rather than like a batch evaluator. It is built into
+`boys-cuda-accuracy-gate` and not into the library, because it is a caller of the public headers,
+and it is the one thing here that proves a consumer's own kernel reaches the arithmetic. A thread
+there forms `x` itself, as `rho * d2` with `rho` a power of two so the product is exact, so every
+value it writes back is comparable with the committed reference grid cell for cell.
+
 **What including this header costs your build** is the header's own promise, and it is unusually
 cheap:
 
