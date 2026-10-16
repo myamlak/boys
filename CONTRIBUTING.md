@@ -97,7 +97,8 @@ the comparison lane by lane and region by region:
 
 ```bash
 cmake --build build --target boys-accuracy-gate
-./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+./build/Release/boys-accuracy-gate --strict   # the config directory is your generator's:
+                                              # a Ninja build runs it as ./build/boys-accuracy-gate
 ```
 
 It exits non-zero if any figure in the documents is not verified at the revision you are on, naming
@@ -294,7 +295,8 @@ worth reading before changing which legs run.
   after.
 - **Headers:** `#pragma once`. Every public API entry carries Doxygen `///` comments with `\param`,
   `\return` and `\pre` for preconditions. The Doxygen gate runs with `EXTRACT_ALL = NO` and zero
-  warnings.
+  warnings, on the pinned Doxygen 1.18.0 CI installs - another version's warning set is not the
+  gate's, so run the pinned build if you want the local answer to mean CI's.
 - **Raw arrays:** 3-vector coordinates use `std::array<double, 3>`. Pointer-plus-count APIs use
   `std::span`. Raw arrays only where an ABI mandates them.
 - **Errors:** no exceptions. The CPU lanes are `noexcept` with documented preconditions and are
