@@ -1435,9 +1435,11 @@ A combination carries **`base + additive`**: the lane's figure and whatever term
 same arithmetic the specification's contract table states lane by lane. The rows in the table above
 are the contract. `BoysLaneContracts()` is the library's own list of those rows, and it answers
 with the absolute figures the double and float lanes were published with — 5.5e-14 for the two double
-rows and 1.5e-7 for the two float ones. Those figures sit at or below this page's contract at every
-cell, so the two statements agree wherever the list answers yes, and a caller asking for a tolerance
-between the list's figure and this page's bound is answered by the list's tighter one. The half rows, on either side of the device seam, are
+rows and 1.5e-7 for the two float ones. Those figures sit at or below this page's contract near
+x = 0, where the contract is `1e-13` and the list says 5.5e-14, and above it wherever the relative
+arm falls under the constant, past the cell where `F_0(x)` is 0.55: at x = 30 the contract is
+1.61802e-14 against the list's 5.5e-14, so the list reads 3.4 times the bound there. The list's
+figure is the stricter claim below that crossing and the looser one above it. The half rows, on either side of the device seam, are
 the same figures in both places: their base is the fp32 engine's arithmetic stated absolutely beside
 a term of the returned value's own last digit, and neither moves.
 
