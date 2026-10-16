@@ -52,12 +52,12 @@ boys::BoysAllN(6, batch, grid, 4);            // grid[k * 4 + i] = F_k(x[i])
 boys::BoysSingle(3, 1.25);                    // F_3(1.25)
 ```
 
-    F_3(1.25)  = 0.055476132923077584
-    F_0(3.5)   = 0.46984703520162352
-    F_3(3.5)   = 0.01183138358371668
-    F_6(3.5)   = 0.0040954447623731674
-    F_2(0.25)  = 0.16753319090735061
-    F_2(4)     = 0.017525782161993072
+    F_3(1.25)  = 0.055476132923076911
+    F_0(3.5)   = 0.46984703520162335
+    F_3(3.5)   = 0.011831383583716588
+    F_6(3.5)   = 0.0040954447623731041
+    F_2(0.25)  = 0.16753319090734875
+    F_2(4)     = 0.017525782161992999
     F_2(30)    = 0.00013483513281472914
     F_0(30)    = 0.16180215937964007
     F_6(30)    = 3.6049669032736188e-08
@@ -81,7 +81,7 @@ catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
 const double f = boys::BoysSingle(n, x);
 ```
 
-    F_3(1.25) = 0.055476132923077584
+    F_3(1.25) = 0.055476132923076911
     guaranteed error <= 5.5e-14  (from throughout, every region)
     BoysAllOrders agrees to 0
 
@@ -110,13 +110,13 @@ boys::BoysAllOrders(nmax, x, ladder);         // ladder[k] = F_k(x)
 ```
 
     k   F_6(3.5)
-    0   0.46984703520162352
-    1   0.062807093111329287
-    2   0.02260341370166705
-    3   0.01183138358371668
-    4   0.0075174716662426075
-    5   0.0053514087962664245
-    6   0.0040954447623731674
+    0   0.46984703520162335
+    1   0.062807093111329163
+    2   0.022603413701666943
+    3   0.011831383583716588
+    4   0.0075174716662425286
+    5   0.0053514087962663534
+    6   0.0040954447623731041
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
 The heading is the program's own: it names the top order the call asked for and the argument, and
@@ -139,10 +139,10 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
 ```
 
     n = 2, stride 2
-    x = 0.25    out[ 0] = 0.16753319090735061
-    x = 1       out[ 2] = 0.10026879814501737
-    x = 4       out[ 4] = 0.017525782161993072
-    x = 12.5    out[ 6] = 0.0012030139279729935
+    x = 0.25    out[ 0] = 0.16753319090734875
+    x = 1       out[ 2] = 0.10026879814501641
+    x = 4       out[ 4] = 0.017525782161992999
+    x = 12.5    out[ 6] = 0.0012030139279729933
     x = 30      out[ 8] = 0.00013483513281472914
     worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
 
@@ -164,11 +164,11 @@ boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top 
 ```
 
     five arguments, each at its own top order
-      F_3(0.5) = 0.097222024416930161
-      F_6(2) = 0.014008835839082766
-      F_2(7.5) = 0.004270013619430555
-      F_8(0.125) = 0.05260285043488188
-      F_4(20) = 8.127855549358838e-06
+      F_3(0.5) = 0.097222024416928829
+      F_6(2) = 0.014008835839082516
+      F_2(7.5) = 0.0042700136194305507
+      F_8(0.125) = 0.052602850434880673
+      F_4(20) = 8.1278555493588363e-06
     values the per-argument call produces: 28
     values the padded call produces:        45
     produced for nothing:                   17
@@ -215,14 +215,14 @@ boys::BoysAllOrders<Named>(nmax, x, named_ladder);
 ```
 
     k   default policy            named policy
-    0   0.54629197178514799      0.54629197178514799
-    1   0.092841394632249843     0.092841394632249843
-    2   0.039287837054570146     0.039287837054570153
-    3   0.022870837329790384     0.022870837329790391
-    4   0.015602172536926782     0.015602172536926787
-    worst disagreement: 6.9e-18 (guaranteed error <= 5.5e-14)
+    0   0.54629197178514766      0.54629197178514799
+    1   0.092841394632249538     0.092841394632249843
+    2   0.039287837054569889     0.039287837054570153
+    3   0.022870837329790165     0.022870837329790391
+    4   0.015602172536926584     0.015602172536926787
+    worst disagreement: 3.3e-16 (guaranteed error <= 5.5e-14)
 
-The two agree here to within 6.9e-18, far inside the 5.5e-14 the lane prints, and that is expected
+The two agree here to within 3.3e-16, far inside the 5.5e-14 the lane prints, and that is expected
 rather
 than a coincidence: the settings select how the same approximation is summed, not what is
 approximated, so they part company only in the last bits — three of the five lines above differ
@@ -255,9 +255,9 @@ const boys::CombinationCoverage answer = boys::QueryCombination(
 
     the double entry, every order, as it stands:
       requested    verdict                  guaranteed   measured
-      1e-12        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
-      1e-10        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
-      1e-08        YES - guaranteed       5.5e-14      4.1e-14  [throughout, every region]
+      1e-12        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
+      1e-10        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
+      1e-08        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
     1e-20 is answered NO
 
 The distinction the verdict makes matters for a calculation. **`YES - guaranteed` means the bound the
