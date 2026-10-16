@@ -1388,12 +1388,56 @@ inline void BoysFarRecurLowOrdersFromR(int nmax, double r, std::size_t stride,
     const double step = 2.0 * h;
     double c = h;
 
+#if BOYS_ISA_AVX2_FMA
+    // The orders in line for a runtime nmax: a request that stops before the last ones never
+    // reaches their terms, and each carries the same two multiplies the loop stepped - the store's
+    // address advanced by the stride instead of an index. Same terms, same order, same roundings.
+    //
+    // The unrolled prologue is the vector tier's: the arm64 unit MSVC builds is a scalar-tier
+    // unit, and its back end crashes (C1001) on this body where the counted loop below compiles,
+    // so that tier keeps the loop. Both bodies step the same multiplies in the same order.
+    double* p = out + stride;
+
+    f = f * c;
+    *p = f;
+
+    if (nmax == 1)
+    {
+        return;
+    }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
+
+    if (nmax == 2)
+    {
+        return;
+    }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
+
+    if (nmax == 3)
+    {
+        return;
+    }
+
+    c = c + step;
+    p += stride;
+    f = f * c;
+    *p = f;
+#else
     for (int m = 1; m <= nmax; ++m)
     {
         f = f * c;
         out[static_cast<std::size_t>(m) * stride] = f;
         c = c + step;
     }
+#endif
 }
 
 /// The recurrence at the caller's own argument: forms the seed quotient and defers to the core
