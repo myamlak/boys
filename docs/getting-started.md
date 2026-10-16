@@ -346,8 +346,8 @@ every combination its classes hold, 2,592 of them and no refusals, and measured 
 Its workload is 16,384 arguments, x log-uniform over [1e-3, 4e1], each argument's own highest order
 drawn as the sum of two shell angular momenta over 0..16, up to nmax 32.
 
-One row per question shape, for the double lane, each the fastest entry of its class and all of them
-documented at 5.5e-14:
+**Recorded run, not reproduced by `ctest`.** One row per question shape, for the double lane, each
+the fastest entry of its class and all of them documented at 5.5e-14:
 
 | the class's question | the fastest measured entry | ns per argument | options the run could not place behind it |
 |---|---|---|---|
