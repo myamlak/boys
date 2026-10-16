@@ -390,8 +390,9 @@ struct BoysDeviceTables {
     /// Chebyshev ones above — the two forms are two pools over one cut, which is what
     /// the two forms of the grid's table are as well — so the piece of order \c n and
     /// index \c p is read at \c pieceStart[n] + p in both. Region B's seed is one fit
-    /// over [kX0, kX1] like the Chebyshev seed, at the same stored degree,
-    /// \c bSeedDeg here and \c bSeedDeg32 in the float lane.
+    /// over [kX0, kFlatHi] on the double lane and [kX0, kX1] on the float, like the
+    /// Chebyshev seed, at the same stored degree, \c bSeedDeg here and
+    /// \c bSeedDeg32 in the float lane.
     const double* monoCoeffs = nullptr;      ///< region A, monomial form
     const double* monoBSeedCoeffs = nullptr; ///< region B's seed, monomial form
     const float* monoCoeffs32 = nullptr;     ///< the float lane's region A, monomial form

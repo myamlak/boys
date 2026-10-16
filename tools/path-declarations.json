@@ -25,13 +25,14 @@
       ]
     },
     {
-      "id": "host.double.far.asymptotic-recurrence",
-      "body": "include/boys/boys_impl.hpp::AsymptoticRecurrenceAllOrders",
+      "id": "host.double.far.ladder",
+      "body": "include/boys/boys_impl.hpp::FarLadderRun",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC",
         "include/boys/boys_decl.hpp :: BoysAllOrdersWithFarRepresentation"
       ],
       "verified_by": [
+        "tests/boys_accuracy_gate.cpp :: main",
         "tests/boys_test.cpp :: BoysTest.FarRepresentationArmsAreNotSubstituted"
       ]
     },
@@ -106,16 +107,6 @@
       "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionB",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundSingleB"
-      ],
-      "verified_by": [
-        "tests/boys_accuracy_gate.cpp :: main"
-      ]
-    },
-    {
-      "id": "host.double.all-n.region-c",
-      "body": "include/boys/boys_impl.hpp::BoysAllNBodyRegionC",
-      "bar": [
-        "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
       ],
       "verified_by": [
         "tests/boys_accuracy_gate.cpp :: main"
@@ -274,14 +265,15 @@
       ]
     },
     {
-      "id": "host.double.far.simd-seed",
-      "body": "include/boys/boys_arguments_lanes.hpp::FarLadderSeed",
+      "id": "host.double.far.orders-lane",
+      "body": "include/boys/boys_orders_lanes.hpp::BoysFarLadderOrdersLane",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundDoubleBatch",
         "tests/boys_accuracy_gate.cpp :: kBoundSingleC"
       ],
       "verified_by": [
-        "tests/boys_all_n_test.cpp :: BoysAllNTest.FarLaneIsThePerArgumentBodyBitForBit"
+        "tests/boys_all_n_test.cpp :: BoysAllNTest.FarLaneIsThePerArgumentBodyBitForBit",
+        "tests/boys_accuracy_gate.cpp :: main"
       ]
     },
     {

@@ -39,6 +39,18 @@
 
 namespace boys {
 
+/// The paired rounds a class needs before its ordering means anything: a lower
+/// and an upper quartile of the within-round ratios need a set that can
+/// disagree with itself four ways, so a run shorter than this places no option
+/// and a racing wave opens at this many rounds whatever the run's protocol was.
+///
+/// Public because it is a floor on a number the caller chooses: asking for
+/// fewer rounds than this still measures every option, and the report says the
+/// ordering it could not make rather than making one.
+///
+/// \ingroup boys
+inline constexpr int kProbeMinimumPairedRounds = 4;
+
 /// The workload and the pass protocol the probe runs, with the defaults a
 /// caller who wants a representative answer should leave alone.
 ///
@@ -72,6 +84,38 @@ struct ProbeOptions {
     /// shuffled per round; a quartile band needs at least four pooled rounds.
     int rounds = 5;
 
+    /// Wall milliseconds one timed unit is calibrated to, the length every
+    /// option's unit is brought to by an inner repeat count of its own.
+    ///
+    /// **A unit, not a workload.** The same argument count buys a very different
+    /// unit from two options: a fast cell finishes the whole array in a fraction
+    /// of a millisecond while a slow one takes several, so a fixed count measures
+    /// the fast cells - the ones that decide a default - over the least time and
+    /// the noisiest clock. The probe therefore times a cheap pass first, derives a
+    /// repeat count per option so that one timed unit is about this long, and
+    /// divides the repeat count back out. Every option's figure is then a mean
+    /// over about this much wall time rather than over the same number of
+    /// arguments.
+    double unitTargetMs = 6.0;
+
+    /// Wall-clock budget one class's racing stage may spend, in seconds. The
+    /// stage stops when its tie set holds a single row, when a wave separates
+    /// nothing further, or when this budget is spent - and a class it could not
+    /// settle is printed as unresolved rather than measured further. Zero or
+    /// negative spends no budget beyond the first wave of each class, which is a
+    /// screening run and not a default decision.
+    double classBudgetSeconds = 20.0;
+
+    /// Where the raw per-visit dump is written, or empty for none. **One line per
+    /// timed visit**, so the whole ordering analysis can be redone offline: the
+    /// rows a report aggregates are gone once it is printed, and a measurement
+    /// that cannot be re-read without re-running the machine is a measurement
+    /// taken once.
+    ///
+    /// The path is the caller's, like `--emit-defaults`, because the work
+    /// directory is a property of whoever ran the probe and not of this library.
+    std::string rawDumpPath;
+
     /// Length of the quiet window the background load average is taken over,
     /// in seconds.
     double backgroundWindowSeconds = 1.0;
@@ -99,23 +143,21 @@ struct ProbeOptions {
     /// printed in.
     std::string reference;
 
-    /// Runs of the refinement protocol: how many times the probe measures a class
-    /// whose own rounds did not separate, before it reads the vote.
+    /// The most racing waves one class's stage may run. The stage races a tie
+    /// rather than re-running it whole: each wave re-measures the pool the wave
+    /// before it left, keeps only the rows it could not place behind its own
+    /// leader, and is longer than the wave before it (\c refinementFactor), so
+    /// the pool shrinks while the evidence per row sharpens. The stage also stops
+    /// early when a wave places every rival or when the tie set stops narrowing,
+    /// and \c classBudgetSeconds caps the whole stage.
     int refinementRuns = 5;
 
-    /// How much longer each refinement run is than the pass protocol above: the
-    /// refinement re-measures only the tied options, so it can spend more per
-    /// option. The stage refines a tie by asking whether the leader holds up over
-    /// more ROUNDS of the same comparison, so this lengthens the run's \c rounds
-    /// and leaves its \c passes alone - a run is this many times the protocol, not
-    /// this many times this many. Multiplying both, which this did, made a run the
-    /// factor squared and the whole stage 125 times the protocol it refines.
-    ///
-    /// The default is 1: a refinement run is then exactly as long as the protocol
-    /// it refines, and the whole stage costs \c refinementRuns protocols per class
-    /// that needed one. The vote is taken over the runs and the runs are what
-    /// decide, so longer runs buy precision the vote does not read - and a stage
-    /// that refines a measurement must not cost a large multiple of it.
+    /// How much longer each racing wave is than the one before it, by its rounds.
+    /// A wave races a tie by asking whether the leader holds up over more ROUNDS
+    /// of the same comparison, so this grows the wave's \c rounds and leaves its
+    /// \c passes alone - growing both would make a wave the factor squared. The
+    /// default is 1: every wave is as long as the protocol it started from, and
+    /// only the pool shrinks.
     int refinementFactor = 1;
 
     /// The options to measure, named as the report prints them. Empty measures
@@ -363,6 +405,13 @@ struct OptionProbeMeasurement {
     /// this is the same for every option that produced a figure.
     int rounds = 0;
 
+    /// Calls one timed unit of this option is made of: the inner repeat count the
+    /// calibration chose so that a unit is about \c ProbeOptions::unitTargetMs
+    /// long. The unit's wall time is divided by it, so the figure beside it is one
+    /// call's cost per argument however many calls the unit held. One for an
+    /// option whose single call already fills the target.
+    int repeats = 1;
+
     /// Largest absolute difference between this option's values and the
     /// certified per-order fp64 lane's value for the same order at the same
     /// argument, over the workload.
@@ -540,6 +589,50 @@ struct OptionProbeClass {
     /// equal silently.
     std::vector<std::string> differingBounds;
 
+    /// The rows this class's racing stage could not place behind its leader, its
+    /// leader first. More than one row is the class being reported as unresolved
+    /// within \c unresolvedWidth rather than as a ranking.
+    std::vector<std::string> tieSet;
+
+    /// What the class's tie was unresolved within, as a fraction of a cost, when
+    /// the racing stage ran out of budget or stopped separating. Zero when the
+    /// class is ordered.
+    double unresolvedWidth = 0.0;
+
+    /// Whether the class's racing stage stopped on its budget rather than on its
+    /// own evidence.
+    bool budgetSpent = false;
+
+    /// The rounds the class's own evidence rests on: the screening rounds, and the
+    /// rounds its racing stage added where it raced.
+    int rounds = 0;
+
+    /// **Effective rounds**, and the minimum effect this class's evidence could
+    /// detect. The rounds of one pass are not independent readings of a class's
+    /// rows - the anchor's own cost moves through a round and carries every ratio
+    /// in it - so the count of rounds overstates the evidence when that movement
+    /// is large. \c effectiveRounds is the round count discounted by that
+    /// correlation, N/(1 + (m-1)*rho) with m the rows compared per round; it is
+    /// \c rounds itself on a run whose rounds are independent, which is the value
+    /// reported when the correlation cannot be estimated at all.
+    double effectiveRounds = 0.0;
+
+    /// The intra-round correlation of the paired log-ratios, by a one-way
+    /// random-effects estimate with the round as the grouping. Zero is rounds that
+    /// carry nothing common.
+    double roundCorrelation = 0.0;
+
+    /// The smallest relative effect this class's run could have detected at 80%
+    /// power, as a fraction of a cost, from the run's own robust sigma: 1.4826
+    /// times the median absolute deviation of the paired log-ratios. A pair closer
+    /// together than this is not a measurement this run made, whatever the
+    /// ordering says, and it is printed beside every ordering claim for that
+    /// reason.
+    double minimumDetectableEffect = 0.0;
+
+    /// The robust sigma the figure above was formed from, as a fraction of a cost.
+    double robustSigma = 0.0;
+
     /// What the class's ordering rests on, or why it was not made.
     std::string note;
 };
@@ -659,8 +752,9 @@ struct OptionProbeRefinement {
     /// run, when it holds a single option, and when there was no class to refine.
     bool ran = false;
 
-    /// Runs taken, the passes each ran, and the rounds each ran. Zero when the
-    /// stage did not run.
+    /// Waves taken, the passes each ran, and the rounds each ran. Zero when the
+    /// stage did not run. A wave is one run of the comparison over the pool the
+    /// previous wave left; \c rounds is the last wave's, which is the longest.
     int runs = 0;
     int passes = 0; ///< passes each run took
     int rounds = 0; ///< rounds each pass took
@@ -668,6 +762,36 @@ struct OptionProbeRefinement {
     /// The options re-measured: the class's leader and every option of it the
     /// main run could not place behind the leader.
     std::vector<std::string> pool;
+
+    /// How many options the pool held when the last wave began. The waves halve
+    /// the pool, so this is a fraction of \c pool's size on a stage that raced.
+    std::size_t lastPoolSize = 0;
+
+    /// Whether the waves settled the class: the last wave placed every rival of
+    /// its leader behind it, so the pool the next wave would have run holds the
+    /// leader alone. False is a class the stage could not settle, either because
+    /// a wave separated nothing further or because the budget ran out - the two
+    /// are told apart by \c budgetSpent.
+    bool settled = false;
+
+    /// Whether the stage stopped on its budget rather than on its own evidence.
+    /// The class is then reported as unresolved at the width below, which is an
+    /// outcome and not a failure: it is this run saying what it could not
+    /// separate within the time it was given.
+    bool budgetSpent = false;
+
+    /// Wall seconds the stage spent, and the budget it was given.
+    double secondsSpent = 0.0;
+    double budgetSeconds = 0.0;
+
+    /// The rows this stage's last wave could not place behind its leader, its
+    /// leader first: the tie set the deterministic tie-break is applied to.
+    /// Empty when the stage did not run.
+    std::vector<std::string> tieSet;
+
+    /// The widest band the stage's last wave showed, as a fraction of a cost:
+    /// what the tie was unresolved within. Zero when the stage settled.
+    double unresolvedWidth = 0.0;
 
     /// What each run led with, in the order the runs were taken, empty when a run
     /// placed no leader.
@@ -889,6 +1013,51 @@ struct OptionProbeReport {
     /// the certified double lane's precision showed on this run. The ordering is
     /// made pair by pair from each pair's own band, so this number bars nothing.
     double resolution = 0.0;
+
+    /// The A/A self-pair: one option's ratio to *itself* inside a round, which is
+    /// the noise floor measured on the run's own work in the very quantity the
+    /// ordering is made in.
+    ///
+    /// **This is what replaces the canary in a verdict.** The canary is a fixed
+    /// spin of integer work, so its spread carries the clock's own decay and not
+    /// this workload's repeatability; a pair of one option's calls inside one round
+    /// carries exactly the clock, the caches and the visit order the ordering
+    /// itself is subject to, and it is the only measurement on the run that can say
+    /// how much of a lead is real.
+    ///
+    /// \c aaMedian is the middle of those ratios over the run's rounds - 1.000 is a
+    /// perfectly repeatable measurement - and \c aaLo and \c aaHi are the band they
+    /// fell in. \c aaSpread is that band's width as a fraction of a cost.
+    int aaRounds = 0;
+    double aaMedian = 0.0;
+    double aaLo = 0.0;
+    double aaHi = 0.0;
+    double aaSpread = 0.0;
+
+    /// Where this run's wall time went, in seconds, as the four things a run
+    /// spends it on. **The map and not an estimate**: each is accumulated at the
+    /// region that spends it, so a change to the protocol can be priced before it
+    /// is made rather than measured by running it.
+    ///
+    /// \c screeningSeconds is the timed grid of passes and rounds - the payload,
+    /// and normally the whole of the cost; \c racingSeconds is every class's racing
+    /// stage; \c calibrationSeconds is the quiet window, the background windows,
+    /// the canary's runs between rounds and the per-option unit calibration; and
+    /// \c accountingSeconds is everything outside the clock that is not one of
+    /// those - the warm-up pass, the accuracy walk, the far representations and the
+    /// report's own construction.
+    double screeningSeconds = 0.0;
+    double racingSeconds = 0.0;
+    double unitCalibrationSeconds = 0.0;
+    double instrumentSeconds = 0.0;
+    double accountingSeconds = 0.0;
+
+    /// Wall seconds the whole run took, as the clock read it: the sum above plus
+    /// the probe's own bookkeeping.
+    double totalSeconds = 0.0;
+
+    /// Lines the raw dump carries, zero when no dump was asked for.
+    std::size_t rawDumpLines = 0;
 
     /// The loudest bound the reference option is documented at, read from the
     /// library: the floor of the accuracy comparison.

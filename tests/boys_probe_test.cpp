@@ -42,6 +42,11 @@ ProbeOptions OneRound() {
     options.calibrationSeconds = 0.0;
     options.passes = 1;
     options.rounds = 1;
+    // The unit calibration is off for the same reason the calibration window is: this protocol is
+    // here to read the book and the refusal paths, and bringing every unit to a fixed wall length
+    // would multiply the work of every test by the repeat count it produced. A test about the
+    // calibrated unit turns it back on with a target it can afford.
+    options.unitTargetMs = 0.0;
     return options;
 }
 
@@ -802,8 +807,8 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
             return;
         }
 
-        // Reached by the refinement's vote, or by a tie this run could not break: the
-        // name is one of the class's own options, and the runs taken over the tied set
+        // Reached by the racing stage's vote, or by a tie this run could not break: the
+        // name is one of the class's own options, and the waves taken over the tied set
         // are in the report rather than only their outcome.
         bool member = false;
 
@@ -815,7 +820,7 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         EXPECT_FALSE(report.inseparable.empty())
             << "a tie was decided without naming the pair the class could not place";
         EXPECT_FALSE(report.refinements.empty())
-            << "a tie was decided with no refinement run behind the choice";
+            << "a tie was decided with no racing wave behind the choice";
 
         // From here the class is tied, and the way the report says the tie was reached
         // has to match the vote's own record: the vote naming this row - unanimously or by
@@ -931,7 +936,7 @@ TEST(ProbeTest, TheClockCheckIsReadFromTheRunsOwnRows) {
 // A band is a lower and an upper quartile, and two rounds have neither: no pair of the
 // class is placed, and the report says so rather than printing a width it never
 // measured. The run still ends in one default - the class's own fastest, reached by
-// the refinement runs, taken at a longer protocol - and it says which of the two this is.
+// the racing waves, taken at a longer protocol - and it says which of the two this is.
 TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     ProbeOptions options = Timed();
     options.passes = 1;
@@ -956,7 +961,7 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
 
     // One default, and it is a member of that class: the options the class could
     // not place were re-run alone at a longer protocol and voted on, and the
-    // report carries the runs, their leaders and the vote.
+    // report carries the waves, their leaders and the vote.
     EXPECT_EQ(report.verdict, OptionProbeVerdict::kRecommend);
     EXPECT_FALSE(report.recommended.empty()) << "a measured class was left without a default";
     EXPECT_TRUE(report.hasDefault);
@@ -987,17 +992,33 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
                                             : OptionProbeDefaultHow::kChosenAmongEquals))
                   : OptionProbeDefaultHow::kChosenAmongEquals);
 
-    EXPECT_EQ(stage.runs, report.options.refinementRuns);
-    // The stage is the same protocol run longer, and the factor is what lengthens it: it
-    // scales the ROUNDS and leaves the passes alone, so a run is this many times the
-    // protocol and not this many times this many. Both counts are read against the factor
-    // by equality, and the protocol's being longer is the rounds' own comparison below.
+    // The stage races over waves, so the cap is a stop and not a count: the stage takes
+    // as many waves as its own evidence needs, up to the cap.
+    EXPECT_GE(stage.runs, 1);
+    EXPECT_LE(stage.runs, report.options.refinementRuns)
+        << "the stage took more waves than the cap allows";
+    // A wave is the same protocol with more ROUNDS: the factor lengthens the rounds once
+    // per wave after the first and leaves the passes alone, and the first wave opens at
+    // the protocol's own rounds or at the four a band needs, whichever is longer.
     EXPECT_EQ(stage.passes, report.options.passes)
-        << "the refinement lengthened the passes, which the factor does not do";
-    EXPECT_EQ(stage.rounds, report.options.rounds * report.options.refinementFactor);
+        << "a wave lengthened the passes, which the factor does not do";
+    {
+        const int opening =
+            std::max(report.options.rounds, boys::kProbeMinimumPairedRounds);
+        int expected = opening;
+
+        for (int wave = 1; wave < stage.runs; ++wave) {
+            expected *= report.options.refinementFactor;
+        }
+
+        EXPECT_EQ(stage.rounds, expected)
+            << "the last wave is not the first " << opening << " round(s) grown by the factor "
+            << report.options.refinementFactor << " once per wave after the first";
+    }
+
     EXPECT_EQ(stage.runLeaders.size(), static_cast<std::size_t>(stage.runs));
-    EXPECT_GT(stage.rounds, report.pairedRounds)
-        << "the re-run was not at a larger protocol than the run that could not order";
+    EXPECT_GE(stage.rounds, report.options.rounds)
+        << "a wave was shorter than the protocol it races";
     EXPECT_FALSE(stage.pool.empty());
     EXPECT_NE(stage.pool.end(), std::find(stage.pool.begin(), stage.pool.end(), stage.winner))
         << "the refinement named a winner it did not re-measure";
@@ -1005,8 +1026,8 @@ TEST(ProbeTest, AnOrderingNeedsFourPairedRounds) {
     const std::string text = boys::FormatOptionProbe(report);
     EXPECT_NE(text.find("not measurable on this run"), std::string::npos);
     EXPECT_NE(text.find("2 paired round(s)"), std::string::npos);
-    EXPECT_NE(text.find("the refinement stage"), std::string::npos);
-    EXPECT_NE(text.find("leader of each run"), std::string::npos);
+    EXPECT_NE(text.find("the racing stages"), std::string::npos);
+    EXPECT_NE(text.find("leader of each wave"), std::string::npos);
     EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
 }
 
@@ -1107,8 +1128,11 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
 
     EXPECT_EQ(stage.precision, OptionPrecision::kFp64);
     EXPECT_TRUE(stage.ran);
-    EXPECT_EQ(stage.runs, 6);
-    EXPECT_EQ(stage.runLeaders.size(), 6u) << "a run of the vote placed no leader";
+    EXPECT_GE(stage.runs, 1);
+    EXPECT_LE(stage.runs, report.options.refinementRuns)
+        << "the stage took more waves than the cap allows";
+    EXPECT_EQ(stage.runLeaders.size(), static_cast<std::size_t>(stage.runs))
+        << "a wave of the race placed no leader";
     EXPECT_FALSE(stage.winner.empty()) << "the vote ended with no entry to name";
 
     // The vote names the default: options a class cannot separate are settled by which was fastest in most
@@ -1127,16 +1151,19 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
         << "the way-it-was-reached does not match what the vote named";
 
     EXPECT_EQ(stage.passes, report.options.passes)
-        << "the refinement lengthened the passes, which the factor does not do";
-    EXPECT_EQ(stage.rounds, report.options.rounds * report.options.refinementFactor);
-    EXPECT_GT(stage.rounds, report.pairedRounds)
-        << "the re-run was not at a longer protocol than the run that could not order";
+        << "a wave lengthened the passes, which the factor does not do";
+    EXPECT_GE(stage.rounds, report.options.rounds)
+        << "a wave was shorter than the protocol it races";
+    EXPECT_LE(stage.rounds,
+              std::max(report.options.rounds, boys::kProbeMinimumPairedRounds) *
+                  report.options.refinementFactor * report.options.refinementFactor)
+        << "the waves ran away from the protocol: the factor is applied once per wave";
 
     // Every leader is one of the options that were re-measured, and the winner
-    // is one of the leaders: the vote counts the runs it ran.
+    // is one of the leaders: the vote counts the waves it ran.
     for (const std::string& leader : stage.runLeaders) {
         EXPECT_NE(std::find(stage.pool.begin(), stage.pool.end(), leader), stage.pool.end())
-            << leader << " led a refinement run without having been re-measured";
+            << leader << " led a wave without having been re-measured";
     }
 
     EXPECT_NE(std::find(stage.runLeaders.begin(), stage.runLeaders.end(), stage.winner),
@@ -1161,7 +1188,7 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
         << "a two-round run reported a measured ordering";
 
     const std::string text = boys::FormatOptionProbe(report);
-    EXPECT_NE(text.find("the refinement stage"), std::string::npos);
+    EXPECT_NE(text.find("the racing stages"), std::string::npos);
     EXPECT_NE(text.find("vote: " + stage.winner), std::string::npos);
     EXPECT_NE(text.find("default: " + report.recommended), std::string::npos);
     EXPECT_NE(text.find("reached by:"), std::string::npos);
@@ -1177,10 +1204,10 @@ TEST(ProbeTest, ATiedClassIsReRunAloneAndVotedOn) {
     }
 }
 
-// The refinement factor is a claim about one thing: how much longer a refinement run is than one pass protocol.
-// The stage refines a tie by asking whether the leader holds up over more ROUNDS of the same comparison, so the
-// factor lengthens the ROUNDS and leaves the passes alone - a run is the factor times the protocol, never the
-// factor times the factor. Applying it to both squares it: at the shipped factor the stage became 25 passes' worth of rounds where 5 were asked for.
+// The refinement factor is a claim about one thing: how much longer a racing wave is than one pass protocol.
+// The stage races a tie by asking whether the leader holds up over more ROUNDS of the same comparison, so the
+// factor lengthens the ROUNDS and leaves the passes alone, once per wave - never the protocol times the factor
+// squared. Applying it to both squares it: at the shipped factor a wave became 25 passes' worth of rounds.
 TEST(ProbeTest, TheRefinementFactorLengthensTheRoundsAndNotThePasses) {
     ProbeOptions options = Timed();
     options.passes = 1;
@@ -1189,11 +1216,11 @@ TEST(ProbeTest, TheRefinementFactorLengthensTheRoundsAndNotThePasses) {
     options.refinementFactor = 3;
     const OptionProbeReport report = boys::RunOptionProbe(options);
 
-    ASSERT_EQ(report.pairedRounds, 2) << "the main run is the protocol the stage refines";
+    ASSERT_EQ(report.pairedRounds, 2) << "the main run is the protocol the stage races";
     ASSERT_EQ(report.options.refinementFactor, 3);
 
     // The certified double lane's class: two paired rounds form no band, so this
-    // class cannot be ordered and is the one a refinement stage is run over.
+    // class cannot be ordered and is the one a racing stage is run over.
     const boys::OptionProbeRefinement* stage = nullptr;
 
     for (const boys::OptionProbeRefinement& refinement : report.refinements) {
@@ -1203,22 +1230,118 @@ TEST(ProbeTest, TheRefinementFactorLengthensTheRoundsAndNotThePasses) {
         }
     }
 
-    ASSERT_NE(stage, nullptr) << "a class of more than one option was left unrefined";
+    ASSERT_NE(stage, nullptr) << "a class of more than one option was left unraced";
     EXPECT_TRUE(stage->ran);
 
     EXPECT_EQ(stage->passes, report.options.passes)
         << "the factor lengthened the passes: it lengthens the rounds of the same comparison "
-           "and leaves the passes alone, so a run is the protocol lengthened and not squared";
-    EXPECT_EQ(stage->rounds, report.options.rounds * report.options.refinementFactor)
-        << "the factor did not lengthen the rounds exactly once";
+           "and leaves the passes alone, so a wave is the protocol lengthened and not squared";
 
-    EXPECT_EQ(stage->passes * stage->rounds,
-              report.pairedRounds * report.options.refinementFactor)
-        << "the refinement run is " << stage->passes << " pass(es) by " << stage->rounds
-        << " round(s) against a protocol of " << report.pairedRounds
-        << " paired round(s): the stage is the factor squared, not the factor";
-    EXPECT_GT(stage->rounds, report.options.rounds)
-        << "the refinement run is no longer a protocol than the run it refines";
+    // The waves grow the rounds once each, from the protocol's own count or from the four a
+    // band needs, whichever is longer. Both ends are read by equality: a factor applied twice
+    // in one wave, or applied to the opening wave, moves the last wave off this figure.
+    const int opening = std::max(report.options.rounds, boys::kProbeMinimumPairedRounds);
+    int expected = opening;
+
+    for (int wave = 1; wave < stage->runs; ++wave) {
+        expected *= report.options.refinementFactor;
+    }
+
+    EXPECT_GE(stage->runs, 1);
+    EXPECT_LE(stage->runs, report.options.refinementRuns)
+        << "the stage took more waves than the cap allows";
+    EXPECT_EQ(stage->rounds, expected)
+        << "the last wave is not the first " << opening << " round(s) grown by the factor "
+        << report.options.refinementFactor << " once per wave after the first";
+    EXPECT_GE(stage->rounds, opening)
+        << "a wave is no longer a protocol than the run it races";
+}
+
+// The timed unit is a length and not an option: an option whose whole call is shorter than the
+// target is called repeatedly inside one timed unit, so no option's figure rests on a shorter
+// reading than another's. The count that did it reaches the measurement, and the report states the
+// target it ran under beside the count each option took.
+TEST(ProbeTest, EveryTimedUnitIsBroughtToTheTargetLength) {
+    // Two options of one class, so the whole protocol still runs - the pairs, the A/A column and
+    // the class's own reading - while the target length makes the timed loops cost what they cost.
+    // The names are all the book is read for: one round can form no ratio, so no row of it carries
+    // a figure, and whether a row does is the narrowed run's to say.
+    const OptionProbeReport book = boys::RunOptionProbe(OneRound());
+    std::vector<std::string> names;
+
+    for (const OptionProbeMeasurement& measurement : book.measurements) {
+        if (measurement.precision == OptionPrecision::kFp64 &&
+            measurement.shape == boys::OptionProbeShape::kAllOrders) {
+            names.push_back(measurement.name);
+
+            if (names.size() == 2) {
+                break;
+            }
+        }
+    }
+
+    ASSERT_EQ(names.size(), 2u) << "the run's own book did not offer two options to pick from";
+
+    ProbeOptions options = Timed();
+    options.only = names;
+    options.unitTargetMs = 0.2;
+    const OptionProbeReport report = boys::RunOptionProbe(options);
+
+    EXPECT_DOUBLE_EQ(report.options.unitTargetMs, 0.2);
+
+    std::size_t measured = 0;
+    int most = 0;
+
+    for (const OptionProbeMeasurement& measurement : report.measurements) {
+        if (!measurement.measured) {
+            continue;
+        }
+
+        EXPECT_GE(measurement.repeats, 1) << measurement.name << " was timed no times";
+        most = std::max(most, measurement.repeats);
+        ++measured;
+    }
+
+    EXPECT_EQ(measured, 2u);
+    EXPECT_GT(most, 1) << "no option was repeated, so a unit shorter than the target was timed "
+                          "anyway and the calibration reached no figure";
+
+    const std::string text = boys::FormatOptionProbe(report);
+    EXPECT_NE(text.find("unit length:"), std::string::npos) << "the report states no unit target";
+    EXPECT_NE(text.find("0.200 ms"), std::string::npos) << "the report states another target";
+    EXPECT_NE(text.find("rep"), std::string::npos) << "the per-option repeat count is not printed";
+
+    // The A/A self-pair, which is taken inside every round whatever the unit length is: two
+    // calls of one option in one round are the run's own noise floor, and both are read.
+    EXPECT_EQ(report.aaRounds, report.pairedRounds) << "a round went without its A/A pair";
+    EXPECT_GT(report.aaMedian, 0.0);
+    EXPECT_LE(report.aaLo, report.aaMedian);
+    EXPECT_LE(report.aaMedian, report.aaHi);
+    EXPECT_NE(text.find("A/A self-pair:"), std::string::npos);
+}
+
+// A run with no unit target times each option's whole call once and says so: the calibration is a
+// choice of the protocol, and a figure read without knowing whether it was calibrated would be read
+// as a reading that was never taken.
+TEST(ProbeTest, AUnitTargetOfZeroTimesEachCallOnce) {
+    const OptionProbeReport report = boys::RunOptionProbe(Timed());
+
+    EXPECT_DOUBLE_EQ(report.options.unitTargetMs, 0.0);
+
+    for (const OptionProbeMeasurement& measurement : report.measurements) {
+        if (measurement.measured) {
+            EXPECT_EQ(measurement.repeats, 1) << measurement.name;
+        }
+    }
+
+    const std::string text = boys::FormatOptionProbe(report);
+    EXPECT_NE(text.find("unit length: not calibrated"), std::string::npos);
+
+    // One round is one pair and a band needs four, so the A/A floor is not formed and the report
+    // says that rather than printing a floor from a single reading.
+    const OptionProbeReport one = boys::RunOptionProbe(OneRound());
+    EXPECT_LT(one.aaRounds, 2);
+    EXPECT_NE(boys::FormatOptionProbe(one).find("A/A self-pair: not measured"), std::string::npos);
 }
 
 // The acceptance rule, stated where it can be checked: a run that measured its class ends with exactly one

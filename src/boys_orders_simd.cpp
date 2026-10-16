@@ -134,9 +134,9 @@ void BoysAllOrdersF32SimdComposed(
 namespace boys::detail {
 
 // The far region's two ladders at the fused leg: this unit is licensed for the fused instruction
-// set. All three forms are built, ClenshawSplit's multiply-add being the fused one at every form,
-// and the leg is in the name (LadderLeg) so the link can only reach these. Measured, one shared
-// definition left the ladder at 28.84 instructions per order against the fused step's 6.09.
+// set, ClenshawSplit's multiply-add being the fused one at every form. The leg is in the name
+// (LadderLeg), so a unit compiles the leg it names and the asking leg's copies come from units
+// without the fused flag. Measured, one shared definition cost 28.84 instructions per order.
 template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
     int, double, double*) noexcept;
 template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(

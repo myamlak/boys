@@ -594,6 +594,25 @@ jobs:
         run: |
           .venv/bin/python tools/check_probe_table.py --control
           .venv/bin/python tools/check_probe_table.py
+      # The probe's dump reader: the ranked table re-derived offline from a raw dump by
+      # tools/analyse_probe_dump.py, which no step ran - a tool that exists and enforces nothing is
+      # the failure the required-checks step below exists to catch, and it caught this one. The raw
+      # dump is a probe run's own output with --dump-raw, which no step here asks a run for, so the
+      # analysis is run on the dump the tool writes itself: a small file of the frozen format whose
+      # truth is stated in its own comments - one class of six options at 8.00 to 16.00 ns per
+      # argument, three passes of three rounds, a per-round clock effect and an A/A column - and the
+      # whole analysis, the fit and the intervals and the tie set and the pick, runs end to end with
+      # no probe behind it. It goes red when the reader stops understanding the format the probe
+      # writes, when a line of the dump is left unplaced or when a class is left unanalysed; the
+      # ranking itself is printed for the reader of that analysis and is not asserted here. The dump
+      # is written to the root and .gitignore lists it beside this tree's other probe output. The
+      # tool needs nothing but the standard library, so this leg needs no virtual environment to run
+      # it.
+      - name: Probe dump (the offline ranking, on a dump whose truth is known)
+        if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
+        run: |
+          python3 tools/analyse_probe_dump.py --emit-synthetic probe-synthetic-dump.txt \
+            --dump probe-synthetic-dump.txt --check
       # The build-defaults round trip: a seam is derived from the committed option-probe report, a
       # build is configured against it, and that build's suite has to stay green. The two
       # build-defaults steps of the windows job configure against a committed fixture, which is a

@@ -8,8 +8,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fstream>
+#include <iomanip>
 #include <limits>
 #include <numeric>
+#include <ostream>
 #include <random>
 #include <string>
 #include <thread>
@@ -206,6 +209,75 @@ double QuantileOf(std::vector<double> values, double p) {
     return values[lower] * (1.0 - weight) + values[upper] * weight;
 }
 
+/// The robust standard deviation of a set of readings: 1.4826 times their
+/// median absolute deviation.
+///
+/// **Robust on purpose.** A run's noise is measured from the readings it took,
+/// and a mean square would let one disturbed round of a hundred set it: a single
+/// outlier moves a standard deviation further than it moves any figure built on
+/// it, so an effect read off one would be about the outlier rather than about the
+/// measurement. The constant is the one that makes the estimator agree with the
+/// standard deviation on a normal set, and it is stated here because every effect
+/// the probe calls detectable is a multiple of it.
+double RobustSigmaOf(std::vector<double> values) {
+    if (values.size() < 2)
+    {
+        return 0.0;
+    }
+
+    const double middle = QuantileOf(values, 0.5);
+
+    for (double& value : values)
+    {
+        value = std::fabs(value - middle);
+    }
+
+    return 1.4826 * QuantileOf(values, 0.5);
+}
+
+/// The one option of \p names a tie is settled by, as a **function of the names
+/// and of nothing else**: the run's own order, the vote and the round a pair was
+/// read in are all evidence about which rows are tied, and none of them is
+/// evidence about which of them to name.
+///
+/// A default has to be reproducible from the data, so the rule is declared once,
+/// here, and applied wherever a tie no measurement of this run can break has to
+/// end in one name.
+///
+/// The rule, in order:
+///
+///   1. the fewest table bytes. **Not read today, and the clause is inert rather
+///      than absent**: this probe measures cost and accuracy, and no call it makes
+///      returns how much coefficient storage a combination holds, so there is no
+///      figure here to compare. It is stated first because it is the clause a
+///      reader expects - two rows that cost the same are settled by the one that
+///      carries less - and the report names it as the clause that could not be
+///      applied rather than dropping it silently;
+///   2. the lexicographically first name, which is total and needs no figure.
+///
+/// \param names the tied options, empty names skipped
+///
+/// \returns the name the rule settles on, empty exactly when \p names holds no
+///          name at all
+std::string DeterministicPick(const std::vector<std::string>& names) {
+    std::string best;
+
+    for (const std::string& name : names)
+    {
+        if (name.empty())
+        {
+            continue;
+        }
+
+        if (best.empty() || name < best)
+        {
+            best = name;
+        }
+    }
+
+    return best;
+}
+
 /// The load the machine put on a single-threaded, CPU-bound workload, as a
 /// percentage above the fastest run of the canary this machine has shown, with
 /// the canary's own run-to-run agreement as the thing that decides whether a
@@ -379,8 +451,36 @@ constexpr double kFigureQuantile = 0.5;
 
 /// The number of rounds a quartile band needs before it can exist: two ends of a
 /// band are two order statistics, and below four observations they are the same
-/// observation twice.
-constexpr std::size_t kMinimumPairedRounds = 4;
+/// observation twice. The floor itself is part of the probe's public protocol,
+/// because it is a floor on a number the caller chooses.
+constexpr std::size_t kMinimumPairedRounds = kProbeMinimumPairedRounds;
+
+/// The rounds one racing wave is doubled up to.
+///
+/// **A stop and not a target**: without it the doubling is unbounded - a pool
+/// that never settles would take a wave of 2^40 rounds - and a stage that cannot
+/// end is worse than a stage that ends unresolved. How many waves run is the
+/// caller's own cap, ProbeOptions::refinementRuns.
+constexpr int kWaveRoundsCap = 4096;
+
+/// The most calls one timed unit is calibrated to hold.
+///
+/// A ceiling and not a target: an option fast enough to want more than this in
+/// its unit is an option whose whole array costs less than a microsecond, and a
+/// unit of a million calls is still under a second. Without it a degenerate
+/// reading - an option measured at zero because the clock did not move, or one
+/// the compiler folded away - would ask for an unbounded repeat count.
+constexpr double kMaxUnitRepeats = 1.0e6;
+
+/// The two quantiles an effect has to clear to be called detectable at 80% power
+/// with a two-sided 5% level: the normal quantiles at 0.975 and at 0.80.
+///
+/// Read from the normal and not from a t: the sigma an MDE is formed from is
+/// already a robust estimate over many rounds, so the degrees of freedom it would
+/// correct for are not the ones the estimate rests on, and a t correction would
+/// put a precision on the figure that the estimate does not have.
+constexpr double kMdeTwoSidedQuantile = 1.959964;
+constexpr double kMdePowerQuantile = 0.841621;
 
 /// The precision classes this probe measures, in the order it walks them: the
 /// double lane first, because that is the lane the library's own default is
@@ -972,10 +1072,21 @@ std::size_t ReferenceIndex(const std::vector<Option>& options, const std::string
 ///
 /// The reference's own column is skipped, and only it: its ratio is one in every
 /// round by construction, so it would contribute a band of zero.
-double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::size_t reference) {
+/// The widest of the within-round bands a pass showed its option columns against the
+/// reference: for every column but the reference's, the ratio to the reference inside each
+/// round, and the lower and upper quartile of those ratios, and the widest band of the set.
+///
+/// The columns it reads are the options alone. The run's table carries one column past
+/// them - the A/A self-pair - which is not an option and is not part of this spread.
+///
+/// \param rounds    the pass's rounds, one row per round and one column per option
+/// \param reference the column every ratio is formed against
+/// \param extent    how many of the row's columns are options
+double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::size_t reference,
+                        std::size_t extent) {
     double widest = 0.0;
 
-    if (rounds.empty() || reference >= rounds.front().size())
+    if (rounds.empty() || reference >= rounds.front().size() || reference >= extent)
     {
         return 0.0;
     }
@@ -988,7 +1099,7 @@ double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::siz
         }
     }
 
-    for (std::size_t index = 0; index < rounds.front().size(); ++index)
+    for (std::size_t index = 0; index < std::min(extent, rounds.front().size()); ++index)
     {
         if (index == reference)
         {
@@ -2862,10 +2973,9 @@ void CellRun(const Option& option, Run&& run) noexcept {
 /// does not exist — and would double every single-precision cell's instantiation
 /// into the bargain.
 ///
-/// There is no run-time convenience entry on this side to fall back on, unlike
-/// the double lane's \c BoysAllOrdersWithRoute: every cell of a single-precision
-/// lane is an instantiation a consumer reaches by naming its policy, and the
-/// probe reaches it the same way.
+/// There is no entry on this side to shortcut a cell through: every cell of a
+/// single-precision lane is an instantiation a consumer reaches by naming its
+/// policy, and the probe reaches it the same way.
 template <OptionPrecision kLane, typename Run>
 void CellRunAt(const Option& option, Run&& run) noexcept {
     if constexpr (kLane == OptionPrecision::kFp64)
@@ -3005,7 +3115,7 @@ void StopOnDeviceLane(const Option& option) {
 /// the shape costs a caller who has one (n, x) pair and no array.
 ///
 /// The single-precision lane's cell at its class row's combination is measured
-/// through the shape's run-time entry, which takes the route as an argument; every
+/// through the shape's route entry, whose route the call site names; every
 /// other cell takes its own policy instantiation. Both are calls a consumer may
 /// write, so a class that declares both carries a figure for both.
 ///
@@ -3040,20 +3150,41 @@ void VisitSingleShape(const Workload& work, const Option& option, Visit&& visit)
                 }
             };
 
-            // The single-precision lane's own cell of this shape is the shape's run-time entry,
+            // The single-precision lane's own cell of this shape is the shape's route entry,
             // exactly as the double lane's all-orders cell is: measured through the call and not
-            // through a selection inside the timed loop, so the figure is the call's own.
+            // through a selection inside the timed loop, so the figure is the call's own. The
+            // entry names its route where the call is compiled, so the route picks the arm here.
             if constexpr (kLane == OptionPrecision::kFp32)
             {
-                using SelectorClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+                using RouteClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
 
-                if (option.scheme == SelectorClass::kScheme &&
-                    option.granularity == SelectorClass::kGranularity &&
-                    option.pack == SelectorClass::kPack &&
-                    option.division == SelectorClass::kDivision &&
-                    option.regionBExp == SelectorClass::kRegionBExp)
+                if (option.scheme == RouteClass::kScheme &&
+                    option.granularity == RouteClass::kGranularity &&
+                    option.pack == RouteClass::kPack &&
+                    option.division == RouteClass::kDivision &&
+                    option.regionBExp == RouteClass::kRegionBExp)
                 {
-                    walk([&](int k, Io x) { return BoysSingleF32WithRoute(option.route, k, x); });
+                    switch (option.route)
+                    {
+                    case FitRoute::kChebyshev:
+                        walk([&](int k, Io x) {
+                            return BoysSingleF32WithRoute<FitRoute::kChebyshev>(k, x);
+                        });
+
+                        return;
+
+                    case FitRoute::kRationalMinimax:
+                        walk([&](int k, Io x) {
+                            return BoysSingleF32WithRoute<FitRoute::kRationalMinimax>(k, x);
+                        });
+
+                        return;
+                    }
+
+                    // A route the enumeration does not name is the entry's own fallback arm.
+                    walk([&](int k, Io x) {
+                        return BoysSingleF32WithRoute<static_cast<FitRoute>(99)>(k, x);
+                    });
 
                     return;
                 }
@@ -3071,34 +3202,36 @@ void VisitSingleShape(const Workload& work, const Option& option, Visit&& visit)
 /// One argument per call, the ladder running to that argument's own order, at the
 /// cell's own axes: the shape an integral engine asks for.
 ///
-/// The certified lane's cell of this shape names the run-time entry when the cell
-/// is the combination that entry divides in and seeds its ladders with, which is
-/// the dispatch a consumer reaches without naming a template argument, and its own
-/// policy instantiation for every other cell, which is how a consumer reaches a
-/// partition, a packing axis, a division form or an exponential. Both are branches
-/// on the same run-time values, so a cell's cost includes its own selection.
+/// The certified lane's cell of this shape names the route entry when the cell is
+/// the combination that entry divides in and seeds its ladders with - the route it
+/// names and the class row's other axes - which is the call a consumer writes
+/// holding a route and no other axis, and its own policy instantiation for every
+/// other cell, which is how a consumer reaches a
+/// partition, a packing axis, a division form or an exponential. The route is named
+/// where the call is compiled, so a cell's route picks the arm in this function and
+/// not in the timed walk.
 ///
-/// That entry declares two calls — one taking the scheme and one reading the
-/// class's own row — and both are calls a consumer may write, so both are made:
-/// a cell of the run-time sub-lattice at the row's scheme is measured through the
+/// That entry declares two calls - one taking the scheme and one reading the
+/// class's own row - and both are calls a consumer may write, so both are made:
+/// a cell of the sub-lattice at the row's scheme is measured through the
 /// call without the scheme argument, the shorter of the two and the one a caller
 /// holding a route alone reaches, and every other scheme in the sub-lattice
 /// through the call that names one.
 ///
-/// The run-time entry is the class's own default's — the row this build's seam
-/// gives \c BoysAllOrders, or the five where it gives none — and therefore divides
-/// in that row's form and seeds its region-B ladders with that row's exponential,
-/// whatever it is handed: it takes neither as an argument, so a cell at one of the
-/// other two form members or at the other member of the exponential axis would be
-/// measured through arithmetic it did not name. The form, the member and the
-/// packing axis are part of the shortcut's own condition for that reason, and a
-/// cell of this shape at another member of any of them takes its own instantiation
-/// below like any other cell.
+/// The entry's unnamed axes are the class's own default's - the row this build's
+/// seam gives \c BoysAllOrders, or the five where it gives none - and it therefore
+/// divides in that row's form and seeds its region-B ladders with that row's
+/// exponential, whatever it is handed: it takes neither as an argument, so a cell
+/// at one of the other two form members or at the other member of the exponential
+/// axis would be measured through arithmetic it did not name. The form, the member
+/// and the packing axis are part of the shortcut's own condition for that reason,
+/// and a cell of this shape at another member of any of them takes its own
+/// instantiation below like any other cell.
 ///
-/// The condition is read off the name the run-time entry stands in for and not off
+/// The condition is read off the name the entry stands in for and not off
 /// the five: in a build whose seam carries a row for the class, a cell at the
 /// five's own combination is a cell at another arithmetic, and measuring it
-/// through the selector would report one combination's cost for another's.
+/// through the entry would report one combination's cost for another's.
 ///
 /// \tparam kLane the lane whose entry answers, and whose I/O the values are
 /// \param work   the workload the cell is measured over
@@ -3110,11 +3243,11 @@ void VisitAllOrdersShape(const Workload& work, const Option& option, Visit&& vis
 
     if constexpr (kLane == OptionPrecision::kFp64)
     {
-        using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
+        using RouteClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
 
-        if (option.granularity == SelectorClass::kGranularity &&
-            option.pack == SelectorClass::kPack && option.division == SelectorClass::kDivision &&
-            option.regionBExp == SelectorClass::kRegionBExp)
+        if (option.granularity == RouteClass::kGranularity &&
+            option.pack == RouteClass::kPack && option.division == RouteClass::kDivision &&
+            option.regionBExp == RouteClass::kRegionBExp)
         {
             double values[kMaxBoysOrder + 1];
 
@@ -3132,21 +3265,59 @@ void VisitAllOrdersShape(const Workload& work, const Option& option, Visit&& vis
                 }
             };
 
-            // The cells at the class's own scheme are reached two ways, and the shorter is the call a
-            // consumer holding a route and no scheme writes: measured through the call rather than a
-            // branch inside the timed loop, so the figure is the call's own.
-            if (option.scheme == SelectorClass::kScheme)
+            // The cells at the class's own scheme are reached two ways, and the shorter is the call
+            // a consumer holding a route and no scheme writes: measured through the call rather
+            // than a branch inside the timed loop, so the figure is the call's own. The entry names
+            // its route where the call is compiled, so the route picks the arm here.
+            const EvalScheme scheme = option.scheme;
+
+            if (scheme == RouteClass::kScheme)
             {
+                switch (option.route)
+                {
+                case FitRoute::kChebyshev:
+                    walk([&](int n, double x, double* out) {
+                        BoysAllOrdersWithRoute<FitRoute::kChebyshev>(n, x, out);
+                    });
+
+                    return;
+
+                case FitRoute::kRationalMinimax:
+                    walk([&](int n, double x, double* out) {
+                        BoysAllOrdersWithRoute<FitRoute::kRationalMinimax>(n, x, out);
+                    });
+
+                    return;
+                }
+
+                // A route the enumeration does not name is the entry's own fallback arm.
                 walk([&](int n, double x, double* out) {
-                    BoysAllOrdersWithRoute(option.route, n, x, out);
+                    BoysAllOrdersWithRoute<static_cast<FitRoute>(99)>(n, x, out);
                 });
+
+                return;
             }
-            else
+
+            switch (option.route)
             {
+            case FitRoute::kChebyshev:
                 walk([&](int n, double x, double* out) {
-                    BoysAllOrdersWithRoute(option.route, option.scheme, n, x, out);
+                    BoysAllOrdersWithRoute<FitRoute::kChebyshev>(scheme, n, x, out);
                 });
+
+                return;
+
+            case FitRoute::kRationalMinimax:
+                walk([&](int n, double x, double* out) {
+                    BoysAllOrdersWithRoute<FitRoute::kRationalMinimax>(scheme, n, x, out);
+                });
+
+                return;
             }
+
+            walk([&](int n, double x, double* out) {
+                BoysAllOrdersWithRoute<static_cast<FitRoute>(99)>(scheme, n, x, out);
+            });
 
             return;
         }
@@ -3553,16 +3724,47 @@ private:
     bool _bitIdentical = true;
 };
 
+/// One member of the far axis at the entry that takes it: the entry names its arm where the call
+/// is compiled and not where it runs, so a swept member is dispatched here. The case label is the
+/// enumerator, so an enumerator renamed in the library leaves the label unable to compile, and a
+/// member the switch does not name reaches the entry's own fallback, the default representation.
+///
+/// \param arm  the member the sweep is on
+/// \param nmax highest order, 0..kMaxBoysOrder
+/// \param x    an argument at or above \c kX1
+/// \param out  receives the nmax + 1 values
+void EvaluateFarArm(FarRepresentation arm, int nmax, double x, double* out) {
+    switch (arm)
+    {
+    case FarRepresentation::kAsymptoticRecurrence:
+        BoysAllOrdersWithFarRepresentation<FarRepresentation::kAsymptoticRecurrence>(nmax, x, out);
+        return;
+
+    case FarRepresentation::kScaledTable:
+        BoysAllOrdersWithFarRepresentation<FarRepresentation::kScaledTable>(nmax, x, out);
+        return;
+
+    case FarRepresentation::kCorrectedSeed:
+        BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(nmax, x, out);
+        return;
+    }
+
+    BoysAllOrdersWithFarRepresentation(nmax, x, out);
+}
+
 /// The far region's representation axis, measured once over the workload and outside
 /// the clock: one row per member the library reports, each arm's worst relative
 /// difference from the certified lane over the arguments at or above kX1.
 ///
 /// The arms are swept from \c BoysFarRepresentations() and not from a list here, so a
-/// member added to the enum is measured without this file being edited - and a member
-/// the library stops serving is one the sweep stops calling.
+/// member the library stops serving is one the sweep stops calling; a member added to
+/// the enum is measured once \c EvaluateFarArm carries its case, which is the one place
+/// this file names an arm.
 ///
-/// The argument at exactly \c kX1 is a far argument: region C is \c [kX1, inf), and
-/// the entry routes by the same comparison this does.
+/// The argument at exactly \c kX1 is a far argument: region C is \c [kX1, inf).
+/// The scan opens there, and the entry's far route opens no lower - at
+/// \c detail::kFlatHi, where the fitted grid ends - so the scan covers every
+/// argument the entry serves from a far arm.
 ///
 /// \param work the workload the run was measured over
 ///
@@ -3587,7 +3789,7 @@ std::vector<OptionProbeFarArm> MeasureFarRepresentations(const Workload& work) {
             ++arm.farArguments;
 
             const int n = work.order[i];
-            BoysAllOrdersWithFarRepresentation(member.representation, n, work.x[i], values);
+            EvaluateFarArm(member.representation, n, work.x[i], values);
 
             for (int k = 0; k <= n; ++k)
             {
@@ -3894,11 +4096,11 @@ const char* HowText(OptionProbeDefaultHow how) {
     case OptionProbeDefaultHow::kOnlyEntry:
         return "the only entry of its class, named by there being no alternative";
     case OptionProbeDefaultHow::kRefined:
-        return "the vote over the refinement runs, which was unanimous";
+        return "the vote over the racing waves, which was unanimous";
     case OptionProbeDefaultHow::kVote:
-        return "the vote over the refinement runs, which had a plurality";
+        return "the vote over the racing waves, which had a plurality";
     case OptionProbeDefaultHow::kChosenAmongEquals:
-        return "a choice among options the run could not separate";
+        return "a choice among options the run could not separate, made by the declared tie-break";
     case OptionProbeDefaultHow::kNone:
         return "nothing named";
     }
@@ -4120,6 +4322,151 @@ OptionProbeClass UnrankedClass(const SpaceClass& klass, const OptionProbeReport&
                  "closure's to account for, where each is refused, unbuilt, unanswered by "
                  "this run's request or offered without a figure";
     return entry;
+}
+
+/// The evidence one class's ordering rests on, read off the run's own round table: the robust
+/// scatter of the class's within-round ratios, the share of that scatter which is round-to-round
+/// drift rather than noise, the number of rounds that share leaves, and the smallest true ratio
+/// this run could have called out at 80% power.
+///
+/// The reading is the logarithmic ratio of a rival to the class's leader inside one round,
+/// which is the quantity the ordering above was made in: a rival that could not be placed is one
+/// whose ratios straddle zero, so the scatter that decides is the scatter of those ratios and the
+/// smallest shift a design could call is a fixed multiple of it. The scatter is the median
+/// absolute deviation raised by 1.4826, which one disturbed round moves less than a variance
+/// would. The share of drift is a one-way random-effects intraclass correlation over the rounds,
+/// MSB against MSW, which is the right model here because every option is measured once in every
+/// round and the thing that could correlate two readings is being taken in the same round. A run
+/// whose rounds repeat each other keeps its rounds, N_eff = N / (1 + (m - 1) rho) with m the
+/// ratios a round carries; a run whose rounds drift loses them, and the loss is printed rather
+/// than hidden in a round count. The smallest detectable effect is
+/// (1.959964 + 0.841621) sigma / sqrt(N_eff), the two-sided 5% and 80%-power quantiles of the
+/// normal: the run can call a true ratio at least that far from one, and must not claim the
+/// order of two rows that are nearer than that.
+///
+/// Where the table cannot support the arithmetic - fewer than two rounds, no second row, a
+/// non-positive cost - the counts are filled in and the estimates are left at zero: N_eff is then
+/// the round count itself, which is what a caller reads as this run having no usable reading of
+/// its own correlation rather than a figure computed from no data.
+///
+/// \param rounds the round table, one row per round and one column per option
+/// \param columns the class's own columns of that table
+/// \param leader the column of the class's fastest row
+/// \param entry the class's entry, whose evidence fields are filled in
+void ClassEvidence(const std::vector<std::vector<double>>& rounds,
+                   const std::vector<std::size_t>& columns, std::size_t leader,
+                   OptionProbeClass& entry) {
+    entry.rounds = static_cast<int>(rounds.size());
+    entry.effectiveRounds = static_cast<double>(entry.rounds);
+
+    const std::size_t rivals = columns.size() > 0 ? columns.size() - 1 : 0;
+
+    if (entry.rounds < 2 || rivals < 1 || columns.size() <= leader)
+    {
+        return;
+    }
+
+    std::vector<double> roundMeans;
+    std::vector<double> withinSquares;
+    std::vector<double> readings;
+
+    roundMeans.reserve(rounds.size());
+    withinSquares.reserve(rounds.size());
+    readings.reserve(rounds.size() * rivals);
+
+    for (const std::vector<double>& row : rounds)
+    {
+        std::vector<double> perRound;
+
+        for (const std::size_t column : columns)
+        {
+            if (column != leader && column < row.size() && row[leader] > 0.0 && row[column] > 0.0)
+            {
+                perRound.push_back(std::log(row[column] / row[leader]));
+            }
+        }
+
+        // A round that did not carry one reading for every rival of the class is not a
+        // round of this class's design and is left out whole: a short round would pull the
+        // round mean toward the rows it happened to carry.
+        if (perRound.size() != rivals)
+        {
+            continue;
+        }
+
+        double mean = 0.0;
+
+        for (const double value : perRound)
+        {
+            mean += value;
+            readings.push_back(value);
+        }
+
+        mean /= static_cast<double>(rivals);
+
+        double within = 0.0;
+
+        for (const double value : perRound)
+        {
+            within += (value - mean) * (value - mean);
+        }
+
+        roundMeans.push_back(mean);
+        withinSquares.push_back(within);
+    }
+
+    const std::size_t groups = roundMeans.size();
+
+    if (groups < 2)
+    {
+        entry.rounds = static_cast<int>(groups);
+        entry.effectiveRounds = static_cast<double>(groups);
+        return;
+    }
+
+    double grand = 0.0;
+
+    for (const double mean : roundMeans)
+    {
+        grand += mean;
+    }
+
+    grand /= static_cast<double>(groups);
+
+    double between = 0.0;
+
+    for (const double mean : roundMeans)
+    {
+        between += (mean - grand) * (mean - grand);
+    }
+
+    const double msb =
+        static_cast<double>(rivals) * between / static_cast<double>(groups - 1);
+
+    double withinTotal = 0.0;
+
+    for (const double within : withinSquares)
+    {
+        withinTotal += within;
+    }
+
+    const double msw =
+        rivals > 1 ? withinTotal / (static_cast<double>(groups) * static_cast<double>(rivals - 1))
+                   : 0.0;
+
+    const double denominator = msb + static_cast<double>(rivals - 1) * msw;
+    const double rho = denominator > 0.0 ? std::max(0.0, std::min(1.0, (msb - msw) / denominator))
+                                         : 0.0;
+
+    entry.rounds = static_cast<int>(groups);
+    entry.roundCorrelation = rho;
+    entry.effectiveRounds =
+        static_cast<double>(groups) / (1.0 + static_cast<double>(rivals - 1) * rho);
+    entry.robustSigma = RobustSigmaOf(readings);
+    entry.minimumDetectableEffect = entry.effectiveRounds > 0.0
+                                        ? (kMdeTwoSidedQuantile + kMdePowerQuantile) *
+                                              entry.robustSigma / std::sqrt(entry.effectiveRounds)
+                                        : 0.0;
 }
 
 /// Fills in the classes, the single default and the refusal from the figures
@@ -4457,11 +4804,30 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
     } else
     {
         // The class could not be ordered, so what is reported is a tie and not a ranking: where
-        // the longer protocol ran its vote decides, and with no vote the printed figure is all
-        // there is to go on.
+        // the stage ran, its vote - itself settled by the declared tie-break where it split -
+        // decides, and with no vote the tie is settled by the declared tie-break over the rows
+        // the class's own rounds left level with the fastest.
         const bool voted = stage != nullptr && stage->ran && !stage->winner.empty();
 
-        report.recommended = voted ? stage->winner : fastest.name;
+        // The tied set by name: the racing stage's own where it ran, and otherwise the rows the
+        // class's own rounds could not place behind the fastest, which is the same set read off
+        // the shorter protocol.
+        std::vector<std::string> tiedNames;
+
+        if (stage != nullptr && stage->ran && stage->tieSet.size() > 1)
+        {
+            tiedNames = stage->tieSet;
+        } else
+        {
+            tiedNames.push_back(fastest.name);
+
+            for (const std::size_t column : pooled.unplaced)
+            {
+                tiedNames.push_back(report.measurements[column].name);
+            }
+        }
+
+        report.recommended = voted ? stage->winner : DeterministicPick(tiedNames);
 
         report.defaultHow =
             voted ? (stage->unanimous
@@ -4503,10 +4869,38 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
 
         record.entry.measured = record.columns.size();
 
+        // The evidence the ordering below rests on, read off the same round table the ordering
+        // was made from: how many rounds the class's own reading really carries, and the smallest
+        // ratio this run could have called out. It is computed here, before the tie is settled,
+        // because the width it reports is the width the tie is unresolved at.
+        ClassEvidence(rounds, record.columns, record.outcome.leader, record.entry);
+
         // The stage that refines this class and no other: the class's own tie is
         // the only one its vote may settle.
         const OptionProbeRefinement* own =
             refinement_of(record.entry.precision, record.entry.shape);
+
+        // The set the class's tie was settled inside, and the width it is unresolved at: the
+        // racing stage's own tie set where it ran, and otherwise the rows the class's own rounds
+        // could not place behind the leader - the same set read off the shorter protocol, which
+        // is what the conclusion above settled by the declared tie-break.
+        if (own != nullptr && own->ran && !own->tieSet.empty())
+        {
+            record.entry.tieSet = own->tieSet;
+            record.entry.unresolvedWidth = own->unresolvedWidth;
+            record.entry.budgetSpent = own->budgetSpent;
+        } else
+        {
+            record.entry.tieSet.push_back(record.entry.leader);
+
+            for (const std::string& name : record.entry.unplaced)
+            {
+                record.entry.tieSet.push_back(name);
+            }
+
+            record.entry.unresolvedWidth = record.outcome.widestBand;
+            record.entry.budgetSpent = false;
+        }
 
         if (defaultClass)
         {
@@ -4747,21 +5141,21 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         if (stage != nullptr && stage->ran)
         {
             report.reason += Text(
-                "The %zu option(s) the class left tied were then re-run on their own, %d time(s) "
-                "at %d passes by %d rounds, and %s. ",
+                "The %zu option(s) the class left tied were then raced on their own, over %d "
+                "wave(s) of %d passes by %d rounds in the last, and %s. ",
                 stage->pool.size(), stage->runs, stage->passes, stage->rounds,
                 stage->note.c_str());
         } else
         {
-            report.reason += "No refinement stage ran on this set, so the choice among the tied "
-                             "options was made without one. ";
+            report.reason += "No racing stage ran on this set, so the choice among the tied "
+                             "options rests on the declared tie-break and not on one. ";
         }
 
         if (row_differs && other_row != nullptr)
         {
             report.reason += Text(
                 "The report's own figures put '%s' first, at %.2f ns/argument; the vote over the "
-                "refinement runs named '%s', and that is the default. Those two cannot be separated "
+                "racing waves named '%s', and that is the default. Those two cannot be separated "
                 "by this run, so the class's top entries are reported as what they are - entries no "
                 "pair of the class placed one behind the other - and neither is offered as the "
                 "fastest: what this run measured about them is that it could not tell them "
@@ -4922,76 +5316,101 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         report.hasDefault ? OptionProbeVerdict::kRecommend : OptionProbeVerdict::kCannotDetermine;
 }
 
-/// The refinement stage: the tied options of one class, measured alone at a
-/// larger protocol, repeated, and voted on.
+/// The racing stage: the tied options of one class, measured alone over waves and
+/// voted on. It replaces the refinement stage's repeat-the-same-run shape rather
+/// than standing beside it: the protocol knobs are the same two
+/// (ProbeOptions::refinementRuns caps the waves and ProbeOptions::refinementFactor
+/// grows them), and what changed is where the evidence is spent.
 ///
 /// The options re-measured are the class's fastest and every option of it the
 /// main run could not place behind the fastest; nothing else in the option space
 /// is touched.
 ///
-/// Each run is a fresh pass over the tied set at ProbeOptions::passes passes of
-/// ProbeOptions::rounds times ProbeOptions::refinementFactor rounds, with its own
-/// shuffle, and each run is ordered by the same
-/// OrderColumns the main run used. A refinement run's table holds the tied set
-/// alone - no certified lane to pair against - so its anchor is the tied set's own
-/// fastest row and its figures are each option's cost against that row, formed
-/// inside a single round. That is the quantity the report orders by, so a run is a
-/// longer measurement of the same figure and not a second one: the vote says
-/// whether the row the report names as the class's fastest holds up over more
-/// rounds of the comparison, and a vote for any other row is the run saying it
-/// could not separate the two.
+/// A wave is one run of the comparison over the pool the wave before it left: the
+/// same passes, ProbeOptions::refinementFactor times as many rounds as the wave
+/// before it, its own shuffle, and the same OrderColumns the main run used. Only
+/// the rows that wave could not place behind its leader are carried into the next
+/// wave, so the pool shrinks while the rounds per wave grow and the stage spends
+/// its budget where the class is still open. It stops when a wave leaves one row
+/// (the class is settled), when a wave separates nothing further (the class is
+/// unresolved at the width it reports), or when ProbeOptions::classBudgetSeconds
+/// is spent - which is the same answer as the second, printed with the budget
+/// named so a reader knows the run was cut and not the evidence exhausted.
+///
+/// A wave's table holds the tied set alone - no certified lane to pair against -
+/// so its anchor is the set's own first row and its figures are each option's
+/// cost against that row, formed inside a single round. That is the quantity the
+/// report orders by, so a wave is a longer measurement of the same figure and not
+/// a second one: the vote says whether the row the report names as the class's
+/// fastest holds up over more rounds of the comparison, and a vote for any other
+/// row is the stage saying it could not separate the two.
 ///
 /// \param report    the report the stage is recorded in
 /// \param book      the options the run measured, in the report's own order
 /// \param work      the workload, already built and warmed
 /// \param buffers   the scratch the calls need
-/// \param options   the protocol in force, read for the run count and the factor
-/// \param precision the lane whose reference class is refined
-/// \param shape     the question shape of the class refined, which with the
+/// \param options   the protocol in force, read for the wave cap, the factor and
+///                  the class's budget
+/// \param repeats   the inner repeat count each option's timed unit was calibrated
+///                  to, so a wave's units are as long as the main run's - indexed
+///                  by the same column the tied set is
+/// \param precision the lane whose reference class is raced
+/// \param shape     the question shape of the class raced, which with the
 ///                  precision is the class this stage's vote is about
 /// \param pool      the columns of the class's measured options
 /// \param mainLeader the class's fastest by the main run's own rounds, which is
-///                  the entry the stage falls back to when no run places one
+///                  the entry the stage falls back to when no wave places one
 void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Workload& work,
-            Buffers& buffers, const ProbeOptions& options, OptionPrecision precision,
-            OptionProbeShape shape, const std::vector<std::size_t>& pool,
-            const std::string& mainLeader) {
+            Buffers& buffers, const ProbeOptions& options, const std::vector<int>& repeats,
+            OptionPrecision precision, OptionProbeShape shape,
+            const std::vector<std::size_t>& pool, const std::string& mainLeader) {
     OptionProbeRefinement stage;
     stage.precision = precision;
     stage.shape = shape;
     stage.ran = true;
-    stage.runs = std::max(1, options.refinementRuns);
-    // ONE multiplication, not two: this stage refines a tie by lengthening the ROUNDS of the
-    // same comparison, so --refine-factor leaves the passes alone. Multiplying both made a
-    // refinement run the factor squared - 25x the protocol at factor 5 rather than 5. The device
-    // probe's stage states the same arithmetic at the same line of its own.
+    // The wave cap and the growth of a wave's rounds over the one before it. ONE multiplication,
+    // not two: a wave lengthens the ROUNDS of the same comparison, so --refine-factor leaves the
+    // passes alone - multiplying both made one wave the factor squared, 25x at factor 5 rather
+    // than 5. The device probe's stage states the same arithmetic at the same line of its own.
+    const int waveCap = std::max(1, options.refinementRuns);
+    const int growth = std::max(1, options.refinementFactor);
+
     stage.passes = std::max(1, options.passes);
-    stage.rounds = std::max(1, options.rounds) * std::max(1, options.refinementFactor);
+    stage.rounds = std::max(options.rounds, static_cast<int>(kMinimumPairedRounds));
+    stage.budgetSeconds = options.classBudgetSeconds;
 
     for (const std::size_t column : pool)
     {
         stage.pool.push_back(report.measurements[column].name);
     }
 
-    std::vector<std::size_t> visit(pool.size());
-    std::vector<std::size_t> columns(pool.size());
-
-    for (std::size_t slot = 0; slot < pool.size(); ++slot)
-    {
-        visit[slot] = slot;
-        columns[slot] = slot;
-    }
-
+    // The waves: a wave re-measures the pool the one before it left, over growth times the
+    // rounds, and keeps only the rows it could not place behind its leader - the pool shrinks
+    // while the evidence per row sharpens. It stops on its own evidence or on its budget, and
+    // the report keeps the two apart: neither is a ranking.
     std::vector<std::string> winners;
+    std::vector<std::size_t> current = pool;
+    std::vector<std::size_t> previousTie;
+    const double raceBegin = NowSeconds();
 
-    for (int run = 0; run < stage.runs; ++run)
+    while (!current.empty() && stage.runs < waveCap)
     {
-        // A fresh seed per run: repetitions of one shuffle would be one run taken
-        // several times, and whatever a position in the round is worth would be
-        // worth the same to the same option every time.
-        std::mt19937_64 shuffle(options.seed +
-                                static_cast<std::uint64_t>(run + 1) * 0x9e3779b97f4a7c15ull);
+        // A fresh seed per wave: repetitions of one shuffle would be one wave taken several
+        // times, and whatever a position in the round is worth would be worth the same to the
+        // same option every time.
+        std::mt19937_64 shuffle(
+            options.seed + static_cast<std::uint64_t>(stage.runs + 1) * 0x9e3779b97f4a7c15ull);
         std::vector<std::vector<double>> table;
+        std::vector<std::size_t> visit(current.size());
+        std::vector<std::size_t> slots(current.size());
+
+        for (std::size_t slot = 0; slot < current.size(); ++slot)
+        {
+            visit[slot] = slot;
+            slots[slot] = slot;
+        }
+
+        const double waveBegin = NowSeconds();
 
         for (int pass = 0; pass < stage.passes; ++pass)
         {
@@ -4999,29 +5418,43 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
             {
                 std::shuffle(visit.begin(), visit.end(), shuffle);
 
-                std::vector<double> row(pool.size(), 0.0);
+                std::vector<double> row(current.size(), 0.0);
 
                 for (const std::size_t slot : visit)
                 {
+                    // The same inner repeat the main run calibrated, so a wave's units are as
+                    // long as the ones the pool was measured in: a wave that re-timed a short
+                    // unit a hundred times over would re-order the class on its own noise.
+                    const std::size_t column = current[slot];
+                    const int repeat = column < repeats.size() ? std::max(1, repeats[column]) : 1;
                     const Clock::time_point t0 = Clock::now();
-                    const double sum = Checksum(work, buffers, book[pool[slot]]);
+
+                    double sum = 0.0;
+
+                    for (int inner = 0; inner < repeat; ++inner)
+                    {
+                        sum += Checksum(work, buffers, book[column]);
+                    }
+
                     const Clock::time_point t1 = Clock::now();
                     (void)sum;
 
-                    row[slot] =
-                        MillisecondsBetween(t0, t1) * 1e6 / static_cast<double>(options.count);
+                    row[slot] = MillisecondsBetween(t0, t1) * 1e6 /
+                                (static_cast<double>(options.count) * static_cast<double>(repeat));
                 }
 
                 table.push_back(std::move(row));
             }
         }
 
-        // The runs are ordered in the quantity the report orders by: each option's cost against
-        // the tied set's own fastest, formed inside a single round so the round's clock is in both
-        // terms of the ratio and cancels. Slot zero is the anchor, the main run's leader.
-        std::vector<double> runFigures(pool.size(), 0.0);
+        stage.secondsSpent += NowSeconds() - waveBegin;
 
-        if (!table.empty() && pool.size() > 0)
+        // The wave is ordered in the quantity the report orders by: each option's cost against
+        // the pool's own first row, formed inside a single round so the round's clock is in both
+        // terms of the ratio and cancels. Slot zero is the anchor.
+        std::vector<double> runFigures(current.size(), 0.0);
+
+        if (!table.empty())
         {
             std::vector<double> anchors;
 
@@ -5032,7 +5465,7 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
 
             const double anchorCost = QuantileOf(anchors, kStatisticQuantile);
 
-            for (std::size_t slot = 0; slot < pool.size(); ++slot)
+            for (std::size_t slot = 0; slot < current.size(); ++slot)
             {
                 std::vector<double> ratios;
 
@@ -5051,11 +5484,69 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
             }
         }
 
-        const RunOutcome outcome = OrderColumns(table, columns, runFigures);
+        const RunOutcome outcome = OrderColumns(table, slots, runFigures);
 
-        winners.push_back(outcome.order.empty() ? std::string()
-                                                : report.measurements[pool[outcome.leader]].name);
+        ++stage.runs;
+        stage.lastPoolSize = current.size();
+        stage.unresolvedWidth = outcome.widestBand;
+        winners.push_back(outcome.order.empty()
+                              ? std::string()
+                              : report.measurements[current[outcome.leader]].name);
         stage.runLeaders.push_back(winners.back());
+
+        if (outcome.order.empty())
+        {
+            // The wave's statistic could not form at all, so nothing was placed and nothing may
+            // be dropped: the pool stands as the previous wave left it and the stage stops here.
+            break;
+        }
+
+        // The rows this wave could not place behind its leader, its leader first. One row is the
+        // wave saying it placed every rival, which is the class settled.
+        std::vector<std::size_t> narrowed;
+        narrowed.push_back(current[outcome.leader]);
+
+        for (const std::size_t column : outcome.unplaced)
+        {
+            narrowed.push_back(current[column]);
+        }
+
+        const bool stable = (narrowed == previousTie);
+        const bool outOfBudget =
+            options.classBudgetSeconds > 0.0 &&
+            NowSeconds() - raceBegin >= options.classBudgetSeconds;
+
+        current = narrowed;
+        previousTie = narrowed;
+
+        if (narrowed.size() <= 1)
+        {
+            stage.settled = true;
+            break;
+        }
+
+        if (stable || outOfBudget)
+        {
+            // The budget is read after the wave and not before it: a wave that was started is a
+            // wave whose rows are reported, where a class stopped mid-wave would be a stage with
+            // a pool nothing ordered.
+            stage.budgetSpent = outOfBudget;
+            break;
+        }
+
+        // The line below is the length of the NEXT wave, so the last wave that runs leaves
+        // the figure at the length it was measured over.
+        if (stage.runs >= waveCap)
+        {
+            break;
+        }
+
+        stage.rounds = std::min(stage.rounds * growth, kWaveRoundsCap);
+    }
+
+    for (const std::size_t column : current)
+    {
+        stage.tieSet.push_back(report.measurements[column].name);
     }
 
     // The vote, in the order the candidates first led a run.
@@ -5090,6 +5581,7 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
 
     std::size_t bestIndex = 0;
     int tiedAtBest = 0;
+    std::vector<std::string> tiedAtBestNames;
 
     for (std::size_t index = 0; index < candidates.size(); ++index)
     {
@@ -5101,12 +5593,13 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
             }
 
             ++tiedAtBest;
+            tiedAtBestNames.push_back(candidates[index]);
         }
     }
 
     for (std::size_t index = 0; index < candidates.size(); ++index)
     {
-        stage.tally.push_back(Text("%s won %d of %d run(s)", candidates[index].c_str(),
+        stage.tally.push_back(Text("%s led %d of %d wave(s)", candidates[index].c_str(),
                                    counts[index], stage.runs));
     }
 
@@ -5121,25 +5614,32 @@ void Refine(OptionProbeReport& report, const std::vector<Option>& book, const Wo
                           mainLeader.c_str());
     } else
     {
-        stage.winner = candidates[bestIndex];
         stage.unanimous = (tiedAtBest == 1 && best == stage.runs);
         stage.plurality = (tiedAtBest == 1);
 
+        // A split vote is a tie the stage could not measure apart, and a tie is settled by the
+        // declared deterministic rule and not by the order the candidates happened to be seen in:
+        // the first candidate to lead a wave is the first wave's leader, which is an artefact of
+        // the shuffle and not evidence about the rows.
+        stage.winner = stage.plurality ? candidates[bestIndex]
+                                       : DeterministicPick(tiedAtBestNames);
+
         if (stage.unanimous)
         {
-            stage.note = Text("every one of the %d run(s) led with '%s', so the vote was unanimous",
+            stage.note = Text("every one of the %d wave(s) led with '%s', so the vote was unanimous",
                               stage.runs, stage.winner.c_str());
         } else if (stage.plurality)
         {
-            stage.note = Text("'%s' led %d of the %d run(s), more than any other candidate, so the "
+            stage.note = Text("'%s' led %d of the %d wave(s), more than any other candidate, so the "
                               "vote had a plurality and not a unanimous result",
                               stage.winner.c_str(), best, stage.runs);
         } else
         {
             stage.note = Text(
-                "the vote was split: %d option(s) led %d run(s) each, so '%s' was taken from among "
-                "them by choice - any of them is equally good on this evidence, and this one is "
-                "named so that the report ends with one default",
+                "the vote was split: %d option(s) led %d wave(s) each, so '%s' was taken from among "
+                "them by the declared tie-break - the lexicographically first name of the tied set, "
+                "the fewest table bytes not being a figure this probe reads - because a name that "
+                "depends on which wave was taken first is not a measurement of the rows",
                 tiedAtBest, best, stage.winner.c_str());
         }
     }
@@ -5193,6 +5693,10 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     report.referenceBound = LaneCellBound(OptionPrecision::kFp64, kAnchorCell.route,
                                           kAnchorCell.scheme, kAnchorCell.pack,
                                           kAnchorCell.granularity, kAnchorCell.division);
+
+    // The whole run's clock, read before the workload is built: what the cost map below
+    // accounts for is the run a caller waited for and not only its timed part.
+    const Clock::time_point runBegin = Clock::now();
 
     const Workload work = BuildWorkload(options);
     Buffers buffers = MakeBuffers(work);
@@ -5292,12 +5796,69 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         (void)warm;
     }
 
+    // The unit calibration: the pass that decides how many calls one timed unit of each option is
+    // made of, so every unit is about the same wall time. It is timed over a REDUCED argument
+    // count - an option's cost per argument does not move by a factor of two between a sixteenth
+    // of the workload and the whole of it. Nothing measured here enters a figure; the count does.
+    const double unitCalibrationBegin = NowSeconds();
+    std::vector<double> unitNsPerArgument(options_.size(), 0.0);
+    std::vector<int> unitRepeats(options_.size(), 1);
+
+    if (options.unitTargetMs > 0.0 && options.count > 0)
+    {
+        ProbeOptions unitOptions = options;
+        unitOptions.count = std::max<std::size_t>(64, options.count / 16);
+
+        const Workload unitWork = BuildWorkload(unitOptions);
+        Buffers unitBuffers = MakeBuffers(unitWork);
+
+        for (std::size_t index = 0; index < options_.size(); ++index)
+        {
+            const Clock::time_point t0 = Clock::now();
+            const double sum = Checksum(unitWork, unitBuffers, options_[index]);
+            const Clock::time_point t1 = Clock::now();
+            (void)sum;
+
+            const double milliseconds = MillisecondsBetween(t0, t1);
+            unitNsPerArgument[index] = milliseconds * 1e6 / static_cast<double>(unitOptions.count);
+
+            const double fullCallMs = milliseconds * static_cast<double>(options.count) /
+                                      static_cast<double>(unitOptions.count);
+
+            if (fullCallMs > 0.0)
+            {
+                const double wanted = options.unitTargetMs / fullCallMs;
+                const double rounded = std::min(std::floor(wanted + 0.5), kMaxUnitRepeats);
+
+                unitRepeats[index] = static_cast<int>(std::max(1.0, rounded));
+            }
+        }
+    }
+
+    report.unitCalibrationSeconds = NowSeconds() - unitCalibrationBegin;
+
+    // Where the run's wall time goes, accumulated at each region that spends it: the instrument
+    // costs time that is not part of any figure, and a protocol cannot be priced from its own
+    // description until those costs are separated from the payload.
+    double instrumentSeconds = 0.0;
+
     LoadMeter meter;
+    const Clock::time_point calibrateBegin = Clock::now();
     report.calibrated = meter.Calibrate(options.calibrationSeconds, kCalibrationTolerancePercent);
+    instrumentSeconds += SecondsBetween(calibrateBegin, Clock::now());
     report.canaryFloorMs = meter.FloorMs();
     report.canaryCalibrationRuns = meter.Runs();
     report.canaryCalibrationMedianMs = meter.MedianMs();
     report.canaryCalibrationSpread = meter.CalibrationSpreadPercent();
+
+    // Every canary run the instrument takes inside the passes, timed, so the block above is a
+    // measurement of the instrument rather than a count of its runs times an assumed cost.
+    const auto sampleCanary = [&meter, &instrumentSeconds]() {
+        const Clock::time_point begin = Clock::now();
+        const double milliseconds = meter.SampleMs();
+        instrumentSeconds += SecondsBetween(begin, Clock::now());
+        return milliseconds;
+    };
 
     // The round table: one row per timed round, one column per option, each cell that
     // option's cost per argument in that round. Every figure below aggregates ratios taken
@@ -5310,6 +5871,54 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     const std::size_t reference = ReferenceIndex(options_, options.reference);
     std::vector<double> referenceCost;
     std::vector<double> passLoads;
+
+    // The A/A self-pair's column: one column past the options, the reference option called a
+    // second time at the end of every round. The ratio of the two calls sits inside one round, so
+    // it is the run's noise floor in the quantity the ordering is made in, on the same clock,
+    // caches and workload. It is not an option: no figure is formed against it.
+    const std::size_t aaColumn = options_.size();
+
+    // The raw dump. Written as the run goes rather than gathered and written at the end: the
+    // rows are the whole point of the file, and holding every row of a census in memory to
+    // write them once would make the probe's footprint a property of what it measured.
+    std::ofstream dump;
+    std::size_t dumpLines = 0;
+
+    if (!options.rawDumpPath.empty())
+    {
+        dump.open(options.rawDumpPath, std::ios::binary);
+        // Ten significant digits: a cost is read here to re-derive the ratios a report was
+        // ordered by, so the file carries more than the two decimals the report prints.
+        dump << std::setprecision(10);
+
+        if (dump)
+        {
+            const std::string anchor =
+                reference < options_.size() ? options_[reference].name : std::string();
+
+            dump << "# boys-option-probe raw dump v1\n";
+            dump << "# protocol version=" << kVersionString << " count=" << options.count
+                 << " unit_target_ms=" << options.unitTargetMs << " passes=" << options.passes
+                 << " rounds=" << options.rounds << " seed=" << options.seed
+                 << " reference=" << anchor << "\n";
+            dump << "# calibration: one line per option, c <name> <one_call_ns_per_argument> "
+                    "<repeats>\n";
+            dump << "# visits: t <pass> <round> <position> <ns_per_argument> <repeats> <name>, one "
+                    "line per timed\n";
+            dump << "# visit. The A/A column is a second call of the anchor in the same round and "
+                    "carries the\n";
+            dump << "# name (aa)<anchor>. The racing stage's rows are not in this file: it is a "
+                    "second protocol\n";
+            dump << "# over a smaller pool, and the report states each stage in full.\n";
+
+            for (std::size_t index = 0; index < options_.size(); ++index)
+            {
+                dump << "c " << options_[index].name << " " << unitNsPerArgument[index] << " "
+                     << unitRepeats[index] << "\n";
+                ++dumpLines;
+            }
+        }
+    }
 
     // The canary's runs inside a pass: one before the first round and one after every round,
     // each taken between rounds and never inside a timed region, so the instrument can never
@@ -5340,8 +5949,10 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
 
         if (report.calibrated)
         {
+            const Clock::time_point backgroundBegin = Clock::now();
             record.backgroundLoad = meter.Average(options.backgroundWindowSeconds);
-            canaryMs.push_back(meter.SampleMs());
+            instrumentSeconds += SecondsBetween(backgroundBegin, Clock::now());
+            canaryMs.push_back(sampleCanary());
             record.beforeLoad = meter.Percent(canaryMs.back());
         }
 
@@ -5349,18 +5960,72 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         {
             std::shuffle(visit.begin(), visit.end(), shuffle);
 
-            std::vector<double> row(options_.size(), 0.0);
+            std::vector<double> row(options_.size() + 1, 0.0);
+            std::size_t position = 0;
 
             for (const std::size_t index : visit)
             {
+                // One timed unit: the calibrated number of calls, so that a unit of a fast
+                // option is about as long as a unit of a slow one and no option is measured
+                // over a fraction of the time the ordering is decided on.
+                const int repeats = unitRepeats[index];
+
                 const Clock::time_point t0 = Clock::now();
-                const double sum = Checksum(work, buffers, options_[index]);
+                double sum = 0.0;
+
+                for (int rep = 0; rep < repeats; ++rep)
+                {
+                    sum += Checksum(work, buffers, options_[index]);
+                }
+
                 const Clock::time_point t1 = Clock::now();
 
                 const double milliseconds = MillisecondsBetween(t0, t1);
-                row[index] = milliseconds * 1e6 / static_cast<double>(options.count);
+                row[index] = milliseconds * 1e6 /
+                             (static_cast<double>(options.count) * static_cast<double>(repeats));
                 record.seconds += SecondsBetween(t0, t1);
                 report.measurements[index].checkedSum = sum;
+
+                if (dump)
+                {
+                    dump << "t " << (pass + 1) << " " << (round + 1) << " " << position << " "
+                         << row[index] << " " << repeats << " " << options_[index].name << "\n";
+                    ++dumpLines;
+                }
+
+                ++position;
+            }
+
+            // The A/A call, after every option and inside the same round, so the pair is taken
+            // under one clock. Its position in the round is the same every round and is always
+            // last, which is the position the ordering never reads.
+            if (reference < options_.size())
+            {
+                const int repeats = unitRepeats[reference];
+
+                const Clock::time_point t0 = Clock::now();
+                double sum = 0.0;
+
+                for (int rep = 0; rep < repeats; ++rep)
+                {
+                    sum += Checksum(work, buffers, options_[reference]);
+                }
+
+                const Clock::time_point t1 = Clock::now();
+                (void)sum;
+
+                const double milliseconds = MillisecondsBetween(t0, t1);
+                row[aaColumn] = milliseconds * 1e6 /
+                                (static_cast<double>(options.count) * static_cast<double>(repeats));
+                record.seconds += SecondsBetween(t0, t1);
+
+                if (dump)
+                {
+                    dump << "t " << (pass + 1) << " " << (round + 1) << " " << position << " "
+                         << row[aaColumn] << " " << repeats << " (aa)"
+                         << options_[reference].name << "\n";
+                    ++dumpLines;
+                }
             }
 
             passRounds.push_back(row);
@@ -5368,7 +6033,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
 
             if (report.calibrated)
             {
-                canaryMs.push_back(meter.SampleMs());
+                canaryMs.push_back(sampleCanary());
             }
         }
 
@@ -5376,7 +6041,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         {
             while (static_cast<int>(canaryMs.size()) < canarySamples)
             {
-                canaryMs.push_back(meter.SampleMs());
+                canaryMs.push_back(sampleCanary());
             }
 
             record.afterLoad = meter.Percent(canaryMs.back());
@@ -5400,12 +6065,46 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         // which is the spread the ordering is made in. Reported beside the
         // canary's, and it gates nothing either - the resolution below is what
         // says whether a pair could be separated.
-        record.pairedSpread = PassPairedSpread(passRounds, reference);
+        record.pairedSpread = PassPairedSpread(passRounds, reference, options_.size());
         report.passes.push_back(record);
     }
 
     report.loadMedian = MedianMilliseconds(passLoads);
     report.pairedRounds = static_cast<int>(roundCost.size());
+
+    // The A/A self-pair, read off the rounds it was taken in: the second call's cost over the
+    // first's, in the round both were timed in. It measures this run's own resolution - the lead
+    // a pair must show before this machine can tell it from the noise of measuring it - and the
+    // report prints it rather than leaving a reader to argue from the canary's other workload.
+    if (!roundCost.empty() && reference < options_.size())
+    {
+        std::vector<double> pairs;
+
+        for (const std::vector<double>& row : roundCost)
+        {
+            if (aaColumn < row.size() && row[reference] > 0.0 && row[aaColumn] > 0.0)
+            {
+                pairs.push_back(row[aaColumn] / row[reference]);
+            }
+        }
+
+        if (pairs.size() >= 2)
+        {
+            report.aaRounds = static_cast<int>(pairs.size());
+            report.aaMedian = QuantileOf(pairs, kFigureQuantile);
+            report.aaLo = QuantileOf(pairs, kStatisticQuantile);
+            report.aaHi = QuantileOf(pairs, 1.0 - kStatisticQuantile);
+            report.aaSpread = report.aaLo > 0.0 ? report.aaHi / report.aaLo - 1.0 : 0.0;
+        }
+    }
+
+    if (dump)
+    {
+        dump << "# end lines=" << dumpLines << "\n";
+        dump.close();
+    }
+
+    report.rawDumpLines = dumpLines;
 
     // The accuracy column, measured once per option outside the clock. It does
     // not depend on a pass: the values a lane returns for an argument are a
@@ -5467,6 +6166,9 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         for (std::size_t index = 0; index < options_.size(); ++index)
         {
             OptionProbeMeasurement& measurement = report.measurements[index];
+            // The repeat count the unit was calibrated to, recorded whether or not the row's
+            // ratios formed: it is a property of the option's cost and the run's target.
+            measurement.repeats = unitRepeats[index];
             std::vector<double> ratios;
             std::vector<double> early;
             std::vector<double> late;
@@ -5563,7 +6265,7 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                 tied.push_back(column);
             }
 
-            Refine(report, options_, work, buffers, options, precision, shape, tied,
+            Refine(report, options_, work, buffers, options, unitRepeats, precision, shape, tied,
                    report.measurements[mainRun.leader].name);
         }
     }
@@ -5578,6 +6280,29 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
                           });
 
     Conclude(report, roundCost);
+
+    // The cost map: what each stage of the run spent. The screening grid is the payload and the
+    // rider of every other cost; the instrument, the unit calibration, the racing stages and the
+    // accounting are each accumulated where they were spent, and what is left over after all
+    // four is what the run spent outside the clock entirely.
+    report.screeningSeconds = 0.0;
+    report.racingSeconds = 0.0;
+
+    for (const OptionProbePass& pass : report.passes)
+    {
+        report.screeningSeconds += pass.seconds;
+    }
+
+    for (const OptionProbeRefinement& stage : report.refinements)
+    {
+        report.racingSeconds += stage.secondsSpent;
+    }
+
+    report.instrumentSeconds = instrumentSeconds;
+    report.totalSeconds = SecondsBetween(runBegin, Clock::now());
+    report.accountingSeconds =
+        std::max(0.0, report.totalSeconds - report.screeningSeconds - report.racingSeconds -
+                          report.unitCalibrationSeconds - report.instrumentSeconds);
 
     return report;
 }
@@ -7338,6 +8063,63 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                  report.options.backgroundWindowSeconds);
     text += Text("            calibration %.3f s | canary alarm %.1f%% (a flag, not a gate)\n",
                  report.options.calibrationSeconds, report.options.canarySpreadAlarm);
+
+    // The unit the protocol times, and what it took to make every option's unit the same length:
+    // an option whose whole call is shorter than the target is called repeatedly inside one timed
+    // unit, so no option's figure rests on a shorter reading than another's. The counts are the
+    // run's own, and where they are not all 1 the spread is printed beside the target.
+    {
+        int fewest = 0;
+        int most = 0;
+        std::size_t repeated = 0;
+        std::vector<double> counts;
+
+        for (const OptionProbeMeasurement& measurement : report.measurements)
+        {
+            if (!measurement.measured)
+            {
+                continue;
+            }
+
+            counts.push_back(static_cast<double>(measurement.repeats));
+            fewest = fewest == 0 ? measurement.repeats : std::min(fewest, measurement.repeats);
+            most = std::max(most, measurement.repeats);
+
+            if (measurement.repeats > 1)
+            {
+                repeated += 1;
+            }
+        }
+
+        if (report.options.unitTargetMs <= 0.0)
+        {
+            text += "  unit length: not calibrated - this run timed each option's whole call once "
+                    "per visit,\n";
+            text += "            so a fast option's figure rests on a shorter reading than a slow "
+                    "one's.\n";
+        } else if (counts.empty())
+        {
+            text += Text("  unit length: %.3f ms of wall clock per timed unit "
+                         "(calibration %.3f s);\n",
+                         report.options.unitTargetMs, report.unitCalibrationSeconds);
+            text += "            no option produced a figure, so no repeat count was read\n";
+        } else
+        {
+            text += Text("  unit length: %.3f ms of wall clock per timed unit, made equal by an "
+                         "inner repeat\n",
+                         report.options.unitTargetMs);
+            text += Text("            count (calibration %.3f s): repeat(s) %d..%d, median %g, %zu "
+                         "of %zu option(s)\n",
+                         report.unitCalibrationSeconds, fewest, most,
+                         QuantileOf(counts, kFigureQuantile), repeated, counts.size());
+            text += "            repeated, 1 where an option's whole call already outran the "
+                    "target. The count each\n";
+            text += "            option took is in the 'rep' column of the table below; the unit's "
+                    "cost is divided\n";
+            text += "            by the arguments it evaluated, so the repeats enter a figure as a "
+                    "divisor.\n";
+        }
+    }
     text += "  comparison: paired. Every option is called once in every round, and the comparison\n";
     text += "            between two options is the ratio of their times inside the round both "
             "were called\n";
@@ -7393,6 +8175,34 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "            discarded a pass on that would discard the measurement rather than the\n";
     text += "            machine. The paired% column below is the spread of the quantity the\n";
     text += "            comparison is actually made in, and it is what the ordering uses.\n";
+
+    // The A/A self-pair, printed beside the canary it replaces in the verdict: an option called
+    // twice inside one round measures this run's own noise on the run's own workload, in the
+    // quantity the ordering is made in, which the canary's different workload cannot.
+    if (report.aaRounds >= 2)
+    {
+        text += Text("  A/A self-pair: the reference option called twice in each of %d round(s), "
+                     "the second over\n",
+                     report.aaRounds);
+        text += Text("            the first: median %.4f (%.2f%% on the second call), lower..upper "
+                     "quartile\n",
+                     report.aaMedian, 100.0 * (report.aaMedian - 1.0));
+        text += Text("            %.4f..%.4f, %.2f%% from the low end to the high. Nothing was "
+                     "done to the\n",
+                     report.aaLo, report.aaHi, 100.0 * report.aaSpread);
+        text += "            options between the two calls, so all of it is this run's own noise: a "
+                "pair whose two\n";
+        text += "            calls differ by less than this band is not separated by this run, "
+                "whatever the canary\n";
+        text += "            above reads. The canary is context and this is the floor.\n";
+    } else
+    {
+        text += Text("  A/A self-pair: not measured - %d round(s) carried both calls of the "
+                     "reference option, so\n",
+                     report.aaRounds);
+        text += "            this run's own noise floor is unread and nothing here is separated "
+                "against one.\n";
+    }
     text += "  load readings: context, and not a bar. A reading is the percentage by which the\n";
     text += "            canary took longer than its floor, so it says how busy the machine "
             "looked,\n";
@@ -7467,9 +8277,10 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         nameWidth = std::max(nameWidth, measurement.name.size());
     }
 
-    text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %9s  %11s  %10s  %s\n",
+    text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %5s %9s  %11s  %10s  %s\n",
                  static_cast<int>(nameWidth), "option", "prec", "arithmetic", "ns/arg", "hi",
-                 "spread", "vs ref band", "drift%", "peak ns", "max error", "bound", "verdict");
+                 "spread", "vs ref band", "drift%", "rep", "peak ns", "max error", "bound",
+                 "verdict");
 
     for (const OptionProbeMeasurement& measurement : report.measurements)
     {
@@ -7500,20 +8311,21 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
 
         if (measurement.measured)
         {
-            text += Text("  %-*s %-6s %-13s %9.2f %9.2f %6.2fx %6.3f..%-6.3f %6.1f%% %9.2f  "
+            text += Text("  %-*s %-6s %-13s %9.2f %9.2f %6.2fx %6.3f..%-6.3f %6.1f%% %5d %9.2f  "
                          "%11.3e  %10.3g  %s\n",
                          static_cast<int>(nameWidth), measurement.name.c_str(),
                          PrecisionName(measurement.precision), measurement.arithmetic.c_str(),
                          measurement.nsPerArgument, measurement.nsPerArgumentMax,
                          measurement.spread, measurement.ratioLo, measurement.ratioHi,
-                         100.0 * measurement.ratioDrift, measurement.nsPerArgumentPeak,
-                         measurement.maxError, measurement.bound, verdict.c_str());
+                         100.0 * measurement.ratioDrift, measurement.repeats,
+                         measurement.nsPerArgumentPeak, measurement.maxError, measurement.bound,
+                         verdict.c_str());
         } else
         {
-            text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %9s  %11.3e  %10.3g  %s\n",
+            text += Text("  %-*s %-6s %-13s %9s %9s %7s %15s %7s %5s %9s  %11.3e  %10.3g  %s\n",
                          static_cast<int>(nameWidth), measurement.name.c_str(),
                          PrecisionName(measurement.precision), measurement.arithmetic.c_str(),
-                         "not measured", "-", "-", "-", "-", "-", measurement.maxError,
+                         "not measured", "-", "-", "-", "-", "-", "-", measurement.maxError,
                          measurement.bound, verdict.c_str());
         }
     }
@@ -7549,7 +8361,12 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "pair whose\n";
     text += "   ratio drifts does not carry a decaying clock alike, and the confidence line below "
             "says\n";
-    text += "   whether any pair drifted further than this run can order. 'peak ns' is the single "
+    text += "   whether any pair drifted further than this run can order. 'rep' is how many calls of\n";
+    text += "   the option one timed visit was made of, which the unit calibration chose to bring "
+            "every\n";
+    text += "   visit to the same wall length; the cost is divided by the arguments each call "
+            "evaluated,\n";
+    text += "   so it is a divisor and not a correction. 'peak ns' is the single "
             "fastest\n";
     text += "   round the option was seen in; it bounds what the option can do at a peak clock and "
             "is\n";
@@ -7775,6 +8592,46 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += Text("             %zu could not be placed behind it | the class's entry is reached "
                      "by %s\n",
                      entry.unplaced.size(), HowText(entry.how));
+
+        // The evidence the ordering claim above rests on: the rounds the class's reading really
+        // carries once the correlation between its rounds is taken out, and the smallest ratio
+        // this run could have called at 80% power. A run that could not read its own correlation
+        // prints its round count and says so - a shorter argument, not a figure from no data.
+        if (entry.rounds >= 2)
+        {
+            if (entry.robustSigma > 0.0)
+            {
+                text += Text("             evidence: %d paired round(s), rho %.2f (drift across "
+                             "rounds), N_eff %.1f, MDE +/-%.2f%% at 80%% power\n",
+                             entry.rounds, entry.roundCorrelation, entry.effectiveRounds,
+                             100.0 * entry.minimumDetectableEffect);
+            } else
+            {
+                text += Text("             evidence: %d paired round(s), N_eff %.1f - this class's "
+                             "rounds could not be read for correlation (N_eff is the round count) "
+                             "and no effect size is claimed\n",
+                             entry.rounds, entry.effectiveRounds);
+            }
+        }
+
+        // What the class's ordering could not settle, and the width it could not settle it
+        // inside. Printing it ends the matter - the run does not extend itself to break a tie its
+        // own evidence says it cannot break - and the set is what the tie-break was applied to.
+        if (entry.tieSet.size() > 1)
+        {
+            std::string tied;
+
+            for (const std::string& name : entry.tieSet)
+            {
+                tied += tied.empty() ? name : ", " + name;
+            }
+
+            text += Text("             unresolved at +/-%.2f%%: this class names its entry out of "
+                         "%zu row(s) the run could not separate (%s)%s\n",
+                         100.0 * entry.unresolvedWidth, entry.tieSet.size(), tied.c_str(),
+                         entry.budgetSpent ? ", and the class's racing budget was spent first"
+                                           : "");
+        }
 
         std::vector<std::string> rankedLines;
 
@@ -8199,24 +9056,36 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         }
     }
 
-    // The refinement stage and its vote, printed in full: a default reached this
-    // way rests on the runs, so the runs are what the reader is given.
+    // The racing stage and its vote, printed in full: a default reached this way
+    // rests on the waves, so the waves are what the reader is given.
     if (!report.refinements.empty())
     {
-        text += "\n  the refinement stages — the options a class left tied, re-run alone and "
+        text += "\n  the racing stages - the options a class left tied, raced over waves and "
                 "voted on\n";
-        text += "    One stage per class whose own rounds could not order its pool, so a\n";
-        text += "    stage's tied set is the class's own and its vote settles that class and no "
-                "other.\n";
+        text += "    One stage per class whose own rounds could not order its pool. A wave "
+                "re-measures the\n";
+        text += "    pool the wave before it left and keeps only the rows it could not place "
+                "behind its leader,\n";
+        text += "    so the pool shrinks while the rounds per wave grow. The stage stops when a "
+                "wave leaves one\n";
+        text += "    row, when a wave separates nothing further, or when its budget is spent - the "
+                "last of those\n";
+        text += "    is an outcome and not a failure: the class is then reported unresolved at a "
+                "width, which is\n";
+        text += "    what this run refuses to call.\n";
 
         for (const OptionProbeRefinement& stage : report.refinements)
         {
-            text += Text("    %s %s: %d run(s) of %d passes by %d rounds each, over %zu tied "
+            text += Text("    %s %s: %d wave(s), %d passes by %d rounds in the last, over %zu tied "
                          "option(s)\n",
                          PrecisionName(stage.precision), OptionProbeShapeName(stage.shape),
                          stage.runs, stage.passes, stage.rounds, stage.pool.size());
+            text += Text("      budget %.2f s, spent %.2f s; pool %zu at the first wave, %zu at the "
+                         "last\n",
+                         stage.budgetSeconds, stage.secondsSpent, stage.pool.size(),
+                         stage.lastPoolSize);
             text += Text("      options re-measured: %s\n", Joined(stage.pool).c_str());
-            text += Text("      leader of each run, in the order the runs were taken: %s\n",
+            text += Text("      leader of each wave, in the order the waves were taken: %s\n",
                          Joined(stage.runLeaders).c_str());
 
             for (const std::string& line : stage.tally)
@@ -8224,7 +9093,68 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
                 text += Text("      %s\n", line.c_str());
             }
 
-            text += Text("      vote: %s — %s\n", stage.winner.c_str(), stage.note.c_str());
+            text += Text("      vote: %s - %s\n", stage.winner.c_str(), stage.note.c_str());
+
+            if (stage.tieSet.size() > 1)
+            {
+                text += Text("      unresolved at +/-%.2f%%: the last wave could not separate "
+                             "%zu row(s) (%s)%s\n",
+                             100.0 * stage.unresolvedWidth, stage.tieSet.size(),
+                             Joined(stage.tieSet).c_str(),
+                             stage.budgetSpent ? ", and the budget was spent first" : "");
+            } else if (!stage.tieSet.empty())
+            {
+                text += Text("      settled: the last wave placed every rival of '%s' behind it\n",
+                             stage.tieSet.front().c_str());
+            }
+        }
+    }
+
+    // What the run spent, in the blocks a reader would have to cut to make it
+    // cheaper: the passes are the payload, and the blocks beside them are
+    // what paying for the payload cost. The rest is time spent outside the
+    // clock.
+    if (report.totalSeconds > 0.0)
+    {
+        const double total = report.totalSeconds;
+
+        text += Text("\n  what this run cost: %.2f s of wall clock\n", total);
+        text += Text("    passes (timed payload + in-pass windows)  %9.2f s  %5.1f%%\n",
+                     report.screeningSeconds, 100.0 * report.screeningSeconds / total);
+        text += Text("    unit calibration                            %9.2f s  %5.1f%%\n",
+                     report.unitCalibrationSeconds, 100.0 * report.unitCalibrationSeconds / total);
+        text += Text("    load instrument (calibration + canary runs)  %9.2f s  %5.1f%%\n",
+                     report.instrumentSeconds, 100.0 * report.instrumentSeconds / total);
+        text += Text("    racing stages                               %9.2f s  %5.1f%%\n",
+                     report.racingSeconds, 100.0 * report.racingSeconds / total);
+        text += Text("    the rest (warm-up, accuracy walk, report)    %9.2f s  %5.1f%%\n",
+                     report.accountingSeconds, 100.0 * report.accountingSeconds / total);
+
+        // The raw dump, named with the shape of what it holds: a reader who wants the rows the
+        // figures were aggregated from re-derives them here rather than trusting the aggregate.
+        if (!report.options.rawDumpPath.empty() && report.rawDumpLines > 0)
+        {
+            text += Text("    raw dump: %zu line(s) at %s\n", report.rawDumpLines,
+                         report.options.rawDumpPath.c_str());
+            text += "      one 't <pass> <round> <position> <ns_per_argument> <repeats> <name>' line "
+                    "per timed\n";
+            text += "      unit, and one 'c <name> <one_call_ns_per_argument> <repeats>' line per "
+                    "option from\n";
+            text += "      the unit calibration. The A/A call is a 't' line whose name is "
+                    "'(aa)<anchor>'. The\n";
+            text += "      racing stages are not in the file: they are a second protocol over a "
+                    "smaller pool, and\n";
+            text += "      the report states each stage above.\n";
+        } else if (!report.options.rawDumpPath.empty())
+        {
+            text += Text("    raw dump: asked for at %s and written nothing - the file could not be "
+                         "opened\n",
+                         report.options.rawDumpPath.c_str());
+        } else
+        {
+            text += "    raw dump: none - the caller named no path (--dump-raw=FILE), so the "
+                    "per-round rows\n";
+            text += "              were aggregated and dropped rather than written\n";
         }
     }
 
@@ -8262,13 +9192,26 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         text += "              second is the one the ordering uses.\n";
     }
 
+    // The tie-break, declared once where the report's own claims are: every entry a class could
+    // not win outright is settled by this rule and by nothing else, so a default is a function of
+    // the data rather than the outcome of a vote.
+    text += "\n  the tie-break: where a class's rows cannot be separated, the entry this report names "
+            "is\n";
+    text += "                settled by one declared rule and by nothing else - the fewest table "
+            "bytes,\n";
+    text += "                then the lexicographically first name. No call this probe makes "
+            "returns a\n";
+    text += "                row's table bytes, so the first clause is declared and could not be "
+            "applied\n";
+    text += "                here; every tie this run settled was settled by the name.\n";
+
     text += Text("  verdict: %s\n", report.verdict == OptionProbeVerdict::kRecommend
                                         ? "RECOMMEND"
                                         : "CANNOT DETERMINE");
 
     if (!report.recommended.empty())
     {
-        // The row the class's own refinement stage named, when that is not the row
+        // The row the class's own racing stage named, when that is not the row
         // this report names: the two differ exactly when the run could not separate
         // them.
         const OptionProbeRefinement* tiedStage = nullptr;

@@ -47,9 +47,11 @@ namespace {
 constexpr int kNmax = boys::kMaxBoysOrder;
 constexpr double kX0 = boys::detail::kX0;
 
-// The loudest fp64 budget the library documents: the 5.5e-14 per-region budget
-// of the shipped entries, asserted here although the scheme rows promise tighter.
-constexpr double kRegionBudget = 5.5e-14;
+// The loudest published figure a region-A cell is read at: the larger of 1e-13 * F_n(x) and
+// 1e-13 * F_0(x) (README.md, "What the bound is, and what it is not"), and F falling with x puts
+// its smallest value at the region's right edge - F_0(kX0) = 0.2569057156730954, so the bar is
+// 1e-13 of it. Asserted here although the scheme rows promise tighter.
+constexpr double kRegionBudget = 2.569057156730954e-14;
 
 // The scale of the difference between reading a fit four orders at a time and
 // reading it once, measured at 2.3e-16 over the region-A grid - far below the
@@ -603,14 +605,14 @@ TEST(BoysAcrossOrders, ThePublicAxisIsDefinedPastItsOwnDomain) {
     EXPECT_EQ(differing, 0u) << "the entry's fallback is not the certified scalar single lane";
 }
 
-// The class the run-time route selector stands in for: BoysAllOrders, the double
+// The class the route entry stands in for: BoysAllOrders, the double
 // lane's ladder entry, which is the entry its unnamed calls are made through.
 using RoutedClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
-// The axis at the combination the selector builds: the class's own row, with the route and the scheme
-// named where the selector takes them (src/boys.cpp, SelectorClass and SelectorPolicy, "the axes a
-// selector does not take are read off the class's own default"). Spelling the other axes as the
-// library's five instead would measure the seam rather than the route.
+// The axis at the combination the selector builds: the class's own row, with the route and the
+// scheme named where the route template takes them (boys_impl.hpp, BoysAllOrdersWithRoute, "the
+// axes a selector does not take are read off the class's own default"). Spelling the other axes as
+// the library's five instead would measure the seam rather than the route.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 using RoutedAxisPolicy = boys::EvalPolicy<kRoute,
                                           kScheme,
@@ -646,8 +648,8 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
         {
             boys::BoysAllOrders<RoutedAxisPolicy<boys::FitRoute::kRationalMinimax, kScheme>>(
                 kNmax, x, ours.data());
-            boys::BoysAllOrdersWithRoute(
-                boys::FitRoute::kRationalMinimax, kScheme, kNmax, x, routed.data());
+            boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+                kScheme, kNmax, x, routed.data());
             boys::BoysAllOrders<RoutedAxisPolicy<boys::FitRoute::kChebyshev, kScheme>>(
                 kNmax, x, shipped.data());
 

@@ -222,9 +222,10 @@ __m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) noexcept {
                                         StepMulAdd<kMulAddRoute>(v, coeff(2), coeff(0)));
     }
 
-    assert(deg >= 4 && deg % 2 == 0);
+    assert(deg >= 4);
 
     const int m = deg / 2;
+    const int mo = (deg + 1) / 2;
     __m256d b1 = coeff(2 * m);
     __m256d b2 = _mm256_setzero_pd();
 
@@ -238,10 +239,10 @@ __m256d ClenshawSplitGathered(C coeff, int deg, __m256d t) noexcept {
 
     const __m256d even = StepMulAdd<kMulAddRoute>(v, b1, _mm256_sub_pd(coeff(0), b2));
 
-    __m256d o1 = coeff(2 * m - 1);
+    __m256d o1 = coeff(2 * mo - 1);
     __m256d o2 = _mm256_setzero_pd();
 
-    for (int k = m - 2; k >= 1; --k)
+    for (int k = mo - 2; k >= 1; --k)
     {
         const __m256d o0 =
             StepMulAdd<kMulAddRoute>(twoV, o1, _mm256_sub_pd(coeff(2 * k + 1), o2));
@@ -457,6 +458,81 @@ inline void StoreGroup(double* out, int l, std::size_t stride, __m256d value) no
     }
 }
 
+/// The far ladder's four-orders lane: one argument's terms, four orders to a vector.
+///
+/// The arithmetic is FarLadderRun's walk (boys_impl.hpp) and not a second one. A term there is
+/// \c (w[q] * A[l]) * p with \c p the running \c h^(4j) and \c A the double factorial table;
+/// here the same two multiplies carry four orders at once - the table read is four consecutive
+/// entries, \c w the four lanes as one vector, \c p one broadcast - so a group costs two vector
+/// multiplies and the walk's own \c p *= h4 advances it. The region's terms are independent
+/// products, which is what lets one register hold four orders of them and what the flat grid's
+/// orders lane cannot do with a fit. Same operands, same order, same roundings: every order is
+/// the walk's value bit for bit, and the far-lane identity test (tests/boys_all_n_test.cpp) is
+/// what would see a lane that drifted.
+///
+/// The table read is aligned, and how it comes out aligned is arithmetic: kDoubleFactorial
+/// carries alignas(32), a group starts at l = 0, 4, 8, ..., and 8l bytes is 32 * (l / 4), so
+/// every group's first entry sits on a 32-byte boundary. Groups stop at the last l with
+/// \c l + 3 <= nmax <= kMaxBoysOrder, so the widest load ends at index 31; index 32, the table's
+/// last entry in its 264 bytes, is read by the scalar tail alone. Nothing needs padding.
+///
+/// Two call shapes, the across-orders lane's own (StoreGroup): a stride-1 caller gets one
+/// register store a group, and a strided caller the same values at one store an order, which is
+/// that layout's price where no scatter exists.
+///
+/// The prologue forms only what the orders read, the small-n cells' own waste: w[l] for \c l <= nmax
+/// (one entry at n = 0), h from order 1, h^2 from order 2, and h^4 only from \c nmax = 4 on, where a
+/// second group or a tail past order 3 first reads it; at \c nmax = 3 the one group still advances
+/// \c p by that 0.0, a value no order reads. The guards pick which quantities exist, never how one
+/// is formed, so every live order is still made of the walk's own arithmetic.
+///
+/// No branch guards the powers' underflow, here as in the walk: \c h^32 leaves the normal range
+/// above x = 2.06e9 and flushes to true zero above x = 6.48e9, where the largest order's value is
+/// below 7.7e-285 - under every figure the far region publishes.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      argument, kX1 <= x
+/// \param stride distance between two orders in \c out
+/// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out) noexcept {
+    assert(nmax >= 0 && nmax <= kMaxBoysOrder);
+
+    const double r = 1.0 / std::sqrt(x);
+
+    // The prologue forms only what the orders read: w[l] for l <= nmax, h from order 1, h^2 from
+    // order 2, h^4 from a second group. The guards hide work no order reads; every live value is
+    // formed by the walk's own expression over the walk's own operands, so the values stay the
+    // walk's bit for bit.
+    const double h = (nmax >= 1) ? 0.5 * (r * r) : 0.0;
+    const double h2 = (nmax >= 2) ? h * h : 0.0;
+    const double h4 = (nmax >= 4) ? h2 * h2 : 0.0;
+    const double w[4] = {kBoysHalfSqrtPi * r,
+                         (nmax >= 1) ? kBoysHalfSqrtPi * (r * h) : 0.0,
+                         (nmax >= 2) ? kBoysHalfSqrtPi * (r * h2) : 0.0,
+                         (nmax >= 3) ? kBoysHalfSqrtPi * (r * (h2 * h)) : 0.0};
+
+    double p = 1.0;
+    int l = 0;
+
+    if (nmax >= 3)
+    {
+        const __m256d wv = _mm256_loadu_pd(w);
+
+        // Four orders a group, advanced by the walk's own h4; the orders left over are the walk's.
+        for (; l + 3 <= nmax; l += 4)
+        {
+            const __m256d a = _mm256_load_pd(kDoubleFactorial + l);
+            StoreGroup(out, l, stride, _mm256_mul_pd(_mm256_mul_pd(wv, a), _mm256_set1_pd(p)));
+            p *= h4;
+        }
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        out[static_cast<std::size_t>(l) * stride] = (w[l & 3] * kDoubleFactorial[l]) * p;
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute,
           OrdersScheme kScheme,
           bool kComposed,
@@ -530,21 +606,23 @@ static_assert(std::size(kFlatMonoCoeffs) == std::size(kFlatCoeffs),
 // The transposed twin is a permutation of those blocks and its read rule is a stride, so a
 // twin emitted with the wrong one is a compile error here rather than a wrong value at a
 // caller: the first interval's order 0 and order 1 are read out of both shapes.
-static_assert(std::size(kFlatTransposedCoeffs) == std::size(kFlatCoeffs) &&
-                  std::size(kFlatTransposedMonoCoeffs) == std::size(kFlatCoeffs),
-              "the transposed twin holds the same coefficients as the interval-major form, so "
-              "the two are addressed by the same offsets");
+static_assert(std::size(kFlatTransposedCoeffs) ==
+                      static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock &&
+                  std::size(kFlatTransposedMonoCoeffs) ==
+                      static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock,
+              "the transposed twin holds one padded block per interval, addressed by its own "
+              "row and block strides, so the interval-major form's offsets do not reach it");
 static_assert(kFlatTransposedCoeffs[0] == kFlatCoeffs[0] &&
-                  kFlatTransposedCoeffs[kMaxOrder + 1] == kFlatCoeffs[1] &&
+                  kFlatTransposedCoeffs[kFlatTwinRow] == kFlatCoeffs[1] &&
                   kFlatTransposedCoeffs[1] == kFlatCoeffs[kFlatDegs[0] + 1],
               "the twin's k-th coefficient of order l is the interval-major table's k-th "
-              "coefficient of that order: the coefficient index steps by kMaxOrder + 1 and the "
+              "coefficient of that order: the coefficient index steps by kFlatTwinRow and the "
               "order by one");
 static_assert(FlatDegreesCarried(),
-              "every interval of the uniform grid must be fitted at an even degree between 4 "
-              "and the read cap: the split Clenshaw recurrence this lane sums the far orders "
-              "with is written for an even degree of at least four, and a degree above the cap "
-              "is beyond the coefficients the interval stores");
+              "every interval of the uniform grid must be fitted at a degree between 4 and the "
+              "read cap: below 4 the split Clenshaw recurrence this lane sums the far orders "
+              "with is not written, and a degree above the cap is beyond the coefficients the "
+              "interval stores");
 
 // One group of four orders out of the transposed twin: the four orders' k-th coefficients
 // are four consecutive doubles at a stride of one order count, so the fetch is a load where
@@ -585,7 +663,8 @@ void UniformOrdersAt(int nmax,
             StoreGroup(out,
                        l,
                        stride,
-                       TransposedGroup<kMulAddRoute, kScheme, kDeg>(base, l, kMaxOrder + 1, deg, tv));
+                       TransposedGroup<kMulAddRoute, kScheme, kDeg>(base, l, kFlatTwinRow,
+                                                                   deg, tv));
         }
     }
 
@@ -607,29 +686,15 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
         (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
 
     const FlatPoint at = FlatLocate(x);
-    const int deg = kFlatDegs[at.iv];
-    const int orderStride = deg + 1;
-    const double* const base = transposed + at.block;
+    const int orderStride = kFlatDeg + 1;
+    const double* const base = transposed + at.iv * static_cast<std::size_t>(kFlatTwinBlock);
     const double* const rows = table + at.block;
 
-    // kFlatDegs carries two degrees, so the interval's walk is specialised on both and the
-    // runtime form below is reached only by a grid carrying a third. Each arm is the same
-    // Horner walk with its trip count known, so a value is the value it was at every bit.
-    switch (deg)
-    {
-    case 6:
-        UniformOrdersAt<kMulAddRoute, kScheme, 6>(nmax, out, stride, base, rows, orderStride, deg,
-                                                  at.t);
-        return;
-    case 8:
-        UniformOrdersAt<kMulAddRoute, kScheme, 8>(nmax, out, stride, base, rows, orderStride, deg,
-                                                  at.t);
-        return;
-    default:
-        UniformOrdersAt<kMulAddRoute, kScheme, 0>(nmax, out, stride, base, rows, orderStride, deg,
-                                                  at.t);
-        return;
-    }
+    // Every interval is fitted at the grid's one degree (FlatDegreesUniform), so the walk is the
+    // constant-trip-count Horner at a constant stride and the runtime arm has no grid to serve:
+    // the one arm below is the case the switch ran for this degree, at the same bits.
+    UniformOrdersAt<kMulAddRoute, kScheme, kFlatDeg>(nmax, out, stride, base, rows, orderStride,
+                                                     kFlatDeg, at.t);
 }
 
 // Four orders of one argument still share a register; what changes is where the coefficients
@@ -1138,12 +1203,12 @@ void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept 
                               kGranularity, kForm>;
 
     // Past the fits one ladder replaces the per-order loop below: nmax steps where that loop pays
-    // (nmax + 1)(nmax + 2) / 2. The join is the one the single-order lane recurses above - kFlatHi
-    // on the grid, kX1 on region B - and below it the orders are not one ladder, so the per-order
-    // call stands.
+    // (nmax + 1)(nmax + 2) / 2. The join is the one the single-order lane recurses above: kFlatHi
+    // on the grid and on the derived partitions alike, since the seed is re-fitted to that top.
+    // Below it the orders are not one ladder, so the per-order call stands.
     const bool aboveFits = (kGranularity == FitGranularity::kUniform)
                                ? x > detail::kFlatHi
-                               : x >= detail::kX1;
+                               : x >= detail::kFlatHi;
 
     if (aboveFits)
     {
@@ -1350,9 +1415,10 @@ __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept {
                                         StepMulAdd<kMulAddRoute>(v, coeff(2), coeff(0)));
     }
 
-    assert(deg >= 4 && deg % 2 == 0);
+    assert(deg >= 4);
 
     const int m = deg / 2;
+    const int mo = (deg + 1) / 2;
     __m256 b1 = coeff(2 * m);
     __m256 b2 = _mm256_setzero_ps();
 
@@ -1365,10 +1431,10 @@ __m256 ClenshawSplitF32(C coeff, int deg, __m256 t) noexcept {
 
     const __m256 even = StepMulAdd<kMulAddRoute>(v, b1, _mm256_sub_ps(coeff(0), b2));
 
-    __m256 o1 = coeff(2 * m - 1);
+    __m256 o1 = coeff(2 * mo - 1);
     __m256 o2 = _mm256_setzero_ps();
 
-    for (int k = m - 2; k >= 1; --k)
+    for (int k = mo - 2; k >= 1; --k)
     {
         const __m256 o0 = StepMulAdd<kMulAddRoute>(twoV, o1, _mm256_sub_ps(coeff(2 * k + 1), o2));
         o2 = o1;

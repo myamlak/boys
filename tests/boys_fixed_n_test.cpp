@@ -1,7 +1,7 @@
 // BoysFixedN contract tests: F_n(x[i]) over an array at one fixed order, the batch shape of the
 // angular-momentum-grouped integral-engine inner loops. Elements run the BoysSingle region bodies
-// verbatim, so the bounds 1e-15 / 3e-14 / 5.5e-14 hold over the committed grid and identity matches
-// BoysSingle bitwise; layout pins out[i * stride] = F_n(x[i]) at stride >= 1 (default 1).
+// verbatim, so per-region budgets 1e-15 / 3e-14 / 5.5e-14 hold over the committed grid; identity
+// matches BoysSingle bitwise; layout pins out[i * stride] = F_n(x[i]) at stride >= 1 (default 1).
 
 #include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
@@ -114,7 +114,8 @@ BoysRegion RegionOf(double x) {
     return BoysRegion::C;
 }
 
-// The double-single per-region bound; this entry mirrors the scalar single lane per element.
+// The double-single per-region budgets, the bars the lane's fits were placed against; this
+// entry mirrors the scalar single lane per element.
 double RegionBound(BoysRegion region) {
     switch (region)
     {
@@ -231,21 +232,10 @@ void SweepSingleIdentity(const GridColumns& grid) {
     }
 }
 
-// --- The two classes the cross-lane claims compare ---------------------------
-//
-// BoysFixedN and BoysSingle here name no policy, so the first resolves the fixed-order class's own
-// row and the second the single class's. The claims that follow - every element of the one is the
-// other's value, bit for bit - are the committed seam's own, whose two rows carry one arithmetic.
-// A replacement may answer the two classes with different arithmetic, and then the two values are
-// two arithmetics' and no cross-lane claim is judged: the case reports the cells that differ.
-//
-// The cells compared are the ones a value on these two shapes is reached through: the fit route,
-// the scheme, the partition and the division form. The region-B exponential joins them where
-// either class's partition is not the grid's own, whose path reaches neither the region-B ladder
-// that reads the cell nor the far ladder, which names the accurate member outright (kFlatHi is
-// above kX1, so no argument of a uniform class falls between them). The budget is the
-// single-precision engines' and the packing axis is refused on both shapes, so neither carries a
-// value here.
+// The cross-lane claims below are the committed seam's own: the two classes resolve one
+// arithmetic there. A replaced seam may answer them differently, and then the cells that differ
+// are reported in place of the claim. The region-B exponential is compared only where a partition
+// is not the grid's own; below it no argument reaches that cell (kFlatHi sits above kX1).
 using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
 using SingleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
 

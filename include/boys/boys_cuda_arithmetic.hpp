@@ -32,18 +32,20 @@
 ///
 /// T is double for the double lane's seeds and float for the float lane's. BSeed is
 /// the whole of region B's seed, taken at the argument rather than as one polynomial
-/// over the region: the shipped partition's seed is one fit over [kX0, kX1] and
-/// another partition's is piecewise. It takes the order because the relaxed batches
+/// over the region: the shipped partition's seed is one fit over the lane's own band -
+/// [kX0, kFlatHi) on the double lane, [kX0, kX1) on the float - and another
+/// partition's is piecewise. It takes the order because the relaxed batches
 /// read their region-B degree from the order-0 entry — the F_0 seed's error reaches
 /// every output with gain at most 1 + 1.846e-17 — while the single lanes read it per
 /// order; the lane object decides which, and the arithmetic is the same either way.
 ///
 /// The region structure is the library's: region A (x below kX0) is the piecewise
-/// Chebyshev fit of F_n itself, region B (up to kX1) is the upward recursion seeded
-/// by the region-B fit of F_0, and region C is the far region's corrected seed with
-/// the same recursion carrying the exp(-x)/2 term the asymptotic step drops. The
-/// all-orders bodies carry a second, downward recursion inside region A: the fit
-/// there is of F_n, and the lower orders come back down from it.
+/// Chebyshev fit of F_n itself, region B (up to kFlatHi on the double lane, kX1 on
+/// the float) is the upward recursion seeded by the region-B fit of F_0, and region C
+/// is the far region's corrected seed with the same recursion carrying the exp(-x)/2
+/// term the asymptotic step drops. The all-orders bodies carry a second, downward
+/// recursion inside region A: the fit there is of F_n, and the lower orders come back
+/// down from it.
 
 #include "boys/accuracy.hpp"
 #include "boys/boys_coefficients.hpp"
@@ -136,11 +138,12 @@ __device__ __forceinline__ double DeviceClenshawSplit(const double* c, int deg, 
     if (deg == 2)
     {
         // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
-        // (the odd part's m = 1 finalization would double the t*c[1] term).
+        // (the odd part's mo = 1 finalization would double the t*c[1] term).
         return DeviceMulAdd<kRoute>(t, c[1], DeviceMulAdd<kRoute>(v, c[2], c[0]));
     }
 
     const int m = deg / 2;
+    const int mo = (deg + 1) / 2;
     double b1 = c[2 * m];
     double b2 = 0.0;
 
@@ -153,10 +156,10 @@ __device__ __forceinline__ double DeviceClenshawSplit(const double* c, int deg, 
 
     const double even = DeviceMulAdd<kRoute>(v, b1, c[0] - b2);
 
-    double o1 = c[2 * m - 1];
+    double o1 = c[2 * mo - 1];
     double o2 = 0.0;
 
-    for (int k = m - 2; k >= 1; --k)
+    for (int k = mo - 2; k >= 1; --k)
     {
         const double o0 = DeviceMulAdd<kRoute>(twoV, o1, c[2 * k + 1] - o2);
         o2 = o1;
@@ -185,11 +188,12 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
     if (deg == 2)
     {
         // T_2(t) = 2t^2 - 1 = v; the even/odd split below assumes deg >= 4
-        // (the odd part's m = 1 finalization would double the t*c[1] term).
+        // (the odd part's mo = 1 finalization would double the t*c[1] term).
         return DeviceMulAdd<kRoute>(t, c[1], DeviceMulAdd<kRoute>(v, c[2], c[0]));
     }
 
     const int m = deg / 2;
+    const int mo = (deg + 1) / 2;
     float b1 = c[2 * m];
     float b2 = 0.0f;
 
@@ -202,10 +206,10 @@ __device__ __forceinline__ float DeviceClenshawSplit32(const float* c, int deg, 
 
     const float even = DeviceMulAdd<kRoute>(v, b1, c[0] - b2);
 
-    float o1 = c[2 * m - 1];
+    float o1 = c[2 * mo - 1];
     float o2 = 0.0f;
 
-    for (int k = m - 2; k >= 1; --k)
+    for (int k = mo - 2; k >= 1; --k)
     {
         const float o0 = DeviceMulAdd<kRoute>(twoV, o1, c[2 * k + 1] - o2);
         o2 = o1;
@@ -712,7 +716,7 @@ __device__ __forceinline__ double DeviceSingleF64(const Lane& lane, int order, d
         return DeviceSeed<kRoute>(lane, order, xx);
     }
 
-    if (xx < kX1)
+    if (xx < kFlatHi)
     {
         double f = lane.BSeed(xx, order);
         const double expx = DeviceRegionBExp<kFastExp, kRoute>(xx);
@@ -807,7 +811,7 @@ __device__ __forceinline__ void DeviceAllOrdersF64(
         return;
     }
 
-    if (xx < kX1)
+    if (xx < kFlatHi)
     {
         double f = lane.BSeed(xx, order);
         store(0, f);

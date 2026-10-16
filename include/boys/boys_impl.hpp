@@ -184,12 +184,14 @@ ClenshawSplit(const typename B::Value* c, int deg, typename B::Packed t) noexcep
             t, B::Broadcast(c[1]), B::MulAdd(v, B::Broadcast(c[2]), B::Broadcast(c[0])));
     }
 
-    // The odd part below is the Clenshaw finalization for the D family with the
-    // top odd coefficient c[2m-1] and needs an even deg >= 4 (deg == 2 is handled
-    // above), which is all the generator (tools/gen_boys_coefficients.py) emits.
-    assert(deg >= 4 && deg % 2 == 0);
+    // The odd part below is the D family's Clenshaw finalization, seeded at the
+    // degree's top odd coefficient c[2 * mo - 1], mo = (deg + 1) / 2: at an even
+    // degree that is c[2 * m - 1], at an odd one the degree's own top odd
+    // coefficient. deg == 2 returns above, where the split has no loop to run.
+    assert(deg >= 4);
 
     const int m = deg / 2;
+    const int mo = (deg + 1) / 2;
     P b1 = B::Broadcast(c[std::ptrdiff_t{2} * m]);
     P b2 = B::Broadcast(V{0});
 
@@ -202,11 +204,11 @@ ClenshawSplit(const typename B::Value* c, int deg, typename B::Packed t) noexcep
 
     const P even = B::MulAdd(v, b1, B::Sub(B::Broadcast(c[0]), b2));
 
-    // Odd part: c[1], c[3], ..., c[2m-1] with the D recurrence.
-    P o1 = B::Broadcast(c[2 * m - 1]);
+    // Odd part: c[1], c[3], ..., c[2 * mo - 1] with the D recurrence.
+    P o1 = B::Broadcast(c[2 * mo - 1]);
     P o2 = B::Broadcast(V{0});
 
-    for (int k = m - 2; k >= 1; --k)
+    for (int k = mo - 2; k >= 1; --k)
     {
         const P o0 = B::MulAdd(twoV, o1, B::Sub(B::Broadcast(c[std::ptrdiff_t{2} * k + 1]), o2));
         o2 = o1;
@@ -509,7 +511,7 @@ inline double RegionAValue(int order, double x) noexcept {
 }
 
 // Which piece of the narrow partition an argument falls in. The edges are the
-// derived partition's own, non-decreasing, and the last is kX1, so the scan
+// derived partition's own, non-decreasing, and the last is kFlatHi, so the scan
 // ends inside the table for any argument region B dispatches here.
 inline int NarrowBPieceOf(double x) noexcept {
     int piece = 0;
@@ -542,12 +544,12 @@ inline double NarrowRegionBSeed(double x) noexcept {
 }
 
 // Region B's seed from the shipped partition: one polynomial over the whole of
-// [kX0, kX1) at the degree the table carries. This is the seed at every
+// [kX0, kFlatHi) at the degree the table carries. This is the seed at every
 // granularity except the narrow one - the grid stores no seed of its own, and the
 // extended band is the same fit because nothing amplifies its seed.
 template <EvalScheme kScheme>
 inline double ShippedRegionBSeed(double x) noexcept {
-    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+    const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
 
     return FitSum<kScheme, backend::ScalarFp64>(
         detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
@@ -631,7 +633,7 @@ struct ChebyshevFit {
         else if constexpr (kGranularity == FitGranularity::kUniform)
         {
             // The same fit as the shipped arm, by construction and not by fallback:
-            // region B's seed is one fit over [kX0, kX1) at every granularity except
+            // region B's seed is one fit over [kX0, kFlatHi) at every granularity except
             // the narrow one, and the grid has no seed of its own to store.
             return ShippedRegionBSeed<kScheme>(x);
         }
@@ -687,16 +689,16 @@ static_assert(kFlatPerUnit * detail::kFlatHi ==
               "domain locates no further than the last interval");
 
 // Every interval's degree is checked against the read cap rather than assumed: the
-// split Clenshaw scheme seeds its odd part at c[2m-1] and so needs an even degree of
-// at least 4, and a degree above the cap is beyond the coefficients the interval
-// stores. A table violating either would be summed into a different polynomial.
+// split Clenshaw scheme's body is written for a degree of at least 4 (0, 1 and 2
+// return above it), and a degree above the cap is beyond the coefficients the
+// interval stores. Parity is no part of the rule.
 constexpr bool FlatDegreesCarried() noexcept
 {
     for (std::size_t iv = 0; iv < static_cast<std::size_t>(detail::kFlatIntervals); ++iv)
     {
         const int deg = detail::kFlatDegs[iv];
 
-        if (deg < 4 || deg % 2 != 0 || deg > detail::kFlatReadCap)
+        if (deg < 4 || deg > detail::kFlatReadCap)
         {
             return false;
         }
@@ -706,10 +708,9 @@ constexpr bool FlatDegreesCarried() noexcept
 }
 
 static_assert(FlatDegreesCarried(),
-              "every interval of the uniform table must be fitted at an even degree between 4 "
-              "and the read cap: an odd degree would drop the leading odd coefficient the split "
-              "Clenshaw summation seeds from, and a degree above the cap is beyond the "
-              "coefficients the interval carries");
+              "every interval of the uniform table must be fitted at a degree between 4 and the "
+              "read cap: below 4 the split Clenshaw summation's general body is not written, and "
+              "a degree above the cap is beyond the coefficients the interval carries");
 
 static_assert(std::size(detail::kFlatOffsets) ==
                       static_cast<std::size_t>(detail::kFlatIntervals) + 1 &&
@@ -718,6 +719,81 @@ static_assert(std::size(detail::kFlatOffsets) ==
               "the uniform table's offsets must run one per interval and end at the stored "
               "count: the read rule reaches an interval's last coefficient through them, so an "
               "offset past the end reads a neighbouring fit's numbers");
+
+// The two uniformities the locator's arithmetic rests on, proved here so a regenerated grid that
+// breaks either refuses at compile time rather than at a caller: every interval is fitted at the
+// one degree kFlatDeg, and every offset steps by the one block kFlatBlock = (kMaxOrder + 1) *
+// (kFlatDeg + 1). The offsets array keeps its readers; this is what lets the locator skip it.
+inline constexpr int kFlatDeg = detail::kFlatDegs[0];
+inline constexpr int kFlatBlock = (kMaxOrder + 1) * (kFlatDeg + 1);
+
+constexpr bool FlatDegreesUniform() noexcept
+{
+    for (std::size_t iv = 0; iv < static_cast<std::size_t>(detail::kFlatIntervals); ++iv)
+    {
+        if (detail::kFlatDegs[iv] != kFlatDeg)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(FlatDegreesUniform(),
+              "every interval of the uniform table must be fitted at the one degree the "
+              "locator's stride and the walk's trip count are compiled from: an interval at "
+              "another degree would be summed at the wrong stride into a different polynomial");
+
+constexpr bool FlatBlocksUniform() noexcept
+{
+    for (std::size_t iv = 0; iv < std::size(detail::kFlatOffsets); ++iv)
+    {
+        if (detail::kFlatOffsets[iv] != static_cast<int>(iv) * kFlatBlock)
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static_assert(FlatBlocksUniform(),
+              "the uniform table's offsets must step by kFlatBlock, the block the locator "
+              "computes instead of reading them: an offset that steps otherwise would address, "
+              "silently, a neighbouring interval's fit");
+
+// t's map, 2 (u - iv) - 1, is exact from u's own bits, and no bound on the grid's top takes part
+// in it: a power-of-two kFlatPerUnit of at least one moves x's significand and rounds nothing
+// into u, f = u - iv is exact there, and 2 f - 1 needs a 54th bit only below u = 1/4 - the
+// first cell's own quarter, where the map rounds in its last bit and no constant can prevent it.
+constexpr bool FlatMapExact() noexcept
+{
+    double perUnit = kFlatPerUnit;
+
+    // Refused rather than normalized: a reciprocal below one is a cell wider than the unit, whose
+    // product of x and kFlatPerUnit falls subnormal below x = 2^-1022 / kFlatPerUnit and can round
+    // there. A zero, a NaN or a negative reciprocal lands here too.
+    if (!(perUnit >= 1.0))
+    {
+        return false;
+    }
+
+    while (perUnit >= 2.0)
+    {
+        perUnit *= 0.5;
+    }
+
+    return perUnit == 1.0;
+}
+
+static_assert(FlatMapExact(),
+              "the locator's mapped argument is taken through one MulAdd, which delivers the "
+              "two-rounding spelling's bits wherever the product and the fraction are exact: that "
+              "needs kFlatPerUnit to be a power of two no smaller than one, so that x's "
+              "significand is only moved and the product can never fall subnormal - the grid's top "
+              "is no part of it, 2 * f - 1 holding at most 53 bits for every u at or above 1/4 "
+              "however far the grid reaches, and rounding once below it");
 
 template <EvalScheme kScheme>
 struct UniformFit {
@@ -847,13 +923,13 @@ static_assert(FlatRatPairsCarried(),
 /// One copy, because the ladder and the single order must agree on it to the bit:
 /// two spellings of the same index arithmetic would be two chances to disagree
 /// about which interval an argument falls in. The interval is carried and not only
-/// its offset, because the table's degree is the interval's own: an order's
-/// coefficients are reached at the stride kFlatDegs[iv] + 1, which is the stride
+/// its offset, because the table's degree is one for every interval (FlatDegreesUniform):
+/// an order's coefficients are reached at the stride kFlatDeg + 1, which is the stride
 /// the single-order read walks; the group reader reads the grid's transposed
 /// shape, one coefficient index across the orders.
 struct FlatPoint {
     std::size_t iv;    ///< the interval the argument falls in
-    std::size_t block; ///< kFlatOffsets[iv], this interval's order-0 coefficient
+    std::size_t block; ///< iv * kFlatBlock, this interval's order-0 coefficient (kFlatOffsets[iv])
     double t;          ///< the argument mapped into [-1, 1) on that interval
 };
 
@@ -868,9 +944,10 @@ inline FlatPoint FlatLocate(double x) noexcept {
 
     const std::size_t index = static_cast<std::size_t>(iv);
 
-    return FlatPoint{index,
-                     static_cast<std::size_t>(detail::kFlatOffsets[index]),
-                     2.0 * (u - static_cast<double>(iv)) - 1.0};
+    // The block is arithmetic where FlatBlocksUniform proves the table's own value. t is the same
+    // map through MulAdd, which FlatMapExact proves returns the two-rounding spelling's bits.
+    return FlatPoint{index, static_cast<std::size_t>(iv * kFlatBlock),
+                     backend::ScalarFp64::MulAdd(2.0, u - static_cast<double>(iv), -1.0)};
 }
 
 /// One order off the rational member over the uniform grid: this interval's row at
@@ -915,11 +992,11 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
     {
         const std::size_t base =
             at.block + static_cast<std::size_t>(l) *
-                           static_cast<std::size_t>(detail::kFlatDegs[at.iv] + 1);
+                           static_cast<std::size_t>(kFlatDeg + 1);
 
         return FitSum<Policy::kScheme, backend::ScalarFp64>(
-            detail::kFlatCoeffs.data() + base, detail::kFlatMonoCoeffs.data() + base,
-            detail::kFlatDegs[at.iv], at.t);
+            detail::kFlatCoeffs.data() + base, detail::kFlatMonoCoeffs.data() + base, kFlatDeg,
+            at.t);
     }
 }
 
@@ -972,11 +1049,10 @@ double FlatSingleOrder(int n, double x) noexcept {
         const FlatPoint at = FlatLocate(x);
         const std::size_t base =
             at.block + static_cast<std::size_t>(n) *
-                           static_cast<std::size_t>(detail::kFlatDegs[at.iv] + 1);
+                           static_cast<std::size_t>(kFlatDeg + 1);
 
         return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base,
-                                           detail::kFlatMonoCoeffs.data() + base,
-                                           detail::kFlatDegs[at.iv], at.t);
+                                           detail::kFlatMonoCoeffs.data() + base, kFlatDeg, at.t);
     }
     else
     {
@@ -1121,20 +1197,6 @@ void ScaledFarLadder(int nmax, double x, double* out) noexcept {
     }
 }
 
-extern template void ScaledFarLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-extern template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-
-extern template void ScaledFarLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-extern template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-extern template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-
 /// One argument's whole ladder off the scaled far table, with the recovery the
 /// stored function needs: H_n is what the table holds and F_n is what a caller
 /// receives, and the two differ by m_n = Gamma(n+1/2) / (2 x^(n+1/2)).
@@ -1230,24 +1292,6 @@ void CorrectedSeedLadder(int nmax, double x, double* out) noexcept {
     }
 }
 
-// Both legs are declared here and each is defined in exactly one unit: the fused leg in
-// boys_orders_simd.cpp, licensed for the fused instruction set, and the asking leg in boys.cpp,
-// which is not. The declarations keep every other unit from emitting a second definition the link
-// could choose: the wrong choice costs a call per exact product, or an unlicensed instruction.
-extern template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-extern template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kFusedLeg>(
-    int, double, double*) noexcept;
-
-extern template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-extern template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-extern template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-
 /// One argument's whole ladder from the corrected seed.
 ///
 /// Two legs of one arithmetic, chosen by the tier the compiling unit carries: the
@@ -1269,29 +1313,141 @@ template <DivisionForm kForm> void CorrectedSeedAllOrders(int nmax, double x, do
 #endif
 }
 
-/// The far region's bare ladder: the closed form's seed and the upward step without
-/// the term the repaired arms carry.
+// The far ladder's coefficients: A[m] = (2m-1)!!, exact as doubles to m = 15 (29!! = 6.19e15,
+// under 2^53) and rounded from m = 16. The ratio A[m] = (2m - 1) A[m - 1] is what makes a term
+// one table read and two multiplies; every entry agrees bit for bit with gamma(m + 1/2) * 2^m /
+// sqrt(pi) at 60 digits, all 33 of them. Aligned 32 for the four-orders lane's group loads.
+alignas(32) inline constexpr double kDoubleFactorial[kMaxBoysOrder + 1] = {
+    1.0,                    // A[0], the empty product
+    1.0,                    // 1
+    3.0,                    // 3
+    15.0,                   // 15
+    105.0,                  // 105
+    945.0,                  // 945
+    10395.0,                // 10395
+    135135.0,               // 135135
+    2027025.0,              // 2027025
+    34459425.0,             // 34459425
+    654729075.0,            // 654729075
+    13749310575.0,          // 13749310575
+    316234143225.0,         // 316234143225
+    7905853580625.0,        // 7905853580625
+    213458046676875.0,      // 213458046676875
+    6190283353629375.0,     // 6190283353629375, the last integer the double holds exactly
+    1.9189878396251062e+17, // 31!!
+    6.33265987076285e+18,   // 33!!
+    2.2164309547669976e+20, // 35!!
+    8.200794532637892e+21,  // 37!!
+    3.1983098677287775e+23, // 39!!
+    1.3113070457687988e+25, // 41!!
+    5.638620296805835e+26,  // 43!!
+    2.5373791335626256e+28, // 45!!
+    1.1925681927744342e+30, // 47!!
+    5.843584144594727e+31,  // 49!!
+    2.980227913743311e+33,  // 51!!
+    1.5795207942839547e+35, // 53!!
+    8.687364368561751e+36,  // 55!!
+    4.951797690080198e+38,  // 57!!
+    2.921560637147317e+40,  // 59!!
+    1.7821519886598634e+42, // 61!!
+    1.1227557528557138e+44, // 63!!
+};
+
+#if BOYS_ISA_AVX2_FMA
+// The far ladder's four-orders lane, defined by boys/boys_orders_lanes.hpp (included at the bottom
+// of this header at the tier this unit's flags name). The run below hands it its contiguous call,
+// so it is declared here the way the arguments lane's kernels are declared below their bodies.
+void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, double* out) noexcept;
+#endif
+
+/// The far region's ladder, written into a run: out[l * stride] = F_l(x), l = 0..nmax.
 ///
-/// It is one of the region's representations and not a coarser reading of another:
-/// both of the arithmetic's own errors are live here, and both are the region's own
-/// size at its edge. The seed is \c F_0 * H_0 with \c H_0 held at 1, whose relative
-/// error is \c erfc(sqrt(x)) - 2.65e-14 at \c kX1 - and the step drops the
-/// \c exp(-x)/2 term, which at \c kX1 is larger than \c F_32 itself.
+/// The region's terms are the asymptotic series' own, \c F_m = F_0 A[m] h^m with
+/// \c h = 1/(2x) and \c A[m] the double factorial above. There is no upward step and
+/// no \c exp(-x)/2 term in it: the step the region-B body takes carries that term,
+/// and over this region the closed form's own truncation \c erfc(sqrt(x)) stands in
+/// for it, one rounding of the seed rather than a term the ladder subtracts 32 times.
+///
+/// What the arithmetic delivers, at the far region's own figures: at \c kX1 it is
+/// 4.31e-15 at order 0 and 5.0e-14 at n = 32, the series' tail
+/// \c 0.5 x^-(m+1/2) Gamma(m + 1/2, x) reaching its largest value at the region's
+/// left edge and falling away with x. The far region's fits are cut at an absolute
+/// 5.5e-14, which covers every one of them, and the ladder-scaled figure the entries
+/// publish - 1e-13 of \c F_0(x), the contract's wider arm - does not cover the tail
+/// below \c detail::kFlatHi: at x = 29 the tail at n = 32 is 4.94e-14 against a bar
+/// of 1.65e-14 there, three times it, while at the cut itself, x = 31.0, it reads
+/// 0.288 of the bar, 3.47x to spare. That is why this body is entered only at or
+/// above \c detail::kFlatHi, the grid's own hi and so the arm's own left edge. It
+/// is also why \c FarRepresentation::kCorrectedSeed pays for the reading that holds
+/// the figure across the region, keeping the recurrence above.
+///
+/// The order's power of h is carried in fours: \c w holds \c F_0 h^q for q = 0..3 and
+/// \c p the running \c h^(4j), so a term is two multiplies and one table read.
+///
+/// No branch guards the powers: \c h^32 leaves the normal range above x = 2.06e9 and
+/// flushes to zero above x = 6.48e9, and the largest order's value there is below
+/// 7.7e-285 - under every figure this region states by 270 orders of magnitude.
+///
+/// \param nmax   highest order, 0..kMaxBoysOrder
+/// \param x      argument, kX1 <= x
+/// \param stride distance between two orders in \c out
+/// \param out    receives nmax + 1 values, out[l * stride] = F_l(x)
+inline void FarLadderRun(int nmax, double x, std::size_t stride, double* out) noexcept {
+#if BOYS_ISA_AVX2_FMA
+    // The contiguous call is the four-orders lane's: one vector holds four orders' terms, the
+    // same two multiplies an order, and every per-argument entry calls with stride 1. The
+    // strided caller keeps the walk below, whose values are the lane's own bit for bit.
+    if (stride == 1)
+    {
+        BoysFarLadderOrdersLane(nmax, x, stride, out);
+        return;
+    }
+#endif
+
+    // One division, and it is not a step of a chain: the seed's closed form is what the
+    // division form's own scope leaves outside the axis, and the reciprocal is what
+    // carries h as well.
+    const double r = 1.0 / std::sqrt(x);
+    const double h = 0.5 * (r * r);
+    const double h2 = h * h;
+    const double h4 = h2 * h2;
+    const double w[4] = {kBoysHalfSqrtPi * r, kBoysHalfSqrtPi * (r * h), kBoysHalfSqrtPi * (r * h2),
+                         kBoysHalfSqrtPi * (r * (h2 * h))};
+
+    double p = 1.0;
+    int q = 0;
+
+    for (int l = 0; l <= nmax; ++l)
+    {
+        out[static_cast<std::size_t>(l) * stride] = (w[q] * kDoubleFactorial[l]) * p;
+
+        if (++q == 4)
+        {
+            q = 0;
+            p *= h4;
+        }
+    }
+}
+
+/// The far region's ladder, in the closed form the arm named
+/// \c FarRepresentation::kAsymptoticRecurrence answers with.
+///
+/// It is the same arithmetic as \c FarLadderRun and not a second one, read at the
+/// orders the caller names: the seed is the closed form with \c H_0 held at 1, whose
+/// relative error is \c erfc(sqrt(x)) - 2.65e-14 at \c kX1 - and the series' tail is
+/// the ladder's, which is what the absolute figure above covers and the relative
+/// figure does not.
+///
+/// The division form is the caller's and does not reach this arithmetic: the ladder's
+/// one division is the seed's closed form, so the axis is inert here.
 ///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, kX1 <= x
 /// \param out  receives nmax + 1 values, out[k] = F_k(x)
-template <DivisionForm kForm> void AsymptoticRecurrenceAllOrders(int nmax, double x, double* out) noexcept {
-    double f = kBoysHalfSqrtPi / std::sqrt(x);
-
-    const double invx = StepReciprocal<kForm>(x);
-    out[0] = f;
-
-    for (int l = 1; l <= nmax; ++l)
-    {
-        f = DivideStep<kForm>((l - 0.5) * f, x, invx);
-        out[l] = f;
-    }
+template <DivisionForm kForm>
+void AsymptoticRecurrenceAllOrders(int nmax, double x, double* out) noexcept {
+    static_cast<void>(kForm);
+    FarLadderRun(nmax, x, 1, out);
 }
 
 // The rational minimax route: a numerator/denominator pair per piece, read by Horner
@@ -1338,7 +1494,7 @@ struct RationalFit {
 
     // The region-B seed from the region's own minimax pair.
     static double RegionBSeed(double x) noexcept {
-        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+        const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
         double num = detail::kRatBnum[detail::kRatBnumDeg];
 
         for (int j = detail::kRatBnumDeg - 1; j >= 0; --j)
@@ -1551,7 +1707,7 @@ inline double ChebyshevValue(int order, double x) noexcept {
     return RegionAValue<ChebyshevFit<kScheme, kDefaultFitGranularity>>(order, x);
 }
 
-// Region-B seed F_0(x) of the Chebyshev route at a scheme, valid on [kX0, kX1).
+// Region-B seed F_0(x) of the Chebyshev route at a scheme, valid on [kX0, kFlatHi).
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeed(double x) noexcept {
     return ChebyshevFit<kScheme, kDefaultFitGranularity>::RegionBSeed(x);
@@ -2085,7 +2241,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
     }
 }
 
-// The shipped region-B seed at a cut degree: one polynomial over [kX0, kX1), read at the
+// The shipped region-B seed at a cut degree: one polynomial over [kX0, kFlatHi), read at the
 // degree the caller's table certifies for the peak order. The shipped and the uniform
 // partition read this fit between them (see ShippedRegionBSeed), so the two arms of
 // RegionBSeedWithDegrees below reach the table through here.
@@ -2093,7 +2249,7 @@ template <EvalScheme kScheme, typename DegreesArray>
 inline double ShippedRegionBSeedWithDegrees(double x,
                                             const DegreesArray& degrees,
                                             int peakOrder) noexcept {
-    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+    const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
 
     return FitSum<kScheme, backend::ScalarFp64>(
         detail::kBcoeffs.data(),
@@ -2134,7 +2290,7 @@ inline double RegionBSeedWithDegrees(double x,
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
         // The same fit as the shipped arm, by construction and not by fallback: region B's
-        // seed is one fit over [kX0, kX1) at every granularity except the narrow one, so the
+        // seed is one fit over [kX0, kFlatHi) at every granularity except the narrow one, so the
         // degree this read is cut at is the shipped table's own. The arm is written rather
         // than left to an `else`, so a reader sees that the two coincide.
         return ShippedRegionBSeedWithDegrees<kScheme>(x, degrees, peakOrder);
@@ -2212,7 +2368,7 @@ constexpr auto RegionBDegreeTableOf() noexcept {
     else if constexpr (Policy::kGranularity == FitGranularity::kUniform)
     {
         // The same fit as the shipped arm, by construction and not by fallback: region B's
-        // seed is one fit over [kX0, kX1) at every granularity except the narrow one, so the
+        // seed is one fit over [kX0, kFlatHi) at every granularity except the narrow one, so the
         // table a rung would cut it with is the shipped table's. The assertion above keeps a
         // policy naming the grid from reaching a rung at all.
         return RegionBDegrees<kRole, SchemeTailBasis<Policy::kScheme>()>();
@@ -2231,7 +2387,7 @@ constexpr auto RegionBDegreeTableOf() noexcept {
 // rung bodies call, and this one is the shipped partition's reading of the same fit.
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
-    const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+    const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
     return FitSum<kScheme, backend::ScalarFp64>(
         detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), degree, t);
 }
@@ -3039,7 +3195,7 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         }
     }
 
-    if (x < kX1)
+    if (x < kFlatHi)
     {
         double f = Fit::RegionBSeed(x);
         out[0] = f;
@@ -3055,16 +3211,7 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
         return;
     }
 
-    double f = FarSeedAt(x);
-    out[0] = f;
-    const double invx = StepReciprocal<Policy::kDivision>(x);
-    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
-
-    for (int l = 1; l <= nmax; ++l)
-    {
-        f = UpwardStep<Policy::kDivision>(l, f, x, invx, expx);
-        out[l] = f;
-    }
+    FarLadderRun(nmax, x, 1, out);
 }
 
 // One order at one argument, in the policy's family and scheme. The fit is
@@ -3124,7 +3271,7 @@ double SingleOrder(int n, double x) noexcept {
         }
     }
 
-    if (x < kX1)
+    if (x < kFlatHi)
     {
         double f = Fit::RegionBSeed(x);
         const double expx = RegionBHalfExp<Policy::kRegionBExp>(x);
@@ -3138,16 +3285,13 @@ double SingleOrder(int n, double x) noexcept {
         return f;
     }
 
-    double f = FarSeedAt(x);
-    const double invx = StepReciprocal<Policy::kDivision>(x);
-    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
+    // One order of the far ladder, read where the ladder writes it: the buffer is the run's own
+    // shape at the widest order and the term asked for is one of its entries, so the order is
+    // answered by the same arithmetic every other order of this argument is.
+    double ladder[kMaxBoysOrder + 1];
+    FarLadderRun(n, x, 1, ladder);
 
-    for (int l = 0; l < n; ++l)
-    {
-        f = UpwardStep<Policy::kDivision>(l + 1, f, x, invx, expx);
-    }
-
-    return f;
+    return ladder[n];
 }
 
 // Each engine takes the policy and the multiplier, and nothing else: the fit family, the scheme
@@ -3322,6 +3466,10 @@ void BoysFixedNImpl(
         // next order to build from this one.
         RefuseUniformPartition<Policy>();
 
+        // The far ladder's run at the widest order, written once and read per argument: this entry
+        // asks one order of every argument, and the entry is not the ladder's - the run is.
+        double ladder[kMaxBoysOrder + 1];
+
         for (std::size_t i = 0; i < count; ++i)
         {
             const double xi = x[i];
@@ -3354,12 +3502,11 @@ void BoysFixedNImpl(
                 continue;
             }
 
-            double f = PolicyRegionBSeed<Policy>(xi);
-            const double invxi = StepReciprocal<Policy::kDivision>(xi);
-
-            if (xi < kX1)
+            if (xi < kFlatHi)
             {
+                double f = PolicyRegionBSeed<Policy>(xi);
                 const double expx = RegionBHalfExp<Policy::kRegionBExp>(xi);
+                const double invxi = StepReciprocal<Policy::kDivision>(xi);
 
                 for (int l = 0; l < n; ++l)
                 {
@@ -3370,15 +3517,8 @@ void BoysFixedNImpl(
                 continue;
             }
 
-            f = FarSeedAt(xi);
-            const double expx = RegionBHalfExp<RegionBExp::kAccurate>(xi);
-
-            for (int l = 0; l < n; ++l)
-            {
-                f = UpwardStep<Policy::kDivision>(l + 1, f, xi, invxi, expx);
-            }
-
-            out[i * stride] = f;
+            FarLadderRun(n, xi, 1, ladder);
+            out[i * stride] = ladder[n];
         }
     }
 }
@@ -3656,7 +3796,7 @@ void BoysAllNAtOrdersF32Impl(
 // work.
 
 // The per-region bars the fits are cut against, absolute and none of them the lane's published
-// bound (1e-13 of the value): A at most 1e-15 over [0, kX0), B's and C's at most 5.5e-14. The
+// bound (the larger of 1e-13 of F_n(x) and 1e-13 of F_0(x)): A at most 1e-15 over [0, kX0), B's and C's at most 5.5e-14. The
 // committed reference grid lands 1.4e-15 on the band at n = 32, C 5.0e-14 inside its bar with 10%
 // slack, and B 2.2e-13 at n = 32, x = kX0 - four times its own bar.
 
@@ -3761,7 +3901,7 @@ inline BoysPath BoysClassifyPath(double x, double tierSplit) noexcept {
         return BoysPath::kExtended;
     }
 
-    if (x < kX1)
+    if (x < kFlatHi)
     {
         return BoysPath::kMiddle;
     }
@@ -3880,19 +4020,14 @@ inline void BoysAllNBodyRegionB(int nmax, double x, std::size_t stride, double* 
     }
 }
 
-// Region C: the far seed and its upward recurrence (m-invariant).
+// Region C: the far ladder's terms, written where the caller's planes are (m-invariant). The
+// division form does not reach this arithmetic - the ladder has one division, the seed's closed
+// form, and it is not a step of a chain - so the axis is inert here and the parameter is kept
+// because the entry's callers name it.
 template <DivisionForm kForm = kDefaultDivisionForm>
 inline void BoysAllNBodyRegionC(int nmax, double x, std::size_t stride, double* plane) noexcept {
-    double f = FarSeedAt(x);
-    plane[0] = f;
-    const double invx = StepReciprocal<kForm>(x);
-    const double expx = RegionBHalfExp<RegionBExp::kAccurate>(x);
-
-    for (int l = 1; l <= nmax; ++l)
-    {
-        f = UpwardStep<kForm>(l, f, x, invx, expx);
-        plane[static_cast<std::size_t>(l) * stride] = f;
-    }
+    static_cast<void>(kForm);
+    FarLadderRun(nmax, x, stride, plane);
 }
 
 /// The tile every kernel of the partitioned entry writes through.
@@ -3968,12 +4103,11 @@ inline void BoysAllNBodyForPath(int nmax, double xi, std::size_t stride, double*
 }
 
 // The far ladder's lane: one ladder per lane of an AVX2 double register, four of the run's
-// ARGUMENTS at once - the arguments axis, since a ladder recurs in the order. Arithmetic for
-// arithmetic with the scalar body, so its test is equality and not a bound; the half-exponential it
-// does not carry the caller forms per argument. boys_arguments_lanes.hpp owns both tiers' bodies.
+// ARGUMENTS at once - the arguments axis, since the ladder's terms are consumed in the order.
+// Arithmetic for arithmetic with the scalar body, so its test is equality and not a bound.
+// boys_arguments_lanes.hpp owns both tiers' bodies.
 void BoysFarLadderLanes(int nmax,
                         const double* x,
-                        const double* halfExp,
                         std::size_t stride,
                         double* const* cols,
                         DivisionForm form) noexcept;
@@ -4219,18 +4353,23 @@ void BoysAllNRun(int nmax,
 
 /// Whether the far region's ladder is the body this path answers an argument with.
 ///
-/// The ladder is a recurrence in the order, so no orders-axis lane can hold it - a register holds
-/// four values of one formula, and the region's formula is the step that produces the next order of
-/// the previous one. Four ARGUMENTS is what a register can hold of it, and that is the arguments
-/// axis's lane: this path reaches it here or not at all. Nothing about the arithmetic changes,
-/// because the body the lane reproduces (boys/boys_arguments_lanes.hpp, BoysFarLadderLanes) is the
-/// body this predicate selects: at the orders axis the packed body hands an argument past its fits
-/// to the certified scalar orders lane (boys/boys_orders_lanes.hpp, BoysAllOrdersPacked), and that lane's arm
-/// above its fits is BoysAllNBodyRegionC - one argument at a time, this ladder.
+/// The region's terms are read order by order at one argument (a run of F_0..F_nmax, the arms of
+/// boys_orders_lanes.hpp's packed body ending at BoysAllNBodyRegionC), so what a register holds of
+/// them is four ARGUMENTS - that is the arguments axis's lane, and this path reaches it here or not
+/// at all. The lane's own form has an orders axis in it now, the region's terms being independent
+/// products rather than a chain (four orders of one argument take the same seed, the same power and
+/// four table entries): the packed bodies' orders lane does not have a far arm of that shape today,
+/// and this predicate selects the axis the lane that exists is written across.
+///
+/// Nothing about the arithmetic changes, because the body the lane reproduces
+/// (boys/boys_arguments_lanes.hpp, BoysFarLadderLanes) is the body this predicate selects: at the
+/// orders axis the packed body hands an argument past its fits to the certified scalar orders lane
+/// (boys/boys_orders_lanes.hpp, BoysAllOrdersPacked), and that lane's arm above its fits is
+/// BoysAllNBodyRegionC - one argument at a time, this ladder.
 ///
 /// The join and the axis are that lane's own predicate, ScalarOrders' `aboveFits`: the grid ends at
-/// kFlatHi and the derived partitions at kX1, and the route, the scheme and the form do not enter
-/// it, because the arm above the fits reads no fit. A policy this predicate does not name keeps the
+/// kFlatHi and so do the derived partitions. The route, the scheme and the form do not enter it,
+/// because the arm above the fits reads no fit. A policy this predicate does not name keeps the
 /// per-argument body: the lane is BoysAllNBodyRegionC's operations and nothing else, and a body
 /// that reached the ladder another way would be a second arithmetic taken on no comparison.
 template <EvalPolicyLike Policy>
@@ -4243,7 +4382,7 @@ constexpr bool FarLadderIsThePerArgumentBody(double x, bool vectorTier) noexcept
     {
         return vectorTier && (Policy::kGranularity == FitGranularity::kUniform
                                   ? x > detail::kFlatHi
-                                  : x >= kX1);
+                                  : x >= detail::kFlatHi);
     }
 }
 
@@ -4256,13 +4395,12 @@ void BoysAllNRunPerArgument(int nmax,
                             const double* x,
                             double* out,
                             std::size_t count) noexcept {
-    // One register's worth of the far region, held until it fills or the path ends: the arguments,
-    // the half-exponential the body forms per argument, and where each one's column is. The arm is
-    // the vector tier's, and the tier is this unit's own flags: a unit compiled without them answers
-    // the far region one argument at a time, which is the body the lane reproduces.
+    // One register's worth of the far region, held until it fills or the path ends: the arguments
+    // and where each one's column is. The arm is the vector tier's, and the tier is this unit's own
+    // flags: a unit compiled without them answers the far region one argument at a time, which is
+    // the body the lane reproduces.
 #if BOYS_ISA_AVX2_FMA
     double farX[kBoysFarLaneWidth];
-    double farHalfExp[kBoysFarLaneWidth];
     double* farCol[kBoysFarLaneWidth];
     std::size_t held = 0;
 #endif
@@ -4273,12 +4411,11 @@ void BoysAllNRunPerArgument(int nmax,
         if (FarLadderIsThePerArgumentBody<Policy>(x[i], true))
         {
             farX[held] = x[i];
-            farHalfExp[held] = RegionBHalfExp<RegionBExp::kAccurate>(x[i]);
             farCol[held] = out + i;
 
             if (++held == kBoysFarLaneWidth)
             {
-                BoysFarLadderLanes(nmax, farX, farHalfExp, count, farCol, Policy::kDivision);
+                BoysFarLadderLanes(nmax, farX, count, farCol, Policy::kDivision);
                 held = 0;
             }
 
@@ -4808,6 +4945,143 @@ BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, s
 
     detail::BoysAllNAtOrdersImpl<Policy>(n, x, out, count);
     return BoysStatus::kSuccess;
+}
+
+// The far-region entry: defined here rather than in a shipped unit, so a consumer that names a
+// representation compiles that arm and not a dispatch over the others; it forwards to the three
+// far bodies above. Its contract is the declaration's on boys/boys.hpp.
+template <FarRepresentation kFar>
+void BoysAllOrdersWithFarRepresentation(int nmax, double x, double* out) noexcept {
+    // Every member of the axis is served below, so a caller naming one gets what the name
+    // says: what the fallback is for is a name this build does not serve, which is the
+    // default entry outright, the fallback BoysAllOrdersWithRoute takes for a route it
+    // does not serve. The default is named where it is declared, not spelled here.
+    constexpr bool kServed = kFar == FarRepresentation::kAsymptoticRecurrence ||
+                             kFar == FarRepresentation::kScaledTable ||
+                             kFar == FarRepresentation::kCorrectedSeed;
+    constexpr FarRepresentation kSelected = kServed ? kFar : kDefaultFarRepresentation;
+
+    // The bare ladder is the region's own arithmetic, and its span opens where the fitted
+    // grid ends: below kFlatHi the default entry answers, whose fitted regions serve as
+    // they do under every name on this axis.
+    if constexpr (kSelected == FarRepresentation::kAsymptoticRecurrence)
+    {
+        if (x >= detail::kFlatHi)
+        {
+            detail::AsymptoticRecurrenceAllOrders<kDefaultDivisionForm>(nmax, x, out);
+            return;
+        }
+    }
+
+    // The table serves the span its rows report and nothing else: outside it the
+    // default entry answers, at its own values and by its own code, so the join at
+    // kScaledFarX0 and the edge at kScaledFarX1 are not a second implementation of
+    // the arguments beyond them.
+    if constexpr (kSelected == FarRepresentation::kScaledTable)
+    {
+        if (x >= detail::kScaledFarX0 && x < detail::kScaledFarX1)
+        {
+            // The division form is the default entry's: this entry names the far
+            // representation and no other axis, so the recovery's ladder divides the
+            // way an unnamed division form divides rather than substituting a form the
+            // caller did not name.
+            detail::ScaledFarAllOrders<kDefaultDivisionForm>(nmax, x, out);
+            return;
+        }
+    }
+
+    // The corrected seed serves region C, which is the whole of [kX1, inf): below
+    // it the fitted regions answer. Its span is the region itself rather than a
+    // table's, because the seed correction and the stepped exp term are properties
+    // of the region and not of a table's rows.
+    if constexpr (kSelected == FarRepresentation::kCorrectedSeed)
+    {
+        if (x >= detail::kX1)
+        {
+            detail::CorrectedSeedAllOrders<kDefaultDivisionForm>(nmax, x, out);
+            return;
+        }
+    }
+
+    boys::BoysAllOrders<DefaultPolicy<Precision::kFp64, Shape::kAllOrders>>(nmax, x, out);
+}
+
+// The route entries: defined here rather than in a shipped unit, so a consumer that names a
+// route compiles that route's arm and not a dispatch over the others; each forwards to the
+// public entry at the policy its route builds. Their contract is the declarations' on
+// boys/boys.hpp.
+template <FitRoute kRoute>
+void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept {
+    // The class's own scheme, not the reference one: the values a route does not serve are the
+    // default entry's bit for bit, which requires the scheme that entry reads, so the scheme is
+    // read off the row rather than off the seam's five.
+    using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
+
+    BoysAllOrdersWithRoute<kRoute>(SelectorClass::kScheme, nmax, x, out);
+}
+
+template <FitRoute kRoute>
+void BoysAllOrdersWithRoute(EvalScheme scheme, int nmax, double x, double* out) noexcept {
+    // One body, instantiated once per (route, scheme) pair through the same entry a compile-time
+    // caller uses: the policy names only the fits and the summation they are read in. Every
+    // argument the named route's rows do not cover is answered by the body's own shipped-family
+    // branches, and every route this build does not serve is the default entry outright.
+    using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
+
+    constexpr bool kServed = kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax;
+    constexpr FitRoute kSelected = kServed ? kRoute : SelectorClass::kRoute;
+
+    // A scheme outside the enumeration is the split Clenshaw's body, which is the declared
+    // fallback: the Horner test is an equality and the fallthrough is that body.
+    using HornerPolicy = EvalPolicy<kSelected,
+                                    EvalScheme::kHorner,
+                                    SelectorClass::kBudget,
+                                    SelectorClass::kPack,
+                                    SelectorClass::kGranularity,
+                                    SelectorClass::kDivision,
+                                    SelectorClass::kRegionBExp>;
+    using SplitClenshawPolicy = EvalPolicy<kSelected,
+                                           EvalScheme::kSplitClenshaw,
+                                           SelectorClass::kBudget,
+                                           SelectorClass::kPack,
+                                           SelectorClass::kGranularity,
+                                           SelectorClass::kDivision,
+                                           SelectorClass::kRegionBExp>;
+
+    if (scheme == EvalScheme::kHorner)
+    {
+        BoysAllOrders<HornerPolicy>(nmax, x, out);
+        return;
+    }
+
+    BoysAllOrders<SplitClenshawPolicy>(nmax, x, out);
+}
+
+// The float lane's route entry, the same template at the single-order class.
+template <FitRoute kRoute>
+float BoysSingleF32WithRoute(int n, float x) noexcept {
+    // One body instantiated per route, as the double lane's entries above are: the closed form at
+    // zero, the region split, the two recurrences and the domains are the body's, and the route
+    // names only its two fits. Every cell but the route is read off the row this entry's default
+    // arm runs: an arm naming its own fit family would answer from another partition's tables.
+    using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
+
+    // Every route this build does not serve is the default entry outright; the fallback is
+    // read from the class row, never pinned to kChebyshev: an emitted seam may default this
+    // class to the other route (measured 2026-10-12, the probe's vote names kRationalMinimax
+    // for the float single class), and a pinned arm answers the wrong tables.
+    constexpr bool kServed = kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax;
+    constexpr FitRoute kSelected = kServed ? kRoute : SingleOrderClass::kRoute;
+
+    using RoutePolicy = EvalPolicy<kSelected,
+                                   SingleOrderClass::kScheme,
+                                   SingleOrderClass::kBudget,
+                                   SingleOrderClass::kPack,
+                                   SingleOrderClass::kGranularity,
+                                   SingleOrderClass::kDivision,
+                                   SingleOrderClass::kRegionBExp>;
+
+    return BoysSingleF32<RoutePolicy>(n, x);
 }
 
 // The combination named in the type and the rung named in the call: the rung

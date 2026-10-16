@@ -106,8 +106,9 @@ namespace {
 // lane states them: relative for the double and float lanes, beside the value for the half lanes.
 // ---------------------------------------------------------------------------
 
-// README's four-region table (the one that has an extended-band cell). The contract holds one
-// relative figure over the whole domain, so all four regions state it.
+// README's four-region table (the one that has an extended-band cell). The contract states one
+// 1e-13 in every region - the ladder arm it is read off differs with the region's arguments, the
+// coefficient does not - so all four regions state it.
 constexpr double kBoundSingleA = 1e-13;
 constexpr double kBoundSingleBand = 1e-13;
 constexpr double kBoundSingleB = 1e-13;
@@ -118,12 +119,22 @@ constexpr double kBoundDoubleBatch = 1e-13;
 // floor below (kFloatValueFloor).
 constexpr double kBoundFloat = 2.384185791015625e-07;
 
-// The absolute figure each lane published before the contract went relative, kept as the floor
-// under it: the combinations that do not hold the relative figure alone - the lean partitions'
-// extended-band cells, the rational route's high-order intervals, the float lane's high-order
-// batch cells - hold this one (README.md, "What the bound is, and what it is not").
-constexpr double kDoubleValueFloor = 5.5e-14; // the double lanes' published absolute figure
+// The float lanes' published absolute figure, the value floor their rows bind above (the form
+// floatFormFor states below). The double lanes published one too, 5.5e-14, and it was the value
+// floor this gate's double rows were judged with until the contract's ladder figure took over;
+// the lane list (BoysLaneContracts) still returns it; its re-make rides the option probe's report.
 constexpr double kFloatValueFloor = 1.5e-7;   // the float lanes' published absolute figure
+
+// The figure a double-lane cell is judged at: the lane's bound, the larger of 1e-13 * F_n(x) and
+// 1e-13 * F_0(x), read against the cell's own value (MeasureAt). F falling with the order makes
+// the arm scaled by the ladder's first rung the wider one, so what is passed here is `figure` of
+// that rung over the value it is scaled by.
+double DoubleCellFigure(double figure, double rung, double value)
+{
+    const double magnitude = std::abs(value);
+
+    return magnitude > 0.0 ? figure * rung / magnitude : figure;
+}
 
 // The floor a relative figure binds above: the smallest normal of each budget's format (DBL_MIN,
 // 2^-1022; FLT_MIN, 2^-126). Below it the return is subnormal or zero and no accuracy is claimed.
@@ -352,9 +363,9 @@ int AddFarClaim(const char* lane, const char* region, double bound, bool judged 
 }
 
 // The three arms' own bodies, reached directly rather than through the entry that names them:
-// an arm is a compile-time arithmetic behind a run-time dispatch, and a call that goes through
-// the dispatch measures the dispatch's answer and not the arm's. The division form is the
-// default entry's, which is the form the shipped dispatch divides in.
+// an arm is a compile-time arithmetic, so these rows hold each arm to its figure on its own,
+// beside the rows that reach the same arm through the name. The division form is the default
+// entry's, which is the form the entry's arms divide in.
 void FarAsymptoticBody(int nmax, double x, double* out) noexcept
 {
     boys::detail::BoysAllNBodyRegionC<boys::kDefaultDivisionForm>(nmax, x, 1, out);
@@ -368,6 +379,66 @@ void FarCorrectedSeedBody(int nmax, double x, double* out) noexcept
 void FarScaledTableBody(int nmax, double x, double* out) noexcept
 {
     boys::detail::ScaledFarAllOrders<boys::kDefaultDivisionForm>(nmax, x, out);
+}
+
+// The entry names its arm where the call is compiled, so a table row's run-time arm is
+// dispatched here: the case label is the enumerator, and an arm the switch does not name reaches
+// the entry's own fallback, the default representation.
+void EvaluateFarArm(boys::FarRepresentation arm, int nmax, double x, double* out) noexcept
+{
+    switch (arm)
+    {
+    case boys::FarRepresentation::kAsymptoticRecurrence:
+        boys::BoysAllOrdersWithFarRepresentation<boys::FarRepresentation::kAsymptoticRecurrence>(
+            nmax, x, out);
+        return;
+
+    case boys::FarRepresentation::kScaledTable:
+        boys::BoysAllOrdersWithFarRepresentation<boys::FarRepresentation::kScaledTable>(
+            nmax, x, out);
+        return;
+
+    case boys::FarRepresentation::kCorrectedSeed:
+        boys::BoysAllOrdersWithFarRepresentation<boys::FarRepresentation::kCorrectedSeed>(
+            nmax, x, out);
+        return;
+    }
+
+    boys::BoysAllOrdersWithFarRepresentation(nmax, x, out);
+}
+
+// The route entry a route row names at run time: the entry is compiled per route, so the row's
+// route picks its arm here, and a route the enumeration does not name reaches the entry's own
+// fallback.
+void EvaluateRouteArm(boys::FitRoute route, int nmax, double x, double* out) noexcept
+{
+    switch (route)
+    {
+    case boys::FitRoute::kChebyshev:
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kChebyshev>(nmax, x, out);
+        return;
+
+    case boys::FitRoute::kRationalMinimax:
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(nmax, x, out);
+        return;
+    }
+
+    boys::BoysAllOrdersWithRoute<static_cast<boys::FitRoute>(99)>(nmax, x, out);
+}
+
+// The float lane's route entry, picked the same way.
+float EvaluateRouteArmF32(boys::FitRoute route, int n, float x) noexcept
+{
+    switch (route)
+    {
+    case boys::FitRoute::kChebyshev:
+        return boys::BoysSingleF32WithRoute<boys::FitRoute::kChebyshev>(n, x);
+
+    case boys::FitRoute::kRationalMinimax:
+        return boys::BoysSingleF32WithRoute<boys::FitRoute::kRationalMinimax>(n, x);
+    }
+
+    return boys::BoysSingleF32WithRoute<static_cast<boys::FitRoute>(99)>(n, x);
 }
 
 // The region a double-single argument is dispatched in, by the README interval table: the
@@ -2052,36 +2123,37 @@ int RunFloorControl()
     for (Accum& a : control)
     {
         a.lane = "control";
-        a.baseBound = kBoundSingleA;
+        a.baseBound = kBoundFloat;
         a.relative = true;
-        a.floorValue = kDoubleFloor;
-        a.valueFloor = kDoubleValueFloor;
+        a.floorValue = kFloatFloor;
+        a.valueFloor = kFloatValueFloor;
     }
 
     control[0].region = "over the arm, inside the floor";
     control[1].region = "inside the arm";
     control[2].region = "over the arm and over the floor";
 
-    // The value the three cells are read at, and the arm the figure alone gives there: the double
-    // lanes' relative 1e-13 over the 5.5e-14 figure stated beside it, at a value of 1e-6, where
-    // the arm is 1e-19 - so a 1e-15 error is far over the arm and far inside the floor.
+    // The value the three cells are read at, and the arm the figure alone gives there: the float
+    // lane's relative 2.384e-07 over the 1.5e-7 value floor its rows bind above
+    // (kFloatValueFloor), at a value of 1e-6, where the arm is 2.4e-13 - so a 1e-10 error is
+    // far over the arm and far inside the floor.
     constexpr int kControlN = 5;
     constexpr double kControlX = 1.0;
     constexpr double kControlValue = 1e-6;
-    const double arm = kBoundSingleA * kControlValue;
+    const double arm = kBoundFloat * kControlValue;
 
     std::printf("\nthe floor-rescue counter's control: three readings put through the instrument "
-                "the books are\nmeasured by, at the double lanes' own pair of figures - the "
-                "relative 1e-13 and the 5.5e-14\nfigure stated beside it - and read at a value of "
-                "1e-6, where the arm is 1e-19. The first\nis over the arm and inside the floor, "
-                "the second is inside the arm, and the third is over both\n");
+                "the books are\nmeasured by, at the pair of figures the float lane's rows state - "
+                "a relative 2.384e-07\nover the 1.5e-7 value floor - and read at a value of 1e-6, "
+                "where the arm is 2.4e-13.\nThe first is over the arm and inside the floor, the "
+                "second is inside the arm, and the third is\nover both\n");
 
-    MeasureAt(control[0], kControlN, kControlX, kControlValue + 1e-15, kControlValue, -6,
-              kBoundSingleA, false);
-    MeasureAt(control[1], kControlN, kControlX, kControlValue + 1e-20, kControlValue, -6,
-              kBoundSingleA, false);
-    MeasureAt(control[2], kControlN, kControlX, kControlValue + 1e-13, kControlValue, -6,
-              kBoundSingleA, false);
+    MeasureAt(control[0], kControlN, kControlX, kControlValue + 1e-10, kControlValue, -6,
+              kBoundFloat, false);
+    MeasureAt(control[1], kControlN, kControlX, kControlValue + 1e-16, kControlValue, -6,
+              kBoundFloat, false);
+    MeasureAt(control[2], kControlN, kControlX, kControlValue + 1e-4, kControlValue, -6,
+              kBoundFloat, false);
 
     std::printf("  the counter reads them as:\n");
     PrintFloorRescue("the control's own readings", {&control});
@@ -2091,7 +2163,7 @@ int RunFloorControl()
     const bool named = control[0].floorRescuedWorstN == kControlN
                        && control[0].floorRescuedWorstX == kControlX;
     const bool armNamed = std::abs(control[0].floorRescuedWorstArm - arm) <= 1e-6 * arm;
-    const bool floorNamed = control[0].floorRescuedWorstCeiling == kDoubleValueFloor;
+    const bool floorNamed = control[0].floorRescuedWorstCeiling == kFloatValueFloor;
     const bool overFailed = control[2].failures == 1 && control[0].failures == 0;
 
     std::printf("  CONTROL: the cell over the arm and inside the floor counted %zu time(s), 1 "
@@ -2213,14 +2285,10 @@ int main(int argc, char** argv) {
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders>;
 
-    // The form the double lanes' figures are stated in: the contract's relative figure over the
-    // whole domain, whose cells are the ones the format's own floor answers below.
+    // The form the double lanes' figures are stated in: the contract's ladder-scaled figure over
+    // the whole domain (each cell's arm is composed by DoubleCellFigure), whose cells are the ones
+    // the format's own floor answers below.
     constexpr BoundForm kRelativeDouble{true, kDoubleFloor, 0.0};
-
-    // The form a combination the tree does not hold the relative figure for is judged in: the
-    // same figure with the lane's absolute figure as its floor, which is the figure README
-    // states for those combinations beside the measured one.
-    constexpr BoundForm kRelativeDoubleFloored{true, kDoubleFloor, 0.0, kDoubleValueFloor};
 
     // The double lane's rows are judged against the published figure, which is the shipped
     // default build's: a build whose default rows are a replacement's measures them and judges
@@ -2353,7 +2421,9 @@ int main(int argc, char** argv) {
                     got,
                     ref.v[k],
                     ref.decade[k],
-                    Claims()[static_cast<std::size_t>(slot)].baseBound,
+                    DoubleCellFigure(Claims()[static_cast<std::size_t>(slot)].baseBound,
+                                     ref.v[ref.Index(0, i)],
+                                     ref.v[k]),
                     Unrepresentable(got, -1022));
 
             if (x < boys::detail::kX0)
@@ -2462,7 +2532,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2485,7 +2557,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2510,7 +2584,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2542,7 +2618,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2574,7 +2652,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2593,7 +2673,9 @@ int main(int argc, char** argv) {
                         got,
                         ref.v[ref.Index(n, i)],
                         ref.decade[ref.Index(n, i)],
-                        kBoundDoubleBatch,
+                        DoubleCellFigure(kBoundDoubleBatch,
+                                         ref.v[ref.Index(0, i)],
+                                         ref.v[ref.Index(n, i)]),
                         Unrepresentable(got, -1022));
             }
         }
@@ -2613,7 +2695,7 @@ int main(int argc, char** argv) {
                                                RegionName(row.region),
                                                kBoundDoubleBatch,
                                                true,
-                                               kRelativeDoubleFloored));
+                                               kRelativeDouble));
     }
 
     // The report's own rows against the tables the kernel evaluates: a row's
@@ -2639,6 +2721,14 @@ int main(int argc, char** argv) {
     // DefaultPolicy).
     using RouteClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
+    // The route this build's own seam gives that class, and the other one: read from the build
+    // because an emitted seam may default either route, the same reason the float lane's section
+    // reads its own rather than naming one.
+    constexpr boys::FitRoute kShippedRoute = RouteClass::kRoute;
+    constexpr boys::FitRoute kNonDefaultRoute = kShippedRoute == boys::FitRoute::kChebyshev
+                                                    ? boys::FitRoute::kRationalMinimax
+                                                    : boys::FitRoute::kChebyshev;
+
     // The domain the class's entries read, and the one a route's selector takes over in this
     // build. A class row naming the grid reads one fixed table whose domain is its own row of
     // BoysFitGranularities: the grid covers [0, kFlatHi) whole and the body answers the whole of
@@ -2657,7 +2747,7 @@ int main(int argc, char** argv) {
                                 routePartition->granularity == boys::FitGranularity::kUniform;
 
     // Filled by the carriage measurement below and read by the route book's
-    // claims: the run-time selector's pairs, and the entries that name a route
+    // claims: the route-and-scheme pairs, and the entries that name a route
     // without answering it.
     std::size_t routeRuntimePairs = 0;
     std::size_t routeRuntimeDiff = 0;
@@ -2725,8 +2815,8 @@ int main(int argc, char** argv) {
             }
 
             boys::BoysAllOrders(nmax, x, plain.data());
-            boys::BoysAllOrdersWithRoute(boys::FitRoute::kChebyshev, nmax, x, selected.data());
-            boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax, nmax, x, out.data());
+            boys::BoysAllOrdersWithRoute<kShippedRoute>(nmax, x, selected.data());
+            boys::BoysAllOrdersWithRoute<kNonDefaultRoute>(nmax, x, out.data());
 
             for (int n = 0; n <= nmax; ++n)
             {
@@ -2792,7 +2882,7 @@ int main(int argc, char** argv) {
                     }
                 } else
                 {
-                    boys::BoysAllOrdersWithRoute(row.route, 0, x, out.data());
+                    EvaluateRouteArm(row.route, 0, x, out.data());
                     MeasureInto(RouteClaims(),
                                 routeSeedClaim[r],
                                 0,
@@ -2804,7 +2894,7 @@ int main(int argc, char** argv) {
                                 Unrepresentable(out[0], -1022));
                 }
 
-                boys::BoysAllOrdersWithRoute(row.route, nmax, x, out.data());
+                EvaluateRouteArm(row.route, nmax, x, out.data());
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -2818,7 +2908,9 @@ int main(int argc, char** argv) {
                                 got,
                                 ref.v[k],
                                 ref.decade[k],
-                                kBoundDoubleBatch,
+                                DoubleCellFigure(kBoundDoubleBatch,
+                                                 ref.v[ref.Index(0, i)],
+                                                 ref.v[k]),
                                 Unrepresentable(got, -1022));
                 }
             }
@@ -2830,8 +2922,8 @@ int main(int argc, char** argv) {
         for (std::size_t i = 0; i < count; i += 7)
         {
             boys::BoysAllOrders(nmax, ref.x[i], plain.data());
-            boys::BoysAllOrdersWithRoute(static_cast<boys::FitRoute>(99), nmax, ref.x[i],
-                                         out.data());
+            boys::BoysAllOrdersWithRoute<static_cast<boys::FitRoute>(99)>(nmax, ref.x[i],
+                                                                         out.data());
 
             for (int n = 0; n <= nmax; ++n)
             {
@@ -3087,13 +3179,14 @@ int main(int argc, char** argv) {
             }
         }
 
-        // ---- the run-time selector's two-argument form: route and scheme named together, the
+        // ---- the selector's two-argument form: route and scheme named together, the
         // pair a compile-time call site reaches through one EvalPolicy. The values must be the same
         // values, not merely inside the same bound.
         const auto runtimePair = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
             // The entry a call site writes for this pair: the policy names the route and the
-            // scheme and leaves the other axes to the class, which is the reading the selector
-            // itself makes for the axes its caller did not name (src/boys.cpp, SelectorPolicy).
+            // scheme and leaves the other axes to the class, which is the reading the entry
+            // itself makes for the axes its caller did not name (boys_impl.hpp,
+            // BoysAllOrdersWithRoute).
             using Counterpart = boys::EvalPolicy<kRoute,
                                                  kScheme,
                                                  RouteClass::kBudget,
@@ -3106,7 +3199,7 @@ int main(int argc, char** argv) {
             {
                 std::array<double, 33> a{};
                 std::array<double, 33> b{};
-                boys::BoysAllOrdersWithRoute(kRoute, kScheme, nmax, ref.x[i], a.data());
+                boys::BoysAllOrdersWithRoute<kRoute>(kScheme, nmax, ref.x[i], a.data());
                 boys::BoysAllOrders<Counterpart>(nmax, ref.x[i], b.data());
 
                 for (int n = 0; n <= nmax; ++n)
@@ -3494,8 +3587,7 @@ int main(int argc, char** argv) {
                     }
 
                     const std::size_t k = ref.Index(n, i);
-                    const float got = boys::BoysSingleF32WithRoute(
-                        row.route, n, xf);
+                    const float got = EvaluateRouteArmF32(row.route, n, xf);
                     const double asDouble = static_cast<double>(got);
                     const bool unrepresentable =
                         got == 0.0f || std::fabs(asDouble) < std::numeric_limits<float>::min();
@@ -3529,11 +3621,11 @@ int main(int argc, char** argv) {
                 const float xf = static_cast<float>(ref.xf[i]);
                 const float plain = boys::BoysSingleF32(n, xf);
                 const float namedDefault =
-                    boys::BoysSingleF32WithRoute(kShippedRouteF32, n, xf);
-                const float namedUnknown = boys::BoysSingleF32WithRoute(
-                    static_cast<boys::FitRoute>(99), n, xf);
+                    boys::BoysSingleF32WithRoute<kShippedRouteF32>(n, xf);
+                const float namedUnknown =
+                    boys::BoysSingleF32WithRoute<static_cast<boys::FitRoute>(99)>(n, xf);
                 const float namedOther =
-                    boys::BoysSingleF32WithRoute(kNonDefaultRouteF32, n, xf);
+                    boys::BoysSingleF32WithRoute<kNonDefaultRouteF32>(n, xf);
 
                 if (namedDefault != plain || namedUnknown != plain)
                 {
@@ -4118,7 +4210,7 @@ int main(int argc, char** argv) {
         const int claimEntry = AddGranularityClaim("rational x narrow",
                                                    "batch entry, A..C",
                                                    kBoundDoubleBatch,
-                                                   kRelativeDoubleFloored);
+                                                   kRelativeDouble);
 
         narrowRatClaims[0] = claimA;
         narrowRatClaims[1] = claimB;
@@ -4153,7 +4245,9 @@ int main(int argc, char** argv) {
                             got,
                             ref.v[k],
                             ref.decade[k],
-                            kBoundDoubleBatch,
+                            DoubleCellFigure(kBoundDoubleBatch,
+                                             ref.v[ref.Index(0, i)],
+                                             ref.v[k]),
                             Unrepresentable(got, -1022));
 
                 if (x < boys::detail::kX0 && x >= NarrowFit::kRegionAFitsFrom)
@@ -5300,7 +5394,7 @@ int main(int argc, char** argv) {
             e.scheme = info.scheme;
             e.entry = row.entry;
             e.kind = row.kind;
-            e.slot = AddSchemeClaim(info.name, row.entry, baseBound, kRelativeDoubleFloored);
+            e.slot = AddSchemeClaim(info.name, row.entry, baseBound, kRelativeDouble);
             e.carriage = static_cast<int>(schemeEntryCarriage.size()) - 1;
             schemeEntries.push_back(e);
         }
@@ -5420,7 +5514,9 @@ int main(int argc, char** argv) {
                               got,
                               ref.v[k],
                               ref.decade[k],
-                              SingleBound(x),
+                              DoubleCellFigure(SingleBound(x),
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(got, -1022));
 
                     if constexpr (kFirst)
@@ -5453,7 +5549,9 @@ int main(int argc, char** argv) {
                               a[static_cast<std::size_t>(m)],
                               ref.v[km],
                               ref.decade[km],
-                              kBoundDoubleBatch,
+                              DoubleCellFigure(kBoundDoubleBatch,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[km]),
                               Unrepresentable(a[static_cast<std::size_t>(m)], -1022));
 
                     if constexpr (kFirst)
@@ -5486,7 +5584,9 @@ int main(int argc, char** argv) {
                               a[i],
                               ref.v[k],
                               ref.decade[k],
-                              kBoundDoubleBatch,
+                              DoubleCellFigure(kBoundDoubleBatch,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(a[i], -1022));
 
                     if constexpr (kFirst)
@@ -5542,7 +5642,9 @@ int main(int argc, char** argv) {
                               a[p],
                               ref.v[k],
                               ref.decade[k],
-                              kBoundDoubleBatch,
+                              DoubleCellFigure(kBoundDoubleBatch,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(a[p], -1022));
 
                     if constexpr (kFirst)
@@ -5589,7 +5691,9 @@ int main(int argc, char** argv) {
                               a[k],
                               ref.v[k],
                               ref.decade[k],
-                              kBoundDoubleBatch,
+                              DoubleCellFigure(kBoundDoubleBatch,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(a[k], -1022));
 
                     if constexpr (kFirst)
@@ -5725,11 +5829,11 @@ int main(int argc, char** argv) {
     {
         packSchemes.push_back(info.scheme);
         packSlots.push_back(
-            AddPackClaim(info.name, "orders axis, region A", kBoundSingleA, kRelativeDoubleFloored));
+            AddPackClaim(info.name, "orders axis, region A", kBoundSingleA, kRelativeDouble));
         packSlots.push_back(AddPackClaim(info.name,
                                          "orders axis, A..C",
                                          kBoundSingleC,
-                                         kRelativeDoubleFloored));
+                                         kRelativeDouble));
     }
 
     const auto sweepPackAxis = [&]<boys::EvalScheme kScheme>() {
@@ -5769,7 +5873,9 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  regionABound,
+                                  DoubleCellFigure(regionABound,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(got, -1022));
                     }
 
@@ -5779,7 +5885,9 @@ int main(int argc, char** argv) {
                               got,
                               ref.v[k],
                               ref.decade[k],
-                              SingleBound(x),
+                              DoubleCellFigure(SingleBound(x),
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(got, -1022));
                 }
             }
@@ -5800,11 +5908,11 @@ int main(int argc, char** argv) {
         packPlaneSlots.push_back(AddPackClaim(info.name,
                                               "orders axis on the plane entry, region A",
                                               kBoundSingleA,
-                                              kRelativeDoubleFloored));
+                                              kRelativeDouble));
         packPlaneSlots.push_back(AddPackClaim(info.name,
                                               "orders axis on the plane entry, A..C",
                                               kBoundDoubleBatch,
-                                              kRelativeDoubleFloored));
+                                              kRelativeDouble));
     }
 
     const auto sweepPlanePackAxis = [&]<boys::EvalScheme kScheme>() {
@@ -5846,7 +5954,9 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  regionABound,
+                                  DoubleCellFigure(regionABound,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(got, -1022));
                     }
 
@@ -5859,7 +5969,9 @@ int main(int argc, char** argv) {
                               got,
                               ref.v[k],
                               ref.decade[k],
-                              kBoundDoubleBatch,
+                              DoubleCellFigure(kBoundDoubleBatch,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(got, -1022));
                 }
             }
@@ -5979,7 +6091,7 @@ int main(int argc, char** argv) {
                         const int slot = AddPackClaim(axis,
                                                       openedLabels[label].c_str(),
                                                       rowBound[at],
-                                                      kRelativeDoubleFloored);
+                                                      kRelativeDouble);
 
                         openedSlots[openedSlot(routeIdx, partIdx, schemeIdx, entry, region)] =
                             slot;
@@ -6075,7 +6187,9 @@ int main(int argc, char** argv) {
                                   viaOrders,
                                   ref.v[k],
                                   ref.decade[k],
-                                  regionABound,
+                                  DoubleCellFigure(regionABound,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(viaOrders, -1022));
                         MeasureAt(PackClaims()[planeRegionA],
                                   n,
@@ -6083,7 +6197,9 @@ int main(int argc, char** argv) {
                                   viaPlane,
                                   ref.v[k],
                                   ref.decade[k],
-                                  regionABound,
+                                  DoubleCellFigure(regionABound,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(viaPlane, -1022));
                     }
 
@@ -6096,7 +6212,9 @@ int main(int argc, char** argv) {
                               viaOrders,
                               ref.v[k],
                               ref.decade[k],
-                              ordersGridBound,
+                              DoubleCellFigure(ordersGridBound,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(viaOrders, -1022));
                     MeasureAt(PackClaims()[planeGrid],
                               n,
@@ -6104,7 +6222,9 @@ int main(int argc, char** argv) {
                               viaPlane,
                               ref.v[k],
                               ref.decade[k],
-                              planeGridBound,
+                              DoubleCellFigure(planeGridBound,
+                                               ref.v[ref.Index(0, i)],
+                                               ref.v[k]),
                               Unrepresentable(viaPlane, -1022));
                 }
             }
@@ -6217,7 +6337,10 @@ int main(int argc, char** argv) {
             for (std::size_t r = 0; r < kGranRowCount; ++r)
             {
                 granSlots[granIndex(g, s, r)] =
-                    AddGranularityClaim(member, granRows[r].row, granRows[r].bound, kRelativeDoubleFloored);
+                    AddGranularityClaim(member,
+                                        granRows[r].row,
+                                        granRows[r].bound,
+                                        kRelativeDouble);
             }
         }
     }
@@ -6457,7 +6580,9 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  bar,
+                                  DoubleCellFigure(bar,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(got, -1022));
                     }
                 }
@@ -6602,7 +6727,7 @@ int main(int argc, char** argv) {
                 row.slot = AddEntryClaim(row.entry,
                                          "uniform grid, whole committed grid",
                                          kBoundDoubleBatch,
-                                         kRelativeDoubleFloored);
+                                         kRelativeDouble);
             };
 
             switch (kind)
@@ -6647,7 +6772,9 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  kBoundDoubleBatch,
+                                  DoubleCellFigure(kBoundDoubleBatch,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(got, -1022));
                     }
                 }
@@ -6686,7 +6813,9 @@ int main(int argc, char** argv) {
                                   got,
                                   ref.v[k],
                                   ref.decade[k],
-                                  kBoundDoubleBatch,
+                                  DoubleCellFigure(kBoundDoubleBatch,
+                                                   ref.v[ref.Index(0, i)],
+                                                   ref.v[k]),
                                   Unrepresentable(got, -1022));
                     }
                 }
@@ -6730,7 +6859,9 @@ int main(int argc, char** argv) {
                                       got,
                                       ref.v[k],
                                       ref.decade[k],
-                                      kBoundDoubleBatch,
+                                      DoubleCellFigure(kBoundDoubleBatch,
+                                                       ref.v[ref.Index(0, i)],
+                                                       ref.v[k]),
                                       Unrepresentable(got, -1022));
                         }
                     }
@@ -7280,18 +7411,20 @@ int main(int argc, char** argv) {
     };
 
     add("README.double.single",
-        "double single: 1e-13 of F_n(x) - one relative figure over the whole domain, which is "
-        "what the four regions the report reads are each judged against. The figure is the "
-        "shipped default build's: a build whose default rows are a replacement's records these "
-        "cells and judges none of them, and its own figures are the option probe's report",
+        "double single: the larger of 1e-13 of F_n(x) and 1e-13 of F_0(x) - the accuracy "
+        "contract's figure over the whole domain, the ladder's first rung being its wider arm "
+        "wherever the order's own value is the smaller - which is what the four regions the "
+        "report reads are each judged against. The figure is the shipped default build's: a "
+        "build whose default rows are a replacement's records these cells and judges none of "
+        "them, and its own figures are the option probe's report",
         "README accuracy contract",
         kDefaultRowsAreReplaced ? Verdict::NotJudged
                                 : verdictOf({kSingleA, kSingleBand, kSingleB, kSingleC}),
         worstOf({kSingleA, kSingleBand, kSingleB, kSingleC}));
 
     add("README.double.batch",
-        "double batch: 1e-13 of F_n(x) in every region, all entries. The figure is the shipped "
-        "default build's, on the same terms as the row above",
+        "double batch: the larger of 1e-13 of F_n(x) and 1e-13 of F_0(x) in every region, all "
+        "entries. The figure is the shipped default build's, on the same terms as the row above",
         "README accuracy contract",
         kDefaultRowsAreReplaced ? Verdict::NotJudged
                                 : verdictOf({kOrders, kFixedN, kAllN, kAllNAtOrders}),
@@ -7338,13 +7471,13 @@ int main(int argc, char** argv) {
         // The header's contract table as it stands: the double single lane's
         // region-A cell and its extended-band cell, the two rows the table does
         // not collapse, measured against the slots that hold them. Both state the
-        // lane's one relative figure, as the contract does over the whole domain.
+        // contract's figure, as the table's own rows do over the whole domain.
         const Accum& headerA = Claims()[static_cast<std::size_t>(kHeaderA)];
 
         add("header.double.region_A_and_band",
-            "double single: 1e-13 of F_n(x) in the region-A and extended-band cells the "
-            "header's table keeps apart. The figure is the shipped default build's, on the "
-            "same terms as README.double.single",
+            "double single: the larger of 1e-13 of F_n(x) and 1e-13 of F_0(x) in the region-A "
+            "and extended-band cells the header's table keeps apart. The figure is the shipped "
+            "default build's, on the same terms as README.double.single",
             "include/boys/boys.hpp preamble table (four-region, with the extended-band column)",
             kDefaultRowsAreReplaced ? Verdict::NotJudged : verdictOf({kSingleA, kSingleBand}),
             Fmt("%s. The record of what this row used to test: the same table read as a "
@@ -8986,10 +9119,11 @@ int main(int argc, char** argv) {
                      routeEntryOver));
 
         addRoute("route.runtime",
-                 "the run-time selector's route-and-scheme form answers each pair as the "
+                 "the selector's route-and-scheme form answers each pair as the "
                  "compile-time entry for that pair does, value for value",
-                 "include/boys/boys.hpp, BoysAllOrdersWithRoute(route, scheme, ...) and "
-                 "EvalPolicy; src/boys.cpp, SelectorPolicy for the axes the pair does not name",
+                 "include/boys/boys.hpp, BoysAllOrdersWithRoute<kRoute>(scheme, ...) and "
+                 "EvalPolicy; boys_impl.hpp, BoysAllOrdersWithRoute for the axes the pair does "
+                 "not name",
                  routeRuntimeDiff == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu cell(s) differ between the run-time pair selector and the "
                      "compile-time entry it names, over all four (route, scheme) pairs",
@@ -14404,8 +14538,8 @@ int main(int argc, char** argv) {
 
     // ---- the far-representation book ----------------------------------------
     // The axis decides the whole far region and no book above has a row for it. Each arm is
-    // measured twice - through the entry a caller names it, and against its own body - and each
-    // row is judged in its own figure's own form: the recurrence's absolute, the seeded relative.
+    // measured twice - through the entry a caller names it, and against its own body - and judged
+    // in its own figure's form: the bare ladder's off the contract's arm, the others per cell.
     {
         const Reference farref = LoadReference(std::string(BoysDataDir) +
                                                "/boys_far_gate_reference.csv");
@@ -14428,6 +14562,16 @@ int main(int argc, char** argv) {
                                        ? tableRow.del_separate
                                        : tableRow.del_fused;
 
+        // The form a row states its figure in: the number itself, a fraction of the cell's own
+        // value, or a fraction of the ladder's first rung - the accuracy contract's arm, the larger
+        // of 1e-13 * F_n(x) and 1e-13 * F_0(x), which at a fixed x is 1e-13 of F_0(x) because F
+        // falls with the order.
+        enum FarFigureForm {
+            kFarFigureAbsolute,
+            kFarFigureOfValue,
+            kFarFigureOfRung,
+        };
+
         // One arm's row: the name a report prints it under, the span it is judged over, the
         // figure and the form, and how the cells are reached.
         struct FarArmRow {
@@ -14435,7 +14579,7 @@ int main(int argc, char** argv) {
             const char* span;
             const char* source;
             double figure;
-            bool relative;
+            FarFigureForm form;
             boys::FarRepresentation arm;
             void (*body)(int, double, double*) noexcept;
             bool throughEntry; // the shipped entry rather than the arm's body
@@ -14446,31 +14590,35 @@ int main(int argc, char** argv) {
         const FarArmRow farArms[] = {
             {"asymptotic recurrence",
              "C, the arm's own body",
-             "README.md's region-C cell, the figure every published far-region figure was "
-             "measured at; absolute, at kX1 5.0e-14 of it at n=32 against a value of 1.95e-14",
+             "the accuracy contract's arm, 1e-13 of the ladder's first rung, over the span the "
+             "shipped dispatch opens the arm at: x >= kFlatHi, the fitted grid's hi. The tail is "
+             "largest at that left edge - 3.00 of the bar at n=32, x=29 with the committed hi - "
+             "and inside it from x = 29.93, 0.288 of the bar with the grid cut at 31.0",
              kBoundSingleC,
-             false,
+             kFarFigureOfRung,
              boys::FarRepresentation::kAsymptoticRecurrence,
              FarAsymptoticBody,
              false,
-             boys::detail::kX1,
+             boys::detail::kFlatHi,
              HUGE_VAL},
             {"asymptotic recurrence",
              "C, the named entry",
-             "the same figure: the entry answers this arm's values over the whole region",
+             "the same figure over the same span: at or above kFlatHi the name reaches this arm's "
+             "own values, and below it the fitted grid answers, which is the span the arm is not "
+             "entered over",
              kBoundSingleC,
-             false,
+             kFarFigureOfRung,
              boys::FarRepresentation::kAsymptoticRecurrence,
              FarAsymptoticBody,
              true,
-             boys::detail::kX1,
+             boys::detail::kFlatHi,
              HUGE_VAL},
             {"corrected seed",
              "C, the arm's own body",
              "the arm's own relative figure, measured: the recurrence with its dropped term "
              "restored and the seed's erfc(sqrt(x)) error carried",
              kFarCorrectedSeedFigure,
-             true,
+             kFarFigureOfValue,
              boys::FarRepresentation::kCorrectedSeed,
              FarCorrectedSeedBody,
              false,
@@ -14480,7 +14628,7 @@ int main(int argc, char** argv) {
              "C, the named entry",
              "the same figure: the entry answers this arm's values at every x >= kX1",
              kFarCorrectedSeedFigure,
-             true,
+             kFarFigureOfValue,
              boys::FarRepresentation::kCorrectedSeed,
              FarCorrectedSeedBody,
              true,
@@ -14491,7 +14639,7 @@ int main(int argc, char** argv) {
              "the row the table publishes (boys_coefficients.hpp, kScaledFarRows): relative, a "
              "swept maximum over 32 points per interval rounded up to a power of two",
              tableFigure,
-             true,
+             kFarFigureOfValue,
              boys::FarRepresentation::kScaledTable,
              FarScaledTableBody,
              false,
@@ -14501,7 +14649,7 @@ int main(int argc, char** argv) {
              "C, the table's span, the named entry",
              "the same figure: the entry answers the table's values inside its span",
              tableFigure,
-             true,
+             kFarFigureOfValue,
              boys::FarRepresentation::kScaledTable,
              FarScaledTableBody,
              true,
@@ -14512,7 +14660,7 @@ int main(int argc, char** argv) {
              "the recurrence's figure: outside its span the table is the default entry outright, "
              "so the join at kScaledFarX1 is measured rather than assumed",
              kBoundSingleC,
-             false,
+             kFarFigureOfRung,
              boys::FarRepresentation::kScaledTable,
              FarScaledTableBody,
              true,
@@ -14525,21 +14673,21 @@ int main(int argc, char** argv) {
         // under 2^-48 reads 0.9866 of the figure against the reference as written and 1.0058
         // against it as a double: the read's own rounding there is 3.3x the 0.58% exceedance.
 
-        // The cell's bound in the figure's own form. A relative figure is a fraction of the value
-        // and not a number, so a cell's bound is the product; a cell whose value falls below
-        // binary64's smallest normal returns a subnormal or a zero, no accuracy is claimed there,
-        // and the cell is counted outside the claim rather than passed by a bound that cannot bind.
-        const auto farCellBound = [](double figure, bool relative, double ref) {
-            if (!relative)
+        // The cell's bound in the figure's own form. An absolute figure is the bound itself; a
+        // relative one is a fraction of the cell's own value, and the contract's arm a fraction of
+        // the ladder's first rung (F_0(x), passed in), so both are a product. A scale below
+        // binary64's smallest normal counts the cell outside the claim, no bound binding there.
+        const auto farCellBound = [](double figure, FarFigureForm form, double ref, double rung) {
+            if (form == kFarFigureAbsolute)
             {
                 return figure;
             }
 
-            const double value = std::fabs(ref);
+            const double scale = std::fabs(form == kFarFigureOfRung ? rung : ref);
 
-            return value < std::numeric_limits<double>::min()
+            return scale < std::numeric_limits<double>::min()
                        ? std::numeric_limits<double>::infinity()
-                       : figure * value;
+                       : figure * scale;
         };
 
         const auto farHolds = [](double x, const FarArmRow& row) {
@@ -14549,7 +14697,7 @@ int main(int argc, char** argv) {
         const auto farEvaluate = [&](const FarArmRow& row, double x, double* out) {
             if (row.throughEntry)
             {
-                boys::BoysAllOrdersWithFarRepresentation(row.arm, nmax, x, out);
+                EvaluateFarArm(row.arm, nmax, x, out);
             } else
             {
                 row.body(nmax, x, out);
@@ -14595,7 +14743,10 @@ int main(int argc, char** argv) {
                               got[n],
                               farref.v[k],
                               farref.decade[k],
-                              farCellBound(row.figure, row.relative, farref.v[k]),
+                              farCellBound(row.figure,
+                                           row.form,
+                                           farref.v[k],
+                                           farref.v[farref.Index(0, i)]),
                               std::fabs(got[n]) < std::numeric_limits<double>::min());
                 }
             }
@@ -14625,7 +14776,10 @@ int main(int argc, char** argv) {
                               onGateGot[n],
                               ref.v[k],
                               ref.decade[k],
-                              farCellBound(row.figure, row.relative, ref.v[k]),
+                              farCellBound(row.figure,
+                                           row.form,
+                                           ref.v[k],
+                                           ref.v[ref.Index(0, i)]),
                               std::fabs(onGateGot[n]) < std::numeric_limits<double>::min());
                 }
             }
@@ -14654,9 +14808,10 @@ int main(int argc, char** argv) {
         }
         std::printf("  `as a figure` is the row's worst cell read in the figure's own form, "
                     "ratio x figure: for a\n  relative figure that is the relative error the "
-                    "cell delivers, and for an absolute one it is\n  the delivered error itself. "
-                    "A row over its figure prints it, so the reader is given the\n  figure the "
-                    "arm's own row would have to state and not only the verdict\n");
+                    "cell delivers, for the contract's arm the\n  fraction of the ladder's first "
+                    "rung it delivers, and for an absolute one it is the\n  delivered error "
+                    "itself. A row over its figure prints it, so the reader is given the\n  "
+                    "figure the arm's own row would have to state and not only the verdict\n");
         std::printf("  %-22s %-46s %8s %8s  %-11s %-9s %-11s %-11s %7s  %-24s %s\n",
                     "arm",
                     "span and reading",
@@ -14684,11 +14839,14 @@ int main(int argc, char** argv) {
             const Verdict v = a.judged ? FromAccum(a) : Verdict::NotJudged;
             char where[64] = "-";
             char delivered[48] = "-";
-            // The row's worst cell read in the figure's own form, `ratio x figure`: for a relative
-            // figure that is the relative error the cell delivers - the figure an arm's own row
-            // would state if the one above it moved - and for an absolute one the delivered error
-            // itself. A row over its figure prints both, so the reader gets the honest figure too.
+            // The row's worst cell read in the figure's own form, `ratio x figure`: a relative
+            // figure gives the relative error the cell delivers - the figure an arm's own row would
+            // state if the one above it moved - the contract's arm the fraction of the ladder's
+            // first rung, an absolute one the delivered error. It prints beside the delivery.
             char implied[48] = "-";
+            const char* formName = row.form == kFarFigureAbsolute
+                                       ? "absolute"
+                                       : (row.form == kFarFigureOfRung ? "of F_0(x)" : "relative");
 
             if (a.worstN >= 0)
             {
@@ -14715,7 +14873,7 @@ int main(int argc, char** argv) {
                         a.points,
                         a.points - a.vacuous,
                         row.figure,
-                        row.relative ? "relative" : "absolute",
+                        formName,
                         delivered,
                         implied,
                         a.worstN >= 0 ? a.worstRatio : 0.0,
@@ -14746,7 +14904,7 @@ int main(int argc, char** argv) {
         const FarAgreement farAgreement[] = {
             {boys::FarRepresentation::kAsymptoticRecurrence,
              "asymptotic recurrence",
-             boys::detail::kX1,
+             boys::detail::kFlatHi,
              HUGE_VAL},
             {boys::FarRepresentation::kCorrectedSeed,
              "corrected seed",
@@ -14792,7 +14950,7 @@ int main(int argc, char** argv) {
                     FarScaledTableBody(nmax, x, body);
                 }
 
-                boys::BoysAllOrdersWithFarRepresentation(row.arm, nmax, x, named);
+                EvaluateFarArm(row.arm, nmax, x, named);
 
                 for (int n = 0; n <= nmax; ++n)
                 {
@@ -14885,7 +15043,8 @@ int main(int argc, char** argv) {
                     "region guarantees. A bound can be written for the axis once the derived\n"
                     "              partition's own rows carry what it delivers; until then this "
                     "row is a reading,\n              and a reader who needs a bound over the "
-                    "far region reads the recurrence's\n              absolute cell above it\n",
+                    "far region reads the recurrence's\n              own row above it, 1e-13 of "
+                    "the ladder's first rung\n",
                     32,
                     static_cast<int>(boys::detail::kScaledFarIntervals),
                     static_cast<double>(boys::detail::kScaledFarX1));

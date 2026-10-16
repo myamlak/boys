@@ -38,10 +38,10 @@ template void BoysAllOrdersF32<EvalPolicy<>>(
 template void BoysAllNF32<EvalPolicy<>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
 
-// The far ladders' asking leg: the arm a host without the fused instruction set reaches, defined
-// here because this unit carries no fused flag, and defined once - the declarations in
-// boys_impl.hpp hold that for every other unit that would otherwise emit a copy. The fused leg's
-// instantiations are boys_orders_simd.cpp's, for the mirror reason. See LadderLeg.
+// The far ladders' asking leg: the arm a host without the fused instruction set reaches, prebuilt
+// here because this unit carries no fused flag. A unit that names the leg compiles its own copy at
+// its own flags, which is what keeps the fused arm off a host that has not licensed it; the fused
+// leg's prebuilt copies are boys_orders_simd.cpp's. See LadderLeg.
 template void detail::CorrectedSeedLadder<DivisionForm::kExactDivision, detail::LadderLeg::kAskingLeg>(
     int, double, double*) noexcept;
 template void detail::CorrectedSeedLadder<DivisionForm::kPlainReciprocal,
@@ -57,26 +57,6 @@ template void detail::ScaledFarLadder<DivisionForm::kPlainReciprocal,
                                       detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
 template void detail::ScaledFarLadder<DivisionForm::kRefinedReciprocal,
                                       detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
-
-namespace {
-
-// The class the run-time selectors stand in for: BoysAllOrders, the double lane's
-// ladder entry, which is the entry the unnamed calls below are made through.
-using SelectorClass = DefaultPolicy<Precision::kFp64, Shape::kAllOrders>;
-
-// The policy a run-time selector builds from the axes its caller named. The axes a selector
-// does not take are read off the class's own default - the row this build's seam carries for
-// BoysAllOrders, or the five where it carries none - and not spelled as the five here.
-template <FitRoute kRoute, EvalScheme kScheme>
-using SelectorPolicy = EvalPolicy<kRoute,
-                                  kScheme,
-                                  SelectorClass::kBudget,
-                                  SelectorClass::kPack,
-                                  SelectorClass::kGranularity,
-                                  SelectorClass::kDivision,
-                                  SelectorClass::kRegionBExp>;
-
-} // namespace
 
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
     // The rows are the generated header's own measured figures rather than numbers repeated here,
@@ -110,7 +90,7 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
              AccuracyComponent::kRegionBFit,
              AccuracyRegion::kB,
              detail::kX0,
-             detail::kX1,
+             detail::kFlatHi,
              detail::kX0,
              detail::kRegionBFitChebStored,
              detail::kRegionBFitChebDelivered,
@@ -120,7 +100,7 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
              AccuracyComponent::kRegionBFit,
              AccuracyRegion::kB,
              detail::kX0,
-             detail::kX1,
+             detail::kFlatHi,
              detail::kX0,
              detail::kRegionBFitRatStored,
              detail::kRegionBFitRatDelivered,
@@ -130,95 +110,6 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
     }();
 
     return kRoutes;
-}
-
-void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noexcept {
-    // The class's own scheme, not the reference one: the values a route does not serve are the
-    // default entry's bit for bit, which requires the scheme that entry reads, so the scheme is
-    // read off the row rather than off the seam's five.
-    BoysAllOrdersWithRoute(route, SelectorClass::kScheme, nmax, x, out);
-}
-
-void BoysAllOrdersWithRoute(
-    FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept {
-    // One body, instantiated once per (route, scheme) pair through the same entry a compile-time
-    // caller uses: the policy names only the fits and the summation they are read in. Every
-    // argument the named route's rows do not cover is answered by the body's own shipped-family
-    // branches, and every route this build does not serve is the default entry outright.
-    const bool served = route == FitRoute::kChebyshev || route == FitRoute::kRationalMinimax;
-    const FitRoute selected = served ? route : SelectorClass::kRoute;
-
-    if (selected == FitRoute::kRationalMinimax)
-    {
-        if (scheme == EvalScheme::kHorner)
-        {
-            BoysAllOrders<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kHorner>>(
-                nmax, x, out);
-            return;
-        }
-
-        BoysAllOrders<SelectorPolicy<FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw>>(nmax, x,
-                                                                                        out);
-        return;
-    }
-
-    if (scheme == EvalScheme::kHorner)
-    {
-        BoysAllOrders<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kHorner>>(nmax, x, out);
-        return;
-    }
-
-    BoysAllOrders<SelectorPolicy<FitRoute::kChebyshev, EvalScheme::kSplitClenshaw>>(nmax, x, out);
-}
-
-void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
-                                        int nmax,
-                                        double x,
-                                        double* out) noexcept {
-    // Every member of the axis is served below, so a caller naming one gets what the name
-    // says: what the fallback is for is a name this build does not serve, which is the
-    // default entry outright, the fallback BoysAllOrdersWithRoute takes for a route it
-    // does not serve. The default is named where it is declared, not spelled here.
-    const bool served = far == FarRepresentation::kAsymptoticRecurrence ||
-                        far == FarRepresentation::kScaledTable ||
-                        far == FarRepresentation::kCorrectedSeed;
-    const FarRepresentation selected = served ? far : kDefaultFarRepresentation;
-
-    // The bare ladder is the region's own arithmetic, over the whole region and at the
-    // default entry's values: below kX1 the fitted regions answer, as they do under
-    // every name on this axis.
-    if (selected == FarRepresentation::kAsymptoticRecurrence && x >= detail::kX1)
-    {
-        detail::AsymptoticRecurrenceAllOrders<kDefaultDivisionForm>(nmax, x, out);
-        return;
-    }
-
-    // The table serves the span its rows report and nothing else: outside it the
-    // default entry answers, at its own values and by its own code, so the join at
-    // kScaledFarX0 and the edge at kScaledFarX1 are not a second implementation of
-    // the arguments beyond them.
-    if (selected == FarRepresentation::kScaledTable && x >= detail::kScaledFarX0 &&
-        x < detail::kScaledFarX1)
-    {
-        // The division form is the default entry's: this entry names the far
-        // representation and no other axis, so the recovery's ladder divides the
-        // way an unnamed division form divides rather than substituting a form the
-        // caller did not name.
-        detail::ScaledFarAllOrders<kDefaultDivisionForm>(nmax, x, out);
-        return;
-    }
-
-    // The corrected seed serves region C, which is the whole of [kX1, inf): below
-    // it the fitted regions answer. Its span is the region itself rather than a
-    // table's, because the seed correction and the stepped exp term are properties
-    // of the region and not of a table's rows.
-    if (selected == FarRepresentation::kCorrectedSeed && x >= detail::kX1)
-    {
-        detail::CorrectedSeedAllOrders<kDefaultDivisionForm>(nmax, x, out);
-        return;
-    }
-
-    BoysAllOrders<SelectorClass>(nmax, x, out);
 }
 
 // The evaluation-scheme report. Both tables are built once from the generated rows;
@@ -279,38 +170,6 @@ std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept {
     }();
 
     return kRoutes;
-}
-
-float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept {
-    // One body instantiated per route, as the double lane's selector is: the closed form at zero,
-    // the region split, the two recurrences and the domains are the body's, and the route names
-    // only its two fits. Every cell but the route is read off the row this entry's default arm
-    // runs: an arm naming its own fit family would answer from another partition's tables.
-    using SingleOrderClass = DefaultPolicy<Precision::kFp32, Shape::kSingle>;
-
-    // Every route this build does not serve is the default entry outright; the fallback is
-    // read from the class row, never pinned to kChebyshev: an emitted seam may default this
-    // class to the other route (measured 2026-10-12, the probe's vote names kRationalMinimax
-    // for the float single class), and a pinned arm answers the wrong tables.
-    const bool served = route == FitRoute::kChebyshev || route == FitRoute::kRationalMinimax;
-    const FitRoute selected = served ? route : SingleOrderClass::kRoute;
-
-    using RationalClass = EvalPolicy<FitRoute::kRationalMinimax, SingleOrderClass::kScheme,
-                                     SingleOrderClass::kBudget, SingleOrderClass::kPack,
-                                     SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
-                                     SingleOrderClass::kRegionBExp>;
-
-    if (selected == FitRoute::kRationalMinimax)
-    {
-        return BoysSingleF32<RationalClass>(n, x);
-    }
-
-    using ChebyshevClass = EvalPolicy<FitRoute::kChebyshev, SingleOrderClass::kScheme,
-                                      SingleOrderClass::kBudget, SingleOrderClass::kPack,
-                                      SingleOrderClass::kGranularity, SingleOrderClass::kDivision,
-                                      SingleOrderClass::kRegionBExp>;
-
-    return BoysSingleF32<ChebyshevClass>(n, x);
 }
 
 std::span<const EvalFitInfo> BoysEvalSchemeFits() noexcept {
@@ -625,8 +484,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
         }
 
         // The interval a partition's own tables serve, read from the fitted routes' own domains:
-        // region A's per-order tables from zero to kX0 and region B's seed from kX0 to kX1. Above the
-        // top edge the entry runs region C's asymptotic, which no partition replaces.
+        // region A's per-order tables from zero to kX0 and region B's seed from kX0 to kFlatHi.
+        // Above the top edge the entry runs region C's asymptotic, which no partition replaces.
         double fittedLo = std::numeric_limits<double>::infinity();
         double fittedHi = 0.0;
 
@@ -757,9 +616,9 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 
 std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // The figures these rows carry are the absolute ones their runs measured; the contract is
-    // relative (README, docs/specification.md). Each is a lane's figure for one value over the
-    // whole of x >= 0 at the reference multiplier; the plain form's own term is stated apart,
-    // measured at n = 0, x = 9.74054909 for fp32 and n = 32, x = 11.9453125 for fp16-device.
+    // ladder-scaled, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) (README, specification.md).
+    // Each is a lane's figure for one value over the whole of x >= 0 at the reference multiplier;
+    // the plain form's own term is stated apart, and only on the lanes that carry such a form.
     static const std::array<LaneContractInfo, 8> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
@@ -797,7 +656,8 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // row because it is a different lane, and a kFp64Device class reads this lane's own statement.
         {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
-         "publish it in the contract's relative form, \"|error| <= 1e-13 * F_n(x)\" "
+         "publish it in the contract's ladder-scaled form, "
+         "\"|error| <= max(1e-13 * F_n(x), 1e-13 * F_0(x))\" "
          "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
          "It is the host double lane's number because it is the same arithmetic over the same "
          "pieces; it is this row's because the lane is this lane's - a device class asked for "

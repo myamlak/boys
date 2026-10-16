@@ -11,6 +11,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <limits>
+#include <map>
 #include <random>
 #include <sstream>
 #include <string>
@@ -87,14 +88,17 @@ std::vector<ReferenceRow> LoadReference() {
     return rows;
 }
 
-// Tolerance with a small margin over the design target: the reference values
-// carry ~1e-17 double-rounding, and the fits are validated at 4.5e-14.
+// The flat absolute bar the double lanes' fits were placed against over region C, with a small
+// margin over the design target: the reference values carry ~1e-17 double-rounding, and the fits
+// are validated at 4.5e-14. It is kept for the flat readings of a whole-grid worst below; each
+// cell is judged at the lane's published figure, DoubleBound below.
 constexpr double kDoubleTolerance = 5.5e-14;
 constexpr float kFloatTolerance = 1.5e-7f;
 
 // Per-region worst bounds for the double single lane, each within one significant
 // digit of its measured worst: region A <= 1e-15 (6.7e-16), region B <= 3e-14
-// (2.9e-14), region C the overall 5.5e-14 (5.0e-14 at (32, x1)).
+// (2.9e-14), region C the flat bar above (5.0e-14 at (32, x1)). They read the
+// lane's worst over a region; each cell is judged at its own published figure.
 constexpr double kRegionATolerance = 1e-15;
 constexpr double kRegionBTolerance = 3e-14;
 
@@ -153,6 +157,31 @@ struct RegionWorsts {
 };
 
 std::vector<ReferenceRow> gReference = LoadReference();
+
+// The double lanes' published figure at a cell whose ladder rung is F_0(x): the larger of
+// 1e-13 * F_n(x) and 1e-13 * F_0(x), and F falling with the order makes the rung's arm the wider
+// one (README.md, "What the bound is, and what it is not").
+double DoubleBound(double rung) { return 1e-13 * rung; }
+
+// The ladder's first rung F_0(x) at each argument of the committed reference, whose every x
+// carries an order-0 row.
+double Rung(double x) {
+    static const std::map<double, double> rungs = [] {
+        std::map<double, double> out;
+        for (const ReferenceRow& row : gReference)
+        {
+            if (row.n == 0)
+            {
+                out[row.x] = row.value;
+            }
+        }
+        return out;
+    }();
+
+    const auto it = rungs.find(x);
+    EXPECT_TRUE(it != rungs.end()) << "the reference carries no F_0 row at x=" << x;
+    return it != rungs.end() ? it->second : 0.0;
+}
 
 #if BoysFp16
 // The fp16 reference is the certified double lane (5e-14) at the fp16-rounded argument,
@@ -388,7 +417,7 @@ TEST(BoysTest, SingleMatchesReferenceDouble) {
     {
         const double value = boys::BoysSingle(row.n, row.x);
         const double error = std::abs(value - row.value);
-        EXPECT_LE(error, kDoubleTolerance)
+        EXPECT_LE(error, DoubleBound(Rung(row.x)))
             << "n=" << row.n << " x=" << row.x << " got=" << value << " want=" << row.value;
         worst = std::max(worst, error);
         regionWorst.Update(error, row.x);
@@ -399,6 +428,7 @@ TEST(BoysTest, SingleMatchesReferenceDouble) {
     EXPECT_LE(regionWorst.a, kRegionATolerance) << "region A (x < kX0)";
     EXPECT_LE(regionWorst.b, kRegionBTolerance) << "region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "region C (x >= kX1)";
+
     EXPECT_LE(regionWorst.e, kRegionBTolerance) << "extended band (kExtendedBX0 <= x < kX0)";
 
     std::printf("BoysSingle: worst |error| = %.3e (region A %.3e, region B %.3e, region C %.3e, "
@@ -436,15 +466,18 @@ TEST(BoysTest, BatchMatchesReferenceDouble) {
             }
 
             const double error = std::abs(batch[k] - reference);
-            EXPECT_LE(error, kDoubleTolerance) << "batch F" << k << " at x=" << row.x
-                                               << " got=" << batch[k] << " want=" << reference;
+            EXPECT_LE(error, DoubleBound(Rung(row.x)))
+                << "batch F" << k << " at x=" << row.x << " got=" << batch[k]
+                << " want=" << reference;
             worst = std::max(worst, error);
             regionWorst.Update(error, row.x);
         }
     }
 
-    // The batch lane asserts its own merged 5.5e-14 cell per region: the weighted
-    // region-A worst was measured at 1.6e-14, so a 1e-15 bound would not hold here.
+    // The batch lane's flat reading per region is the fits' own bar, 5.5e-14 - the
+    // weighted region-A worst was measured at 1.6e-14, so a 1e-15 bound would not hold
+    // here - while each cell above is judged at the lane's published figure, the
+    // ladder-scaled arm.
     EXPECT_LE(regionWorst.a, kDoubleTolerance) << "batch region A (x < kX0)";
     EXPECT_LE(regionWorst.b, kDoubleTolerance) << "batch region B (kX0 <= x < kX1)";
     EXPECT_LE(regionWorst.c, kDoubleTolerance) << "batch region C (x >= kX1)";
@@ -625,8 +658,8 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
         if (x < boys::detail::kScaledFarX0 || x >= boys::detail::kScaledFarX1)
         {
             boys::BoysAllOrders(kMax, x, shipped.data());
-            boys::BoysAllOrdersWithFarRepresentation(
-                FarRepresentation::kScaledTable, kMax, x, named.data());
+            boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kScaledTable>(
+                kMax, x, named.data());
 
             for (int n = 0; n <= kMax; ++n)
             {
@@ -650,8 +683,8 @@ TEST(BoysTest, ScaledFarRepresentationIsSelectableAndNotSelected) {
             continue;
         }
 
-        boys::BoysAllOrdersWithFarRepresentation(
-            FarRepresentation::kScaledTable, row.n, row.x, named.data());
+        boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kScaledTable>(
+            row.n, row.x, named.data());
         const double rel = std::abs(named[row.n] - row.value) / std::abs(row.value);
 
         if (rel > worst)
@@ -688,8 +721,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
     for (double x : {0.5, 11.5, 12.5, 28.5, std::nextafter(boys::detail::kX1, 0.0)})
     {
         boys::BoysAllOrders(kMax, x, shipped.data());
-        boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax, x,
-                                                  named.data());
+        boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+            kMax, x, named.data());
 
         for (int n = 0; n <= kMax; ++n)
         {
@@ -714,8 +747,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
             continue;
         }
 
-        boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, row.n, row.x,
-                                                  named.data());
+        boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+            row.n, row.x, named.data());
         boys::BoysAllOrders(row.n, row.x, shipped.data());
 
         const double rel = std::abs(named[row.n] - row.value) / std::abs(row.value);
@@ -760,8 +793,8 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
     // At the join the correction is off and the seed is the closed form, bit for bit;
     // at that same argument the branch below would have built a different seed. Together
     // with the step above, that is what the branch placement states.
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 0, join,
-                                             named.data());
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+        0, join, named.data());
     EXPECT_EQ(named[0], m);
     EXPECT_NE(fitted, m);
 
@@ -769,10 +802,10 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
     // branches read at the two doubles that straddle it.
     std::vector<double> below(kMax + 1);
     std::vector<double> above(kMax + 1);
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax,
-                                             std::nextafter(join, 0.0), below.data());
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, kMax, join,
-                                             above.data());
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+        kMax, std::nextafter(join, 0.0), below.data());
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+        kMax, join, above.data());
 
     double step = 0.0;
     int step_n = 0;
@@ -800,35 +833,47 @@ TEST(BoysTest, CorrectedSeedIsSelectableAndNotSelected) {
 
 TEST(BoysTest, FarRepresentationArmsAreNotSubstituted) {
     // The axis's own discriminator: each name serves the arithmetic it names, so the two names a
-    // substitution would fuse are held apart here at the two arguments that separate them.
+    // substitution would fuse are held apart here, at an argument inside both spans. The bare
+    // ladder's span opens at the fitted grid's hi-bound, and below it that name answers as the
+    // default entry by design: kX1, a region-B argument, holds nothing apart.
     using boys::FarRepresentation;
-    const double x = boys::detail::kX1;
+    const double x = boys::detail::kFlatHi;
+
+    // What the pairing rests on: the argument is inside the bare ladder's span and inside the span
+    // where the seed correction is in force. A re-cut that moves either bound re-pairs this case
+    // rather than leaving a pair that cannot differ here.
+    static_assert(boys::detail::kFlatHi >= boys::detail::kX1,
+                  "kFlatHi must sit inside both spans or no argument holds the two names apart");
+    static_assert(boys::detail::kFlatHi < boys::detail::kSeedCorrectionX1,
+                  "the seed correction must be in force at the argument the arms are cut at");
+
     std::vector<double> bare(boys::kMaxBoysOrder + 1);
     std::vector<double> corrected(boys::kMaxBoysOrder + 1);
 
     // At order 0 the ladders have taken no step, so what separates them is the seed alone. The
     // bare seed is F_0 * H_0 with H_0 held at 1 and the corrected one carries H_0 - 1, so the gap
-    // between them is erfc(sqrt(x)): measured at 2.664e-14 for an erfc of 2.650e-14.
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kAsymptoticRecurrence, 0, x,
-                                             bare.data());
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 0, x,
-                                             corrected.data());
+    // between them is erfc(sqrt(x)): measured at 3.488e-15 for an erfc of 3.435e-15.
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kAsymptoticRecurrence>(
+        0, x, bare.data());
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+        0, x, corrected.data());
 
     const double seed_error = std::erfc(std::sqrt(x));
     const double seed_gap = std::abs(bare[0] - corrected[0]) / std::abs(corrected[0]);
     EXPECT_NEAR(seed_gap, seed_error, 0.02 * seed_error)
-        << "the two seeds differ by " << seed_gap << " at kX1, against erfc(sqrt(kX1)) = "
+        << "the two seeds differ by " << seed_gap << " at kFlatHi, against erfc(sqrt(kFlatHi)) = "
         << seed_error;
 
     // At order 32 the step separates them as well: the bare step drops the exp(-x)/2 term, which
-    // at kX1 is larger than F_32 itself, so the bare ladder is more than twice the other's value.
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kAsymptoticRecurrence, 32, x,
-                                             bare.data());
-    boys::BoysAllOrdersWithFarRepresentation(FarRepresentation::kCorrectedSeed, 32, x,
-                                             corrected.data());
+    // at kFlatHi is larger than F_32 itself, so the bare ladder is more than twice the other's
+    // value: measured at 1.396 at kFlatHi.
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kAsymptoticRecurrence>(
+        32, x, bare.data());
+    boys::BoysAllOrdersWithFarRepresentation<FarRepresentation::kCorrectedSeed>(
+        32, x, corrected.data());
 
     const double step_gap = std::abs(bare[32] - corrected[32]) / std::abs(corrected[32]);
-    EXPECT_GT(step_gap, 2.0) << "the two ladders differ by " << step_gap
+    EXPECT_GT(step_gap, 1.0) << "the two ladders differ by " << step_gap
                              << " at n = 32, so the step under the first name is not the bare one";
 }
 
@@ -1285,6 +1330,12 @@ TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
     const std::size_t count = args.size();
     const std::size_t nmax = static_cast<std::size_t>(boys::kMaxBoysOrder);
 
+    // Each comparison is the plain entry at THIS batch's own class row: the batch names no policy,
+    // so it resolves its own row, and a seam may give the two classes rows that differ in a
+    // value-moving axis - the emitted seam's fp16 all-orders row carries the narrow partition
+    // where its all-N row carries the grid. At the same row the equality is the loop, bit for bit.
+    using AtOrdersClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kAllNAtOrders>;
+
     std::vector<float> floats(count);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -1300,7 +1351,7 @@ TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
     for (std::size_t i = 0; i < count; ++i)
     {
         std::array<float, boys::kMaxBoysOrder + 1> column{};
-        boys::BoysAllOrdersF32(tops[i], floats[i], column.data());
+        boys::BoysAllOrdersF32<AtOrdersClass>(tops[i], floats[i], column.data());
 
         for (std::size_t k = 0; k <= nmax; ++k)
         {
@@ -1318,6 +1369,11 @@ TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
     }
 
 #if BoysFp16
+    // The half lane's two shapes, each read at its own batch's row for the reason above.
+    using AllNClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllN>;
+    using HalfAtOrdersClass =
+        boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllNAtOrders>;
+
     std::vector<boys::F16> halves(count);
 
     for (std::size_t i = 0; i < count; ++i)
@@ -1334,7 +1390,7 @@ TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
     for (std::size_t i = 0; i < count; ++i)
     {
         std::array<boys::F16, boys::kMaxBoysOrder + 1> ladder{};
-        boys::BoysAllOrdersF16(boys::kMaxBoysOrder, halves[i], ladder.data());
+        boys::BoysAllOrdersF16<AllNClass>(boys::kMaxBoysOrder, halves[i], ladder.data());
 
         for (std::size_t k = 0; k <= nmax; ++k)
         {
@@ -1343,7 +1399,7 @@ TEST(BoysHostClassesTest, TheNewBatchEntriesAreTheirPerArgumentLoop) {
         }
 
         std::array<boys::F16, boys::kMaxBoysOrder + 1> column{};
-        boys::BoysAllOrdersF16(tops[i], halves[i], column.data());
+        boys::BoysAllOrdersF16<HalfAtOrdersClass>(tops[i], halves[i], column.data());
 
         for (std::size_t k = 0; k <= nmax; ++k)
         {

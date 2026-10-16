@@ -154,7 +154,7 @@ struct TableLane64 {
     }
 
     __device__ __forceinline__ double BSeed(double x, int order) const {
-        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+        const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
         return DeviceClenshawSplit(tables->bSeedCoeffs, deg.regionB[order * deg.stride], t);
     }
 };
@@ -220,7 +220,7 @@ struct TableLane64Mono {
     }
 
     __device__ __forceinline__ double BSeed(double x, int order) const {
-        const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+        const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
         return DeviceHornerMono(tables->monoBSeedCoeffs, deg.regionB[order * deg.stride], t);
     }
 };
@@ -523,7 +523,7 @@ struct RatLane64 {
     __device__ __forceinline__ double BSeed(double x, int) const {
         if constexpr (!kNarrow)
         {
-            const double t = 2.0 * (x - kX0) / (kX1 - kX0) - 1.0;
+            const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
             const int numDeg = kRatBnumDeg;
             const int denDeg = kRatBdenDeg;
 

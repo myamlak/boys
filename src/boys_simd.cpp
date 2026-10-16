@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <type_traits>
 
 // The AVX2 tier is x86_64-only by construction: AVX2/FMA intrinsics, compiled /arch:AVX2 (MSVC) or
 // -mavx2 -mfma -mf16c. BOYS_SIMD_X86 answers whether this TU is an x86_64 target - stated by the
@@ -128,7 +129,8 @@ typename B::Packed RegionBClenshaw(const typename B::Value* c,
                                    typename B::Packed xv) noexcept {
     using V = typename B::Value;
     const V lo = static_cast<V>(kX0);
-    const V span = static_cast<V>(kX1 - kX0);
+    // The double lane's shipped seed is fitted over [kX0, kFlatHi); the float's over [kX0, kX1).
+    const V span = static_cast<V>(std::is_same_v<V, float> ? (kX1 - kX0) : (kFlatHi - kX0));
     const typename B::Packed t = B::MulAdd(B::Sub(xv, B::Broadcast(lo)),
                                            B::Broadcast(V{2} / span), B::Broadcast(-V{1}));
     const int d = (kDeg >= 0) ? kDeg : deg;
@@ -189,53 +191,37 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy,
-// forms 1/x once as the plain reciprocal, and runs the shipped far tail's three pieces - the
-// corrected closed-form seed, then the step carrying the exp(-x)/2 term the bare asymptotic step
-// drops. That exp is the library routine: region B's table stops at 30, the term reaches near 60.
+// No entry point calls this lane; its callers are the tests and the benchmark. It takes no policy
+// and runs the region C body at face value, four arguments at a time: F_n = F_0 A[n] h^m in the
+// product form the scalar body writes. Nothing here is a second arithmetic, so above the grid's
+// end the lane returns BoysSingle's value at every bit.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(BoysAvx2Available());
 
+    const __m256d a = _mm256_set1_pd(kDoubleFactorial[n]);
+    const __m256d f0 = _mm256_set1_pd(kHalfSqrtPi);
+
     for (std::size_t i = 0; i + 3 < count; i += 4)
     {
         const __m256d xv = _mm256_loadu_pd(x + i);
-        const __m256d invx = _mm256_div_pd(_mm256_set1_pd(1.0), xv);
-        __m256d f = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_sqrt_pd(invx));
+        const __m256d r = _mm256_div_pd(_mm256_set1_pd(1.0), _mm256_sqrt_pd(xv));
+        const __m256d h = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_mul_pd(r, r));
+        const __m256d h2 = _mm256_mul_pd(h, h);
+        const __m256d h4 = _mm256_mul_pd(h2, h2);
+        const __m256d wq[4] = {_mm256_mul_pd(f0, r),
+                               _mm256_mul_pd(f0, _mm256_mul_pd(r, h)),
+                               _mm256_mul_pd(f0, _mm256_mul_pd(r, h2)),
+                               _mm256_mul_pd(f0, _mm256_mul_pd(r, _mm256_mul_pd(h2, h)))};
 
-        // H_0 = 1 + correction, where the correction's fit is defined.
-        const __m256d t = _mm256_sub_pd(
-            _mm256_div_pd(
-                _mm256_mul_pd(_mm256_set1_pd(2.0),
-                              _mm256_sub_pd(xv, _mm256_set1_pd(kSeedCorrectionX0))),
-                _mm256_set1_pd(kSeedCorrectionX1 - kSeedCorrectionX0)),
-            _mm256_set1_pd(1.0));
-        const __m256d corrected = _mm256_mul_pd(
-            f,
-            _mm256_add_pd(_mm256_set1_pd(1.0),
-                          ClenshawSplit<backend::Avx2Fp64<>>(kSeedCorrectionCoeffs.data(),
-                                                            kSeedCorrectionDeg,
-                                                            t)));
-        f = _mm256_blendv_pd(
-            f, corrected, _mm256_cmp_pd(xv, _mm256_set1_pd(kSeedCorrectionX1), _CMP_LT_OQ));
+        __m256d p = _mm256_set1_pd(1.0);
 
-        double lanes[4];
-        _mm256_storeu_pd(lanes, xv);
-
-        for (double& argument : lanes)
+        for (int j = n / 4; j > 0; --j)
         {
-            argument = RegionBHalfExp<RegionBExp::kAccurate>(argument);
+            p = _mm256_mul_pd(p, h4);
         }
 
-        const __m256d expv = _mm256_loadu_pd(lanes);
-
-        for (int l = 0; l < n; ++l)
-        {
-            f = _mm256_mul_pd(
-                _mm256_sub_pd(_mm256_mul_pd(f, _mm256_set1_pd(l + 0.5)), expv), invx);
-        }
-
-        _mm256_storeu_pd(out + i, f);
+        _mm256_storeu_pd(out + i, _mm256_mul_pd(_mm256_mul_pd(wq[n & 3], a), p));
     }
 
     for (std::size_t i = count - (count % 4); i < count; ++i)

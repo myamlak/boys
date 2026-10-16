@@ -96,106 +96,10 @@ inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t cou
 }
 
 
-// The far region's ladder in the arguments lane: four arguments of ONE ladder at once, the whole
-// body - the seed, its correction and every step - written through the scalar body's own
-// operations in the scalar body's own order. Nothing here is a second arithmetic, so a value the
-// lane returns is the per-argument body's value at every bit.
-
-// Whether this build's scalar arithmetic contracts a bare product-minus-add. The step below is
-// written that way in the scalar body (UpwardStep's `(l - 1/2) * f - expx`), and
-// BOYS_SCALAR_CONTRACTS is what the build measured at its own flags - what CMake pins onto this
-// TU's -ffp-contract. An intrinsic pair never contracts, so the lane spells it, not inherits it.
-#if defined(BOYS_SCALAR_CONTRACTS) && BOYS_SCALAR_CONTRACTS
-constexpr bool kFarStepContracts = true;
-#else
-constexpr bool kFarStepContracts = false;
-#endif
-
-// The multiply-add route the seed's correction runs. The scalar body reads it through
-// ScalarFp64::MulAdd, which spells the fused route as the runtime's `fma` and the separate route
-// as a bare product-plus-add - so a build that selected the separate route and contracts runs the
-// FUSED arithmetic there, and the lane has to name the route in force rather than the selection.
-constexpr backend::MulAddRoute kFarCorrectionRoute =
-    (backend::detail::kSelectedRoute == backend::MulAddRoute::kFused || kFarStepContracts)
-        ? backend::MulAddRoute::kFused
-        : backend::MulAddRoute::kSeparate;
-
-// One step of the ladder: F_l = ((l - 1/2) F_(l-1) - exp(-x)/2) / x. The product-minus-
-// exponential is the scalar body's own expression, at the route that body's build rounds it in.
-inline __m256d FarLadderStep(__m256d lHalf, __m256d f, __m256d expx) noexcept {
-    if constexpr (kFarStepContracts)
-    {
-        return _mm256_fmsub_pd(lHalf, f, expx);
-    }
-    else
-    {
-        return _mm256_sub_pd(_mm256_mul_pd(lHalf, f), expx);
-    }
-}
-
-// The seed: the closed form sqrt(pi)/(2 sqrt(x)) and, where the argument is inside the
-// correction's span, times 1 + the correction. FarSeedAt, lane for lane: the lanes at or above
-// the span's end keep the closed form's own bits, which is what the scalar branch leaves them,
-// and the comparison is the ordered one the scalar `<` is.
-inline __m256d FarLadderSeed(__m256d xv) noexcept {
-    const __m256d f = _mm256_div_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_sqrt_pd(xv));
-    const __m256d t = _mm256_sub_pd(
-        _mm256_div_pd(
-            _mm256_mul_pd(_mm256_set1_pd(2.0),
-                          _mm256_sub_pd(xv, _mm256_set1_pd(kSeedCorrectionX0))),
-            _mm256_set1_pd(kSeedCorrectionX1 - kSeedCorrectionX0)),
-        _mm256_set1_pd(1.0));
-    const __m256d correction = ClenshawSplit<backend::Avx2Fp64<kFarCorrectionRoute>>(
-        kSeedCorrectionCoeffs.data(), kSeedCorrectionDeg, t);
-    const __m256d corrected = _mm256_mul_pd(f, _mm256_add_pd(_mm256_set1_pd(1.0), correction));
-    const __m256d inside = _mm256_cmp_pd(xv, _mm256_set1_pd(kSeedCorrectionX1), _CMP_LT_OQ);
-
-    return _mm256_blendv_pd(f, corrected, inside);
-}
-
-// DivideStep at each form, four-wide. A quotient and a square root are correctly rounded in either
-// width, so the exact form is the scalar spelling read four-wide and the plain form is the product
-// through the reciprocal. The refined form's infinite divisor takes the scalar body's own branch -
-// the plain quotient's signed zero, by a blend, not the two fmas, which form a NaN there.
-inline __m256d DivideRefinedLanes(__m256d a, __m256d x, __m256d invx) noexcept {
-    const __m256d quotient = _mm256_mul_pd(a, invx);
-    const __m256d negated = _mm256_xor_pd(quotient, _mm256_set1_pd(-0.0));
-    const __m256d refined = _mm256_fmadd_pd(_mm256_fmadd_pd(negated, x, a), invx, quotient);
-    const __m256d infinite = _mm256_cmp_pd(_mm256_andnot_pd(_mm256_set1_pd(-0.0), x),
-                                           _mm256_set1_pd(HUGE_VAL),
-                                           _CMP_EQ_OQ);
-
-    return _mm256_blendv_pd(refined, quotient, infinite);
-}
-
-template <DivisionForm kForm>
-__m256d DivideStepLanes(__m256d a, __m256d x, __m256d invx) noexcept {
-    if constexpr (kForm == DivisionForm::kExactDivision)
-    {
-        static_cast<void>(invx);
-        return _mm256_div_pd(a, x);
-    } else if constexpr (kForm == DivisionForm::kPlainReciprocal)
-    {
-        static_cast<void>(x);
-        return _mm256_mul_pd(a, invx);
-    } else
-    {
-        return DivideRefinedLanes(a, x, invx);
-    }
-}
-
-// StepReciprocal, four-wide: the exact form forms none, as the scalar spelling does not.
-template <DivisionForm kForm>
-__m256d StepReciprocalLanes(__m256d x) noexcept {
-    if constexpr (kForm == DivisionForm::kExactDivision)
-    {
-        static_cast<void>(x);
-        return _mm256_setzero_pd();
-    } else
-    {
-        return _mm256_div_pd(_mm256_set1_pd(1.0), x);
-    }
-}
+// The far region's ladder in the arguments lane: four arguments of ONE ladder's terms at once,
+// written through the scalar body's own operations in its own order, so the lane's values are the
+// per-argument body's at every bit. Neither the division form (the ladder's one division is the
+// seed's closed form, not a step of a chain) nor the multiply-add route (no a * b + c below) reaches it.
 
 // One order's four values into the four columns the writer named. Four consecutive doubles are
 // one register store - the sorted entry's groups, which is the shape the tile exists for - and a
@@ -219,25 +123,54 @@ void StoreLanes(int order, std::size_t stride, double* const* cols, __m256d f) n
     }
 }
 
+// One run of the ladder, four arguments at once: FarLadderRun's `w`, its running h^(4j) and a term
+// as two multiplies against the table entry, lane for lane. The order steps in fours and the last
+// group of three or fewer terms takes the same registers at the running power - the scalar loop's
+// own cut - so the four arguments are the scalar body's four values bit for bit.
 template <DivisionForm kForm, bool kContiguous>
 void FarLadderLanesAt(int nmax,
                       const double* x,
-                      const double* halfExp,
                       std::size_t stride,
                       double* const* cols) noexcept {
+    static_cast<void>(kForm); // the ladder's one division is the seed's closed form, as in the body
+
     const __m256d xv = _mm256_loadu_pd(x);
-    const __m256d expx = _mm256_loadu_pd(halfExp);
-    const __m256d invx = StepReciprocalLanes<kForm>(xv);
-    __m256d f = FarLadderSeed(xv);
+    const __m256d r = _mm256_div_pd(_mm256_set1_pd(1.0), _mm256_sqrt_pd(xv));
+    const __m256d h = _mm256_mul_pd(_mm256_set1_pd(0.5), _mm256_mul_pd(r, r));
+    const __m256d h2 = _mm256_mul_pd(h, h);
+    const __m256d h3 = _mm256_mul_pd(h2, h);
+    const __m256d h4 = _mm256_mul_pd(h2, h2);
+    const __m256d w0 = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), r);
+    const __m256d w1 = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_mul_pd(r, h));
+    const __m256d w2 = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_mul_pd(r, h2));
+    const __m256d w3 = _mm256_mul_pd(_mm256_set1_pd(kHalfSqrtPi), _mm256_mul_pd(r, h3));
+    const __m256d w[4] = {w0, w1, w2, w3};
 
-    StoreLanes<kContiguous>(0, stride, cols, f);
+    __m256d p = _mm256_set1_pd(1.0);
+    int l = 0;
 
-    for (int l = 1; l <= nmax; ++l)
+    for (; l + 4 <= nmax + 1; l += 4)
     {
-        const __m256d step =
-            FarLadderStep(_mm256_set1_pd(static_cast<double>(l) - 0.5), f, expx);
-        f = DivideStepLanes<kForm>(step, xv, invx);
-        StoreLanes<kContiguous>(l, stride, cols, f);
+        StoreLanes<kContiguous>(
+            l + 0, stride, cols,
+            _mm256_mul_pd(_mm256_mul_pd(w0, _mm256_set1_pd(kDoubleFactorial[l + 0])), p));
+        StoreLanes<kContiguous>(
+            l + 1, stride, cols,
+            _mm256_mul_pd(_mm256_mul_pd(w1, _mm256_set1_pd(kDoubleFactorial[l + 1])), p));
+        StoreLanes<kContiguous>(
+            l + 2, stride, cols,
+            _mm256_mul_pd(_mm256_mul_pd(w2, _mm256_set1_pd(kDoubleFactorial[l + 2])), p));
+        StoreLanes<kContiguous>(
+            l + 3, stride, cols,
+            _mm256_mul_pd(_mm256_mul_pd(w3, _mm256_set1_pd(kDoubleFactorial[l + 3])), p));
+        p = _mm256_mul_pd(p, h4);
+    }
+
+    for (; l <= nmax; ++l)
+    {
+        StoreLanes<kContiguous>(
+            l, stride, cols,
+            _mm256_mul_pd(_mm256_mul_pd(w[l & 3], _mm256_set1_pd(kDoubleFactorial[l])), p));
     }
 }
 
@@ -252,7 +185,6 @@ void FarRunDirect(int nmax,
                   std::size_t begin,
                   std::size_t end) noexcept {
     double xs[4];
-    double halfExp[4];
     double* cols[4];
     std::size_t j = begin;
 
@@ -262,7 +194,6 @@ void FarRunDirect(int nmax,
         {
             const std::size_t i = (index != nullptr) ? index[j + t] : j + t;
             xs[t] = x[i];
-            halfExp[t] = RegionBHalfExp<RegionBExp::kAccurate>(xs[t]);
             cols[t] = out + i;
         }
 
@@ -271,11 +202,11 @@ void FarRunDirect(int nmax,
 
         if (contiguous)
         {
-            FarLadderLanesAt<kForm, true>(nmax, xs, halfExp, count, cols);
+            FarLadderLanesAt<kForm, true>(nmax, xs, count, cols);
         }
         else
         {
-            FarLadderLanesAt<kForm, false>(nmax, xs, halfExp, count, cols);
+            FarLadderLanesAt<kForm, false>(nmax, xs, count, cols);
         }
     }
 
@@ -296,7 +227,6 @@ void FarRunTiled(int nmax,
     BoysAllNTile(nmax, count, nullptr, out, begin, end,
                  [&](std::size_t base, std::size_t block, double* stage) {
                      double xs[4];
-                     double halfExp[4];
                      double* cols[4];
                      std::size_t t = 0;
 
@@ -305,11 +235,10 @@ void FarRunTiled(int nmax,
                          for (std::size_t q = 0; q < 4; ++q)
                          {
                              xs[q] = x[base + t + q];
-                             halfExp[q] = RegionBHalfExp<RegionBExp::kAccurate>(xs[q]);
                              cols[q] = stage + t + q;
                          }
 
-                         FarLadderLanesAt<kForm, true>(nmax, xs, halfExp, block, cols);
+                         FarLadderLanesAt<kForm, true>(nmax, xs, block, cols);
                      }
 
                      for (; t < block; ++t)
@@ -338,7 +267,6 @@ void FarRunAt(int nmax,
 
 inline void BoysFarLadderLanes(int nmax,
                         const double* x,
-                        const double* halfExp,
                         std::size_t stride,
                         double* const* cols,
                         DivisionForm form) noexcept {
@@ -357,16 +285,15 @@ inline void BoysFarLadderLanes(int nmax,
         switch (form)
         {
         case DivisionForm::kExactDivision:
-            FarLadderLanesAt<DivisionForm::kExactDivision, true>(nmax, x, halfExp, stride, cols);
+            FarLadderLanesAt<DivisionForm::kExactDivision, true>(nmax, x, stride, cols);
             break;
 
         case DivisionForm::kPlainReciprocal:
-            FarLadderLanesAt<DivisionForm::kPlainReciprocal, true>(nmax, x, halfExp, stride, cols);
+            FarLadderLanesAt<DivisionForm::kPlainReciprocal, true>(nmax, x, stride, cols);
             break;
 
         case DivisionForm::kRefinedReciprocal:
-            FarLadderLanesAt<DivisionForm::kRefinedReciprocal, true>(
-                nmax, x, halfExp, stride, cols);
+            FarLadderLanesAt<DivisionForm::kRefinedReciprocal, true>(nmax, x, stride, cols);
             break;
         }
 
@@ -376,15 +303,15 @@ inline void BoysFarLadderLanes(int nmax,
     switch (form)
     {
     case DivisionForm::kExactDivision:
-        FarLadderLanesAt<DivisionForm::kExactDivision, false>(nmax, x, halfExp, stride, cols);
+        FarLadderLanesAt<DivisionForm::kExactDivision, false>(nmax, x, stride, cols);
         break;
 
     case DivisionForm::kPlainReciprocal:
-        FarLadderLanesAt<DivisionForm::kPlainReciprocal, false>(nmax, x, halfExp, stride, cols);
+        FarLadderLanesAt<DivisionForm::kPlainReciprocal, false>(nmax, x, stride, cols);
         break;
 
     case DivisionForm::kRefinedReciprocal:
-        FarLadderLanesAt<DivisionForm::kRefinedReciprocal, false>(nmax, x, halfExp, stride, cols);
+        FarLadderLanesAt<DivisionForm::kRefinedReciprocal, false>(nmax, x, stride, cols);
         break;
     }
 }
@@ -443,12 +370,10 @@ inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t cou
 // absent says nothing about which tier this translation unit was compiled at.
 inline void BoysFarLadderLanes(int nmax,
                         const double* x,
-                        const double* halfExp,
                         std::size_t stride,
                         double* const* cols,
                         DivisionForm form) noexcept {
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
-    static_cast<void>(halfExp); // the scalar body forms its own, at the same expression
 
     for (std::size_t j = 0; j < kBoysFarLaneWidth; ++j)
     {

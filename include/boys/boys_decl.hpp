@@ -43,12 +43,15 @@
 ///    a different stored fit with a different measured bound. An order's own
 ///    end of region A is order-dependent, and the band is the looser of the
 ///    two over its own arguments;
-///  - region B [x0, x1): one F0 fit plus upward recursion;
-///  - region C [x1, inf): the asymptotic form 1/2 sqrt(pi/x) plus upward
-///    recursion. It reads no stored fit at all, and its figure holds with
-///    slack.
+///  - region B [x0, x1) - [x0, kFlatHi) in the double lane: one F0 fit plus
+///    upward recursion;
+///  - region C [x1, inf) - [kFlatHi, inf) in the double lane: the asymptotic
+///    form 1/2 sqrt(pi/x) plus upward recursion. It reads no stored fit at
+///    all, and its figure holds with slack.
 ///
-/// The two boundaries are x0 = 11.899848152108484 and x1 = 28.98933773882074.
+/// The boundaries are x0 = 11.899848152108484 and x1 = 28.98933773882074;
+/// the double lane's second boundary is kFlatHi, the uniform grid's own hi,
+/// where its fit ends and the asymptotic form opens.
 ///
 /// x0, x1 and the fit degrees are placed against a 5e-14 target in double and
 /// 1e-7 in single, over n = 0..32; the placement is validated against a
@@ -58,16 +61,16 @@
 /// below. The per-region budgets the fits were placed against are measurements
 /// and docs/lane-contract.md carries them as such.
 ///
-/// **The accuracy contract**: the bound is relative. The error of a returned
-/// value, |returned - F_n(x)|, is at or below the figure times F_n(x), for
-/// every supported n, x and lane. It binds above the lane format's smallest
-/// normal (2^-1022 double, 2^-126 float), below which the return is subnormal
-/// or zero, the format's own floor answers there, and no accuracy is claimed:
+/// **The accuracy contract**: the bound is a fraction of the value, taken at the wider of the two
+/// arms below. The error of a returned value, |returned - F_n(x)|, is at or below the larger of
+/// the figure times F_n(x) and the figure times F_0(x), for every supported n, x and lane. It
+/// binds above the lane format's smallest normal (2^-1022 double, 2^-126 float), below which the
+/// return is subnormal or zero, the format's own floor answers there, and no accuracy is claimed:
 ///
-/// | Lane | region A | extended band | region B (x0 <= x < x1) | region C (x >= x1) |
+/// | Lane | region A | extended band | region B (x0 <= x < x1)* | region C (x >= x1)* |
 /// |---|---|---|---|---|
-/// | double single | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) |
-/// | double batch | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) | ≤ 1e-13 · F_n(x) |
+/// | double single | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) |
+/// | double batch | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) | ≤ the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) |
 /// | float single / batch | ≤ 2^-22 · F_n(x), or ≤ 1.5e-7 where that is the larger | ≤ 2^-22 · F_n(x), or ≤ 1.5e-7 where that is the larger | ≤ 2^-22 · F_n(x), or ≤ 1.5e-7 where that is the larger | ≤ 2^-22 · F_n(x), or ≤ 1.5e-7 where that is the larger |
 /// | fp16 / bf16 | ≤ 1.5e-7 + one half-ULP | ≤ 1.5e-7 + one half-ULP | ≤ 1.5e-7 + one half-ULP | ≤ 1.5e-7 + one half-ULP |
 /// | native half | - | - | - | ≤ 8 ULP of the returned value |
@@ -75,6 +78,9 @@
 /// The four columns are one figure four times for the lanes whose contract is
 /// one figure over the whole domain; they stay because a report and a sweep
 /// read a lane region by region.
+///
+/// (*) The double lane's cut sits at kFlatHi, the uniform grid's own hi: that
+/// lane's region B is [x0, kFlatHi) and its region C [kFlatHi, inf).
 ///
 /// The figures are the shipped build's: a build whose default rows are
 /// replaced (-DBOYS_BUILD_DEFAULTS) delivers what its own rows were measured
@@ -158,8 +164,8 @@ namespace boys {
 /// \ingroup boys
 enum class AccuracyRegion : int {
     kA = 0, ///< x < x0: per-order Chebyshev fits
-    kB, ///< x0 <= x < x1: F0 fit plus upward recursion
-    kC, ///< x >= x1: asymptotic plus upward recursion
+    kB, ///< x0 <= x < x1, or kFlatHi in the double lane: F0 fit plus upward recursion
+    kC, ///< x >= x1, or kFlatHi in the double lane: asymptotic plus upward recursion
 };
 
 /// The part of an evaluation that fixes its accuracy, so a request that
@@ -182,7 +188,7 @@ enum class AccuracyComponent : int {
 /// \ingroup boys
 enum class EvalLane : std::uint8_t {
     kRegionA = 0, ///< the per-order piecewise fits below kX0
-    kRegionB, ///< the region-B seed F_0, on [kX0, kX1)
+    kRegionB, ///< the region-B seed F_0, on [kX0, kFlatHi)
     kExtendedBand, ///< the extended-band seed F_0, on [kExtendedBX0, kX0)
 };
 
@@ -308,10 +314,11 @@ std::span<const DivisionFormInfo> BoysDivisionForms() noexcept;
 
 /// What one far representation is, as a report names it.
 ///
-/// The member is which arithmetic answers an argument at or above \c kX1, so it is
+/// The member is which arithmetic answers an argument of the far region, so it is
 /// a property of the region and not of a call shape: the one entry that takes it
-/// serves every member over the whole region. That is why these rows carry no
-/// coverage fields where the partition rows do.
+/// serves every member over the whole region, and where a member's span opens above
+/// \c kX1 the arguments below its span answer as the default entry does. That is why
+/// these rows carry no coverage fields where the partition rows do.
 ///
 /// \ingroup boys
 struct FarRepresentationInfo {
@@ -1108,7 +1115,7 @@ struct FitRouteInfo {
     AccuracyComponent component; ///< the component the route's fit supplies
     AccuracyRegion region; ///< the region it supplies it for
     double lo; ///< the fit's left edge, inclusive (region B's kX0)
-    double hi; ///< the fit's right edge, exclusive (region B's kX1)
+    double hi; ///< the fit's right edge, exclusive (region B's kFlatHi)
     double servesFrom; ///< the argument from which naming the route changes values
     int stored; ///< the route's stored coefficients over \c [lo, hi)
     double delivered; ///< the swept worst |F̂ − F| over \c [lo, hi)
@@ -1126,9 +1133,10 @@ struct FitRouteInfo {
 /// \ingroup boys
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 
-/// F_0(x)..F_nmax(x) in double precision at a run-time-selected fit route - the
-/// batch entry's contract (the \c "double batch" row of the table in the file
-/// preamble: |F - F| <= 1e-13 · F_n(x), the relative figure the lane holds to
+/// F_0(x)..F_nmax(x) in double precision at a fit route the caller names where
+/// the call is compiled - the batch entry's contract (the \c "double batch" row
+/// of the table in the file preamble: |F - F| <= the larger of 1e-13 · F_n(x)
+/// and 1e-13 · F_0(x), the ladder-scaled figure the lane holds to
 /// in every region), with the named
 /// route's fits serving the intervals they cover.
 ///
@@ -1143,17 +1151,26 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 /// A route this build does not serve evaluates at the default route, the same
 /// fallback BoysFitRoutes' table and the enumeration's contract describe.
 ///
-/// \param route the fit route, a property of this call only
-/// \param nmax  highest order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \param out   receives nmax + 1 values, out[k] = F_k(x); every value is
-///              written whatever route is named
+/// The route is the entry's template argument, as a policy is on the template
+/// entries and the representation is on \c BoysAllOrdersWithFarRepresentation: a
+/// translation unit that names a route compiles that route's arm and not a
+/// dispatch over the others, and a name no enumerator of \c FitRoute holds - one
+/// a cast alone can produce - evaluates at the default route.
+///
+/// \tparam kRoute the fit route, a property of the call site; every enumerator
+///                of \c FitRoute is served
+/// \param nmax    highest order, 0..kMaxBoysOrder
+/// \param x       argument, >= 0
+/// \param out     receives nmax + 1 values, out[k] = F_k(x); every value is
+///                written whatever route is named
 ///
 /// \ingroup boys
-void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noexcept;
+template <FitRoute kRoute>
+void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept;
 
-/// The same entry with the evaluation scheme named as well as the route: the two
-/// axes of the compile-time selection, at run time.
+/// The same entry with the evaluation scheme named as well as the route: the
+/// route named where the call is compiled, as on the entry above, and the scheme
+/// a run-time one.
 ///
 /// The route and the scheme select different things: the route names the fits
 /// that serve the regions, and the scheme names the summation the Chebyshev
@@ -1164,32 +1181,35 @@ void BoysAllOrdersWithRoute(FitRoute route, int nmax, double x, double* out) noe
 /// enumeration is the reference scheme's body, the same fallback this entry
 /// takes for a route it does not serve.
 ///
-/// \param route   the fit route
+/// \tparam kRoute the fit route, a property of the call site
 /// \param scheme  the evaluation scheme
 /// \param nmax    highest order, 0..kMaxBoysOrder
 /// \param x       argument, >= 0
 /// \param out     receives nmax + 1 values, out[k] = F_k(x)
 ///
 /// \ingroup boys
+template <FitRoute kRoute>
 void BoysAllOrdersWithRoute(
-    FitRoute route, EvalScheme scheme, int nmax, double x, double* out) noexcept;
+    EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
-/// F_0(x)..F_nmax(x) in double precision at a run-time-selected representation of
-/// the far region - the batch entry's contract, with the named representation
-/// serving the arguments it covers and the default entry answering the rest.
+/// F_0(x)..F_nmax(x) in double precision at a representation of the far region the
+/// caller names where the call is compiled - the batch entry's contract, with the
+/// named representation serving the arguments it covers and the default entry
+/// answering the rest.
 ///
-/// The far region is \c [kX1, inf), and it is the region no partition reaches: an
-/// argument above \c kX1 is served by a seed and a dependent upward recurrence
-/// under whatever partition the fitted regions are read at. The representation is
-/// therefore not a fourth arm of the partition axis, and this entry names it
-/// where BoysAllOrdersWithRoute names the partition's fits.
+/// The far region is \c [kX1, inf), and no partition reaches above the fitted
+/// grid's hi-bound: an argument above \c kFlatHi is served by a seed and a
+/// dependent upward recurrence under whatever partition the fitted regions are
+/// read at. The representation is therefore not a fourth arm of the partition
+/// axis, and this entry names it where BoysAllOrdersWithRoute names the
+/// partition's fits.
 ///
 /// \c kScaledTable serves \c [kScaledFarX0, kScaledFarX1) from the stored scaled
 /// table and returns the default entry's values everywhere else, exactly as a
 /// route returns the default's outside the intervals its rows report: every
 /// argument the library accepts is answered under either name, and the arguments
 /// the table covers are the only ones the two differ on. \c kAsymptoticRecurrence
-/// serves \c [kX1, inf) from the region's own arithmetic - the closed form's seed
+/// serves \c [kFlatHi, inf) from the region's own arithmetic - the closed form's seed
 /// and the bare upward step, with neither of the two corrections the repaired arms
 /// carry - and returns the default entry's values below it.
 ///
@@ -1200,17 +1220,21 @@ void BoysAllOrdersWithRoute(
 /// \c exp(-x)/2 term the region's step drops - so inside the region its values are
 /// its own, and a caller may not mix the two arms at one argument.
 ///
-/// \param far  the far region's representation, a property of this call only
+/// The representation is the entry's template argument, as a policy is on the
+/// template entries: a translation unit that names an arm compiles that arm and not
+/// a dispatch over the others, and a name no enumerator of \c FarRepresentation
+/// holds - one a cast alone can produce - evaluates at the default representation.
+///
+/// \tparam kFar the far region's representation; the default is
+///              \c kDefaultFarRepresentation
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    argument, >= 0
 /// \param out  receives nmax + 1 values, out[k] = F_k(x); every value is written
 ///             whatever representation is named
 ///
 /// \ingroup boys
-void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
-                                        int nmax,
-                                        double x,
-                                        double* out) noexcept;
+template <FarRepresentation kFar = kDefaultFarRepresentation>
+void BoysAllOrdersWithFarRepresentation(int nmax, double x, double* out) noexcept;
 
 
 
@@ -1248,8 +1272,9 @@ void BoysAllOrdersWithFarRepresentation(FarRepresentation far,
 /// same spelling either way, and it compiles the combination it asks for.
 
 inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
-/// F_n(x) in double precision, |F - F| <= B_region per region (contract table in
-/// the file preamble).
+/// F_n(x) in double precision; the double lane's contract is the table in the
+/// file preamble - the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) - with \c B_region
+/// the tighter per-region fit budget a report may read in its place.
 ///
 /// \param n     order, 0..kMaxBoysOrder
 /// \param x     argument, >= 0
@@ -1273,7 +1298,8 @@ BoysStatus BoysSingleChecked(int n, double x, double* out) noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision; the batch entry's contract - the
 /// \c "double batch" row of the table in the file preamble:
-/// |F - F| <= 1e-13 · F_n(x) per value, the lane's relative figure, in every
+/// |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) per value, the
+/// lane's ladder-scaled figure, in every
 /// region.
 ///
 /// The row is named rather than \c B_region because this entry's delivered error
@@ -1379,7 +1405,8 @@ inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// count * (nmax + 1) doubles.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// bound, |F - F| <= 1e-13 · F_n(x) (the contract table in the file
+/// bound, |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
+/// contract table in the file
 /// preamble), which is the bound the per-argument BoysAllOrders call meets - the
 /// same contract, not necessarily the same bits. On a host with AVX2 a low-order
 /// batch (where the region-A lane's one-order-at-a-time cost is amortized) hands
@@ -1470,7 +1497,8 @@ void BoysAllN(
 /// padding of the arguments or the output.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// bound, |F - F| <= 1e-13 · F_n(x) (the contract table in the file
+/// bound, |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
+/// contract table in the file
 /// preamble). Each column is the per-argument all-orders body run at that
 /// argument's own top order: out[k * count + i] is the value, bit for bit, that
 /// BoysAllOrders(n[i], x[i], out) returns at out[k].
@@ -1718,7 +1746,8 @@ void BoysFixedNF32(
 void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t count) noexcept;
 } // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
-/// F_n(x) in single precision at a run-time-selected fit route - the
+/// F_n(x) in single precision at a fit route the caller names where the call is
+/// compiled - the
 /// single-precision single entry's contract (|F - F| <= 2^-22 · F_n(x), or <= 1.5e-7
 /// where that is the larger), with
 /// the named
@@ -1726,10 +1755,10 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 ///
 /// This is \c BoysSingleF32 with one thing changed: which fit supplies the lane's
 /// region-A seed and its region-B seed. The route is a property of the float
-/// lane's own tables, so it is offered on the entry that reads them, at run time
-/// and without a scheme. A caller who templates on a policy names the same route
-/// there, and \c BoysAllOrdersF32 reads it for the double lane's fit that seeds
-/// its region-A recursion.
+/// lane's own tables, so it is offered on the entry that reads them, named where
+/// the call is compiled and without a scheme. A caller who templates on a policy
+/// names the same route there, and \c BoysAllOrdersF32 reads it for the double
+/// lane's fit that seeds its region-A recursion.
 ///
 /// Region C holds no coefficient under either route, and outside the intervals
 /// the route reports in \c BoysFitRoutesF32 the default route's code runs: both
@@ -1744,13 +1773,19 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 /// A route this build does not serve evaluates at the default route, the same
 /// fallback the \c FitRoute enumeration's contract describes.
 ///
-/// \param route the fit route, a property of this call only
-/// \param n     order, 0..kMaxBoysOrder
-/// \param x     argument, >= 0
-/// \returns     F_n(x)
+/// The route is the entry's template argument, as on
+/// \c BoysAllOrdersWithRoute above: a translation unit that names a route
+/// compiles that route's arm and not a dispatch over the others, and a name no
+/// enumerator of \c FitRoute holds evaluates at the default route.
+///
+/// \tparam kRoute the fit route, a property of the call site
+/// \param n       order, 0..kMaxBoysOrder
+/// \param x       argument, >= 0
+/// \returns       F_n(x)
 ///
 /// \ingroup boys
-float BoysSingleF32WithRoute(FitRoute route, int n, float x) noexcept;
+template <FitRoute kRoute>
+float BoysSingleF32WithRoute(int n, float x) noexcept;
 
 
 /// The certified fit routes this build carries for the single-precision lane, one

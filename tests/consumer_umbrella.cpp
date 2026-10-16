@@ -237,10 +237,10 @@ std::vector<double> DistinctArgs(const std::vector<Cell>& cells) {
 
 // --- the documented bounds --------------------------------------------------
 
-/// The double single lane's bound at x, from the published figures: 1e-15
-/// below the tightest per-order end of region A, 3e-14 below the end of
-/// region A (the extended band's figure, which covers region A as well), and
-/// 5.5e-14 past it.
+/// The double single lane's per-region budgets at x, the bars the lane's fits were placed
+/// against and not the figure it publishes: 1e-15 below the tightest per-order end of
+/// region A, 3e-14 below the end of region A (the extended band's figure, which covers
+/// region A as well), and 5.5e-14 past it.
 double SingleBound(double x) {
     if (x < 1.0855)
     {
@@ -255,7 +255,8 @@ double SingleBound(double x) {
     return 5.5e-14;
 }
 
-/// The double batch lane's bound: one figure over the whole argument line.
+/// The double batch lane's bar: one absolute figure over the whole argument line, the figure its
+/// contract row carries and not the ladder-scaled bound the lane publishes.
 double BatchBound() {
     return 5.5e-14;
 }
@@ -323,9 +324,10 @@ double ProductBound(Report& report, boys::ProductMode mode) {
     return 0.0;
 }
 
-/// The reference lane's own bound, carried by every composed comparison: the
+/// The reference lane's own figure, carried by every composed comparison: the
 /// certified double lane stands in for the grid wherever a format conversion
-/// sits between the grid and the entry.
+/// sits between the grid and the entry, and 5.5e-14 is the absolute figure its
+/// contract row carries (docs/lane-contract.md).
 constexpr double kOracleBound = 5.5e-14;
 
 /// A value no Boys entry returns: F_n(x) is positive and at most 1 for every
@@ -387,12 +389,42 @@ void AllNAtOrders(const int* n, const double* x, double* out, std::size_t count)
     boys::BoysAllNAtOrders<>(n, x, out, count);
 }
 
+// A route a report's row names, at the row's own call: the entry is compiled per route, so the
+// row's route picks its arm here, and a route the enumeration does not name reaches the entry's
+// own fallback.
+void AllOrdersWithRoute(boys::FitRoute route, int nmax, double x, double* out) {
+    switch (route) {
+    case boys::FitRoute::kChebyshev:
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kChebyshev>(nmax, x, out);
+        return;
+
+    case boys::FitRoute::kRationalMinimax:
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(nmax, x, out);
+        return;
+    }
+
+    boys::BoysAllOrdersWithRoute<static_cast<boys::FitRoute>(99)>(nmax, x, out);
+}
+
 void AllNF32(int nmax, const float* x, float* out, std::size_t count) {
     boys::BoysAllNF32<>(nmax, x, out, count);
 }
 
 float SingleF32(int n, float x) {
     return boys::BoysSingleF32<>(n, x);
+}
+
+// The float lane's route entry, picked the same way.
+float SingleF32WithRoute(boys::FitRoute route, int n, float x) {
+    switch (route) {
+    case boys::FitRoute::kChebyshev:
+        return boys::BoysSingleF32WithRoute<boys::FitRoute::kChebyshev>(n, x);
+
+    case boys::FitRoute::kRationalMinimax:
+        return boys::BoysSingleF32WithRoute<boys::FitRoute::kRationalMinimax>(n, x);
+    }
+
+    return boys::BoysSingleF32WithRoute<static_cast<boys::FitRoute>(99)>(n, x);
 }
 
 void AllOrdersF32(int nmax, float x, float* out) {
@@ -447,6 +479,102 @@ void RegionAProduct(boys::ProductMode mode,
         boys::BoysRegionAProduct<boys::ProductMode::kFp16>(band, nmax, x, out, count);
         return;
     }
+}
+
+// --- the two classes the cross-lane identities compare ----------------------
+// Single and FixedN above name no policy, so each resolves its own class's row in this build's
+// default-policy table. The identities in CheckDoubleLanes are the committed seam's own, whose two
+// rows carry one arithmetic; a replacement may answer the two classes with different cells.
+
+using SingleClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kSingle>;
+using FixedNClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kFixedN>;
+
+// Whether either class's partition is one the recursing bodies serve, which is where the region-B
+// exponential reaches a value.
+constexpr bool kRegionBExpReachesAValue =
+    SingleClass::kGranularity != boys::FitGranularity::kUniform ||
+    FixedNClass::kGranularity != boys::FitGranularity::kUniform;
+
+// Whether the two rows carry one arithmetic, which is what the identities in CheckDoubleLanes rest
+// on: a build whose seam answers the two classes differently carries none of them.
+constexpr bool kOneArithmeticAcrossTheLanes =
+    SingleClass::kRoute == FixedNClass::kRoute && SingleClass::kScheme == FixedNClass::kScheme &&
+    SingleClass::kGranularity == FixedNClass::kGranularity &&
+    SingleClass::kDivision == FixedNClass::kDivision &&
+    (!kRegionBExpReachesAValue || SingleClass::kRegionBExp == FixedNClass::kRegionBExp);
+
+#if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
+// The committed seam's two rows carry one arithmetic, and holding that here is what keeps the
+// identities below at the whole of what they assert on the seam this tree commits.
+static_assert(kOneArithmeticAcrossTheLanes,
+              "the committed seam answers the single class and the fixed-order class with one "
+              "arithmetic, which is what the cross-lane identities below rest on");
+#endif
+
+// The name a route carries in the library's own report, read from that table rather than spelled
+// here.
+const char* RouteCellName(boys::FitRoute route) {
+    for (const boys::FitRouteInfo& row : boys::BoysFitRoutes())
+    {
+        if (row.route == route)
+        {
+            return row.name;
+        }
+    }
+
+    return "unknown";
+}
+
+/// The cells the two rows differ in, as "axis: fixed-order vs single": what a seam that answers
+/// the two classes with two arithmetics leaves to report where an identity was not judged. Every
+/// call site is a branch a seam with one arithmetic discards, so the committed header leaves it
+/// uncalled.
+[[maybe_unused]] std::string LaneCellDifferences() {
+    std::string text;
+
+    const auto note = [&text](const char* axis, const char* fixedN, const char* single) {
+        if (!text.empty())
+        {
+            text += ", ";
+        }
+
+        text += axis;
+        text += ": ";
+        text += fixedN;
+        text += " vs ";
+        text += single;
+    };
+
+    if (FixedNClass::kRoute != SingleClass::kRoute)
+    {
+        note("fit route", RouteCellName(FixedNClass::kRoute), RouteCellName(SingleClass::kRoute));
+    }
+
+    if (FixedNClass::kScheme != SingleClass::kScheme)
+    {
+        note("scheme", boys::EvalSchemeName(FixedNClass::kScheme),
+             boys::EvalSchemeName(SingleClass::kScheme));
+    }
+
+    if (FixedNClass::kGranularity != SingleClass::kGranularity)
+    {
+        note("partition", boys::GranularityName(FixedNClass::kGranularity),
+             boys::GranularityName(SingleClass::kGranularity));
+    }
+
+    if (FixedNClass::kDivision != SingleClass::kDivision)
+    {
+        note("division form", boys::DivisionFormName(FixedNClass::kDivision),
+             boys::DivisionFormName(SingleClass::kDivision));
+    }
+
+    if (kRegionBExpReachesAValue && FixedNClass::kRegionBExp != SingleClass::kRegionBExp)
+    {
+        note("region-B exponential", boys::RegionBExpName(FixedNClass::kRegionBExp),
+             boys::RegionBExpName(SingleClass::kRegionBExp));
+    }
+
+    return text;
 }
 
 // --- the checks -------------------------------------------------------------
@@ -554,6 +682,16 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                   cell.x);
         }
 
+        if constexpr (!kOneArithmeticAcrossTheLanes)
+        {
+            // A skipped check, not a passing one: the two rows are the classes', so a seam that
+            // answers them differently leaves the two values two arithmetics'.
+            std::printf(
+                "  the fixed-order entry's values are NOT held to the single lane's on this build: "
+                "its seam answers the two classes with two arithmetics (%s)\n",
+                LaneCellDifferences().c_str());
+        }
+
         for (const double x : DistinctArgs(cells))
         {
             double all[boys::kMaxBoysOrder + 1] = {};
@@ -569,8 +707,8 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
 
             // Documented: each output element of the fixed-order entry carries the single lane's
             // per-region bound at the same order and argument, and that entry's value bit for bit.
-            // Same source is not the same bits: the equality is asserted on every build, because it
-            // has held at every cell swept on every host measured, and the bound is beside it.
+            // The bound is judged on every build; the identity is the committed seam's own, whose
+            // two rows carry one arithmetic, and is judged where this build's seam does too.
             const std::size_t comparedBefore = report.exactCompared;
             const std::size_t heldBefore = report.exactHeld;
             std::size_t outsideBound = 0;
@@ -593,20 +731,27 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
                     ++outsideBound;
                 }
 
-                Compare(report, plain == singleValue);
+                if constexpr (kOneArithmeticAcrossTheLanes)
+                {
+                    Compare(report, plain == singleValue);
+                }
             }
 
             Require(report,
                     outsideBound == 0,
                     "BoysFixedN returns what BoysSingle returns inside the single lane's bound");
-            Require(report,
-                    report.exactHeld - heldBefore == report.exactCompared - comparedBefore,
-                    "BoysFixedN returns what BoysSingle returns, bit for bit");
+
+            if constexpr (kOneArithmeticAcrossTheLanes)
+            {
+                Require(report,
+                        report.exactHeld - heldBefore == report.exactCompared - comparedBefore,
+                        "BoysFixedN returns what BoysSingle returns, bit for bit");
+            }
 
             // Documented: out[i * stride] = F_n(x[i]), so a stride-1 call and a stride-3 call
             // place the same value at offsets 0 and 0/3, the slots between them the caller's,
-            // untouched. The bound holds on every build; the exact offset only where the bare
-            // product-plus-add is two roundings (a gap changes the code, one ULP apart).
+            // untouched. The bound holds on every build; the exact offset is the committed seam's
+            // own, held where the two class rows carry one arithmetic.
             const double two[2] = {x, x * 0.5 + 0.25};
             const double one = Single(3, x);
             const double other = Single(3, two[1]);
@@ -622,13 +767,20 @@ void CheckDoubleLanes(Report& report, const std::vector<Cell>& cells) {
             Require(report,
                     std::abs(strided[3] - other) <= SingleBound(two[1]),
                     "a stride of 3 writes the second value inside the single lane's bound");
-            Compare(report, strided[0] == one);
-            Compare(report, strided[3] == other);
+
+            if constexpr (kOneArithmeticAcrossTheLanes)
+            {
+                Compare(report, strided[0] == one);
+                Compare(report, strided[3] == other);
 #if defined(BOYS_SCALAR_CONTRACTS) && BOYS_SCALAR_CONTRACTS == 0
-            Require(report, strided[0] == one, "a stride of 3 writes the first value at offset 0");
-            Require(
-                report, strided[3] == other, "a stride of 3 writes the second value at offset 3");
+                Require(report,
+                        strided[0] == one,
+                        "a stride of 3 writes the first value at offset 0");
+                Require(report,
+                        strided[3] == other,
+                        "a stride of 3 writes the second value at offset 3");
 #endif
+            }
 
             // Documented: count may be 0, and then nothing is written.
             double untouched[2] = {kUnwritten, kUnwritten};
@@ -714,7 +866,7 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             double plain[boys::kMaxBoysOrder + 1] = {};
             double out[boys::kMaxBoysOrder + 1] = {};
             AllOrders(boys::kMaxBoysOrder, x, plain);
-            boys::BoysAllOrdersWithRoute(row.route, boys::kMaxBoysOrder, x, out);
+            AllOrdersWithRoute(row.route, boys::kMaxBoysOrder, x, out);
 
             for (const Cell& cell : cells)
             {
@@ -787,7 +939,8 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
         double plain[boys::kMaxBoysOrder + 1] = {};
         double out[boys::kMaxBoysOrder + 1] = {};
         AllOrders(boys::kMaxBoysOrder, x, plain);
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, out);
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+            boys::kMaxBoysOrder, x, out);
 
         for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
@@ -812,7 +965,8 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
         double plain[boys::kMaxBoysOrder + 1] = {};
         double out[boys::kMaxBoysOrder + 1] = {};
         AllOrders(boys::kMaxBoysOrder, x, plain);
-        boys::BoysAllOrdersWithRoute(static_cast<boys::FitRoute>(99), boys::kMaxBoysOrder, x, out);
+        boys::BoysAllOrdersWithRoute<static_cast<boys::FitRoute>(99)>(
+            boys::kMaxBoysOrder, x, out);
 
         for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
@@ -827,9 +981,9 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
             changedUnknown == 0,
             "a route value outside the enumeration evaluates at the default, bit for bit");
 
-    // The two axes compose at run time as at compile time: the entry names both, and a caller
-    // holds one fixed to see the other move - if one axis did not reach the call, a count below
-    // would be zero. What the scheme reaches on the rational route is the library's own account -
+    // The two axes meet in one call: the route named where the call is compiled and the scheme at
+    // run time, and a caller holds one fixed to see the other move - if an axis did not reach the
+    // call, a count below would be zero. The rational route's scheme account is the library's own:
     // boys/boys.hpp's three-selector overload, boys_impl.hpp's PolicyRegionAValue.
     std::size_t routeAtClenshaw = 0;
     std::size_t routeAtHorner = 0;
@@ -864,26 +1018,17 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
         std::array<double, 33> rationalHorner = {};
         std::array<double, 33> chebyshevClenshaw = {};
         std::array<double, 33> chebyshevHorner = {};
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
-                                     boys::EvalScheme::kSplitClenshaw,
-                                     boys::kMaxBoysOrder,
-                                     x,
-                                     rationalClenshaw.data());
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
-                                     boys::EvalScheme::kHorner,
-                                     boys::kMaxBoysOrder,
-                                     x,
-                                     rationalHorner.data());
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kChebyshev,
-                                     boys::EvalScheme::kSplitClenshaw,
-                                     boys::kMaxBoysOrder,
-                                     x,
-                                     chebyshevClenshaw.data());
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kChebyshev,
-                                     boys::EvalScheme::kHorner,
-                                     boys::kMaxBoysOrder,
-                                     x,
-                                     chebyshevHorner.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+            boys::EvalScheme::kSplitClenshaw,
+            boys::kMaxBoysOrder,
+            x,
+            rationalClenshaw.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+            boys::EvalScheme::kHorner, boys::kMaxBoysOrder, x, rationalHorner.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kChebyshev>(
+            boys::EvalScheme::kSplitClenshaw, boys::kMaxBoysOrder, x, chebyshevClenshaw.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kChebyshev>(
+            boys::EvalScheme::kHorner, boys::kMaxBoysOrder, x, chebyshevHorner.data());
 
         for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
         {
@@ -952,13 +1097,10 @@ void CheckFitRoutes(Report& report, const std::vector<Cell>& cells) {
 
         std::array<double, boys::kMaxBoysOrder + 1> twoSelectors = {};
         std::array<double, boys::kMaxBoysOrder + 1> threeSelectors = {};
-        boys::BoysAllOrdersWithRoute(
-            boys::FitRoute::kRationalMinimax, boys::kMaxBoysOrder, x, twoSelectors.data());
-        boys::BoysAllOrdersWithRoute(boys::FitRoute::kRationalMinimax,
-                                     AllOrdersDefault::kScheme,
-                                     boys::kMaxBoysOrder,
-                                     x,
-                                     threeSelectors.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+            boys::kMaxBoysOrder, x, twoSelectors.data());
+        boys::BoysAllOrdersWithRoute<boys::FitRoute::kRationalMinimax>(
+            AllOrdersDefault::kScheme, boys::kMaxBoysOrder, x, threeSelectors.data());
 
         std::size_t differing = 0;
 
@@ -1026,9 +1168,9 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
             for (int n = 0; n <= boys::kMaxBoysOrder; ++n)
             {
                 const float plain = boys::BoysSingleF32(n, xf);
-                const float selected = boys::BoysSingleF32WithRoute(row.route, n, xf);
+                const float selected = SingleF32WithRoute(row.route, n, xf);
                 const float unknown =
-                    boys::BoysSingleF32WithRoute(static_cast<boys::FitRoute>(99), n, xf);
+                    boys::BoysSingleF32WithRoute<static_cast<boys::FitRoute>(99)>(n, xf);
 
                 Require(report,
                         std::isfinite(selected),
@@ -1070,14 +1212,14 @@ void CheckFitRoutesF32(Report& report, const std::vector<Cell>& cells) {
 }
 
 /// The float lane's policy path, which a consumer reaches as a template argument on
-/// the entries themselves rather than through the run-time selector. Three readings
+/// the entries themselves rather than through the route entry. Three readings
 /// make that path an option rather than a name: a policy naming the pair the entry's
 /// own class row carries (the route and the scheme that row names, read off the row
 /// rather than written here) is the entry naming no policy, bit for bit; naming a row
 /// other than the class's own - the OTHER scheme or the OTHER route, whichever member
 /// of the axis the class's row does not carry - changes values the class's own row
 /// answers with, where that axis reaches the class at all; and each route's policy
-/// answers exactly what that route's run-time selector answers, which is one body
+/// answers exactly what that route's entry answers, which is one body
 /// reached two ways rather than two wirings that happen to agree.
 ///
 /// Which member is the other one is read off the class's row rather than written here
@@ -1199,8 +1341,8 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
         const float otherScheme = boys::BoysSingleF32<OtherScheme>(cell.n, xf);
         const float otherRoute = boys::BoysSingleF32<OtherRoute>(cell.n, xf);
         const float bySelector[2] = {
-            boys::BoysSingleF32WithRoute(SingleDefault::kRoute, cell.n, xf),
-            boys::BoysSingleF32WithRoute(kOtherRoute, cell.n, xf)};
+            boys::BoysSingleF32WithRoute<SingleDefault::kRoute>(cell.n, xf),
+            boys::BoysSingleF32WithRoute<kOtherRoute>(cell.n, xf)};
 
         sameAsDefault += (byItsDefault == byDefault) ? 1 : 0;
         sameAsSelector[0] += (byItsDefault == bySelector[0]) ? 1 : 0;
@@ -1220,7 +1362,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
             "every cell of the reference grid");
     Require(report,
             sameAsSelector[0] == cells.size() && sameAsSelector[1] == cells.size(),
-            "each route's policy answers what that route's run-time selector answers, bit for "
+            "each route's policy answers what that route's entry answers, bit for "
             "bit, so the two ways in read one body");
     // The scheme axis is a reading only where the class's route stores both schemes: the lane
     // stores both forms of its Chebyshev family and one of the rational family, so a row at the
@@ -2804,6 +2946,14 @@ int main(int argc, char** argv) {
     std::printf("  fixed-order against single-lane, bit for bit: %zu compared, %zu agreed\n",
                 report.exactCompared,
                 report.exactHeld);
+
+    if constexpr (!kOneArithmeticAcrossTheLanes)
+    {
+        std::printf("  the fixed-order entry's identity with the single lane was not judged on "
+                    "this build: its seam answers the two classes with two arithmetics (%s), so "
+                    "the count above is of the comparisons that were made, not of a check\n",
+                    LaneCellDifferences().c_str());
+    }
 
     return report.failed == 0 ? 0 : 1;
 }

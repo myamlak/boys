@@ -387,7 +387,13 @@ inline constexpr FitGranularity kDefaultFitGranularity = BOYS_BUILD_DEFAULT_FIT_
 /// How the recursion's per-order division is performed.
 ///
 /// A ladder step divides in region B and in region C, and each of those ends in
-/// one of these. They are different arithmetic and not three spellings of one: a
+/// one of these. The double host lanes' region C is the exception: its terms are
+/// the asymptotic series' own products and hold no step of a chain, so that
+/// region is answered under all three forms by the same values, and the one
+/// division it has is the seed's closed form - a closed formula, which the
+/// paragraph below places outside the axis. The float, half and device lanes'
+/// far ladders are chains and take the form the caller names. They are different
+/// arithmetic and not three spellings of one: a
 /// quotient is correctly rounded, and a product by a rounded reciprocal rounds
 /// twice, so the plain form may differ from the exact one by an ulp per step and
 /// a ladder of them accumulates that; the refined form is the plain one carried
@@ -642,35 +648,44 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept;
 /// all carried, none substituted for another.
 ///
 /// The far region is \c [kX1, inf), and its boundary is not a partition's to
-/// move: however the fitted regions are cut below it, an argument above \c kX1
-/// is served today by one seed and a dependent upward recurrence. That is one
-/// representation of the region, and it is what this axis is beside.
+/// move: whatever cuts the fitted regions carry, the arguments above the grid's
+/// hi-bound are served by one seed and a dependent upward recurrence. That is
+/// one representation of the region, and it is what this axis is beside.
 ///
 /// **They are not a partition.** Every partition of the fitted regions is
-/// served by the same seed-plus-recurrence above \c kX1, so an arm of the
+/// served by the same seed-plus-recurrence above \c kFlatHi, so an arm of the
 /// partition axis could not name any of them: the representation is orthogonal
-/// to where the boundary is, and it is a choice of its own. \c kCorrectedSeed is
-/// the one arm that is not a second definition of the function at all - it is the
+/// to where the fitted regions are cut, and it is a choice of its own. \c kCorrectedSeed
+/// is the one arm that is not a second definition of the function at all - it is the
 /// recurrence's arithmetic with its two defects repaired - which is why the pairs
 /// are ranked by measurement rather than by construction.
 ///
 /// **A named representation serves the arguments it covers and changes nothing
-/// else.** \c kAsymptoticRecurrence is the bare ladder over the whole region, at
-/// the default entry's values: the same seed and the same step the other two arms
-/// read, with the two repairs left out, so it is the one arm whose errors are the
-/// region's own rather than a fit's or a table's. \c kScaledTable serves the arguments
-/// in \c [kScaledFarX0, kScaledFarX1) from the stored scaled table and is the
-/// default entry's elsewhere, so every argument a caller may pass is answered
-/// under either name and the values outside the table's span are the same under
-/// both.
+/// else.** \c kAsymptoticRecurrence is the bare ladder above the fitted grid's
+/// hi-bound, \c [kFlatHi, inf), at the default entry's values: the same seed the
+/// other two arms read with the series' own terms, and neither of the two repairs,
+/// so it is the one arm whose error is the region's own rather than a fit's or a
+/// table's, and the fitted regions below its span answer as they do under every name
+/// on this axis. \c kScaledTable serves the arguments in \c [kScaledFarX0,
+/// kScaledFarX1) from the stored scaled table and is the default entry's elsewhere,
+/// so every argument a caller may pass is answered under either name and the values
+/// outside the table's span are the same under both.
 ///
 /// \ingroup boys
 enum class FarRepresentation : std::uint8_t {
-    /// The seed and the upward recurrence: \c F_0 = sqrt(pi)/(2 sqrt(x)) and one
-    /// dependent step per order. It is the region's own arithmetic with neither of
-    /// the two repairs \c kCorrectedSeed carries, so both of the errors that member
-    /// names are live here at the size the region gives them: \c erfc(sqrt(x)) from
-    /// the seed, 2.65e-14 at \c kX1, and the dropped \c exp(-x)/2 term from the step.
+    /// The closed form and the asymptotic series' own terms: \c F_m = F_0 A[m] h^m
+    /// with \c h = 1/(2x), one table read and two multiplies an order. It is the
+    /// region's own arithmetic with neither of the two repairs \c kCorrectedSeed
+    /// carries: the seed is the closed form with \c H_0 held at 1, whose relative
+    /// error is \c erfc(sqrt(x)), 2.65e-14 at \c kX1, and the series truncates at the
+    /// order asked for, its tail \c 0.5 x^-(m+1/2) Gamma(m + 1/2, x) reaching 5.0e-14
+    /// absolute at n = 32, x = \c kX1 - 2.55 times the value 1.95e-14 there, an
+    /// argument the fitted grid serves. Over the span the arm is asked for, \c
+    /// [kFlatHi, inf), the worst measured cell sits at the span's low end: n = 32,
+    /// x = \c kFlatHi reads 0.288 of the bound, a 3.47x margin, and x = 32 reads
+    /// 0.0916. The bound's relative arm is the one it does not hold, at any x: at
+    /// n = 32, x = 31 its error is 1.4e13 times \c 1e-13 F_n(x), where \c
+    /// kCorrectedSeed reads 0.0197 of \c 1e-13 F_n over its span.
     kAsymptoticRecurrence = 0,
 
     /// The stored scaled table: a Chebyshev fit per (interval, order) of
@@ -704,14 +719,22 @@ const char* FarRepresentationName(FarRepresentation representation) noexcept;
 /// build does not serve. Those are one statement here and not two: every member of the axis is
 /// served, so what the fallback answers is a value that is no member of the enum at all.
 ///
-/// **The recurrence's repaired form, and this is a repair rather than a
-/// ranking.** The asymptotic recurrence is not a candidate that lost on
-/// measurement: the `exp(-x)/2` term its step drops is 6.58 times `F_32` at
-/// `kX1`, so its relative error there is 2.56 and it holds no relative figure
-/// worth stating. The corrected seed is that same arithmetic with the term
-/// restored and the seed's own error carried, so the two are one path and one of
-/// them is right. The scaled table is ranked against it by the option probe,
-/// which has not run.
-inline constexpr FarRepresentation kDefaultFarRepresentation = FarRepresentation::kCorrectedSeed;
+/// **The bare ladder, chosen for what it costs and priced where it is written.** The
+/// asymptotic series' terms are the region's cheapest arithmetic - one table read and
+/// two multiplies an order, no exponential and no chain - and what they deliver is the
+/// series' own tail. Under the published bound, the larger of `1e-13 F_n(x)` and
+/// `1e-13 F_0(x)`, the tail holds it wherever the arm is asked for: over
+/// `[kFlatHi, inf)` its worst measured cell is n = 32, x = `kFlatHi`, at 0.288 of the
+/// bound and a 3.47x margin. The one place the bare ladder fell outside the bound
+/// under the old 29.0 hi-bound was the sliver `(29.0, 29.9290065]`, and the fitted
+/// grid serves that sliver once the hi-bound is `kFlatHi`. What the tail does not
+/// hold is the bound's relative arm, and that is the price this choice pays: near the
+/// series' knee the tail is the term (0.78 of the value at n = 28, x = 29) and at
+/// n = 32 its error is 1.4e13 times `1e-13 F_n(x)`, so a caller reading relative to
+/// F_n(x) needs `kCorrectedSeed` - the same arithmetic with the seed's error carried
+/// and the term restored, reading 0.0197 of `1e-13 F_n(x)` over the span where it
+/// serves. The scaled table is ranked against both by the option probe, which has not
+/// run.
+inline constexpr FarRepresentation kDefaultFarRepresentation = FarRepresentation::kAsymptoticRecurrence;
 
 } // namespace boys

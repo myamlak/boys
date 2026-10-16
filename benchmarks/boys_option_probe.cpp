@@ -75,17 +75,28 @@ void Usage() {
                "  --bg=SECONDS       background load window (default 1.0)\n"
                "  --cal=SECONDS      load calibration window (default 0.5)\n"
                "  --refine-runs=N    runs the refinement stage takes over the\n"
-               "                     options a class left tied. The vote says\n"
-               "                     whether the row the figures put first holds\n"
-               "                     up over more rounds or whether the two\n"
-               "                     cannot be separated\n"
-               "                     (default 5)\n"
-               "  --refine-factor=N  how much longer each refinement run is than\n"
-               "                     one pass protocol. The stage refines a tie by\n"
-               "                     asking whether the leader holds up over more\n"
-               "                     rounds of the same comparison, so the factor\n"
-               "                     lengthens the ROUNDS and leaves the passes\n"
-               "                     alone (default 1)\n"
+               "                     options a class left tied, as a CAP on its waves:\n"
+               "                     each wave re-measures the pool the wave before\n"
+               "                     it left and keeps only the rows it could not\n"
+               "                     place behind its leader, so the pool shrinks\n"
+               "                     while the rounds grow (default 5)\n"
+               "  --refine-factor=N  how much longer each wave is than the one before\n"
+               "                     it. The stage races a tie by asking whether the\n"
+               "                     leader holds up over more rounds of the same\n"
+               "                     comparison, so the factor lengthens the ROUNDS\n"
+               "                     and leaves the passes alone (default 1)\n"
+               "  --class-budget=S   wall seconds one class's racing stage may spend,\n"
+               "                     counted from that class's first wave. A stage\n"
+               "                     that runs out says so: the class is reported\n"
+               "                     unresolved at the width its last wave showed,\n"
+               "                     which is an outcome and not a failure, and the\n"
+               "                     run ends there instead of extending itself. 0\n"
+               "                     removes the cap (default 20)\n"
+               "  --unit-target=MS   the wall length every timed unit is brought to by\n"
+               "                     an inner repeat count, so a fast option's figure\n"
+               "                     rests on as long a reading as a slow one's. 0\n"
+               "                     times each option's call once per visit and says\n"
+               "                     so in the report (default 6)\n"
                "  --canary-spread=P  spread percentage of the canary's own runs\n"
                "                     across a pass above which the pass is\n"
                "                     flagged as one that ran on a wandering\n"
@@ -112,6 +123,17 @@ void Usage() {
                "                     seam's own names. The file is what the CMake option\n"
                "                     BOYS_BUILD_DEFAULTS points a build at; a run that\n"
                "                     measured no class writes no file.\n"
+               "  --dump-raw=F       write every timed visit to F, one line per\n"
+               "                     (pass, round, within-round position) as\n"
+               "                     't <pass> <round> <position> <ns/argument>\n"
+               "                     <repeats> <name>', preceded by one 'c <name>\n"
+               "                     <ns> <repeats>' line per option from the unit\n"
+               "                     calibration. F is the caller's path, the\n"
+               "                     convention this command uses for everything that\n"
+               "                     leaves the run (as --emit-defaults is), and the\n"
+               "                     file is written as the run goes: it is what\n"
+               "                     tools/analyse_probe_dump.py re-derives a ranking\n"
+               "                     from, offline, after the machine is free.\n"
                "  --help             this text\n"
                "\n"
                "The result is about this machine, this build and this process. It is\n"
@@ -172,6 +194,15 @@ int main(int argc, char** argv) {
         } else if (arg.rfind("--refine-factor=", 0) == 0)
         {
             options.refinementFactor = std::atoi(arg.c_str() + 16);
+        } else if (arg.rfind("--unit-target=", 0) == 0)
+        {
+            options.unitTargetMs = std::strtod(arg.c_str() + 14, nullptr);
+        } else if (arg.rfind("--class-budget=", 0) == 0)
+        {
+            options.classBudgetSeconds = std::strtod(arg.c_str() + 15, nullptr);
+        } else if (arg.rfind("--dump-raw=", 0) == 0)
+        {
+            options.rawDumpPath = arg.c_str() + 11;
         } else if (arg.rfind("--canary-spread=", 0) == 0)
         {
             options.canarySpreadAlarm = std::strtod(arg.c_str() + 16, nullptr);

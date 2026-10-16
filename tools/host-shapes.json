@@ -2,8 +2,8 @@
  "format": "boys.host-shapes/1",
  "why": [
   "The host entry surface as shape classes, and the entry names that reach each one.",
-  "A shape is the call a caller meets, not the name it is spelled with: a run-time route, a",
-  "route-named sibling, a sorted-argument overload and a span overload are spellings of one",
+  "A shape is the call a caller meets, not the name it is spelled with: a route at the call",
+  "site, a route-named sibling, a sorted-argument overload and a span overload are spellings of one",
   "shape, so a table of shapes does not grow every time an alias is added.",
   "The axes a shape offers are derived from its tuple by check_host_entry_bijection.py and are",
   "not written here: a one-order shape has no ladder to fill a packed register with, so its",
@@ -181,7 +181,7 @@
   },
   "BoysSingleF32WithRoute": {
    "shape": "one-scalar-returned",
-   "spelling": "run-time route over the float lane's own fits"
+   "spelling": "route template over the float lane's own fits"
   },
   "BoysSingleF16": {
    "shape": "one-scalar-returned",
@@ -205,11 +205,11 @@
   },
   "BoysAllOrdersWithRoute": {
    "shape": "ladder-scalar-out",
-   "spelling": "run-time route, with a scheme-carrying overload"
+   "spelling": "template route, with a scheme-carrying overload"
   },
   "BoysAllOrdersWithFarRepresentation": {
    "shape": "ladder-scalar-out",
-   "spelling": "run-time far-region representation, in the place BoysAllOrdersWithRoute names the partition's fits"
+   "spelling": "template over the far-region representation, in the place BoysAllOrdersWithRoute names the partition's fits"
   },
   "BoysAllOrdersF32": {
    "shape": "ladder-scalar-out",

@@ -22,3 +22,4 @@ __pycache__/
 /.claude/
 /.probe-logs/
 /gate.out
+/probe-synthetic-dump.txt

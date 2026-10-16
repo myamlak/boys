@@ -157,9 +157,9 @@ struct RationalFitNarrow;
 
 /// A route outside the FitRoute enumeration: not a selection this library can
 /// answer, and rejected where the caller names it rather than quietly evaluated at
-/// the default. The run-time selector takes the other reading - a route value
-/// outside the enumeration is the default there - because a value that arrives at
-/// run time is not a compile-time claim that the option exists.
+/// the default. The route entry takes the other reading - a route value outside
+/// the enumeration is the default there - because the value can arrive from a
+/// report's rows rather than from a claim the caller makes.
 template <FitRoute kRoute, EvalScheme kScheme, FitGranularity kGranularity>
 struct RouteFit {
     static_assert(kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax,
