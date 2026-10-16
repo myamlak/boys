@@ -64,9 +64,12 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
 
 All four are `noexcept`. The requirements on the values are `n` in `[0, 32]` and `x >= 0`, and both
 hold for anything a basis set produces. **Outside them the behaviour is undefined, and it is not
-benign**: in a release build `x < 0` and a `NaN` anywhere in a batch fault, and `n > 32` returns a
-wrong number with no diagnostic. The three calls that write into an array ask one thing more: the
-buffer has to hold the values the call writes. Nothing checks that either.
+benign**: a release build does not refuse the arguments, it answers them — `BoysSingle(3, -1.0)`
+returns 3.26e-17, `BoysSingle(33, 1.0)` returns 0.735, and a `NaN` argument comes back `NaN` — and a
+`NaN` anywhere in a batch is a segmentation fault, which is how `BoysAllN` dies on the batch
+`{1.0, NaN, 2.0}`. A build with assertions live aborts on the argument instead. The three calls that
+write into an array ask one thing more: the buffer has to hold the values the call writes. Nothing
+checks that either.
 
 **Next:** if you want one of these three shapes specifically, read on. If you want the whole
 catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
