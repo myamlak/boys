@@ -78,7 +78,7 @@ void ChebSimdMixed(int n,
     {
         const __m256d xv = _mm256_loadu_pd(x + i);
         const __m256d mA = _mm256_cmp_pd(xv, _mm256_set1_pd(kX0), _CMP_LT_OQ);
-        const __m256d mB = _mm256_cmp_pd(xv, _mm256_set1_pd(kX1), _CMP_LT_OQ);
+        const __m256d mB = _mm256_cmp_pd(xv, _mm256_set1_pd(kFlatHi), _CMP_LT_OQ);
         const __m256d mBonly = _mm256_andnot_pd(mA, mB);
 
         __m256d fA = _mm256_setzero_pd();
@@ -102,7 +102,7 @@ void ChebSimdMixed(int n,
             const double* c = kBcoeffs.data();
             const int m = kBDeg / 2;
             __m256d t = _mm256_sub_pd(xv, _mm256_set1_pd(kX0));
-            t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (kX1 - kX0)), _mm256_set1_pd(-1.0));
+            t = _mm256_fmadd_pd(t, _mm256_set1_pd(2.0 / (kFlatHi - kX0)), _mm256_set1_pd(-1.0));
             const __m256d v =
                 _mm256_fmsub_pd(_mm256_set1_pd(2.0), _mm256_mul_pd(t, t), _mm256_set1_pd(1.0));
             const __m256d twoV = _mm256_add_pd(v, v);

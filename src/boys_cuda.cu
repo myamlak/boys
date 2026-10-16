@@ -256,7 +256,7 @@ struct Lane64Full {
     }
 
     __device__ __forceinline__ double BSeed(double x, int) const {
-        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        const double t = 2.0 * (x - detail::kX0) / (detail::kFlatHi - detail::kX0) - 1.0;
         return detail::DeviceClenshawSplit(cBcoeffs, cBDeg, t);
     }
 };
@@ -372,7 +372,7 @@ struct Lane64MonoFull {
     }
 
     __device__ __forceinline__ double BSeed(double x, int) const {
-        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        const double t = 2.0 * (x - detail::kX0) / (detail::kFlatHi - detail::kX0) - 1.0;
         return detail::DeviceHornerMono(dMonoBcoeffs, cBDeg, t);
     }
 };
@@ -504,7 +504,7 @@ struct Lane64RatFull {
     }
 
     __device__ __forceinline__ double BSeed(double x, int) const {
-        const double t = 2.0 * (x - detail::kX0) / (detail::kX1 - detail::kX0) - 1.0;
+        const double t = 2.0 * (x - detail::kX0) / (detail::kFlatHi - detail::kX0) - 1.0;
         return detail::DeviceRatSum(dRatBnum, detail::kRatBnumDeg, dRatBden, detail::kRatBdenDeg, t);
     }
 };
