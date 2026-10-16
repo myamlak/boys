@@ -1,5 +1,5 @@
 // I have many arguments but want one order - how do I get F_n(x_i) for all i?
-//   c++ -std=c++20 -I include examples/03_arguments_array.cpp -L build -lboys -o fn && ./fn
+//   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/03_arguments_array.cpp -L build -lboys -o fn && ./fn
 // BoysFixedN walks the array and writes every stride-th element, so the answer goes straight into a
 // column of a larger structure without a copy - and the same entry serves F_0, the cheapest call.
 #include <boys/boys_span.hpp>

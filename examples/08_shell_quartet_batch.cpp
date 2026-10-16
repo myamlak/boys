@@ -1,5 +1,5 @@
 // A shell quartet does not ask for one order. What does the batch it needs cost?
-//   c++ -std=c++20 -I include examples/08_shell_quartet_batch.cpp -L build -lboys -o quartet && ./quartet
+//   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/08_shell_quartet_batch.cpp -L build -lboys -o quartet && ./quartet
 
 // Every argument of a real batch arrives with its own highest order, running to la + lb + lc + ld,
 // and padding all of them to the batch's largest is the easy call and not free. The bound and the

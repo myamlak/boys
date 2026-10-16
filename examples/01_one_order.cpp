@@ -1,5 +1,5 @@
 // How do I evaluate F_n(x) for one order at one argument?
-//   c++ -std=c++20 -I include examples/01_one_order.cpp -L build -lboys -o f0 && ./f0
+//   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/01_one_order.cpp -L build -lboys -o f0 && ./f0
 // The answer is one call, printed beside the error the library guarantees for it, so the value is
 // read with a figure next to it rather than on trust.
 #include <boys/boys_span.hpp>

@@ -1,5 +1,5 @@
 // What does it look like to call this library? - the program the README opens with.
-//   c++ -std=c++20 -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
+//   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/00_first_call.cpp -L build -lboys -o first && ./first
 
 // Four calls cover what a program does with this function: one order at one argument, every order
 // at one, one order over an array of arguments, every order over an array. The entries take a

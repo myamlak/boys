@@ -497,6 +497,18 @@ target_compile_features(boys-tier INTERFACE cxx_std_20)
 if (BOYS_FP16_SEAM)
     target_compile_definitions(boys-tier INTERFACE BoysFp16=1)
 endif()
+# The replacement seam the block above puts on `boys`, on the headers-only target too: the
+# comment above claims this target alone is a consumer's whole interface, and the seam is part
+# of that interface - a unit that links only this one must read the replacement and refuse the
+# committed header, exactly as one that links `boys`. The variables are that block's.
+if (BOYS_BUILD_DEFAULTS)
+    target_include_directories(boys-tier BEFORE INTERFACE
+        "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
+    target_compile_definitions(boys-tier INTERFACE
+        BOYS_BUILD_DEFAULTS_REPLACED=1
+        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+        BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
+endif()
 # The contraction pin the section above states on `boys`, stated again on the
 # target a headers-only consumer links: its units compile the entries' own
 # steps, and a target whose fused step is in the baseline (aarch64) contracts a

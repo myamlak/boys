@@ -1,5 +1,5 @@
 // Which of the options this build offers is fastest on this machine?
-//   c++ -std=c++20 -I include examples/07_option_probe.cpp -L build -lboys -o probe && ./probe
+//   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/07_option_probe.cpp -L build -lboys -o probe && ./probe
 // A property of the machine and the build flags, so it cannot be read off a table - it has to be
 // measured where it will run. This runs a short protocol; boys-option-probe runs the full one.
 #include <boys/boys_all.hpp>

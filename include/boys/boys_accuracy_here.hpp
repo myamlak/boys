@@ -285,11 +285,10 @@ namespace detail {
 /// enumeration's order - the same eight rows and the same order
 /// `BoysLaneContracts()` answers with, so the two are read index for index.
 ///
-/// The figures are the absolute ones that list carries. The contract the docs
-/// state is relative - `docs/specification.md`, the accuracy contract - and the
-/// four double and float rows say in their record that the list is re-made with
-/// the option probe's report rather than with that page, because this header
-/// restates the list and not the page.
+/// The figures are the absolute ones that list carries, and they are at or
+/// below the relative contract the docs state (`docs/specification.md`) at
+/// every cell: a query this list answers yes to is one the contract covers,
+/// and the tighter of the two statements is the one a caller is handed.
 inline constexpr std::array<LaneFigureHere, 8> kLaneFiguresHere = {{
     {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: the double lane's bound is the larger of "

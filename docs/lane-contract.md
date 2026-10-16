@@ -1433,11 +1433,11 @@ not the host's, and it states its own measured base rather than borrowing the ho
 
 A combination carries **`base + additive`**: the lane's figure and whatever term sits beside it, the
 same arithmetic the specification's contract table states lane by lane. The rows in the table above
-are the contract. `BoysLaneContracts()` is the library's own list of those rows, and it still carries
-the absolute figures the double and float lanes were published with — 5.5e-14 for the two double
-rows and 1.5e-7 for the two float ones — because that list is re-made with the option probe's report
-rather than with this page. So for those two precisions a program asking the library for a guarantee
-today is answered in the older, absolute form. The half rows, on either side of the device seam, are
+are the contract. `BoysLaneContracts()` is the library's own list of those rows, and it answers
+with the absolute figures the double and float lanes were published with — 5.5e-14 for the two double
+rows and 1.5e-7 for the two float ones. Those figures sit at or below this page's contract at every
+cell, so the two statements agree wherever the list answers yes, and a caller asking for a tolerance
+between the list's figure and this page's bound is answered by the list's tighter one. The half rows, on either side of the device seam, are
 the same figures in both places: their base is the fp32 engine's arithmetic stated absolutely beside
 a term of the returned value's own last digit, and neither moves.
 
