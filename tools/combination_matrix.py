@@ -393,34 +393,81 @@ def ranked_by_class(report: str) -> dict[tuple[str, str], list[str]]:
     return ranked
 
 
-def cell_name(precision: str, partition: str, pack: str, route: str, scheme: str, division: str,
-              exp: str) -> str:
+# The probe's own walk over a cell's axes, as its ``CellName`` states it: one segment per axis on
+# which a combination departs from its class's own row, in this order, behind the word every name
+# starts with. The pairs are (the member the probe tests against its own row, the name this tool
+# keys that axis by), which differ because the two read the axes in their own words - the row's
+# member is the probe's and the key is the report's. ``cell_walk`` reads the same walk out of the
+# probe's source at the revision, and ``main`` refuses a run whose copy of it does not agree:
+# a grammar copied into a tool drifts the day the probe's moves, and the reading it then produces
+# is a report that looks like a library with hundreds of unmeasured combinations.
+CELL_PREFIX = "batch"
+CELL_WALK = [("granularity", "partition"), ("pack", "packing"), ("route", "route"),
+             ("scheme", "scheme"), ("division", "division"), ("regionBExp", "exponential")]
+CELL_APPENDERS = ["GranularityName", "PackAxisName", "RouteName", "EvalSchemeName",
+                  "DivisionFormName", "RegionBExpName"]
+
+CELL_NAME_HEAD = re.compile(r"std::string\s+CellName\s*\([^)]*\)[^{]*\{")
+CELL_NAME_PREFIX = re.compile(r'std::string\s+name\s*=\s*"([^"]*)"\s*;')
+CELL_NAME_DEPARTURE = re.compile(r"(\w+)\s*!=\s*own\.(\w+)")
+CELL_NAME_TAIL = re.compile(r'name\s*\+\s*"-[^"]*"\s*\+\s*PrecisionName\s*\(')
+CELL_NAME_APPEND = re.compile(r"\b(GranularityName|PackAxisName|RouteName|EvalSchemeName|"
+                              r"DivisionFormName|RegionBExpName)\s*\(")
+
+
+def cell_walk(reader: Reader) -> tuple[str, list[tuple[str, str]], list[str]] | None:
+    """The walk ``CellName`` takes over a cell's axes: the prefix, the departures, the appenders.
+
+    The walk this tool names a cell by is the probe's, and this reads it out of the probe's own
+    source rather than trusting a copy of it: the word a name starts with, the axes the function
+    tests in the order it tests them, and the function each departing axis appends its member
+    under. A copy of a grammar is a second grammar the day the source moves, and the reading it
+    then produces is a report that looks like a library with thousands of unmeasured combinations,
+    so the copy is held against the source on every run.
+
+    :returns the prefix, the ordered (row member, report key) pairs and the appenders, or None
+             where the function was not found or does not state all three.
+    """
+    text = reader.text("src/boys_probe.cpp")
+    match = CELL_NAME_HEAD.search(text)
+
+    if not match:
+        return None
+
+    body = text[match.end():]
+    end = body.find("\n}\n")
+    body = body[:end if end >= 0 else len(body)]
+
+    prefix = CELL_NAME_PREFIX.search(body)
+    keys = dict(CELL_WALK)
+    departures = CELL_NAME_DEPARTURE.findall(body)
+
+    if not prefix or not CELL_NAME_TAIL.search(body) or len(departures) != len(CELL_WALK):
+        return None
+
+    if any(row != own or row not in keys for row, own in departures):
+        return None
+
+    return (prefix.group(1), [(row, keys[row]) for row, _ in departures],
+            CELL_NAME_APPEND.findall(body))
+
+
+def cell_name(precision: str, own: dict[str, str], cell: dict[str, str]) -> str:
     """The name ``CellName`` gives one combination: the probe's grammar, segment for segment.
 
-    The partition's segment is the shipped one's own word, the packing axis is named only where it
-    is the orders member, the route only where it is the rational one, the scheme only where it is
-    Horner, and the division form and the region-B exponential only where they differ from the
-    seam's defaults. The last two segments are what stop two cells colliding on one name: a cell
-    at the plain or exact form would otherwise print the default's spelling, and a cell seeded with
-    the other exponential would print the fast one's.
+    The combination is read against the class's OWN row - the row its own call compiles and its own
+    name denotes - and carries one segment per axis on which it departs from that row, in the order
+    the probe walks the axes and with the departing member's own word, which is the word the
+    library publishes for that enumerator and the word the report states the axis member under. The
+    cell at every member of the class's own row therefore carries no segment at all: it is the
+    class's own cell, and the name it prints under is the class's own name. The precision closes
+    every name, because a name is only ever read inside its class.
     """
-    partition_word = {"shipped": "batch"}.get(partition, partition)
-    name = partition_word
+    name = CELL_PREFIX
 
-    if pack == "orders":
-        name += "-pack-orders"
-
-    if route == "rational-minimax":
-        name += "-rational"
-
-    if scheme == "horner":
-        name += "-horner"
-
-    if division != "refined-reciprocal":
-        name += "-" + division
-
-    if exp != "fast":
-        name += "-" + exp
+    for _, key in CELL_WALK:
+        if cell[key] != own[key]:
+            name += "-" + cell[key]
 
     return name + "-" + precision
 
@@ -533,6 +580,45 @@ def seam_rows(text: str) -> dict[tuple[str, str, str], dict[str, str]]:
         found[(device, cells[1], cells[2])] = dict(zip(keys, cells[3:3 + len(keys)]))
 
     return found
+
+
+# The seam header's own statement of the seven an unnamed call resolves to - the row the probe
+# names a class's cells against where the table carries no row for that class (``kBuildPointRow``,
+# src/boys_probe.cpp). The region-B exponential is not one of these macros: the host's own lives
+# beside the enumeration it names.
+CELL_DEFINE = re.compile(r"#define\s+(BOYS_BUILD_DEFAULT_\w+)\s+([A-Za-z_]\w*::k[A-Za-z0-9]+)\s*$",
+                         re.M)
+BUILD_POINT_CELLS = ("BOYS_BUILD_DEFAULT_FIT_ROUTE", "BOYS_BUILD_DEFAULT_EVAL_SCHEME",
+                     "BOYS_BUILD_DEFAULT_PACK_AXIS", "BOYS_BUILD_DEFAULT_DIVISION_FORM",
+                     "BOYS_BUILD_DEFAULT_FIT_GRANULARITY")
+HOST_EXP_DEFAULT = re.compile(r"\bkDefaultHostRegionBExp\s*=\s*RegionBExp::(k[A-Za-z0-9]+)")
+
+
+def build_point_row(reader: Reader, seam_text: str) -> dict[str, str]:
+    """The row a class the seam carries no row for is named against, in the seam's own spellings.
+
+    The probe falls back to this point for such a class instead of reading one combination for
+    every unnamed class (``kBuildPointRow``), and the point is the seam's own seven: the five
+    macros the seam header states for the host lane and the host's region-B exponential, which
+    lives beside the enumeration it names (``kDefaultHostRegionBExp``, include/boys/accuracy.hpp).
+    A cell of such a class is read against this row, so a reader that left it out would name those
+    cells against a row the library never stated.
+
+    :returns the row in the spellings ``resolve`` reads back, or an empty mapping where the seam
+             does not state all six.
+    """
+    defines = dict(CELL_DEFINE.findall(seam_text))
+    host_exp = HOST_EXP_DEFAULT.search(reader.text("include/boys/accuracy.hpp"))
+
+    if host_exp is None or any(name not in defines for name in BUILD_POINT_CELLS):
+        return {}
+
+    return {"route": defines["BOYS_BUILD_DEFAULT_FIT_ROUTE"],
+            "scheme": defines["BOYS_BUILD_DEFAULT_EVAL_SCHEME"],
+            "packing": defines["BOYS_BUILD_DEFAULT_PACK_AXIS"],
+            "granularity": defines["BOYS_BUILD_DEFAULT_FIT_GRANULARITY"],
+            "division": defines["BOYS_BUILD_DEFAULT_DIVISION_FORM"],
+            "exponential": "RegionBExp::" + host_exp.group(1)}
 
 
 def pairings(reader: Reader, source: str, functions: list[str]) -> dict[str, str]:
@@ -1114,6 +1200,19 @@ def main() -> int:
     print(f"question shapes, read from the report: {', '.join(shapes)}")
     print(f"seam in force: {seam_origin} ({len(seam)} row(s))")
 
+    # The name grammar this tool builds, held against the probe's own before a name is built. The
+    # walk is read from the probe at the revision and compared with the copy `cell_name` names
+    # cells by; a grammar that does not agree would answer the report with this tool's spelling.
+    # That is the reading this tool was already caught by - a copy of a grammar that drifted - so
+    # it is refused here rather than found later in a count of unmeasured combinations.
+    walk = cell_walk(reader)
+
+    if walk != (CELL_PREFIX, CELL_WALK, CELL_APPENDERS):
+        print(f"combination_matrix: the probe's own CellName walks {walk!r} where this tool's copy "
+              "of the grammar walks its own - the names this run would build are this tool's "
+              "spelling and not the probe's. The tool is wrong, not the library")
+        return 1
+
     defects: list[str] = []
 
     # ---------------------------------------------------------------------------------------
@@ -1241,16 +1340,37 @@ def main() -> int:
         combinations = [dict(zip(keys, combination))
                         for combination in itertools.product(*members)]
 
+        # The class's own row: the combination its own call compiles, read from the seam in force
+        # and resolved back into the report's axis members. Every cell's name is read against it -
+        # the cell at its members carries no axis segment and prints under the class's own name,
+        # and every other cell carries one segment per axis it departs on - so the row is read
+        # here, with the names, and the default leg below reads this row rather than a second copy
+        # of it. A class the seam carries no row for is named against the build's own point, which
+        # is the row the probe falls back to for one.
+        seam_key = "k" + camel(precision)
+        key_owner = seam_key if seam_key in carriers else carrier_of(precision, carriers)
+        row = seam.get(("host", key_owner, "k" + camel(shape))) if key_owner else None
+        own_row = resolve(row, maps) if row is not None \
+            else resolve(build_point_row(reader, seam_text), maps)
+
+        if not own_row:
+            print(f"combination_matrix: the class {precision} {shape} has no row this tool can "
+                  "read back into the report's axis members - the seam's own row where the seam "
+                  "carries one, and the build's own point where it does not - so its cells have "
+                  "no row to be named against and this run states nothing about the class. The "
+                  "reader is wrong, not the library")
+            return 1
+
         # The name each of the class's cells is printed under, in the probe's own rules. The
-        # grammar's name is the probe's, segment for segment; every class but the all-orders one
-        # carries its shape's word in front of it, because one combination of the six run-time
-        # axes carries five questions and a name that did not say which one a row answers would be
-        # one name on five cells. The class's own cell is the combination whose grammar name
-        # carries no axis segment at all - the shipped partition on the arguments axis at the
-        # shipped route and scheme - and it prints under the name the report has carried for that
-        # call where it has one, which is a fact of the probe's table and not of this tool's
-        # spelling.
-        own_grammar = "batch-" + precision
+        # grammar's name is the probe's, segment for segment, and it is read against the row read
+        # above: the class's own cell is the combination whose grammar name carries no axis
+        # segment at all, and it prints under the name the report has carried for that call where
+        # it has one, which is a fact of the probe's table and not of this tool's spelling. Every
+        # other cell carries a shape's word in front of the grammar's name where the class is not
+        # the all-orders one, because one combination of the six run-time axes carries five
+        # questions and a name that did not say which one a row answers would be one name on five
+        # cells.
+        own_grammar = CELL_PREFIX + "-" + precision
         prefix = "" if shape == all_orders_shape else shape + "-"
         lane_key = by_precision.get(precision, "")
 
@@ -1282,8 +1402,7 @@ def main() -> int:
 
         def printed_name(cell: dict[str, str]) -> str:
             """One combination of this class, under the name the probe prints it under."""
-            grammar = cell_name(precision, cell["partition"], cell["packing"], cell["route"],
-                                cell["scheme"], cell["division"], cell["exponential"])
+            grammar = cell_name(precision, own_row, cell)
 
             return own_name if grammar == own_grammar else prefix + grammar
 
@@ -1390,14 +1509,12 @@ def main() -> int:
                     f"the closure's class-by-class table states {row_stated['measured']}, so the "
                     "report carries two figures for one class")
 
-        # The default leg. A class has a default of its own when the seam in force carries a row
-        # keyed at it AND that row names a combination the class was measured at; a row naming a
-        # combination nothing measured is a default chosen off no figure. A class whose format the
-        # seam's key does not name is reached through whichever key's documentation does name it,
-        # which on this seam is the one key that carries two formats.
-        seam_key = "k" + camel(precision)
-        key_owner = seam_key if seam_key in carriers else carrier_of(precision, carriers)
-        row = seam.get(("host", key_owner, "k" + camel(shape))) if key_owner else None
+        # The default leg, read against the row the names above were read against. A class has a
+        # default of its own when the seam in force carries a row keyed at it AND that row names a
+        # combination the class was measured at; a row naming a combination nothing measured is a
+        # default chosen off no figure. A class whose format the seam's key does not name is
+        # reached through whichever key's documentation does name it, which on this seam is the
+        # one key that carries two formats.
 
         # A class the library has no entry for is a class no caller can ask at any combination, so
         # the seam's row for it is not a default it can be handed: that defect is the missing
@@ -1459,9 +1576,9 @@ def main() -> int:
                             f"formats, keyed `{key_owner}`, and the two settled on different "
                             f"combinations: {other}'s refinement vote named `{theirs}` and "
                             f"{precision}'s named `{mine}`. One row cannot be both defaults, and "
-                            f"this class gets {cell_name(precision, cell['partition'], cell['packing'], cell['route'], cell['scheme'], cell['division'], cell['exponential'])!r}, "
-                            "which it did not choose. A default of its own needs a format key the "
-                            "enumeration does not have.")
+                            f"this class's own cell - `{printed_name(cell)}` - is the row's "
+                            "combination, which it did not choose. A default of its own needs a "
+                            "format key the enumeration does not have.")
 
                     elif implemented:
                         # Only one of the two took a vote, so whether the two settled together is
