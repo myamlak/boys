@@ -68,8 +68,10 @@ benign**: a release build does not refuse the arguments, it answers them — `Bo
 returns 3.26e-17, `BoysSingle(33, 1.0)` returns 0.735, and a `NaN` argument comes back `NaN` — and a
 `NaN` anywhere in a batch is a segmentation fault, which is how `BoysAllN` dies on the batch
 `{1.0, NaN, 2.0}`. A build with assertions live aborts on the argument instead. The three calls that
-write into an array ask one thing more: the buffer has to hold the values the call writes. Nothing
-checks that either.
+write into an array ask one thing more: the buffer has to hold the values the call writes. The
+`std::span` overloads of these entries (`boys/boys_span.hpp`) compare that extent and refuse a span
+that is short, with a line naming the call and both sizes; a `double*` carries no size, so the
+pointer entries called above cannot check it and the caller still owns the buffer.
 
 **Next:** if you want one of these three shapes specifically, read on. If you want the whole
 catalogue at once, jump to [Which entry do I call?](#which-entry-do-i-call).
