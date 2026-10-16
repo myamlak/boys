@@ -93,6 +93,13 @@ constexpr const char* kNativeHalfAbsent =
 #ifndef BoysGateInputs
 #define BoysGateInputs "unknown"
 #endif
+// The reference grid's directory as the tree spells it, for the lines a recorded run keeps: an
+// absolute path in a record names the checkout the run was made in rather than the tree. A build
+// that bypasses the define prints the absolute one rather than a relative spelling it cannot
+// resolve.
+#ifndef BoysDataDirRelative
+#define BoysDataDirRelative BoysDataDir
+#endif
 
 // The instrument, the reference and the row shape come from tests/boys_gate_reference.hpp,
 // shared with the CUDA device gate; this file's own books are the lanes, schemes, routes and the
@@ -2158,6 +2165,11 @@ int RunFloorControl()
 
 int main(int argc, char** argv) {
     std::string reference = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
+    // What the record's own lines print: the tree's spelling of the same file, so a run kept as
+    // a file names the grid it read and not the machine it was made on. A caller's own
+    // --reference is printed as given.
+    std::string referenceShown =
+        std::string(BoysDataDirRelative) + "/boys_accuracy_gate_reference.csv";
     bool perOrder = false;
     bool strict = false;
     bool driftDump = false;
@@ -2188,6 +2200,7 @@ int main(int argc, char** argv) {
         } else
         {
             reference = arg;
+            referenceShown = arg;
         }
     }
 
@@ -2306,7 +2319,7 @@ int main(int argc, char** argv) {
     const std::vector<int> singleClaims = {kSingleA, kSingleBand, kSingleB, kSingleC};
 
     std::printf("boys accuracy gate\n");
-    std::printf("reference    : %s\n", reference.c_str());
+    std::printf("reference    : %s\n", referenceShown.c_str());
     std::printf("               %zu orders x %zu arguments = %zu points\n",
                 ref.orderCount,
                 ref.count,
@@ -6564,7 +6577,7 @@ int main(int argc, char** argv) {
     std::printf("accuracy gate, version %s\n", boys::kVersionString);
     std::printf("accuracy gate, inputs %s\n", BoysGateInputs);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
-                reference.c_str(),
+                referenceShown.c_str(),
                 ref.x.size(),
                 static_cast<std::size_t>(nmax) + 1,
                 "independent of the code under test");

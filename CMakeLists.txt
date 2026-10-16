@@ -846,6 +846,10 @@ if (BOYS_BUILD_TESTS)
     target_compile_features(boys-accuracy-gate PRIVATE cxx_std_23)
     target_compile_definitions(boys-accuracy-gate PRIVATE
         BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+        # The same directory as the tree spells it, beside the absolute one the gate reads
+        # through: the reference line the gate prints is kept in the recorded run, and a record
+        # is read by people who do not have the machine it was made on.
+        BoysDataDirRelative="tests/data"
         BoysGateRevision="${BOYS_GATE_REVISION}"
         # The content the run was taken from, beside the revision it names: the stamp carries
         # both, and the checker holds the record to the digests.
