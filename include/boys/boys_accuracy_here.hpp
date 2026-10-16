@@ -285,20 +285,23 @@ namespace detail {
 /// enumeration's order - the same eight rows and the same order
 /// `BoysLaneContracts()` answers with, so the two are read index for index.
 ///
-/// The figures are the absolute ones that list carries, and they are at or
-/// below the relative contract the docs state (`docs/specification.md`) at
-/// every cell: a query this list answers yes to is one the contract covers,
-/// and the tighter of the two statements is the one a caller is handed.
+/// The figures are the absolute ones that list carries: they sit at or below
+/// the contract the docs state (`docs/specification.md`) near x = 0, and
+/// above it wherever the lane's relative arm falls under the constant. The
+/// list's figure is therefore the stricter claim below that crossing and the
+/// looser one above it, where the contract is the statement a caller is held
+/// to; a query this list answers yes to is one the contract covers only
+/// below that crossing.
 inline constexpr std::array<LaneFigureHere, 8> kLaneFiguresHere = {{
     {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: the double lane's bound is the larger of "
-     "1e-13 * F_n(x) and 1e-13 * F_0(x), and 5.5e-14 is the absolute figure the lane measured; "
-     "the lane list is re-made with the option probe's report (docs/lane-contract.md)",
+     "1e-13 * F_n(x) and 1e-13 * F_0(x), and 5.5e-14 is the absolute figure the lane measured "
+     "(docs/lane-contract.md), which also states where that figure crosses the contract",
      ""},
     {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: the float lane's bound is the larger of "
-     "2^-22 * F_n(x) and 1.5e-7, plus 1e-7 in the plain-reciprocal form; the lane list is re-made "
-     "with the option probe's report (docs/lane-contract.md)",
+     "2^-22 * F_n(x) and 1.5e-7, plus 1e-7 in the plain-reciprocal form (docs/lane-contract.md), "
+     "which also states where that figure crosses the contract",
      "docs/specification.md, the accuracy contract: the plain reciprocal's own 1e-7 term beside "
      "the base, whose measured worst is 1.7514e-07 absolute at n = 0, x = 9.74055, where the two "
      "forms that divide exactly deliver 1.08354e-07 at worst"},
@@ -313,8 +316,8 @@ inline constexpr std::array<LaneFigureHere, 8> kLaneFiguresHere = {{
      ""},
     {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract (CUDA fp64): the same contract as the CPU "
-     "double lanes, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), at this lane's own entries; "
-     "the lane list is re-made with the option probe's report (docs/lane-contract.md)",
+     "double lanes, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), at this lane's own entries "
+     "(docs/lane-contract.md)",
      ""},
     {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 1e-7, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: 1e-7 plus one half of the returned value's "
