@@ -121,6 +121,13 @@ MAX_ORDER = 32
 MAX_DEG_DOUBLE = 18
 MAX_DEG_FLOAT = 10
 
+# The double lane's region-B seed takes the handoff's own bar, not the shipped
+# 5e-14 class: its left-edge value is the extended band's right edge, and the
+# interval the placed top gives it needs the ladder's 24 (18 misses the bar by
+# 2.1x).
+REGION_B_SEED_TOL = mpf("2e-14")
+REGION_B_SEED_MAXDEG = 24
+
 # The leftmost region-A band is fitted at its own degree rather than the
 # shared cap: its a-priori truncation bound at 18, the minimum of
 # 2 |F_n(c - h (rho + 1/rho)/2)| rho^-deg / (rho - 1) over rho > 1, is
@@ -486,7 +493,7 @@ def scheme_bound(v):
     return math.ldexp(1.0, math.frexp(v)[1])
 
 
-def fit_delivered(cs, ms, n, a, b, npts, relative=False):
+def fit_delivered(cs, ms, n, a, b, npts, relative=False, allowance=False):
     """The worst |F_hat - F_n| each scheme reaches over [a, b], in each of the
     two multiply-add routes, measured against the reference at every argument
     and never against either fit's own residual.
@@ -496,10 +503,18 @@ def fit_delivered(cs, ms, n, a, b, npts, relative=False):
     [[scheme][route]] with route 0 fused and 1 separate.
 
     relative=True divides each error by |F_n| at the argument it was reached at
-    and keeps that worst, which is the reading the near region's bar is in: the
-    two are not the same maximum - a cell's worst absolute error and its worst
-    relative one sit at different arguments - so a bound read relatively is
-    measured relatively and never inferred from the other column.
+    and keeps that worst, which is the reading the per-order figures below are
+    reported in: the two are not the same maximum - a cell's worst absolute
+    error and its worst relative one sit at different arguments - so a bound
+    read relatively is measured relatively and never inferred from the other
+    column.
+
+    allowance=True divides each error by max(|F_n|, |F_0|) there instead. That
+    is the promise's own denominator: the ladder's max over the orders is its
+    order-0 reading because F_n <= F_0, so a figure read this way is the one the
+    bar is in on this table, and it is the reading the ladder accepts on. One
+    reference column is built per call, so a caller that needs both readings
+    measures the cell twice and each figure stays its own sweep's maximum.
     """
     af = float(a)
     bf = float(b)
@@ -517,10 +532,15 @@ def fit_delivered(cs, ms, n, a, b, npts, relative=False):
         for scheme in (0, 1):
             for route in (0, 1):
                 err = abs(cand[scheme][route] - ref)
-                if relative:
-                    if ref == 0.0:
+                if relative or allowance:
+                    denom = abs(ref)
+                    if allowance:
+                        f0 = abs(float(boys_ref(0, x)))
+                        if f0 > denom:
+                            denom = f0
+                    if denom == 0.0:
                         continue
-                    err = err / abs(ref)
+                    err = err / denom
                 if err > worst[scheme][route]:
                     worst[scheme][route] = err
     return worst
@@ -582,7 +602,12 @@ def fit_order(n, region_b=False, f32=False, maxdeg=None, rel=None):
     if maxdeg is None:
         maxdeg = MAX_DEG_FLOAT if f32 else MAX_DEG_DOUBLE
     if region_b:
-        return fit_interval(0, X0, X1, tol, maxdeg, weighted=False, rel=rel)
+        top = region_b_top("float" if f32 else "double")
+        if f32:
+            return fit_interval(0, X0, top, tol, maxdeg, weighted=False,
+                                rel=rel)
+        return fit_interval(0, X0, top, REGION_B_SEED_TOL, REGION_B_SEED_MAXDEG,
+                            weighted=False, rel=rel, degs=(12, REGION_B_SEED_MAXDEG))
     pieces = []
     stack = [(mpf(0), X0, 0)]
     while stack:
@@ -885,10 +910,11 @@ def derive_partition_report(target):
     print()
 
     print("the shipped pieces, read against that bound:")
+    band_deg = fit_order(0, region_b=True)[0]
     for tag, order, lo, hi, deg, stored in (
             ("region A band 1 ", 0, mpf(0), mpf("5.94992407605424223"), 20, 21),
             ("region A band 2 ", 0, mpf("5.94992407605424223"), X0, 18, 19),
-            ("region B seed   ", 0, X0, X1, 18, 19),
+            ("region B seed   ", 0, X0, region_b_top(), band_deg, band_deg + 1),
             ("extended band   ", 0, XNEW0, X0, 24, 25)):
         e, rho = apriori_truncation_bound(order, lo, hi, deg)
         print(f"  {tag} [{mp.nstr(lo, 10)}, {mp.nstr(hi, 10)})  width "
@@ -897,9 +923,10 @@ def derive_partition_report(target):
         print(f"      at or under the target: {e <= target}")
     print()
 
-    print(f"the derived partition of region B [{mp.nstr(X0, 10)}, {mp.nstr(X1, 10)}), "
-          f"width {mp.nstr(X1 - X0, 8)}:")
-    rows, best = derived_partition(0, X0, X1, target, DERIVE_DEGREES)
+    band_top = region_b_top()
+    print(f"the derived partition of region B [{mp.nstr(X0, 10)}, {mp.nstr(band_top, 10)}), "
+          f"width {mp.nstr(band_top - X0, 8)}:")
+    rows, best = derived_partition(0, X0, band_top, target, DERIVE_DEGREES)
     for deg, pieces, stored, pieces_list in rows:
         widths = [b - a for a, b in pieces_list]
         print(f"  degree {deg:2d}: {pieces:2d} pieces, {stored:4d} stored, "
@@ -928,7 +955,8 @@ def derive_partition_report(target):
         budget = bar - FLAT_REL_HALF_ULP[lane]
         cap = FLAT_DEG if lane == "double" else F32_FLAT_DEG
         print(f"the {lane} lane's uniform grid: every cell held to "
-              f"{mp.nstr(bar, 3)} RELATIVE to |F_n|, less half an ulp of the value "
+              f"{mp.nstr(bar, 3)} RELATIVE to F_0, the promise's order-free "
+              f"allowance (F_n <= F_0 at every n), less half an ulp of the value "
               f"({mp.nstr(FLAT_REL_HALF_ULP[lane], 3)}), so the cells are placed at "
               f"{mp.nstr(budget, 4)}, at the read cap {cap}:")
         for width in FLAT_LADDER:
@@ -939,8 +967,8 @@ def derive_partition_report(target):
         grid = uniform_grid(lane)
         per_order = sum(d + 1 for d in grid["degs"])
         print(f"  the join: the closed form's own error at order {MAX_ORDER} against "
-              f"{mp.nstr(FLAT_CLOSED_BOUND[lane], 3)} is at "
-              f"{mp.nstr(grid['join'], 10)}, so the grid is "
+              f"{mp.nstr(bar, 3)} times F_0 is at {mp.nstr(grid['join'], 10)}; the "
+              f"placed top is {mp.nstr(grid['top'], 10)}, so the grid is "
               f"{grid['intervals']} intervals of width {mp.nstr(grid['width'], 4)} "
               f"reaching {mp.nstr(grid['hi'], 8)}")
         print(f"  stored {per_order * (MAX_ORDER + 1)} coefficients per table "
@@ -956,11 +984,11 @@ def derive_partition_report(target):
 # The narrow partitions, as stored tables
 # ---------------------------------------------------------------------------
 # The derived partition is a design law; these are the members that ship it.
-# Region B's seed is one fit over [kX0, kX1); the narrow member cuts the same
-# interval into the pieces the proved bound gives at NARROW_TARGET and
+# Region B's seed is one fit over the band's interval, [kX0, region_b_top());
+# the narrow member cuts the same interval into the pieces the proved bound gives at NARROW_TARGET and
 # NARROW_DEG, each a Chebyshev interpolant of the same degree - so one
 # evaluation reads NARROW_DEG + 1 coefficients instead of the shipped seed's
-# MAX_DEG_DOUBLE + 1, and the table it reads them from is one row per piece
+# own degree + 1, and the table it reads them from is one row per piece
 # instead of one row. Region A's per-order pieces are cut the same way at the
 # same degree, under the criterion region A imposes: see narrow_region_a.
 #
@@ -998,42 +1026,55 @@ NARROW_WORKERS = 6
 # needs: F_n is largest and slowest-decaying at the origin, so the proved
 # truncation bound only falls as the order or the argument rises.
 #
-# THE DEGREE MUST BE EVEN, and that is a constraint of the kernel rather than a
-# preference of this generator. ClenshawSplit's odd part seeds at c[2m-1] and its
-# finalization assumes the m odd coefficients an even degree has, so an odd
-# degree drops its leading odd coefficient: the route then evaluates a different,
-# lower-degree polynomial, at full accuracy. This table was first fitted at
-# degree 7, which is odd, and the route's Clenshaw path asserted in debug and
-# returned those wrong values in release while a published bound for it sat in
-# the header. Every other table here is emitted even, but that was a convention
-# nothing enforced - see the static_assert emitted beside every degree below.
+# THE DEGREE MUST BE ONE THE SPLIT CLENSHAW SUMMATION READS: 4 or more, at
+# either parity. The walk read only even degrees until the odd-part lift: its
+# odd part used to seed at c[2m-1] with m = deg / 2 and assume the m odd
+# coefficients an even degree has, so an odd degree dropped its leading odd
+# coefficient and the route returned a different, lower-degree polynomial, at
+# full accuracy. This table was first fitted at degree 7, which is odd, and the
+# route's Clenshaw path asserted in debug and returned those wrong values in
+# release while a published bound for it sat in the header. The lift seeds the
+# odd part at c[2 * ((deg + 1) / 2) - 1], the degree's own top odd coefficient
+# at either parity, so an odd degree is read as itself now - and the
+# static_assert emitted beside every degree below is what holds every table to
+# the floor the walk still asserts.
 #
-# What the cap buys, measured in binary64 over both schemes and both
-# multiply-add routes at order 0 on the first interval - the worst cell of the
-# grid, being the worst order on the worst interval:
+# What a cap buys, measured in binary64 over both schemes and both multiply-add
+# routes at order 0 on a first interval of the old 1/4 grid - the worst cell of
+# a grid, being the worst order on the worst interval:
 #
 #   degree 4    8.373e-11     on [0, 1/7): too coarse by three orders
 #   degree 6    1.998e-15     on [0, 1/7): clears 1e-14, under one order of margin
-#   degree 7    1.110e-16     on [0, 1/7): at the floor, and odd, so not readable
-#   degree 8    at or below the floor, and even; 1.110e-16 on [0, 1/4) too
+#   degree 7    1.110e-16     on [0, 1/7): at the floor (misread until the lift)
+#   degree 8    at or below the floor; 1.110e-16 on [0, 1/4) too
 #
-# The decay is not geometric: 4 -> 6 is a factor of 42 000, 6 -> 7 only 18. So
-# degree 6 is not the cheap option it looks like - it spends the margin the
-# derived partitions are placed to hold - and 8 costs one multiply-add per order
-# over 7 for a fit the lane's own arithmetic cannot distinguish from exact.
+# The decay is not geometric: 4 -> 6 is a factor of 42 000 and 6 -> 7 only 18,
+# because what a width spends on truncation is set by the half-width h^(deg + 1)
+# and not by the degree alone. The cap this ships is 5, on the (5, 1/16)
+# recipe: the placement bound carries a degree-5 cell on every one of the
+# grid's 496 intervals (margin 31.47 at its worst, the first), 1/16 is the
+# widest width that margin carries at this cap, and the evaluation is the
+# shortest chain an admissible cut offers - three multiply-adds for the seed
+# pair and six per order. Storage does not bind the choice: a graded cut would
+# spend what this one spends to buy bytes back, and the reader addresses one
+# width and not a band.
 #
 # The grid this caps - the width, the interval count, the join and every cell's
-# degree - is derived from the lane's own bound, format and cap by uniform_grid.
-FLAT_DEG = 8
+# degree - is derived from the lane's own bound, format and cap by uniform_grid;
+# the top is the placed FLAT_TOP.
+FLAT_DEG = 5
 
 # The rule the kernel's split Clenshaw summation imposes on every degree it reads,
 # and the check that enforces it where the degrees are published.
 #
-# ClenshawSplit's odd part seeds at c[2m-1] and its finalization assumes the m odd
-# coefficients an even degree has. An odd degree therefore drops its leading odd
-# coefficient, and the route returns a different, lower-degree polynomial - at
-# full accuracy, so nothing about the value looks wrong. The kernel asserts the
-# rule at run time and that assert compiles out under NDEBUG.
+# ClenshawSplit reads both parities: its even part seeds at c[2m] with m = deg / 2
+# and its odd part at the top odd coefficient c[2 * ((deg + 1) / 2) - 1], and an
+# even degree's two seeds are the pair the even-only walk carried. That walk
+# misread an odd degree - at full accuracy, so nothing about the value looked
+# wrong - and the odd-part lift is what reads an odd degree as itself. What
+# remains of the rule is the floor: 0, 1 and 2 return above the walk's general
+# body and the kernel asserts the body for 4 and up, so no table may be fitted
+# below 4. The kernel asserts that at run time and it compiles out under NDEBUG.
 #
 # The uniform table was first fitted at degree 7, which is odd, and the route's
 # Clenshaw path asserted in debug and returned those wrong values in release
@@ -1045,16 +1086,15 @@ FLAT_DEG = 8
 # to compile in every build, host and device alike, rather than shipping a table
 # nothing reads correctly.
 CLENSHAW_DEGREE_RULE = (
-    "a degree the split Clenshaw summation reads must be even: its odd part "
-    "seeds at c[2m-1] and assumes the m odd coefficients an even degree has, so "
-    "an odd degree would drop its leading odd coefficient and evaluate a "
-    "different, lower-degree polynomial accurately"
+    "a degree the split Clenshaw summation reads must be 4 or more: 0, 1 and 2 "
+    "return above its general body, the body is asserted for 4 and up, and it "
+    "reads either parity there"
 )
 
 
 def deg_assert(name):
     """The check emitted beside a degree constant ClenshawSplit reads."""
-    return (f"static_assert({name} % 2 == 0,\n"
+    return (f"static_assert({name} >= 4,\n"
             f"              \"{CLENSHAW_DEGREE_RULE}\");\n")
 
 
@@ -1077,11 +1117,12 @@ def deg_assert(name):
 # 8.436e-9. The lane's figure is its rounding at every admissible degree, which
 # is why the cap is the smallest one the summation reads.
 #
-# Degree 3 is not admissible, and that is the kernel's property and not a
-# preference: ClenshawSplit takes its top odd coefficient at c[2m-1] and asserts
-# an even degree of at least 4 (boys_impl.hpp), so a degree-3 fit is not read as a
-# degree-3 fit - the reading measured 2.282e-2 on that cell, with c[1]'s term
-# carrying what c[3]'s should. The smallest admissible degree is 4, whose first
+# Degree 3 is not admissible, and that is the kernel's floor and not a
+# preference: ClenshawSplit asserts a degree of at least 4 (boys_impl.hpp), so a
+# degree-3 fit is outside the walk's contract. Under the even-only walk it was
+# also misread - the reading measured 2.282e-2 on that cell, with c[1]'s term
+# carrying what c[3]'s should - and the lifted walk reads both parities, but no
+# table emits a degree 3. The smallest admissible degree is 4, whose first
 # neglected coefficient on the double lane's first interval is 8.289e-11: nearly
 # three orders below that lane's own arithmetic floor, so what the table delivers
 # there is the lane's rounding rather than this truncation. Degree 6 delivers the
@@ -1104,18 +1145,24 @@ F32_FLAT_DEG = 4
 #     - so what a caller receives from it is the cell's own truncation plus the
 #     lane's rounding, and the two together must fit inside the bar the cell is
 #     held to. The criterion therefore governs the truncation against the bar
-#     less half an ulp OF THE VALUE, and a cell's degree is the smallest
-#     admissible even degree whose proved truncation bound
-#     (apriori_truncation_bound, the law that places every derived piece here)
-#     holds it - against the function at the cell's right edge, which is where a
-#     relative error is largest. This is the criterion a rung moves: the
-#     effective-degree machinery spends the dropped-coefficient tail of a cell
-#     against (m - 1) times the bar, and a cell's own degree and its own
-#     coefficients are what it scans - which is all a cut needs.
+#     less half an ulp OF THE VALUE, and a cell's degree is the smallest degree
+#     in FLAT_CELL_DEGREES the lane's placement bound holds - against the bar
+#     times F_0 at the cell's right edge, the promise's own denominator there
+#     (F_n <= F_0, so the promise's max over the ladder is its order-0
+#     reading). The double lane's placement bound is bl_cell_bound; the float
+#     lane's is apriori_truncation_bound, the ellipse majorant every derived
+#     piece is placed by, and the two differ by a constant on this partition -
+#     measured at the grid's first cell at order 0, the majorant reads 2.075e-14
+#     where the L bound reads 3.109e-15 - so the L bound is the tighter of the
+#     two and the one this table's margins are stated in. This is the criterion
+#     a rung moves: the effective-degree machinery spends the
+#     dropped-coefficient tail of a cell against (m - 1) times the bar, and a
+#     cell's own degree and its own coefficients are what it scans - which is
+#     all a cut needs.
 #
 #   * the width. The widest dyadic interval whose first cell that criterion still
 #     carries at the read cap. Widest because for one read cap the storage falls
-#     monotonically as the width grows - the interval count falls as the join
+#     monotonically as the width grows - the interval count falls as the top
 #     over the width, while the degree the first cell needs grows far more slowly
 #     - and dyadic because the locate multiplies by the width's reciprocal: 1 /
 #     2^-p is exact in binary arithmetic, so the interval an argument falls in is
@@ -1124,15 +1171,15 @@ F32_FLAT_DEG = 4
 #     kFlatIntervals, which a dyadic pair satisfies exactly and which 1/7
 #     satisfies only by the luck of its reciprocal.
 #
-#   * the join, where the grid stops and the closed form takes over. The closed
-#     form's own error at order n is 0.5 x^-(n+1/2) Gamma(n+1/2, x): largest at
-#     the top order, strictly falling in x. The join is the root of that against
-#     the bound the closed form is held to, rounded up to a whole number of
-#     intervals. That tail is an ABSOLUTE omission and its relative reading at
-#     the top order is far above the near region's bar (2.63 at the double
-#     lane's join, 493 at the float lane's), so the join is not a relative
-#     quantity and the grid's geometry above does not move with the bar: only
-#     the cell law did.
+#   * the join and the top. The closed form's own error at order n is
+#     0.5 x^-(n+1/2) Gamma(n+1/2, x): largest at the top order, strictly falling
+#     in x. The join is the root of that against the lane's own bar times F_0 -
+#     the same order-free allowance the cells are placed against - and the top
+#     is PLACED above it: FLAT_TOP names it, the join is the check that the
+#     placed top covers it, and the interval count is the ceiling of the top
+#     over the width. Naming the top is what keeps the geometry a knob: the
+#     committed border, 29.0, was the same quantity - ceil(28.910614613391565 /
+#     0.25) * 0.25, 116 cells - with nothing naming it.
 #
 # Every figure is a function of the lane's bar, the lane's format and the lane's
 # read cap, so a lane with a different target derives its own grid.
@@ -1146,7 +1193,37 @@ F32_FLAT_DEG = 4
 # publishes; the Chebyshev cells answer to FLAT_REL_BAR instead, and the two
 # bars are named separately because they are read in different units.
 FLAT_CELL_BOUND = {"double": mpf("1e-15"), "float": TOL_FLOAT}
-FLAT_CLOSED_BOUND = {"double": mpf("5.5e-14"), "float": mpf("1.5e-7")}
+# The PLACED top of the uniform grid, per lane: the grid reaches this bound,
+# rounded up to a whole number of intervals, and the derived join must be inside
+# it (checked in uniform_row), because carrying every argument the closed form's
+# own tail cannot is the grid's job. The double lane's 31.0 over the derived
+# join's 29.93 is a margin ruling and not a fit: right above the join the far
+# body's own factor against the promise is 0.920, a 1.09x margin a contraction
+# difference between builds can eat, and 0.345, 2.9x, at 31.0, which it cannot.
+# The committed border, 29.0, was this quantity unnamed -
+# ceil(28.910614613391565 / 0.25) * 0.25, 116 cells - which is why the knob
+# reads new here. A lane without an entry keeps its derived join as its top; the
+# float lane has no audit behind it, and its committed 18.75 border was its own
+# join.
+FLAT_TOP = {"double": mpf(31)}
+# Region B's fitted coverage stops where the far guard hands the band's arguments
+# over, and that guard names the top: an argument inside a lane's top is one the
+# band answers, so the seed and the narrow partition the band reads must reach it,
+# and a table stopping at the derived border would be read outside its own interval
+# above it. A lane with no placed top keeps the border its ladder derived, so the
+# float lane's tables and its guards stay keyed to kX1 together. The header spells
+# the end kFlatHi, which is the grid's whole-interval rounding of the same top, and
+# the two must be one number or the guard hands the band an argument past its fit:
+# narrow_region_b checks that.
+def region_b_top(lane="double"):
+    """The band's right end: the placed top, else the border the ladder derived."""
+    top = FLAT_TOP.get(lane)
+    return X1 if top is None else top
+
+
+def region_b_top_name(lane="double"):
+    """The same end as the header spells it, for the domain the tables serve."""
+    return "kX1" if FLAT_TOP.get(lane) is None else "kFlatHi"
 # Half an ulp of 1 in each lane's format: the floor no fit's arithmetic reaches
 # below, and the part of the bound the cell law must leave to it. Absolute, the
 # way the bound above it is: this is the term the rational member over the same
@@ -1154,10 +1231,13 @@ FLAT_CLOSED_BOUND = {"double": mpf("5.5e-14"), "float": mpf("1.5e-7")}
 FLAT_HALF_ULP = {"double": mpf(2) ** -53, "float": mpf(2) ** -24}
 
 # The bar the uniform table's Chebyshev cells are placed and certified under,
-# RELATIVE: a cell's error is judged against this times |F_n| there rather than
+# RELATIVE: a cell's error is judged against this times F_0 there rather than
 # against a flat tolerance, so the promise follows the function's own magnitude
-# down instead of being anchored to a value of 1. The double lane's is the
-# contract's 1e-13.
+# down instead of being anchored to a value of 1. The reading is order-free:
+# 0 <= t^(2n) <= 1 on the integration range gives F_n <= F_0, so the promise's
+# own max over the ladder, max(bar F_n, bar F_0), is bar F_0 at every order, and
+# the certification holds every delivered figure to that same denominator. The
+# double lane's is the contract's 1e-13.
 #
 # The float lane's own figure, 1.5e-7 absolute, is 2.5 half-ulps of a binary32
 # value read relatively, and the lane's rounding does not reach below about
@@ -1184,19 +1264,33 @@ FLAT_REL_HALF_ULP = {"double": mpf(2) ** -53, "float": mpf(2) ** -24}
 # table the partition can offer.
 FLAT_LADDER = (mpf(8), mpf(4), mpf(2), mpf(1), mpf(1) / 2, mpf(1) / 4,
                mpf(1) / 8, mpf(1) / 16, mpf(1) / 32)
-# The degrees a cell may be fitted at, ascending. Even and at least 4: the split
-# Clenshaw summation reads the odd coefficients up to c[deg-1], so an odd degree
-# drops its leading odd one and evaluates a different polynomial (see
-# CLENSHAW_DEGREE_RULE). The top of the ladder is above any cap below, so the
-# cell law's answer is the cap and not the ladder whenever the cell is easy.
-FLAT_CELL_DEGREES = (4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24)
-# The order the cell law judges a cell against. A cell's relative truncation
-# bound rises with the order and falls with the argument, so the top order is
-# where it is largest - measured to rise at every sampled step on 12 cells of the
-# double grid, at the ladder's degrees 6 and 8, over the orders 0..32. What holds
-# the table to the bar is the certification: the ladder measures every cell at
-# every order, so a cell this reading misjudged is a row the ladder refuses.
-FLAT_BIND_ORDER = MAX_ORDER
+# The recipe's two pins: the (5, 1/16) grid, with the degrees forced uniform at
+# FLAT_DEG on every interval, so the emitted block carries one degree and the
+# locator's uniform-degree and block-stride laws hold by construction - the
+# transposed twin's uniform-block shape needs the same. The width is the law's
+# own answer at this cap (no wider interval is carried, and the width search
+# would derive 1/16 unpinned); the degree pin is what makes the vector uniform
+# over the cells the law would place lower. A recipe with no pin, or with
+# another, is the two laws' own per-interval ladder.
+FLAT_WIDTH_PIN = {"double": mpf(1) / 16}
+FLAT_DEGREE_PIN = {"double": FLAT_DEG}
+# The degrees a cell may be fitted at, ascending. Every degree from 4 up is one
+# the split Clenshaw summation reads, both parities alike (see
+# CLENSHAW_DEGREE_RULE), so the ladder carries 5 beside the even entries: an odd
+# entry is a cell the walk reads as itself, not a table nothing reads. The top
+# of the ladder is above any cap below, so the cell law's answer is the cap and
+# not the ladder whenever the cell is easy.
+FLAT_CELL_DEGREES = (4, 5, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24)
+# The order the cell law judges a cell against. Both placement bounds fall with
+# the order as F_{n + deg + 1}(a) does - the flip of the old reading, measured
+# to fall at every sampled step on the double grid's first and mid cells, at the
+# ladder's degrees 6 and 8, over the orders 0..32 - so order 0 is where the
+# bound is largest and the one that binds the placement, and it is also the
+# order the allowance itself reduces to (F_n <= F_0, so the bar's max is its
+# order-0 reading). What holds the table to the bar is the certification: the
+# ladder measures every cell at every order, so a cell this reading misjudged is
+# a row the ladder refuses.
+FLAT_BIND_ORDER = 0
 
 
 def closed_form_error(order, x):
@@ -1213,43 +1307,74 @@ def closed_form_error(order, x):
 
 
 def uniform_join(bound, order=MAX_ORDER):
-    """The smallest x whose closed form is inside `bound` at the top order.
+    """The smallest x whose closed form is inside `bound` times F_0(x).
 
-    The tail is largest at the top order and falls in x, so the root of this one
-    equation is the join for every order at once.
+    The bar the closed form answers to is the lane's relative one against the
+    order-free allowance - the same bar times F_0 the near table's cells are
+    placed against - so the root of this one equation is the join for every
+    order at once. The tail is largest at the top order and falls in x. The
+    bracket stops at 45: a top of 400 sends the bisection's first midpoint to
+    200.5, where the reference itself refuses as not converged, and the root is
+    below 30 on both lanes.
     """
-    lo, hi = mpf(1), mpf(400)
+    lo, hi = mpf(1), mpf(45)
     for _ in range(200):
         mid = (lo + hi) / 2
-        if closed_form_error(order, mid) <= bound:
+        if closed_form_error(order, mid) <= bound * boys_ref(0, mid):
             hi = mid
         else:
             lo = mid
     return hi
 
 
-def uniform_cell_degree(a, b, budget, cap):
+def bl_cell_bound(order, a, b, deg):
+    """The L bound: F_{order + deg + 1}(a) * h^(deg + 1) / (2^deg * (deg + 1)!),
+    h = (b - a) / 2, as (bound, rho) like apriori_truncation_bound.
+
+    It majorises the leading Chebyshev coefficient a_{deg + 1} a degree-deg fit
+    of F_order omits: the D family's expansion sets that coefficient at
+    h^(deg + 1) / (2^deg * (deg + 1)!) times the function one order higher at
+    the cell's left edge, up to terms that fall with the ratio h / (2 c) - which
+    is why the bound is tightest far from the origin and widest at it. Measured
+    against the exact coefficient, two-sided, at cells sampled across the
+    (5, 1/16) grid at orders 0, 16 and 32: 1.004 to 1.031 times it, so the bound
+    never sits below the coefficient the fit drops, and it is the constant this
+    table's margins are stated in. rho is reported as 0 because nothing here is
+    minimised; the shape is apriori_truncation_bound's, so either bound can be
+    the cell law's.
+    """
+    h = (b - a) / 2
+    return (boys_ref(order + deg + 1, a) * h ** (deg + 1)
+            / (mpf(2) ** deg * mp.factorial(deg + 1)), mpf(0))
+
+
+def uniform_cell_degree(a, b, budget, cap, bound=None):
     """The smallest ladder degree the cell [a, b) is carried at under `budget`.
 
     `budget` is the bar the cell answers to, in the units the bar is read in -
     relative, so the bound is judged against the function AT THE CELL'S RIGHT
-    EDGE: the a-priori bound holds over the whole cell at once and |F_n| falls in
-    the argument, so the right edge is where a relative error is largest. None
-    when no admissible degree up to the cap holds it, which is what tells a width
-    that it cannot be read at all.
+    EDGE: the bound holds over the whole cell at once and |F_n| falls in the
+    argument, so the right edge is where a relative error is largest, and the
+    bar there is the bar times F_0, the ladder's own largest reading. `bound` is
+    the lane's placement law, defaulting to the ellipse majorant every derived
+    piece is placed by; the double lane passes bl_cell_bound. None when no
+    admissible degree up to the cap holds it, which is what tells a width that
+    it cannot be read at all.
     """
     if budget <= 0:
         return None
+    if bound is None:
+        bound = apriori_truncation_bound
     ref = abs(boys_ref(FLAT_BIND_ORDER, b))
     for deg in FLAT_CELL_DEGREES:
         if deg > cap:
             return None
-        if apriori_truncation_bound(FLAT_BIND_ORDER, a, b, deg)[0] <= budget * ref:
+        if bound(FLAT_BIND_ORDER, a, b, deg)[0] <= budget * ref:
             return deg
     return None
 
 
-def uniform_degrees(width, intervals, budget, cap):
+def uniform_degrees(width, intervals, budget, cap, bound=None):
     """Every interval's degree over a grid of `intervals` cells of `width`.
 
     One cell at a time, each at the smallest degree the cell law carries it, so
@@ -1266,13 +1391,39 @@ def uniform_degrees(width, intervals, budget, cap):
     out = []
     for iv in range(intervals):
         a = mpf(iv) * width
-        deg = uniform_cell_degree(a, a + width, budget, cap)
+        deg = uniform_cell_degree(a, a + width, budget, cap, bound)
         if deg is None:
             raise RuntimeError(
                 f"the cell law carries no degree on [{a}, {a + width}) under "
                 f"{mp.nstr(budget, 4)} times F{FLAT_BIND_ORDER}(b), at the {cap} cap")
         out.append(deg)
     return out
+
+
+def placement_margin(width, degs, budget, bound):
+    """The placed grid's own margin: the minimum over its cells of the law's
+    ratio, and the cell that reaches it.
+
+    A cell's margin is budget * F_0(b) / bound(FLAT_BIND_ORDER, a, b, deg), so
+    1.0 is the law's own acceptance and every unpinned degree the law chose sits
+    at or above it by construction. The scan is what holds a PINNED vector to
+    the same law, cell by cell, and the minimum travels with the grid so the
+    report can state the placement's own figure. A margin below 1.0 raises: a
+    cell the bound does not carry is a table the promise does not cover.
+    """
+    worst = worst_at = None
+    for iv, deg in enumerate(degs):
+        a = mpf(iv) * width
+        m = budget * abs(boys_ref(FLAT_BIND_ORDER, a + width)) / bound(
+            FLAT_BIND_ORDER, a, a + width, deg)[0]
+        if worst is None or m < worst:
+            worst, worst_at = m, a
+    if worst < 1:
+        raise RuntimeError(
+            f"the placement carries a cell the cell law does not: margin "
+            f"{mp.nstr(worst, 4)} at a = {mp.nstr(worst_at, 8)}, against the "
+            f"{mp.nstr(budget, 4)} budget the bar leaves the fit")
+    return worst, worst_at
 
 
 def uniform_row(lane, width):
@@ -1286,23 +1437,41 @@ def uniform_row(lane, width):
     uniform_degrees, which is the one place the fall is still relied on. A width
     the first cell cannot carry is a width no other cell can save.
 
-    The JOIN is not relative and is not derived here: it is the closed form's own
-    one-term tail against the absolute bound the region above it publishes, and
-    that tail's relative reading is unbounded at the top order (2.63 at the double
-    lane's join, 493 at the float lane's), so the grid stops where the GLOBAL
-    geometry puts it - width, interval count and join unchanged - and only the
-    cell law moved.
+    The JOIN is derived here and relative: the closed form's own one-term tail
+    against the lane's bar times F_0, whose root is the join for every order at
+    once. The top is then placed - FLAT_TOP names it, and the join must be
+    inside it, because carrying every argument the tail cannot is the
+    grid's job - so an audit that moves the top moves one constant and no law.
+
+    The degree pin may overrule the law's own answer, so the vector is checked
+    after it: placement_margin holds every cell of the grid AS PLACED - the
+    pinned degrees and not the ones the law would have chosen - against the same
+    law, and the worst margin travels with the row.
     """
     bar = FLAT_REL_BAR[lane]
     budget = bar - FLAT_REL_HALF_ULP[lane]
     cap = FLAT_DEG if lane == "double" else F32_FLAT_DEG
-    if uniform_cell_degree(mpf(0), width, budget, cap) is None:
+    bound = bl_cell_bound if lane == "double" else apriori_truncation_bound
+    if uniform_cell_degree(mpf(0), width, budget, cap, bound) is None:
         return None
-    join = uniform_join(FLAT_CLOSED_BOUND[lane])
-    intervals = int(mp.ceil(join / width))
+    join = uniform_join(FLAT_REL_BAR[lane])
+    top = FLAT_TOP.get(lane)
+    if top is None:
+        top = join
+    elif join > top:
+        raise RuntimeError(
+            f"the {lane} lane's join {mp.nstr(join, 10)} is above its placed top "
+            f"{mp.nstr(top, 3)}: past the join the closed form's own tail leaves the "
+            f"bar, so a grid that stops short of it serves arguments no route holds")
+    intervals = int(mp.ceil(max(join, top) / width))
+    degs = uniform_degrees(width, intervals, budget, cap, bound)
+    if lane in FLAT_DEGREE_PIN:
+        degs = [FLAT_DEGREE_PIN[lane]] * intervals
+    margin = placement_margin(width, degs, budget, bound)
     return {"lane": lane, "bar": bar, "budget": budget, "cap": cap, "join": join,
-            "width": width, "intervals": intervals, "hi": intervals * width,
-            "degs": uniform_degrees(width, intervals, budget, cap)}
+            "top": top, "width": width, "intervals": intervals,
+            "hi": intervals * width, "degs": degs,
+            "margin": margin[0], "margin_at": margin[1]}
 
 
 @lru_cache(maxsize=None)
@@ -1315,14 +1484,16 @@ def uniform_grid(lane="double"):
     route's summation rounding is what sets the figure, and that rounding is not
     monotone in the argument the way the bound is.
     """
-    for width in FLAT_LADDER:
+    widths = ((FLAT_WIDTH_PIN[lane],) if lane in FLAT_WIDTH_PIN
+              else FLAT_LADDER)
+    for width in widths:
         row = uniform_row(lane, width)
         if row is not None:
             return row
     budget = FLAT_REL_BAR[lane] - FLAT_REL_HALF_ULP[lane]
     cap = FLAT_DEG if lane == "double" else F32_FLAT_DEG
     raise RuntimeError(
-        f"the uniform grid's ladder carries no width at {mp.nstr(budget, 4)} of the "
+        f"the uniform grid's width search carries no width at {mp.nstr(budget, 4)} of the "
         f"{mp.nstr(FLAT_REL_BAR[lane], 3)} relative bar: every dyadic width in "
         f"{[mp.nstr(w, 3) for w in FLAT_LADDER]} needs a degree above the {cap} this "
         f"lane's table reads")
@@ -1337,8 +1508,23 @@ def narrow_region_b():
     pieces are fitted on the derived mpf edges and stored as the doubles the
     kernel reads, exactly as region A's pieces are.
     """
+    top = region_b_top()
+    if FLAT_TOP.get("double") is not None:
+        # The guard hands the band every argument below the grid's own hi, and the
+        # grid's hi is this top rounded up to whole intervals: the band's fit must
+        # reach that hi, or an argument lands inside the guard and outside the fit.
+        # The placed top is a whole number of intervals, so the two are one number,
+        # and this is what keeps that true if the top ever moves.
+        grid_hi = uniform_grid("double")["hi"]
+        if grid_hi != top:
+            raise RuntimeError(
+                f"region B's band reaches {mp.nstr(top, 10)} and the uniform grid's hi "
+                f"is {mp.nstr(grid_hi, 10)}: the far guard names the grid's hi, so the "
+                f"grid rounds the band's top up to a whole interval and the two must be "
+                f"the same number")
+
     pieces = []
-    for a, b in equalise_partition(0, X0, X1, NARROW_TARGET, NARROW_DEG):
+    for a, b in equalise_partition(0, X0, top, NARROW_TARGET, NARROW_DEG):
         cm = cheb_coeffs(0, a, b, NARROW_DEG)
         pieces.append((float(a), float(b), NARROW_DEG,
                        [float(c) for c in cm],
@@ -1534,15 +1720,20 @@ def flat_order(job):
     scan. That is half of what this table is for; the other half is that every
     order is fitted independently, so a ladder is 33 independent polynomials and
     not a recurrence that has to be walked in order. Each cell is fitted at its
-    own degree, which is why the interval list carries one. The figure every cell
-    returns is the bar's own reading of it - the error relative to |F_n| at the
-    argument it was reached at - and not the absolute error, which is a different
-    maximum on the same sweep.
+    own degree, which is why the interval list carries one. Every cell is
+    measured twice on its one fit: the per-order figure the report carries, the
+    error relative to |F_n| at the argument it was reached at, and the figure the
+    ladder accepts on, the same error over max(|F_n|, |F_0|) there - the
+    promise's own denominator, which is the bar's reading on this table because
+    the ladder's max over the orders is its order-0 reading. Neither is the
+    absolute error, which is a different maximum on the same sweep.
     """
     n, width, degs = job
     intervals = []
     worst = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
     worst_at = [[None, None] for _ in range(NARROW_SCHEMES)]
+    allowance = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
+    allowance_at = [[None, None] for _ in range(NARROW_SCHEMES)]
     for iv, deg in enumerate(degs):
         a = iv * width
         b = a + width
@@ -1551,12 +1742,16 @@ def flat_order(job):
         ms = [float(c) for c in cheb_to_monomial(cm)]
         intervals.append((float(a), float(b), deg, cs, ms))
         w = fit_delivered(cs, ms, n, a, b, SCHEME_MEASURE_POINTS, relative=True)
+        wa = fit_delivered(cs, ms, n, a, b, SCHEME_MEASURE_POINTS, allowance=True)
         for scheme in range(NARROW_SCHEMES):
             for route in (0, 1):
                 if w[scheme][route] > worst[scheme][route]:
                     worst[scheme][route] = w[scheme][route]
                     worst_at[scheme][route] = (float(a), float(b))
-    return n, intervals, worst, worst_at
+                if wa[scheme][route] > allowance[scheme][route]:
+                    allowance[scheme][route] = wa[scheme][route]
+                    allowance_at[scheme][route] = (float(a), float(b))
+    return n, intervals, worst, worst_at, allowance, allowance_at
 
 
 def flat_table(lane="double"):
@@ -1575,13 +1770,18 @@ def flat_table(lane="double"):
     The figure a cell delivers is its truncation plus its lane's summation
     rounding, the bound is monotone in the argument and the rounding is not: a
     lane whose bar is close to its own arithmetic floor can be delivered outside
-    the bar at a cell the bound is comfortable with. Both are read RELATIVE here,
-    at |F_n| of the argument each was reached at, which is the reading the bar is
-    in. A narrower width lowers the rounding because it lowers the coefficients
-    it sums, so the ladder is the search and this is its acceptance test. A
-    ladder that carries no row at all is raised rather than published.
+    the bar at a cell the bound is comfortable with. Both readings are RELATIVE:
+    the acceptance is over max(|F_n|, |F_0|) at the argument each sample was
+    reached at - the allowance the region's promise is written in, since F_n <=
+    F_0 - while every cell's per-order figure at |F_n| travels back with the
+    table and is reported, because it is what that reading delivered. A narrower
+    width lowers the rounding because it lowers the coefficients it sums, so the
+    ladder is the search and this is its acceptance test. A ladder that carries
+    no row at all is raised rather than published.
     """
-    for width in FLAT_LADDER:
+    widths = ((FLAT_WIDTH_PIN[lane],) if lane in FLAT_WIDTH_PIN
+              else FLAT_LADDER)
+    for width in widths:
         grid = uniform_row(lane, width)
         if grid is None:
             continue
@@ -1589,30 +1789,39 @@ def flat_table(lane="double"):
         with multiprocessing.get_context("spawn").Pool(
                 min(len(jobs), NARROW_WORKERS)) as pool:
             out = pool.map(flat_order, jobs)
-        per_order = [intervals for _n, intervals, _w, _a in out]
+        per_order = [intervals for _n, intervals, _w, _a, _wa, _pa in out]
         worst = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
         worst_at = [[None, None] for _ in range(NARROW_SCHEMES)]
-        for _n, _intervals, w, at in out:
+        allowance = [[0.0, 0.0] for _ in range(NARROW_SCHEMES)]
+        allowance_at = [[None, None] for _ in range(NARROW_SCHEMES)]
+        for _n, _intervals, w, at, wa, pa in out:
             for scheme in range(NARROW_SCHEMES):
                 for route in (0, 1):
                     if w[scheme][route] > worst[scheme][route]:
                         worst[scheme][route] = w[scheme][route]
                         worst_at[scheme][route] = at[scheme][route]
-        if all(worst[s][r] <= grid["bar"]
+                    if wa[scheme][route] > allowance[scheme][route]:
+                        allowance[scheme][route] = wa[scheme][route]
+                        allowance_at[scheme][route] = pa[scheme][route]
+        if all(allowance[s][r] <= grid["bar"]
                for s in range(NARROW_SCHEMES) for r in (0, 1)):
-            bounds = [[scheme_bound(worst[s][r]) for r in (0, 1)]
+            bounds = [[scheme_bound(allowance[s][r]) for r in (0, 1)]
                       for s in range(NARROW_SCHEMES)]
             return {"orders": per_order, "worst": worst, "bounds": bounds, "grid": grid,
-                    "worst_at": worst_at,
-                    "per_order": {n: (w, at) for n, _i, w, at in out}}
-        print(f"    the {lane} uniform table does not hold its bar at width "
+                    "worst_at": worst_at, "allowance": allowance,
+                    "allowance_at": allowance_at,
+                    "per_order": {n: (w, at) for n, _i, w, at, _wa, _pa in out},
+                    "per_order_allowance": {n: (wa, pa)
+                                            for n, _i, _w, _a, wa, pa in out}}
+        print(f"    the {lane} uniform table does not hold its allowance at width "
               f"{mp.nstr(width, 3)}: worst "
-              f"{max(max(r) for r in worst):.6e} relative against "
-              f"{mp.nstr(grid['bar'], 3)}; trying the next width down")
+              f"{max(max(r) for r in allowance):.6e} of the "
+              f"{mp.nstr(grid['bar'], 3)} allowance; trying the next width down")
     raise RuntimeError(
-        f"the {lane} uniform table holds {mp.nstr(FLAT_REL_BAR[lane], 3)} relative at "
-        f"no dyadic width in {[mp.nstr(w, 3) for w in FLAT_LADDER]}: the lane's own "
-        f"rounding is above the bar at every grid the ladder carries")
+        f"the {lane} uniform table holds {mp.nstr(FLAT_REL_BAR[lane], 3)} relative "
+        f"over max(|F_n|, |F_0|) at no dyadic width in "
+        f"{[mp.nstr(w, 3) for w in FLAT_LADDER]}: the lane's own arithmetic is "
+        f"above the bar at every grid the ladder carries")
 
 
 def flat_grid_offsets(grid):
@@ -1649,10 +1858,13 @@ def flat_block_lines(flat):
     four orders is then four consecutive doubles and the fetch is one load,
     where the interval-major form steps between the four by the interval's own
     degree + 1 and pays a load and a join per lane. It is a permutation of the
-    same values and not a second table - same count, same offsets, same block
-    lengths - so what the two differ in is which axis a reader walks
-    contiguously, and a reader that wants an order's own polynomial whole reads
-    the interval-major form. Each shape's read rule is stated beside it.
+    same values and not a second table: each interval's block pads every row of
+    kMaxOrder + 1 coefficients to a whole number of four-double loads and its
+    rows to a whole 64-byte line, so a group load never crosses a line, and the
+    pad cells are zeros the reader's stride steps over. What the two differ in
+    is which axis a reader walks contiguously, and a reader that wants an
+    order's own polynomial whole reads the interval-major form. Each shape's
+    read rule is stated beside it.
 
     Two things separate it from the derived partitions, and the option probe
     measures both. The grid is equal-width and derived, so the interval an
@@ -1689,7 +1901,7 @@ def flat_block_lines(flat):
         f"inline constexpr double kFlatWidth = {fmt(grid['width'])};",
         f"inline constexpr double kFlatHi = {fmt(grid['hi'])};",
         "// One degree per interval: the smallest the cell law carries there, at",
-        "// the read cap or below it, and even in every entry.",
+        "// the read cap or below it.",
         "inline constexpr auto kFlatDegs = std::to_array<int>({",
     ]
     for i in range(0, len(degs), 12):
@@ -1712,27 +1924,48 @@ def flat_block_lines(flat):
     # The same coefficients with the order innermost, which is the order the
     # vector lane reads: one coefficient index across the four orders a group
     # carries is four consecutive doubles, where the form above steps between
-    # them by the interval's degree + 1. The offsets are the ones above - the
-    # transposition moves values inside a block and leaves its length alone.
+    # them by the interval's degree + 1. A row pads its kMaxOrder + 1
+    # coefficients to a whole number of four-double loads and a block pads its
+    # rows to a whole 64-byte line, so no group load crosses one.
+    if len(set(degs)) != 1:
+        raise RuntimeError("the transposed twin pads every interval's block to the "
+                           "uniform grid's shape: the degrees must be one and the same")
+    twin_row = (MAX_ORDER + 1 + 3) // 4 * 4
+    twin_block = ((degs[0] + 1) * twin_row + 7) // 8 * 8
+    twin_stored = intervals * twin_block
+    lines.append(f"inline constexpr int kFlatTwinRow = {twin_row};")
+    lines.append(f"inline constexpr int kFlatTwinBlock = {twin_block};")
     lines.append("// The same coefficients transposed, one coefficient index at a time: the k-th\n"
-                 "// coefficient of order l is at kFlatOffsets[iv] + k * (kMaxOrder + 1) + l,\n"
-                 "// and the same for kFlatTransposedMonoCoeffs. Four orders' k-th coefficients\n"
-                 "// are then consecutive and a group reads them in one load.")
+                 "// coefficient of order l is at kFlatTwinBlock * iv + kFlatTwinRow * k + l, and\n"
+                 "// the same for kFlatTransposedMonoCoeffs. A row and a block are padded to whole\n"
+                 "// four-double loads and whole 64-byte lines, at zeros no reader reaches.")
     for name, column in (("kFlatTransposedCoeffs", 3), ("kFlatTransposedMonoCoeffs", 4)):
-        values = [fmt(per_order[n][iv][column][k])
-                  for iv in range(intervals)
-                  for k in range(degs[iv] + 1)
-                  for n in range(MAX_ORDER + 1)]
+        values = []
+        for iv in range(intervals):
+            for k in range(degs[iv] + 1):
+                values += [fmt(per_order[n][iv][column][k]) for n in range(MAX_ORDER + 1)]
+                values += [fmt(0.0)] * (twin_row - (MAX_ORDER + 1))
+            values += [fmt(0.0)] * (twin_block - (degs[iv] + 1) * twin_row)
+        if len(values) != twin_stored:
+            raise RuntimeError(f"the transposed twin's pads do not reach its block: "
+                               f"{len(values)} against {twin_stored}")
         lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
         for i in range(0, len(values), 6):
             lines.append("  " + ", ".join(values[i:i + 6]) + ",")
         lines.append("});")
     lines.append(f"static_assert(std::size(kFlatCoeffs) == {stored} &&\n"
-                 f"                  std::size(kFlatMonoCoeffs) == {stored} &&\n"
-                 f"                  std::size(kFlatTransposedCoeffs) == {stored} &&\n"
-                 f"                  std::size(kFlatTransposedMonoCoeffs) == {stored},\n"
+                 f"                  std::size(kFlatMonoCoeffs) == {stored},\n"
                  "              \"the uniform table must hold every interval of every order, in\"\n"
-                 "              \" both of its shapes\");")
+                 "              \" both of its stored forms\");")
+    lines.append(f"static_assert(std::size(kFlatTransposedCoeffs) == {twin_stored} &&\n"
+                 f"                  std::size(kFlatTransposedMonoCoeffs) == {twin_stored},\n"
+                 "              \"the transposed twin must hold every interval's padded block\");")
+    lines.append("static_assert(kFlatTwinRow == (kMaxOrder + 1 + 3) / 4 * 4 &&\n"
+                 "                  kFlatTwinBlock ==\n"
+                 "                      ((kFlatReadCap + 1) * kFlatTwinRow + 7) / 8 * 8,\n"
+                 "              \"the transposed twin's pads are the group lane's shape: every row\"\n"
+                 "              \" padded to a whole four-double load and every block to a whole\"\n"
+                 "              \" 64-byte line, so no group load of a block crosses a line\");")
     lines.append(f"static_assert(std::size(kFlatDegs) == kFlatIntervals &&\n"
                  f"                  std::size(kFlatOffsets) == kFlatIntervals + 1,\n"
                  "              \"the uniform table must carry one degree and one offset per "
@@ -1740,10 +1973,10 @@ def flat_block_lines(flat):
     lines.append(f"static_assert(kFlatOffsets[kFlatIntervals] == {stored},\n"
                  "              \"the offsets must reach the end of the uniform table\");")
     lines.append("")
-    lines.append("// The uniform table's certification rows: the worst relative error each scheme")
-    lines.append("// delivers in each multiply-add route, over the whole table, rounded up to a")
-    lines.append(f"// power of two, against the {mp.nstr(grid['bar'], 6)} relative bar the cells are placed")
-    lines.append("// and certified under. deg is the cap; stored sums the degrees. No seeding gain.")
+    lines.append("// The uniform table's certification rows: worst error each scheme delivers in")
+    lines.append("// each multiply-add route, over the whole table, relative to max(|F_n|, |F_0|)")
+    lines.append(f"// - the {mp.nstr(grid['bar'], 6)} bar's own denominator, since F_n <= F_0 - rounded up")
+    lines.append("// to a power of two. deg is the cap; stored sums the degrees. No seeding gain.")
     lines.append("struct FlatRow { int scheme, deg, intervals, stored;")
     lines.append("                 double fused, separate; };")
     lines.append("inline constexpr auto kFlatRows = std::to_array<FlatRow>({")
@@ -1804,8 +2037,9 @@ def flat_transposed_findings(path, grid):
     file to the derivation and cannot see that class: both emissions carry the
     same mistake. This walks the read rule over the written arrays instead - every
     (interval, order, coefficient) of one shape against the index the reader looks
-    it up at in the other - so a twin that is not the transposition is a finding
-    here rather than a wrong value at a caller.
+    it up at in the other, and every pad cell against the zero the reader's stride
+    steps over - so a twin that is not the padded transposition is a finding here
+    rather than a wrong value at a caller.
     """
     degs = grid["degs"]
     offsets = flat_grid_offsets(grid)
@@ -1814,14 +2048,31 @@ def flat_transposed_findings(path, grid):
 
     findings = []
 
+    # The padding this check demands is the group lane's shape restated rather
+    # than read out of the file: a twin whose own constants described an
+    # unpadded table would otherwise walk itself and pass.
+    row = (MAX_ORDER + 1 + 3) // 4 * 4
+    block = ((max(degs) + 1) * row + 7) // 8 * 8
+    try:
+        have_row = int(header_scalar(text, "kFlatTwinRow", "int"))
+        have_block = int(header_scalar(text, "kFlatTwinBlock", "int"))
+    except RuntimeError:
+        findings.append(f"{path}: the transposed twin declares no padded row and block "
+                        f"stride")
+        return findings
+    if (have_row, have_block) != (row, block):
+        findings.append(f"{path}: the transposed twin pads with row {have_row} and block "
+                        f"{have_block}; the group lane's shape is {row} and {block}")
+        return findings
+
     for plain_name, twin_name in (("kFlatCoeffs", "kFlatTransposedCoeffs"),
                                   ("kFlatMonoCoeffs", "kFlatTransposedMonoCoeffs")):
         plain = header_array(text, plain_name)
         twin = header_array(text, twin_name)
 
-        if len(plain) != len(twin):
-            findings.append(f"{path}: {len(twin)} {twin_name} against {len(plain)} "
-                            f"{plain_name}")
+        if len(plain) != offsets[-1] or len(twin) != len(degs) * block:
+            findings.append(f"{path}: {len(twin)} {twin_name} and {len(plain)} "
+                            f"{plain_name} against {len(degs)} padded blocks of {block}")
             continue
 
         mismatch = next(
@@ -1830,13 +2081,27 @@ def flat_transposed_findings(path, grid):
              for order in range(MAX_ORDER + 1)
              for k in range(deg + 1)
              if plain[offsets[iv] + order * (deg + 1) + k]
-             != twin[offsets[iv] + k * (MAX_ORDER + 1) + order]),
+             != twin[iv * block + k * row + order]),
             None)
 
         if mismatch is not None:
             iv, order, k = mismatch
             findings.append(f"{path}: {twin_name} does not transpose {plain_name} at "
                             f"interval {iv}, order {order}, coefficient {k}")
+            continue
+
+        pad_cells = [iv * block + k * row + at
+                     for iv, deg in enumerate(degs)
+                     for k in range(deg + 1)
+                     for at in range(MAX_ORDER + 1, row)]
+        pad_cells += [iv * block + at
+                      for iv, deg in enumerate(degs)
+                      for at in range((deg + 1) * row, block)]
+        dirty = next((at for at in pad_cells if twin[at] != 0.0), None)
+
+        if dirty is not None:
+            findings.append(f"{path}: {twin_name} carries a non-zero pad cell at index "
+                            f"{dirty}")
 
     return findings
 
@@ -1931,7 +2196,9 @@ def flat_relative_findings(path, lane, npts=8):
                 if lane == "float":
                     x = r32(x)
                 ref = float(boys_ref(n, mpf(x)))
-                if ref == 0.0:
+                f0 = float(boys_ref(0, mpf(x)))
+                denom = max(abs(ref), abs(f0))
+                if denom == 0.0:
                     continue
                 worst_here = 0.0
                 for fused in (True, False):
@@ -1944,7 +2211,7 @@ def flat_relative_findings(path, lane, npts=8):
                         got = (clenshaw_route(cs, x, a, b, fused),
                                horner_double(ms, t, fused))
                     for v in got:
-                        e = abs(v - ref) / abs(ref)
+                        e = abs(v - ref) / denom
                         if e > worst_here:
                             worst_here = e
                 if worst_here > worst:
@@ -1985,10 +2252,10 @@ def flat_relative_findings(path, lane, npts=8):
 # sqrt(pi)/(2 sqrt(x)). The 2 is H's own - it is what H is defined with above -
 # so it belongs in m and not in the caller.
 # The left edge is the library's own boundary and not a number of this file's:
-# the far table opens where region B ends, so the two tile the argument line
-# with no gap and no overlap between them, and a change to X1 above moves this
-# with it. It also buys the arguments between X1 and 29, which a table opening at
-# 29 would pay the same coefficient budget for and leave to the flat grid.
+# the far table opens at kX1, the far region's own left bound, written as an
+# identity to X1 so a change to X1 above moves this with it. Region B now
+# reaches its placed top above kX1, so the two spans overlap there and the
+# entry guard, not the join, hands the arguments over.
 FAR_X0 = X1
 
 # The right edge of the table's span, [kX1, FAR_X1), where it stops paying for
@@ -2308,12 +2575,12 @@ def scaled_far_block_lines(far):
                  f"                  kScaledFarEdges[kScaledFarIntervals] == kScaledFarX1,\n"
                  "              \"the far partition's edges must tile the region the table \"\n"
                  "              \"serves\");")
-    lines.append("// The join: the table opens where region B ends, so the two tile the argument")
-    lines.append("// line with no gap and no overlap, written as an identity rather than as a copy.")
+    lines.append("// The join: the table opens at kX1, the far region's own left bound, an identity rather")
+    lines.append("// than a copy; region B reaches its placed top above kX1, where the two spans overlap.")
     lines.append("// The degrees are held to the split Clenshaw's contract where the reader is")
     lines.append("// (ScaledFarDegreesCarried in boys_impl.hpp), and the cap is the widest row.")
     lines.append("static_assert(kScaledFarX0 == kX1,")
-    lines.append("              \"the scaled far table must open at kX1, the end of region B\");")
+    lines.append("              \"the scaled far table must open at kX1, the far region's own left bound\");")
     lines.append("")
     lines.append("// The far table's certification rows: the worst relative error delivered in each")
     lines.append("// multiply-add route, over every interval of every order, rounded up to a power of")
@@ -2590,9 +2857,9 @@ def seed_correction_findings(path):
                             f"whose erfc has reached the unit roundoff: {below!r} has reached "
                             f"it too")
 
-    if deg < 4 or deg % 2 != 0:
-        findings.append(f"{path}: the corrected seed is fitted at degree {deg}, and the split "
-                        f"Clenshaw's odd part is derived for an even degree of at least 4")
+    if deg < 4:
+        findings.append(f"{path}: the corrected seed is fitted at degree {deg}, and the "
+                        f"split Clenshaw summation reads degree 4 and up")
     elif len(cs) != deg + 1:
         findings.append(f"{path}: the corrected seed is fitted at degree {deg} and stores "
                         f"{len(cs)} coefficients")
@@ -3207,9 +3474,9 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
                  "              \"the narrow rational region-B route must cover every piece\");")
     lines.append("")
     lines.append("// What the narrow rational route stores and what it delivers, at each")
-    lines.append("// multiply-add route, against the bar the shipped rational rows publish.")
-    lines.append("// Measured on the narrow pieces' own grids in the kernel's arithmetic on")
-    lines.append("// the stored coefficients, which is what the acceptance above read.")
+    lines.append("// multiply-add route: for A kNarrowRatABound's 3e-14, for B the promise")
+    lines.append("// 1e-13 F_0(x), its band maximum kNarrowRatBBound. Measured on the pieces'")
+    lines.append("// own grids in the kernel's arithmetic on the stored coefficients.")
     lines.append(f"inline constexpr double kNarrowRatABound = {fmt(float(narrow_rat_a['bound']))};")
     lines.append(f"inline constexpr int kNarrowRatAStored = {narrow_rat_a['stored']};")
     lines.append("inline constexpr double kNarrowRatADeliveredFused = "
@@ -3232,6 +3499,9 @@ def narrow_b_block_lines(narrow):
     generation is hours and this block is seconds, so --narrow-only writes
     these lines and the block's byte-identity is checked without the rest of
     the table. write_header writes the same lines, so the two cannot drift.
+    The interval is the band's own, [X0, region_b_top()): the far guard hands
+    the band every argument below the placed top, and the fitted partition and
+    the guard cannot stop at two different numbers.
 
     The extended band is the same fit at either granularity, because nothing
     amplifies its seed - the upward recursion it feeds runs the other way, so
@@ -3243,7 +3513,8 @@ def narrow_b_block_lines(narrow):
     pieces = narrow["pieces"]
     deg = pieces[0][2]
     lines = [
-        f"// The narrow partition of region B: the same interval [kX0, kX1) cut into {len(pieces)}",
+        f"// The narrow partition of region B: the same interval [kX0, {region_b_top_name()}) "
+        f"cut into {len(pieces)}",
         f"// pieces at degree {deg}, each as wide as the proved a-priori truncation bound lets",
         "// it be at the 1e-14 target (see --derive-partition). One degree throughout, so",
         "// no offset table: piece i starts at i * (kNarrowBDeg + 1). The seed is unchanged.",
@@ -3264,7 +3535,8 @@ def narrow_b_block_lines(narrow):
     lines.append("static_assert(std::size(kNarrowBEdges) == kNarrowBPieces + 1\n"
                  "                  && std::size(kNarrowBcoeffs) == kNarrowBPieces * (kNarrowBDeg + 1)\n"
                  "                  && std::size(kNarrowBMonoCoeffs) == std::size(kNarrowBcoeffs),\n"
-                 "              \"the narrow partition's pieces must tile [kX0, kX1)\");")
+                 f"              \"the narrow partition's pieces must tile "
+                 f"[kX0, {region_b_top_name()})\");")
     lines.append("")
     lines.append("// The narrow partition's certification rows, the same shape and measured")
     lines.append("// the same way as the scheme rows below: the bound each scheme delivers on")
@@ -3415,7 +3687,8 @@ def fit_extended_band(b_cheb=None):
     if b_cheb is not None:
         bdeg, bcs, _bmono = b_cheb
         junction = abs(clenshaw_double(cd, float(X0), float(edge), float(X0))
-                       - clenshaw_double(bcs, float(X0), float(X0), float(X1)))
+                       - clenshaw_double(bcs, float(X0), float(X0),
+                                         float(region_b_top())))
         if junction > mpf("2e-14"):
             raise RuntimeError(f"extended band: kX0 junction check failed "
                                f"({junction} > 2e-14)")
@@ -3445,8 +3718,8 @@ def fit_extended_band(b_cheb=None):
 # error is near the best for that degree pair, and disagreement is not - the
 # exchange result is what ships, and the second is printed beside it.
 #
-# The fits are made in t = 2(x - X0)/(X1 - X0) - 1, the same mapped argument
-# the Chebyshev region-B fit uses: an affine change of variable maps the
+# The fits are made in t = 2(x - X0)/(top - X0) - 1 over the band's own top, the
+# same mapped argument the Chebyshev region-B fit uses: an affine change maps the
 # rational family onto itself, so the best error over a degree pair is the
 # same in t as in x, and t keeps the linear systems well conditioned.
 
@@ -3474,6 +3747,52 @@ RAT_STRIDE = 5
 # The bar both region-B routes are placed against (the header's 5e-14 target
 # for the interval) and the figures the header states.
 RAT_BAR = mpf("5e-14")
+# The seeds' criterion from the re-base on: the lane's own relative bar, the
+# one the Chebyshev cells on this same band already answer to (FLAT_REL_BAR's
+# double member, 1e-13 - F_n <= F_0 makes its max the order-0 reading), with
+# the acceptance a fifth under it so the published figure stays a promise and
+# not a coincidence of one grid - the region-A route's own gap (2.5e-14
+# accepted, 3e-14 published).
+RAT_B_REL = FLAT_REL_BAR["double"]
+RAT_B_ACCEPT = mpf("8e-14")
+
+
+def rat_b_bound():
+    """The emitted bar: the promise 1e-13 F_0(x) read over region B, whose own
+    maximum is 1e-13 F_0(kX0) - F_0 falls across the band, so its left edge is
+    the promise's largest arm. The fit itself is certified ratio-wise over the
+    whole band; this figure is what the rows publish and the consumers read."""
+    with mp.workdps(RAT_DPS):
+        return RAT_B_REL * boys_ref(0, X0, RAT_TAIL_FLOOR, RAT_TERMS)
+
+
+def rat_b_ratio_on(p, q, indices, xs, ref):
+    """The worst delivered/arm ratio, working precision, the wide seed's own
+    reading."""
+    worst = mpf(0)
+    at = None
+    for i in indices:
+        r = ref[i]
+        e = abs(mpf(region_b_seed_rational(p, q, xs[i])) - r) / r
+        if e > worst:
+            worst, at = e, xs[i]
+    return worst, at
+
+
+def rat_kernel_ratio_both(p, q, ts, ref, indices):
+    """The worst delivered/arm ratio in the kernel's arithmetic, the two
+    multiply-add routes held and the worse taken."""
+    pd = [float(c) for c in p]
+    qd = [float(c) for c in q]
+    worst = mpf(0)
+    at = None
+    who = None
+    for fused in (True, False):
+        for i in indices:
+            e = abs(mpf(rat_eval_double(pd, qd, float(ts[i]), fused)) - ref[i]) / ref[i]
+            if e > worst:
+                worst, at, who = e, ts[i], "fused" if fused else "separate"
+    return worst, at, who
 
 
 def rat_fma(a, b, c):
@@ -3556,19 +3875,20 @@ def clenshaw_split_double(cs, t):
 
 def region_b_seed_chebyshev(cs, x):
     """RegionBSeed(x): the same mapped argument and the same split Clenshaw."""
-    t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+    t = 2.0 * (float(x) - float(X0)) / (float(region_b_top()) - float(X0)) - 1.0
     return clenshaw_split_double(cs, t)
 
 
 def region_b_seed_rational(p, q, x, fused=True):
-    t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+    t = 2.0 * (float(x) - float(X0)) / (float(region_b_top()) - float(X0)) - 1.0
     return rat_eval_double(p, q, t, fused)
 
 
 def rat_nodes():
-    """The certifying grid, in t and in x."""
+    """The certifying grid, in t and in x, over the band's own top."""
+    top = region_b_top()
     ts = [-1 + 2 * mpf(i) / RAT_NODES for i in range(RAT_NODES + 1)]
-    xs = [X0 + (X1 - X0) * (t + 1) / 2 for t in ts]
+    xs = [X0 + (top - X0) * (t + 1) / 2 for t in ts]
     return ts, xs
 
 
@@ -3797,7 +4117,7 @@ def rat_kernel_delivered_on(p, q, indices, xs, ref, fused):
     at = None
     for i in indices:
         x = xs[i]
-        t = 2.0 * (float(x) - float(X0)) / (float(X1) - float(X0)) - 1.0
+        t = 2.0 * (float(x) - float(X0)) / (float(region_b_top()) - float(X0)) - 1.0
         e = abs(mpf(rat_eval_double(pd, qd, t, fused)) - ref[i])
         if e > worst:
             worst, at = e, x
@@ -3848,7 +4168,7 @@ def _fit_region_b_rational(b_cheb):
     coarse = list(range(0, RAT_NODES + 1, RAT_STRIDE))
 
     print(f"fitting the rational region-B route (both routes, {RAT_DPS} dps, "
-          f"bar {mp.nstr(RAT_BAR, 2)}) ...")
+          f"accept {mp.nstr(RAT_B_ACCEPT, 2)} x F_0) ...")
     reaching = None
     for stored in range(RAT_SCAN_MIN, RAT_SCAN_MAX + 1):
         row = []
@@ -3860,9 +4180,10 @@ def _fit_region_b_rational(b_cheb):
             if best is None:
                 row.append(f"[{m}/{k}]-")
                 continue
-            _, d, _, _, _ = best
-            row.append(f"[{m}/{k}]{mp.nstr(d, 3)}")
-            if d <= RAT_BAR and (reaching is None or stored < reaching[0]):
+            _, _d, _, p, q = best
+            ratio, _rat = rat_b_ratio_on(p, q, coarse, xs, ref)
+            row.append(f"[{m}/{k}]{mp.nstr(ratio, 3)}")
+            if ratio <= RAT_B_ACCEPT and (reaching is None or stored < reaching[0]):
                 reaching = (stored, m, k)
         print(f"  {stored:>2} stored: " + "  ".join(row))
         if reaching is not None:
@@ -3873,8 +4194,8 @@ def _fit_region_b_rational(b_cheb):
             break
     if reaching is None:
         raise RuntimeError(f"rational route: no degree pair up to {RAT_SCAN_MAX} "
-                           f"stored coefficients reaches {mp.nstr(RAT_BAR, 2)} over "
-                           f"[{mp.nstr(X0, 17)}, {mp.nstr(X1, 17)}]")
+                           f"stored coefficients holds {mp.nstr(RAT_B_ACCEPT, 2)} x F_0 over "
+                           f"[{mp.nstr(X0, 17)}, {mp.nstr(region_b_top(), 17)}]")
 
     stored, m, k = reaching
     # The pairs at the reaching count, and the best pair one count below it,
@@ -3899,25 +4220,27 @@ def _fit_region_b_rational(b_cheb):
             continue
         seen[(mm, kk)] = (best, _both)
         who, d, at, p, q = best
-        rows.append((total, mm, kk, d, at, p, q, who))
+        ratio, rat = rat_b_ratio_on(p, q, full, xs, ref)
+        rows.append((total, mm, kk, ratio, rat, p, q, who))
     if not rows:
         raise RuntimeError("rational route: the refined fit never converged")
 
     print(f"  refined on {RAT_NODES + 1} nodes against boys_ref at {RAT_DPS} digits, "
           f"the better of the two routes taken per pair:")
-    for total, mm, kk, d, at, _, _, who in sorted(rows, key=lambda r: (r[0], r[3])):
-        print(f"    [{mm}/{kk}] {total} stored via {who}: delivered {mp.nstr(d, 6)} at "
+    for total, mm, kk, ratio, at, _, _, who in sorted(rows, key=lambda r: (r[0], r[3])):
+        print(f"    [{mm}/{kk}] {total} stored via {who}: ratio {mp.nstr(ratio, 6)} at "
               f"x = {mp.nstr(at, 12)}"
-              f"{'  <= bar' if d <= RAT_BAR else '  OVER THE BAR'}")
+              f"{'  <= accept' if ratio <= RAT_B_ACCEPT else '  OVER THE ACCEPT'}")
 
-    ok = [r for r in rows if r[0] == stored and r[3] <= RAT_BAR]
+    ok = [r for r in rows if r[0] == stored and r[3] <= RAT_B_ACCEPT]
     if not ok:
         raise RuntimeError(f"rational route: no pair at {stored} stored coefficients "
-                           f"reaches {mp.nstr(RAT_BAR, 2)} on the certifying grid")
-    if any(r[0] < stored and r[3] <= RAT_BAR for r in rows):
+                           f"holds {mp.nstr(RAT_B_ACCEPT, 2)} x F_0 on the certifying grid")
+    if any(r[0] < stored and r[3] <= RAT_B_ACCEPT for r in rows):
         raise RuntimeError(f"rational route: a pair below {stored} stored coefficients "
-                           f"reaches {mp.nstr(RAT_BAR, 2)}, so the scan's knee is wrong")
-    total, m, k, delivered, at, p, q, who = min(ok, key=lambda r: r[3])
+                           f"holds {mp.nstr(RAT_B_ACCEPT, 2)} x F_0, so the scan's knee is wrong")
+    total, m, k, ratio, at, p, q, who = min(ok, key=lambda r: r[3])
+    delivered = seen[(m, k)][0][1]
 
     # The two routes' figures at the pair that ships, either one of which may
     # be the one offered above: the gap is what says how close to the best fit
@@ -3941,8 +4264,8 @@ def _fit_region_b_rational(b_cheb):
 
     return {
         "m": m, "k": k, "p": p, "q": q, "stored": total,
-        "delivered": delivered, "cheb_delivered": cheb_delivered,
-        "cheb_stored": len(bcs), "bar": RAT_BAR,
+        "delivered": delivered, "ratio": ratio, "cheb_delivered": cheb_delivered,
+        "cheb_stored": len(bcs), "bar": rat_b_bound(),
     }
 
 
@@ -4169,7 +4492,8 @@ def fit_region_a_rational(double_orders):
 # ---------------------------------------------------------------------------
 # The route carried one partition because a rational minimax fit of a whole
 # interval is not a piece of anything: the family's region-A pieces follow the
-# shipped intervals and its region-B seed is one pair over [X0, X1). The narrow
+# shipped intervals and its region-B seed is one pair over the band's own
+# interval [X0, region_b_top()). The narrow
 # partition is a second set of intervals in each region, and the family is
 # fitted over those: the narrow region-A pieces the Chebyshev route's walk
 # already placed, and the narrow region-B edges it already derived.
@@ -4184,8 +4508,9 @@ def fit_region_a_rational(double_orders):
 # and the figure the row publishes is the worse of the two.
 #
 # The bars are the shipped route's own: RAT_A_ACCEPT for region A's pieces and
-# RAT_BAR for region B's seed, the counts the same total-stored search. What
-# changes is the partition, not the criterion.
+# the F_0-scaled RAT_B_ACCEPT for region B's seed (the adopted promise
+# 1e-13 max(F_n, F_0) read relatively), the counts the same total-stored search.
+# What changes is the partition, not the criterion.
 # The search is the shipped route's own: the same scan floor and cap on the
 # stored count, the same certifying grid, the same stride for the subsample the
 # count is first found on. A narrow piece that needs more than RAT_A_SCAN_MAX
@@ -4347,6 +4672,7 @@ def narrow_region_a_rational(narrow_a):
 def _rat_narrow_b_job(job):
     a, b, ts, ref, coarse, full = job
     mp.dps = RAT_DPS  # the scan's working precision; a spawn does not carry it
+    wgt = [mpf(1) / f for f in ref]
     for total in range(RAT_NARROW_B_SCAN_MIN, RAT_NARROW_B_SCAN_MAX + 1):
         # The scan is on a stride subsample and the pair that ships is re-solved
         # on the whole grid, so a count the subsample accepts and the dense grid
@@ -4357,27 +4683,28 @@ def _rat_narrow_b_job(job):
             m = total - 1 - k
             if m < 1:
                 continue
-            r = rat_remez(m, k, coarse, ts, ref, None)
+            r = rat_remez(m, k, coarse, ts, ref, wgt)
             if r is None:
                 continue
             _, p, q = r
-            d, at, who = rat_kernel_delivered_both(p, q, ts, ref, full)
-            if best is None or d < best[0]:
-                best = (d, m, k, p, q, at, who)
-        if best is None or best[0] > RAT_BAR:
+            r_, at, who = rat_kernel_ratio_both(p, q, ts, ref, full)
+            if best is None or r_ < best[0]:
+                best = (r_, m, k, p, q, at, who)
+        if best is None or best[0] > RAT_B_ACCEPT:
             continue
         _, m, k, _, _, _, _ = best
-        r = rat_remez(m, k, full, ts, ref, None)
+        r = rat_remez(m, k, full, ts, ref, wgt)
         if r is None:
             continue
         _, p, q = r
-        d, at, who = rat_kernel_delivered_both(p, q, ts, ref, full)
-        if d > RAT_BAR:
+        ratio, at, who = rat_kernel_ratio_both(p, q, ts, ref, full)
+        if ratio > RAT_B_ACCEPT:
             continue
-        wf, ws = rat_a_routes(p, q, ts, ref, full)
+        d, _dat, _dwho = rat_kernel_delivered_both(p, q, ts, ref, full)
+        wf, wsep = rat_a_routes(p, q, ts, ref, full)
         return {"a": a, "b": b, "m": m, "k": k, "p": p, "q": q,
-                "stored": m + 1 + k, "delivered": d, "at": at, "route": who,
-                "fused": wf, "separate": ws}
+                "stored": m + 1 + k, "delivered": d, "ratio": ratio, "at": at,
+                "route": who, "fused": wf, "separate": wsep}
     return None
 
 
@@ -4406,11 +4733,11 @@ def narrow_region_b_rational(narrow_b):
 
     One pair per narrow piece, over the piece's own interval and in the same
     mapped argument the Chebyshev piece there is read at, accepted at the same
-    RAT_BAR the shipped seed is. The interval edges are the narrow Chebyshev
-    partition's, for the reason region A's are.
+    F_0-scaled promise the wide seed is (RAT_B_ACCEPT x F_0). The interval edges
+    are the narrow Chebyshev partition's, for the reason region A's are.
     """
     print(f"fitting the rational route over the narrow partition of region B "
-          f"(bar {mp.nstr(RAT_BAR, 2)}, both multiply-add routes) ...")
+          f"(accept {mp.nstr(RAT_B_ACCEPT, 2)} x F_0, both multiply-add routes) ...")
     pieces = []
     jobs = []
     refs = []
@@ -4443,8 +4770,8 @@ def narrow_region_b_rational(narrow_b):
         if fit is None:
             raise RuntimeError(
                 f"rational narrow region-B route: [{a!r}, {b!r}) reaches no stored count "
-                f"up to {RAT_NARROW_B_SCAN_MAX} holding {mp.nstr(RAT_BAR, 2)} in both "
-                f"multiply-add routes")
+                f"up to {RAT_NARROW_B_SCAN_MAX} holding {mp.nstr(RAT_B_ACCEPT, 2)} x F_0 in "
+                f"both multiply-add routes")
         pieces.append(fit)
         stored += fit["stored"]
         fused = max(fused, fit["fused"])
@@ -4458,8 +4785,8 @@ def narrow_region_b_rational(narrow_b):
           f"fused {mp.nstr(fused, 6)} / separate {mp.nstr(separate, 6)}, worst "
           f"{mp.nstr(delivered, 6)} at [{at[0]!r}, {at[1]!r})")
     return {"pieces": pieces, "stored": stored, "delivered": delivered, "at": at,
-            "bar": RAT_BAR, "worst": [[float(fused), float(separate)]
-                                      for _ in range(NARROW_SCHEMES)]}
+            "bar": rat_b_bound(), "worst": [[float(fused), float(separate)]
+                                            for _ in range(NARROW_SCHEMES)]}
 
 
 # ---------------------------------------------------------------------------
@@ -4621,7 +4948,8 @@ def narrow_region_a_f32():
 def narrow_region_b_f32():
     """The float lane's narrow region-B partition.
 
-    Region B's shipped seed is one fit over [kX0, kX1) at the lane's degree cap,
+    Region B's shipped seed is one fit over the lane's own band, [kX0, its own
+    region_b_top("float")) - kX1 where the lane has no placed top - at the degree cap,
     because fit_interval's bisection is the region-A walk's and region B has
     none. The narrow member needs one, so the partition is derived by the same
     law: bisect the interval until the lane's own fit_interval accepts a piece
@@ -5563,7 +5891,7 @@ def fit_region_a_rational_f32(float_orders):
 
 
 def f32_rat_region_b_delivered():
-    """The two float region-B seeds' worst |F_0 - fit| over [kX0, kX1).
+    """The two float region-B seeds' worst |F_0 - fit| over the lane's own band.
 
     The shipped seed first, then the rational one, both read on the same
     points - region B's own acceptance grid and the gate's cells in the
@@ -5597,7 +5925,7 @@ def fit_region_b_rational_f32():
     if seed is None:
         raise RuntimeError(f"float rational region-B seed: no stored count up to "
                            f"{F32_RAT_COUNT_MAX} holds {mp.nstr(F32_RAT_ACCEPT, 2)} on "
-                           f"[{X0}, {X1})")
+                           f"[{X0}, {region_b_top('float')})")
     delivered = f32_rat_delivered_float([seed], 0)
     cheb_stored, cheb_delivered, cheb_delivered_horner = f32_rat_region_b_delivered()
     seed["delivered"] = delivered
@@ -5887,7 +6215,8 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     f.write("static_assert(std::size(kNarrowAPieceStartF32) == kMaxOrder + 2,\n"
             "              \"narrow piece-start table must cover kMaxOrder\");\n")
 
-    f.write("\n// The float lane's narrow partition of region B: [kX0, kX1) cut until the figure\n"
+    f.write(f"\n// The float lane's narrow partition of region B: [kX0, {region_b_top_name('float')})"
+            " cut until the figure\n"
             "// the lane's own recurrence carries is under half its budget. The seed's error\n"
             "// is amplified by the steps that follow it, so a piece is placed by the carried\n"
             "// figure and not its fit residual: the pieces nearest kX0 come out narrowest.\n")
@@ -5911,7 +6240,8 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     f.write("static_assert(std::size(kNarrowBEdgesF32) == kNarrowBPiecesF32 + 1\n"
             "                  && std::size(kNarrowBcoeffsF32) == kNarrowBPiecesF32 * (kNarrowBDegF32 + 1)\n"
             "                  && std::size(kNarrowBMonoCoeffsF32) == std::size(kNarrowBcoeffsF32),\n"
-            "              \"the narrow partition's pieces must tile [kX0, kX1)\");\n")
+            f"              \"the narrow partition's pieces must tile "
+            f"[kX0, {region_b_top_name('float')})\");\n")
 
 
     # What the narrow partition stores and what it delivers, in the lane's own
@@ -5975,7 +6305,7 @@ def flat_f32_block_lines(f, flat_f32):
     f.write(f"inline constexpr float kFlatWidthF32 = {fmtf(grid['width'])};\n")
     f.write(f"inline constexpr float kFlatHiF32 = {fmtf(grid['hi'])};\n")
     f.write("// One degree per interval: the smallest the cell law carries there, at\n"
-            "// the read cap or below it, and even in every entry.\n")
+            "// the read cap or below it.\n")
     f.write("inline constexpr auto kFlatDegsF32 = std::to_array<int>({\n")
     for i in range(0, len(degs), 12):
         f.write("  " + ", ".join(str(d) for d in degs[i:i + 12]) + ",\n")
@@ -6610,8 +6940,9 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             + fmt(rat_a_f32["delivered"]) + ";\n")
 
     # The region-B seeds, the two routes over one interval.
-    f.write("\n// The two region-B seeds as the generator measures them: the stored count each\n"
-            "// evaluates and the worst |F_0 - fit| each reaches over [kX0, kX1), on the\n"
+    f.write(f"\n// The two region-B seeds as the generator measures them: the stored count each\n"
+            f"// evaluates and the worst |F_0 - fit| each reaches over "
+            f"[kX0, {region_b_top_name('float')}), on the\n"
             "// region-A points above, in the same arithmetic, the worse of both multiply-add\n"
             "// routes. A swept maximum, not a bound: the bar is kRegionBFitBar.\n"
             f"inline constexpr double kRegionBFitBar = {fmt(rat_a_f32['bound'])};\n"
@@ -6832,15 +7163,16 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         f.write(f"inline constexpr int kRatBdenDeg = {rat_b['k']};\n")
         f.write("\n")
         # The two routes as the generator measures them: the stored count each
-        # evaluates and the worst |F0 - fit| each reaches over [kX0, kX1], in
-        # the double arithmetic the kernel evaluates them in, against the same
+        # evaluates and the worst |F0 - fit| each reaches over the band's own
+        # top, in the double arithmetic the kernel evaluates them in, against the same
         # high-precision reference the fits themselves are validated against.
         # A swept maximum on a finite grid, not a bound: the bar both are
         # certified against is kRegionBFitBar, and both sit under it.
         f.write("// The two region-B routes as the generator measures them: the stored count\n")
-        f.write("// each evaluates and the worst |F0 - fit| each reaches over [kX0, kX1], in the\n")
-        f.write("// kernel's double arithmetic against the reference the fits are validated\n")
-        f.write("// against. A swept maximum, not a bound: the bar is kRegionBFitBar.\n")
+        f.write(f"// each evaluates and the worst |F0 - fit| each reaches over "
+                f"[kX0, {region_b_top_name()}], in the\n")
+        f.write("// kernel's double arithmetic against the reference. A swept maximum, not a bound:\n")
+        f.write("// the bar is the promise 1e-13 F_0(x), whose band maximum is the value below.\n")
         f.write(f"inline constexpr double kRegionBFitBar = {fmt(float(rat_b['bar']))};\n")
         f.write(f"inline constexpr int kRegionBFitChebStored = {rat_b['cheb_stored']};\n")
         f.write("inline constexpr double kRegionBFitChebDelivered = "
@@ -6878,7 +7210,7 @@ def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb
         # another row here and nothing else.
         #
         # The domain is the fit's own interval (region A: every piece of every
-        # order; region B: [kX0, kX1); the extended band: [kExtendedBX0, kX0)).
+        # order; region B: [kX0, the band's top); the extended band: [kExtendedBX0, kX0)).
         # Region C has no stored fit and no row.
         f.write("// The evaluation schemes, one row per (scheme, stored fit): the degree and stored\n")
         f.write("// count the fit uses, and each scheme's bound against the 60-digit reference, per\n")
@@ -7032,7 +7364,7 @@ def measure_scheme_rows(double_orders, b_cheb, ext_cheb, npts=SCHEME_MEASURE_POI
         if deg > deg_a:
             deg_a, stored_a = deg, len(cs)
     bdeg, bcs, bms = b_cheb
-    worst_b = fit_delivered(bcs, bms, 0, X0, X1, npts)
+    worst_b = fit_delivered(bcs, bms, 0, X0, region_b_top(), npts)
     exdeg, excs, exms, _crossings = ext_cheb
     worst_e = fit_delivered(excs, exms, 0, XNEW0, X0, npts)
     rows = []
@@ -7061,22 +7393,35 @@ def print_flat_table_report(lane, flat):
           f"{min(g['degs'])}..{max(g['degs'])}, "
           f"{sum(d + 1 for d in g['degs']) * (MAX_ORDER + 1)} stored per table, "
           f"placed and certified at the {mp.nstr(FLAT_REL_BAR[lane], 3)} relative bar")
-    print("per order, worst |F_n - fit| / |F_n| over the grid in the lane's own "
-          "arithmetic, and the cell it was reached at:")
+    print(f"  placement: every cell of the grid is at or above margin 1.0 under the "
+          f"lane's bound; the worst is {float(g['margin']):.4f} at "
+          f"[{float(g['margin_at']):.8e}, {float(g['margin_at'] + g['width']):.8e}), "
+          f"the law's own acceptance")
+    print("per order, the reported worst |F_n - fit| / |F_n| and the accepted "
+          "worst |F_n - fit| / max(|F_n|, |F_0|) over the grid in the lane's own "
+          "arithmetic, and the cell each was reached at:")
     for n in range(MAX_ORDER + 1):
         w, at = flat["per_order"][n]
+        wa, pa = flat["per_order_allowance"][n]
         scheme, route = max(((s, r) for s in range(NARROW_SCHEMES) for r in (0, 1)),
                             key=lambda sr: w[sr[0]][sr[1]])
+        ascheme, aroute = max(((s, r) for s in range(NARROW_SCHEMES) for r in (0, 1)),
+                              key=lambda sr: wa[sr[0]][sr[1]])
         print(f"  F{n:>2}: {w[scheme][route]:.6e} at "
-              f"[{at[scheme][route][0]:.8e}, {at[scheme][route][1]:.8e})   "
+              f"[{at[scheme][route][0]:.8e}, {at[scheme][route][1]:.8e})  "
+              f"allowance {wa[ascheme][aroute]:.6e} at "
+              f"[{pa[ascheme][aroute][0]:.8e}, {pa[ascheme][aroute][1]:.8e})   "
               f"clenshaw {w[0][0]:.6e} / {w[0][1]:.6e}   "
               f"horner {w[1][0]:.6e} / {w[1][1]:.6e}  (fused / separate)")
     for scheme, name in enumerate(SCHEME_NAMES):
         for route, route_name in ((0, "fused"), (1, "separate")):
             order = max(range(MAX_ORDER + 1),
                         key=lambda n: flat["per_order"][n][0][scheme][route])
+            aorder = max(range(MAX_ORDER + 1),
+                         key=lambda n: flat["per_order_allowance"][n][0][scheme][route])
             print(f"  {name:14s} {route_name:8s} worst relative "
-                  f"{flat['worst'][scheme][route]:.6e} at F{order}, published "
+                  f"{flat['worst'][scheme][route]:.6e} at F{order} / allowance "
+                  f"{flat['allowance'][scheme][route]:.6e} at F{aorder}, published "
                   f"{flat['bounds'][scheme][route]:.6e}")
 
 # ---------------------------------------------------------------------------
@@ -7747,7 +8092,9 @@ def main():
 
     for scheme in range(NARROW_SCHEMES):
         print(f"  {SCHEME_NAMES[scheme]:14s} worst {flat['worst'][scheme][0]:.6e} / "
-              f"{flat['worst'][scheme][1]:.6e} relative (fused / separate), published "
+              f"{flat['worst'][scheme][1]:.6e} per order, "
+              f"{flat['allowance'][scheme][0]:.6e} / {flat['allowance'][scheme][1]:.6e} "
+              f"over the allowance (fused / separate), published "
               f"{flat['bounds'][scheme][0]:.6e}")
 
     # The scaled far table: the asymptotically scaled F over [FAR_X0, FAR_X1).

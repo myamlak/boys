@@ -29,7 +29,7 @@ __constant__ double cA[33][kMaxPieces];
 __constant__ double cB[33][kMaxPieces];
 __constant__ int cDeg[33][kMaxPieces];
 __constant__ int cCount[33];
-__constant__ double cBcoeffs[24];
+__constant__ double cBcoeffs[detail::kBDeg + 1];
 __constant__ int cBDeg;
 
 __constant__ float cCoeffs32[kMaxCoeffs];
@@ -54,7 +54,7 @@ __device__ double dA[kPiecesTotal];
 __device__ double dB[kPiecesTotal];
 __device__ int dDeg[kPiecesTotal];
 __device__ double dCoeffs[kMaxCoeffs];
-__device__ double dBSeed[24];
+__device__ double dBSeed[detail::kBDeg + 1];
 
 __device__ int dPieceStart32[detail::kMaxOrder + 2];
 __device__ int dOffset32[kPiecesTotal32];

@@ -2,11 +2,11 @@
 """The far region's own reference grid, for the far-representation book.
 
 The accuracy gate's grid reaches the far region broadly and coarsely where the
-figures are set. Its smallest arguments above the uniform partition's top edge
-are 29.000000000000004 (a boundary neighbour it never carried before) and
-29.85319827456517, and the worst far cell of every far-representation arm sits
-at an argument inside that band - kX1 itself and the first double above
-kFlatHi. Read against the gate's grid alone, an arm passes with a delivered
+figures are set. Its smallest arguments above the uniform partition's landed top edge
+are the boundary's own neighbour and the far ladder's first node above it,
+and the worst far cell of every far-representation arm sits at an argument
+inside that band - kX1 itself and the first double above kFlatHi. Read
+against the gate's grid alone, an arm passes with a delivered
 error several times its own figure, which is a test of nothing.
 
 So this grid is the far region's: the same function, the same closed form and
@@ -49,7 +49,7 @@ except ImportError:  # pragma: no cover - reported, not raised
 # it: the argument list has to move with the library's boundaries, and a
 # boundary read from the header would move this grid without saying so.
 K_X1 = 28.98933773882074           # region C's left edge; the far table's, too
-K_FLAT_HI = 29.0                   # the uniform partition's exclusive right edge
+K_FLAT_HI = 31.0                   # the uniform partition's exclusive right edge
 K_SEED_CORRECTION_X1 = 34.381626105834208  # where the corrected seed's correction ends
 K_SCALED_FAR_X1 = 117.0            # the scaled table's exclusive right edge
 
@@ -193,25 +193,20 @@ def arguments():
         for v in walk(b, 16):
             add(v)
 
-    # The band the far figures are set in: kX1 to kFlatHi is 0.011 wide and the
-    # gate's grid carried no node in it at all, then nothing until 29.8532.
-    x = K_X1 + 0.0005
-
-    while x <= K_FLAT_HI:
-        add(x)
-        x += 0.0005
-
+    # The band the far figures are set in: the arms open at kX1 and at kFlatHi,
+    # and the band between the two edges is carried by committed_far_arguments,
+    # so what this grid adds above the gate's step is the top's own band.
     x = K_FLAT_HI + 0.005
 
-    while x <= 30.0:
+    while x <= 32.0:
         add(x)
         x += 0.005
 
-    # kFlatHi to 30 resolves the band the recurrence's dropped term is largest
+    # kFlatHi to 32 resolves the band the recurrence's dropped term is largest
     # in, in steps narrower than the band itself. Outward from there the error
     # falls monotonically, so those arguments state the domain and sample the
     # table's own intervals rather than hunt for a maximum.
-    x = 30.0
+    x = 32.0
 
     while x <= 36.0:
         add(x)
@@ -362,9 +357,9 @@ def main():
     print(f"  {len(xs)} argument(s) x {LAST_ORDER - FIRST_ORDER + 1} orders = {cells} cell(s)")
     print(f"  far arguments of the gate's own grid carried here: "
           f"{len(committed_far_arguments())}")
-    print(f"  the two bands the gate's grid does not reach into: "
-          f"{sum(1 for x in xs if K_FLAT_HI < x < 29.8532)} argument(s) in "
-          f"({K_FLAT_HI}, 29.85319827456517), "
+    print(f"  the two bands this grid resolves past the gate's own step: "
+          f"{sum(1 for x in xs if K_FLAT_HI < x < 32.0)} argument(s) in "
+          f"({K_FLAT_HI}, 32.0), "
           f"{sum(1 for x in xs if 116.0 < x < 117.0)} in (116, {K_SCALED_FAR_X1})")
     evidence(xs)
 

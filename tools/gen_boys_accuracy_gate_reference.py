@@ -67,7 +67,7 @@ except ImportError:  # pragma: no cover - reported, not raised
 K_EXTENDED_B_X0 = 1.0855252345349333
 K_X0 = 11.899848152108484
 K_X1 = 28.98933773882074
-K_FLAT_HI = 29.0  # the uniform table's exclusive right edge (kFlatHi)
+K_FLAT_HI = 31.0  # the uniform table's exclusive right edge (kFlatHi)
 TIER_THRESHOLDS = {}
 for _n, _t in (
     (range(0, 5), 1.0855252345349333),
@@ -172,12 +172,12 @@ def grid(committed_xs):
         uniform(a, b, 80)
     uniform(K_X0, K_X1, 200)
 
-    # The far branch's opening band, K_X1 up to K_FLAT_HI and past it: the grid
-    # carried no node between K_X1's neighbourhood and K_FLAT_HI, and then none
-    # until 29.85319827456517. The band is 0.011 wide, so both ladders are
-    # uniform rather than geometric.
+    # The far branch's opening band, K_X1 up to K_FLAT_HI and past it: the arms
+    # open at K_X1 and at K_FLAT_HI, and the band between the two edges is 2.01
+    # wide at the landed top, so both ladders are uniform rather than
+    # geometric.
     uniform(K_X1, K_FLAT_HI, 40)
-    uniform(K_X1, 30.0, 40)
+    uniform(K_X1, 32.0, 40)
 
     lo, hi, steps = K_X1, X_MAX, 250
     for i in range(steps):
