@@ -1,8 +1,7 @@
 #pragma once
 
-// The extern "C" seam to boys_cuda_benchmark_kernels.cu (nvcc). Keep this
-// header free of C++23 headers — the .cu translation unit is compiled at
-// CMAKE_CUDA_STANDARD 20.
+// The extern "C" seam to boys_cuda_benchmark_kernels.cu (nvcc). That TU is
+// compiled at CMAKE_CUDA_STANDARD 20, so keep C++23 headers out of this one.
 
 #include <cstddef>
 

@@ -38,6 +38,19 @@ namespace boys {
 
 namespace detail {
 
+/// The double square root the packed entry below is computed through.
+///
+/// The front door declares the packed entry (`boys/boys.hpp`: BoysAllOrdersHalf2,
+/// BoysAllNF16Native), so its bodies live beside the type they are written in rather than in a
+/// shipped unit, and a consumer that names the lane compiles them. The arithmetic is the same
+/// double square root either way.
+///
+/// \param value The value whose square root is taken.
+/// \returns The double square root of \p value, as \c std::sqrt returns it.
+inline double HalfSqrt(double value) noexcept {
+    return std::sqrt(value);
+}
+
 /// The smallest magnitude that rounds to Inf rather than to the half maximum:
 /// the round-to-nearest-even midpoint between 65504 and 65536.
 constexpr double kHalfRoundToInfinity = 65520.0;
@@ -250,8 +263,8 @@ inline Half2 Half2Div(Half2 a, Half2 b) noexcept {
 /// \ingroup boys
 inline Half2 Half2Sqrt(Half2 a) noexcept {
     return Half2(
-        detail::F16FromDouble(std::sqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.Low())))),
-        detail::F16FromDouble(std::sqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.High())))));
+        detail::F16FromDouble(detail::HalfSqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.Low())))),
+        detail::F16FromDouble(detail::HalfSqrt(detail::DoubleFromHalfBits(detail::F16Bits(a.High())))));
 }
 
 } // namespace boys

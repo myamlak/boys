@@ -1,4 +1,4 @@
-"""Parse the shipped Chebyshev tables out of the generated coefficients header.
+"""Parse the committed Chebyshev tables out of the generated coefficients header.
 
 Reads the generated header as data (never imports the library). Returns the
 region-A piece structure for the double and float lanes: per order, the list

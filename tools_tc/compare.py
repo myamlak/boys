@@ -1,4 +1,4 @@
-"""The three shipped transform bounds against this harness's own measurement.
+"""The three committed transform bounds against this harness's own measurement.
 
 The library publishes one delivered figure per mode - kFp64, kTf32x3,
 kBf16x6 - as the worst |C.T - F_n(x)| over region A: both bands, every order
@@ -8,7 +8,7 @@ figures are parsed out of tests/boys_accuracy_gate.cpp, the gate that enforces
 them, rather than restated here, so the two cannot drift apart.
 
 The reduction order is measured both ways, because it is worth three times.
-The shipped kernel lays a pass's degrees out from the highest down and reduces
+The committed kernel lays a pass's degrees out from the highest down and reduces
 them pairwise before folding them into the total; gemm's default sums the
 degrees into one running total from the constant term up. The published
 figures are the pairwise family - reading a "running" row against them is

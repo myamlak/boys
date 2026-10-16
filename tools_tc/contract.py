@@ -11,8 +11,8 @@ which is the generator's own seed_weight(N, x). For the extended shape the
 low orders come from the F0 seed through the upward recursion and the high
 orders are transform values delivered as they stand.
 
-This reproduces each shipped path with the mode's transform in place of the
-shipped one and reports the worst delivered error over the orders and the
+This reproduces each committed path with the mode's transform in place of the
+committed one and reports the worst delivered error over the orders and the
 argument grid, beside the lane's budget.
 """
 import os
@@ -74,10 +74,10 @@ def transform(L, n, x, mode, with_extended=False):
 
 
 def ladder(L, nmax, x, mode, cast_fn, thresholds, extended, with_extended, Lseed=None):
-    """Reproduce the shipped region-A path with the mode's transform.
+    """Reproduce the committed region-A path with the mode's transform.
 
     Lseed is the table the transform reads. It is the double lane's table for
-    both lanes' shipped code: the float lane's all-orders entry seeds from
+    both lanes' committed code: the float lane's all-orders entry seeds from
     ChebyshevValue(nmax, (double)x) and casts the result, so a tensor-core path
     replacing that seed works on double coefficients and only then rounds."""
     Lseed = Lseed if Lseed is not None else L

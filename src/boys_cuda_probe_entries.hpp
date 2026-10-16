@@ -1,12 +1,8 @@
 #pragma once
 
-// The option space the device-cost probe measures, shared by its host
-// translation unit (boys_cuda_probe.cpp) and its device one
-// (boys_cuda_probe_kernels.cu), so that the two cannot disagree about which
-// options exist.
-//
-// It includes one library header and it is CUDA-header-free, so the nvcc
-// translation unit's include list (see the .cu preamble) can hold it.
+// The option space the device-cost probe measures, shared by its host translation unit
+// (boys_cuda_probe.cpp) and its device one (boys_cuda_probe_kernels.cu), so that the two cannot
+// disagree about which options exist. It is CUDA-header-free, so nvcc's TU can include it.
 
 #include "boys/boys_cuda_options.hpp"
 
@@ -81,6 +77,17 @@ struct ProbeTimeRequest {
     /// The entry, read when \c what is kLaunchedEntry or kInKernelEntry.
     int entry;
 
+    /// The division form the entry is run at, as a \c DivisionForm value
+    /// (boys/accuracy.hpp): the form each of that entry's ladder steps divides
+    /// in. Every entry of this space can run every form, so the form is a
+    /// coordinate of the measurement and not a property of the entry: the same
+    /// entry is a different row under each of the three.
+    ///
+    /// It arrives as an int because this header is compiled by both sides of the
+    /// device boundary, and the enumerator it carries is the library's own
+    /// rather than a second list here.
+    int form;
+
     /// Launches inside the region. The elapsed device time is divided by this
     /// by the caller.
     int reps;
@@ -107,6 +114,14 @@ struct ProbeTimeRequest {
     /// The arguments the fp16 lane takes, launched and in-kernel alike.
     const void* xh;
 
+    /// The arguments the bfloat16 lane takes, in-kernel: the same values the half
+    /// lane is offered, stored in the other format. It is a second array rather
+    /// than a reinterpretation of \c xh - the two formats are 5/10 and 8/7 over
+    /// the same sixteen bits, so reading one as the other would hand every entry
+    /// a different number and a different exponent, and the region a Boys
+    /// argument falls in is decided by exactly that.
+    const void* xb;
+
     /// The output block, wide enough for the tallest ladder of any entry.
     void* out;
 
@@ -121,23 +136,6 @@ struct ProbeTimeRequest {
 
     /// Arguments in the batch.
     unsigned long long count;
-
-    /// The accuracy rung the region runs at: one of kDeviceRungs
-    /// (boys_cuda_options.hpp), and m = 1 when the caller names none. It is the
-    /// axis this probe's classes are keyed on beside the precision and the
-    /// question.
-    ///
-    /// What it selects differs between the two routes. A launched region runs
-    /// the entry's full-accuracy kernel at m = 1 and the same entry's
-    /// effective-degree kernel at any other rung, which is what the host entries
-    /// do at the same multiplier: the relaxed degrees are read from the device
-    /// and not compiled in. An in-kernel region passes it to the device-callable
-    /// entry, which matches it against the rung the handle's tables were cut for
-    /// and refuses the call when the two differ. Nothing here decides which rung
-    /// is resident: the host side makes one resident before the rows that name it
-    /// are timed, and a rung that could not be made resident is a refusal the
-    /// report states.
-    double multiplier;
 
     /// Receives the region's device milliseconds.
     double* outMs;

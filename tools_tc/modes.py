@@ -58,7 +58,7 @@ def to_format(x, fmt):
 # part indices sum to <= d-1 is accumulated (d=2 keeps 3 of the 4 products,
 # which is the standard 3xTF32 emulation of an fp32 GEMM, [OotomoYokota2022]).
 MODES = {
-    # --- the shipped lanes' own transform arithmetic, as calibration ---
+    # --- the committed lanes' own transform arithmetic, as calibration ---
     "fp64":        dict(fmt="fp64", acc="fp64", split=1,
                         note="fp64 operands, fp64 accumulate (A100/H100 class DMMA)"),
     "fp32":        dict(fmt="fp32", acc="fp32", split=1,
@@ -124,7 +124,7 @@ def gemm(C, T, mode_name, reduction="running"):
     than a property of a card: "running" sums the degrees into one running
     total from the constant term up, "pairwise" lays the degree out high to
     low and reduces it pairwise, folding one pass per operand part pairing
-    into the total. The shipped kernel is "pairwise"; the two differ by about
+    into the total. The committed kernel is "pairwise"; the two differ by about
     three times at fp64 and at the split modes' formats."""
     m = MODES[mode_name]
     fmt, accd, d = m["fmt"], m["acc"], m["split"]

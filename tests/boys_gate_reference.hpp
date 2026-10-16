@@ -1,23 +1,9 @@
 #pragma once
 
-// The accuracy gate's instrument, shared by every gate in this tree: the
-// committed high-precision reference grid and the one reading of it, the bound
-// vocabulary the narrow formats are measured in, and the accumulator and row
-// shape a report prints. The CPU gate (tests/boys_accuracy_gate.cpp) and the
-// CUDA device gate (tests/boys_cuda_accuracy_gate.cpp) both include this, so a
-// lane measured on either side is measured against one reference format and
-// printed in one vocabulary rather than two that can drift apart.
-//
-// One reading is one instrument and not one per book: MeasureAt fills whatever
-// accumulator it is handed, MeasureInto names one of a book by index, and the
-// three books the CPU gate keeps - the lanes', the evaluation schemes' and the
-// fit routes' - are filled by the same comparisons and the same counters, so a
-// row added to one of them cannot move another's totals.
-//
-// The reference itself is tests/data/boys_accuracy_gate_reference.csv,
-// re-derivable with tools/gen_boys_accuracy_gate_reference.py. Why it is
-// trusted, and what its routes agree to, is the CPU gate's argument and lives
-// in its preamble rather than here.
+// The accuracy gate's instrument, shared by the CPU gate (tests/boys_accuracy_gate.cpp) and the CUDA device
+// gate (tests/boys_cuda_accuracy_gate.cpp): the committed reference grid (tests/data/boys_accuracy_gate_reference.csv,
+// re-derivable with tools/gen_boys_accuracy_gate_reference.py), the bound vocabulary, the accumulators and
+// the report row. MeasureAt and MeasureInto fill the three books - the lanes', the evaluation schemes' and the fit routes'.
 
 #include "boys/boys.hpp"
 #include "boys/f16.hpp"
@@ -68,15 +54,24 @@ struct Accum {
     std::string lane;
     std::string region;
     double baseBound = 0.0;
-    // Whether any row of the report carries this slot's verdict. A slot
-    // measured for the record - a reading the tree has withdrawn and keeps
-    // re-runnable rather than deleting - is judged by no row, so it can be
-    // over its bound and still leave the gate green. The flag is what lets
-    // the two tables say so instead of leaving a reader to infer it from the
-    // RESULT line not counting the slot.
+    // The form the figure is stated in: relative judges a cell against `baseBound * |F_n(x)|` above
+    // the lane's format floor, and the cell is outside the claim below it; absolute judges it
+    // against the figure itself. The half lanes' ULP terms and the fit-placement budgets are
+    // absolute.
+    bool relative = false;
+    double floorValue = 0.0; // the smallest normal of the lane's format, for a relative figure
+    double valueFloor = 0.0; // the lane's absolute figure, where it states one beside the figure
+    // A term the lane states beside the figure, in the reading its own row writes it in: the plain
+    // reciprocal's extra rounding on the float lanes is the one of these, and it is a term of the
+    // form and not of the value, so it is added to the cell's bound rather than scaled by it.
+    double additive = 0.0;
+    // Whether any row of the report carries this slot's verdict: a slot measured for the record
+    // has none, so it can be over its bound and still leave the gate green, and the two tables
+    // say so rather than leaving it to the RESULT line not to count it.
     bool judged = true;
     std::size_t points = 0;
-    std::size_t vacuous = 0;     // the bound alone exceeds |F_n(x)|
+    std::size_t vacuous = 0;     // outside the claim: the bound exceeds |F_n(x)|, or a relative
+                                 // figure's value is below the lane's floor
     std::size_t vacuousZero = 0; // ... and the returned value cannot hold it
     std::size_t failures = 0;
     double worstRatio = 0.0;
@@ -84,15 +79,24 @@ struct Accum {
     double worstBound = 0.0;
     int worstN = -1;
     double worstX = 0.0;
+    // The cells a judged row passes only because of the value floor it states beside its relative
+    // figure: over the arm the figure alone gives and inside the floor. The worst of them is the
+    // largest error the floor absorbed, and the fields beside it state that cell's delivered
+    // reading, its error in the arm's units, the arm, and the floored bound that rescued it.
+    std::size_t floorRescued = 0;
+    double floorRescuedWorstErr = 0.0;
+    double floorRescuedWorstErrAbs = 0.0;
+    double floorRescuedWorstArm = 0.0;
+    double floorRescuedWorstCeiling = 0.0;
+    int floorRescuedWorstN = -1;
+    double floorRescuedWorstX = 0.0;
     // The largest function magnitude a zero/subnormal return discarded.
     double lostSignal = 0.0;
     int lostSignalN = -1;
     double lostSignalX = 0.0;
-    // The domain the bound binds over: the cells where |F_n(x)| exceeds the
-    // bound, so no floor and no value's own smallness can meet it. Inside it
-    // the lane has to return a value inside the bound; outside it the bound is
-    // met by the format's floor rather than by the arithmetic and no accuracy
-    // is claimed. Counted per claim, so the two sides are never confused.
+    // The domain the bound binds over: the cells where |F_n(x)| exceeds the bound. Inside it the
+    // lane must return a value inside the bound; outside it the bound is met by the format's floor
+    // and no accuracy is claimed.
     std::size_t domainPoints = 0;
     std::size_t domainSubnormal = 0; // ... and the return is subnormal
     std::size_t domainZero = 0;      // ... and the return is the format's zero
@@ -106,12 +110,35 @@ inline std::vector<Accum>& Claims() {
     return claims;
 }
 
-inline int AddClaim(const char* lane, const char* region, double bound, bool judged = true) {
+// The form a figure is stated in, as the claim creators below take it. `relative` bounds the error
+// against the value, above the lane's format floor; the absolute form bounds it against the figure
+// itself, which is the form a fit's placement budget, a half lane's record and a scheme's delivered
+// figure take. `additive` is a term the lane states beside the figure, not a term of its value.
+struct BoundForm {
+    bool relative = false;
+    double floorValue = 0.0;
+    double additive = 0.0;
+    // A floor on the figure itself, in absolute units: the absolute figure the lane published
+    // before the contract stated it relative. A lane that states both forms holds whichever is
+    // the larger, which is what README.md states for the lanes whose combinations do not hold
+    // the relative figure alone today.
+    double valueFloor = 0.0;
+};
+
+inline int AddClaim(const char* lane,
+                    const char* region,
+                    double bound,
+                    bool judged = true,
+                    BoundForm form = {}) {
     Accum a;
     a.lane = lane;
     a.region = region;
     a.baseBound = bound;
     a.judged = judged;
+    a.relative = form.relative;
+    a.floorValue = form.floorValue;
+    a.valueFloor = form.valueFloor;
+    a.additive = form.additive;
     Claims().push_back(a);
     return static_cast<int>(Claims().size()) - 1;
 }
@@ -130,8 +157,16 @@ inline void MeasureAt(Accum& a,
                       bool gotUnrepresentable) {
     ++a.points;
 
+    const double magnitude = std::abs(ref);
     const double err = std::abs(got - ref);
-    const bool boundAboveValue = bound >= std::abs(ref);
+    // The bound this cell is judged against. An absolute figure is the bound itself. A relative
+    // figure is the figure times the magnitude of the true value; below the lane's floor the
+    // return is subnormal, so the floor stands in. A lane stating an absolute figure beside its
+    // relative one holds the larger of the two, with the lane's own added term beside it.
+    const double relativeBase = magnitude < a.floorValue ? a.floorValue : bound * magnitude;
+    const double flooredBase = relativeBase < a.valueFloor ? a.valueFloor : relativeBase;
+    const double cellBound = a.relative ? flooredBase + a.additive : bound + a.additive;
+    const bool boundAboveValue = cellBound >= magnitude;
     OrderAccum& o = a.byOrder[static_cast<std::size_t>(n)];
     ++o.points;
 
@@ -144,16 +179,16 @@ inline void MeasureAt(Accum& a,
         {
             ++a.vacuousZero;
 
-            if (std::abs(ref) > a.lostSignal)
+            if (magnitude > a.lostSignal)
             {
-                a.lostSignal = std::abs(ref);
+                a.lostSignal = magnitude;
                 a.lostSignalN = n;
                 a.lostSignalX = x;
             }
         }
     }
 
-    const double ratio = err / bound;
+    const double ratio = err / cellBound;
 
     if (!boundAboveValue)
     {
@@ -169,9 +204,9 @@ inline void MeasureAt(Accum& a,
         {
             ++a.domainZero;
 
-            if (std::abs(ref) > a.domainZeroRef)
+            if (magnitude > a.domainZeroRef)
             {
-                a.domainZeroRef = std::abs(ref);
+                a.domainZeroRef = magnitude;
             }
         }
 
@@ -181,10 +216,39 @@ inline void MeasureAt(Accum& a,
         }
     }
 
+    // What a row records as its delivered figure is the quantity the claim is about: the error
+    // itself in the absolute form, and the error the value carries in the relative one. The figure
+    // it is printed beside is the claim's own, so the pair divides to the ratio beside them.
+    const double delivered = (a.relative && magnitude > 0.0) ? err / magnitude : err;
+
+    // A judged cell this reading carries only because of the value floor: over the arm the figure
+    // alone gives and inside the floored bound that arm was raised to. A cell the floor lifts
+    // above the value is outside the claim, and a cell over even the floored bound fails, so what
+    // this counts is a pass the stated figure did not make - the pass no row shows.
+    if (a.judged && a.relative && !boundAboveValue)
+    {
+        const double arm = relativeBase + a.additive;
+
+        if (err > arm && err <= cellBound)
+        {
+            ++a.floorRescued;
+
+            if (err > a.floorRescuedWorstErrAbs)
+            {
+                a.floorRescuedWorstErr = delivered;
+                a.floorRescuedWorstErrAbs = err;
+                a.floorRescuedWorstArm = arm;
+                a.floorRescuedWorstCeiling = cellBound;
+                a.floorRescuedWorstN = n;
+                a.floorRescuedWorstX = x;
+            }
+        }
+    }
+
     if (ratio > o.worstRatio)
     {
         o.worstRatio = ratio;
-        o.worstErr = err;
+        o.worstErr = delivered;
         o.worstBound = bound;
         o.worstX = x;
     }
@@ -192,7 +256,7 @@ inline void MeasureAt(Accum& a,
     if (ratio > a.worstRatio)
     {
         a.worstRatio = ratio;
-        a.worstErr = err;
+        a.worstErr = delivered;
         a.worstBound = bound;
         a.worstN = n;
         a.worstX = x;
@@ -213,7 +277,7 @@ inline void MeasureAt(Accum& a,
                         n,
                         x,
                         err,
-                        bound,
+                        cellBound,
                         ratio,
                         ref,
                         refDecade);

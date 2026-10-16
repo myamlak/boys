@@ -1,11 +1,7 @@
-// The F16/Bf16 conversion contract (boys/f16.hpp):
-// round-to-nearest-even float -> half on the I/O boundary, verified bit by
-// bit against the IEEE-754 binary16 / bfloat16 rounding rules. The cases
-// cover every branch of FloatToHalf (Inf/NaN quieting, the 65520 RNE
-// overflow threshold, normal rounding, the 2^-25 zero-threshold tie, the
-// subnormal carry into 0x0400) and the RNE bit trick of FloatToBf16. The
-// assertions go through detail::F16Bits / F16FromBits so the same table
-// runs on the MSVC wrapper path and the stdfloat path (GCC/Clang CI).
+// The F16/Bf16 conversion contract: round-to-nearest-even float -> half on the
+// I/O boundary, verified bit by bit against the IEEE-754 binary16 / bfloat16
+// rounding rules. The assertions go through detail::F16Bits / F16FromBits so the
+// same table runs on the MSVC wrapper path and the stdfloat path (GCC/Clang CI).
 
 #include "boys/f16.hpp"
 
@@ -60,8 +56,7 @@ TEST(F16ConversionTest, FloatToHalfRoundsToNearestEven) {
 }
 
 TEST(F16ConversionTest, FloatToBf16RoundsToNearestEven) {
-    // Not constexpr: MSVC's STL does not make std::ldexp constexpr (GCC/
-    // Clang do, so a constexpr table would compile on CI and fail locally).
+// Not constexpr, for the reason given above: MSVC's std::ldexp is not constexpr.
     struct Case {
         float input;
         std::uint16_t expectedBits;
@@ -85,8 +80,7 @@ TEST(F16ConversionTest, FloatToBf16RoundsToNearestEven) {
 }
 
 TEST(F16ConversionTest, WideningIsExact) {
-    // binary16 -> binary32 is exact: the widened value must reproduce the
-    // stored pattern's exact value (checked against the raw-bit widening).
+// binary16 -> binary32 is exact (checked against the raw-bit widening).
     EXPECT_EQ(static_cast<float>(F16FromBits(0x3C00u)), 1.0f);
     EXPECT_EQ(static_cast<float>(F16FromBits(0x0001u)), std::ldexp(1.0f, -24));
     EXPECT_EQ(static_cast<float>(F16FromBits(0x0400u)), std::ldexp(1.0f, -14));

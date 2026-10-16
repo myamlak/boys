@@ -14,6 +14,12 @@ merges into what is already recorded and --check re-renders the document from
 its own rows: a hand edit to the generated region is drift, and so is a leg in
 ci.yml that the table does not account for.
 
+A table that records a row for no leg of the workflow is refused rather than
+passed. Every row in it would then belong to a build no leg of the matrix
+compares against, so the step that runs --check would go green having compared
+nothing - the rows a leg's own step is checked against are the rows that arm
+it.
+
 Usage:
     python tools/gen_build_facts.py --record build-facts-windows.txt ...
     python tools/gen_build_facts.py --check
@@ -22,11 +28,13 @@ Usage:
 import argparse
 import datetime
 import pathlib
+import re
 import sys
 
-# The CI matrix is read in one place, by the tool that generates the README's
-# supported-platform table. Importing it rather than parsing ci.yml a second
-# time keeps one answer to "which legs are there and what runner does each use".
+# The CI matrix is read in one place, by the tool that generates the
+# supported-platform table in docs/specification.md. Importing it rather than
+# parsing ci.yml a second time keeps one answer to "which legs are there and
+# what runner does each use".
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import gen_platform_table as platform
 
@@ -45,6 +53,34 @@ FORMAT = "boys.build-facts/1"
 def ci_legs():
     """Every CI leg as a dict: check name -> runner label, in workflow order."""
     return {name: runner for name, runner, _ in platform.legs()}
+
+
+def legs_that_probe():
+    """The CI legs a build-facts step runs on: the legs whose steps pass `--leg`.
+
+    Only a leg that runs the probe can print a row, and ten of the twenty-two do
+    not: option-plan runs the option list and no build, the clang-tidy leg builds
+    no binary, and the eight option-matrix cells build the accuracy gate and the
+    test suite, neither of which is the probe. The page tells a maintainer which
+    legs to expect a row from, so it reads that answer off the steps rather than
+    asserting it: a leg that gains or loses a probe step changes this set with
+    the workflow and without an edit here.
+    """
+    workflow = platform.yaml.safe_load(platform.CI_YML.read_text(encoding="utf-8"))
+    legs = set()
+    for job in workflow["jobs"].values():
+        for entry in platform.matrix_entries(job):
+            for step in job.get("steps", []):
+                command = step.get("run") or ""
+                if "boys-build-facts" not in command:
+                    continue
+                named = re.search(r'--leg\s+"([^"]+)"', command)
+                if named is None:
+                    raise SystemExit(
+                        "gen_build_facts: a build-facts step passes no --leg name; this "
+                        "script cannot say which leg that step records a row for")
+                legs.add(platform.expand(named.group(1), entry))
+    return legs
 
 
 def facts_from(entries):
@@ -124,22 +160,42 @@ def render(rows):
         parts.append(render_block(leg, rows[leg], None))
         parts.append("")
 
+    probing = legs_that_probe()
+    waiting = [leg for leg in missing_legs if leg in probing]
+    silent = [leg for leg in missing_legs if leg not in probing]
+
     parts.append("### CI legs with no recorded row yet")
     parts.append("")
-    if not missing_legs:
-        parts.append("None: every leg of the matrix has a row.")
+    if not waiting:
+        parts.append("None: every leg that runs the probe has a row.")
     else:
         parts.append(
             "Each of these legs prints its own row on its next run, under the "
-            "step that runs the probe. Record it with")
+            "step that runs the probe, and that step tees the row into an "
+            "artifact of the run. Record it with")
         parts.append("")
         parts.append("    python tools/gen_build_facts.py --record <the captured block>")
         parts.append("")
         parts.append("| CI leg | Runner label |")
         parts.append("|---|---|")
-        for leg in missing_legs:
+        for leg in waiting:
             parts.append(f"| `{leg}` | `{legs[leg]}` |")
     parts.append("")
+    if silent:
+        parts.append("### CI legs that run no probe")
+        parts.append("")
+        parts.append(
+            "No run of these legs prints a row, and none of them is being waited "
+            "for: the option-matrix cells build the accuracy gate and the test "
+            "suite rather than the probe, and option-plan and the clang-tidy leg "
+            "build no binary at all. A row states what one build is, and these "
+            "legs do not build the probe.")
+        parts.append("")
+        parts.append("| CI leg | Runner label |")
+        parts.append("|---|---|")
+        for leg in silent:
+            parts.append(f"| `{leg}` | `{legs[leg]}` |")
+        parts.append("")
     return "\n".join(parts).rstrip() + "\n"
 
 
@@ -182,7 +238,8 @@ def main():
     parser.add_argument("--record", nargs="+", type=pathlib.Path,
                         help="captured probe output(s) to fold into the table")
     parser.add_argument("--check", action="store_true",
-                        help="exit nonzero if the table is out of date")
+                        help="exit nonzero if the table is out of date, or holds "
+                             "no CI leg's row to check")
     args = parser.parse_args()
     if args.record and args.check:
         parser.error("--record and --check are different acts; pass one")
@@ -198,6 +255,16 @@ def main():
         rows = parse_blocks(current)
         legs = ci_legs()
         recorded = sum(1 for leg in legs if leg in rows)
+        if recorded == 0:
+            print(
+                f"gen_build_facts: docs/build-facts.md records a row for none of "
+                f"the {len(legs)} CI legs. The table carries {len(rows)} row(s), "
+                "none of them a CI leg's, so no leg of the workflow has a row to "
+                "be checked against and this check has nothing to compare. A leg "
+                "prints its own row under its build-facts step; record one with\n"
+                "    python tools/gen_build_facts.py --record <file>",
+                file=sys.stderr)
+            return 1
         print(f"docs/build-facts.md matches its rows: {recorded} of {len(legs)} "
               f"CI legs recorded, {len(rows) - recorded} row(s) from other builds")
         return 0

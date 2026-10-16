@@ -1,6 +1,6 @@
-"""How much of the shipped region-A work is the Chebyshev transform?
+"""How much of the committed region-A work is the Chebyshev transform?
 
-Counted from the shipped dispatch, not estimated. For a ladder of orders
+Counted from the committed dispatch, not estimated. For a ladder of orders
 0..nmax at argument x the double lane (m = 1) does one of three things in
 region A, and this counts the arithmetic of each:
 
@@ -33,7 +33,7 @@ REPEAT = 1  # per ladder step below
 
 
 def clenshaw_cost(deg):
-    """Fused ops of the shipped ClenshawSplit: the split recurrence plus t, v."""
+    """Fused ops of the committed ClenshawSplit: the split recurrence plus t, v."""
     if deg == 0:
         return 0
     if deg == 1:
@@ -59,7 +59,7 @@ def transform_cost(deg_k, orders_touched, build_basis=True):
 
 
 def ladder(x, nmax, thresholds, x0, x1, ext_x0):
-    """Fused-op counts of the shipped double m = 1 path for one ladder."""
+    """Fused-op counts of the committed double m = 1 path for one ladder."""
     if x == 0.0:
         return dict(transform=0.0, recursion=0.0, other=0.0, n_tf=0, mmax=0,
                     band=None, served=0)

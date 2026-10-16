@@ -4,22 +4,23 @@ cmake_minimum_required(VERSION 3.25)
 #
 # Layout: public headers under include/boys/, sources under src/,
 # tests under tests/ (gtest, vendored), benchmark drivers under
-# benchmarks/, the regeneration script under tools/. The templated entries'
-# kernel ships in the headers, so a consumer instantiates whichever accuracy
-# multiplier it names; the library itself exports the default m = 1
-# instantiations and the sampled rungs (extern-template architecture, see
-# include/boys/boys.hpp and src/boys.cpp). The CUDA lane is an optional second
+# benchmarks/, the regeneration script under tools/. The entries' kernels ship
+# in the headers, the default entries included: a consumer instantiates
+# whichever policy it names, and a consumer that links no archive still compiles
+# and links a call that names no policy (see include/boys/boys.hpp and
+# include/boys/kernels.hpp). The CUDA lane is an optional second
 # target that needs the CUDA toolkit (device pins are a documented local
 # gate — CI has no GPU leg and never builds it). No PCH in this tree.
 #
-# Consumers add this tree with add_subdirectory and link boys::boys: the
-# library's only requirement is C++20 (the double NTTP kAccuracyMultiplier),
+# Consumers add this tree with add_subdirectory and link boys::boys, or boys::boys-tier
+# for the headers alone with no archive on the link line: the library's only requirement
+# is C++20;
 # propagated through the target; tests/benchmarks are OFF unless this tree
 # is the top-level project (or the consumer opts in), and a missing
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 3.0.0 LANGUAGES CXX)
+project(boys VERSION 4.0.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -33,9 +34,37 @@ option(BOYS_BUILD_TESTS
 option(BUILD_BENCHMARKS
     "Build the CPU benchmark drivers; the timed runs themselves are local-only"
     ${BOYS_TOP_LEVEL})
+option(BUILD_EXAMPLES
+    "Build the examples: one small program per question a new caller asks"
+    ${BOYS_TOP_LEVEL})
+# One file per question, in the order a caller asks them. The list is read
+# twice below - once to build each program, once to register it with ctest -
+# so an example is added in one place and is then both built and run.
+set(boysExamples
+    00_first_call
+    01_one_order
+    02_all_orders
+    03_arguments_array
+    05_policy
+    06_what_it_guarantees
+    07_option_probe
+    08_shell_quartet_batch)
 option(BUILD_CUDA
-    "Build the CUDA lane (needs the CUDA toolkit; a documented local gate — never CI)"
+    "Build the CUDA lane (needs the CUDA toolkit; CI compiles it and runs no kernel, so the device figures stay a local gate)"
     OFF)
+
+# Two of the library's translation units answer a surface a calculation does not call: the C
+# linkage surface and the option probe (one instantiation per cell of the option space, which is
+# what makes its report an account of the space). Each is a member of `boys` when its option is
+# ON, and a consumer that asks for neither compiles neither - a submodule consumer's default,
+# since only the top-level build carries the suite, the examples and the recorded runs that reach
+# them.
+option(BOYS_BUILD_C_API
+    "Build the C linkage surface (src/boys_c.cpp) into the library"
+    ${BOYS_TOP_LEVEL})
+option(BOYS_BUILD_PROBE
+    "Build the option probe (src/boys_probe.cpp) into the library"
+    ${BOYS_TOP_LEVEL})
 
 # Warnings in this tree's own code are build failures. ON by default: a gate
 # that is off until someone opts in is not a gate, and a consumer embedding
@@ -81,11 +110,13 @@ function(boys_strict_warnings target)
     set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS ${target})
 endfunction()
 
-# The header-only consumer check proves that the entries' template definitions
-# are reachable from the public headers, and it proves it by NOT linking the
-# library: with a library on its link line it would still compile, still run,
-# and prove nothing. Assert the absence here, so a later edit that links it
-# fails the configure on every leg instead of quietly retiring the check.
+# The header-only consumer check proves that the entries' definitions are
+# reachable from the public headers alone, at either tier, and it proves it by
+# NOT linking the library: with a library on its link line it would still
+# compile, still run, and prove nothing. What it proves is the header-only
+# contract itself - a call site compiles the body it calls, whatever its flags.
+# Assert the absence here, so a later edit that links it fails the configure on
+# every leg instead of quietly retiring the check.
 function(boys_assert_no_linked_library target)
     get_target_property(linked ${target} LINK_LIBRARIES)
     if (linked)
@@ -98,6 +129,10 @@ set_property(DIRECTORY PROPERTY BOYS_STRICT_TARGETS "")
 
 if (BUILD_CUDA)
     enable_language(CUDA)
+    # The runtime target the device lane's public interface carries (CUDA::cudart):
+    # enabling the language names the compiler, not the runtime's imported targets,
+    # and the export hands one of them to every consumer of the lane.
+    find_package(CUDAToolkit REQUIRED)
     set(CMAKE_CUDA_STANDARD 20)
     set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     if (NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
@@ -134,22 +169,63 @@ endif()
 # BoysFp16 gates the fp16/bf16 API entries in the public headers, so it must
 # be PUBLIC: consumers compile against the same seam the library was built
 # with. The fp16/bf16 I/O types themselves (f16.hpp) are unconditional.
-# The headers need >= C++20 (the double NTTP kAccuracyMultiplier); the
+# The headers need >= C++20; the
 # requirement is propagated through the target, so consumers need no
 # global standard flags.
-add_library(boys
+#
+# The seam is a build's to close: every half entry sits behind `#if BoysFp16`, so OFF compiles a
+# smaller surface rather than a different arithmetic - the float lanes the half entries share an
+# engine with are untouched. ON is the shipped surface, and the profile the certified figures
+# belong to (docs/build-facts.md).
+option(BOYS_FP16_SEAM
+    "Compile the half/bfloat entries into the surface (BoysFp16=1); OFF closes the seam across \
+the whole tree and refuses a build that also asks for the test suite, which names those entries"
+    ON)
+
+# The library's members, with the two optional units behind their options. One list, because a
+# source cannot be taken back out of a target once it has been named in it.
+set(boysLibrarySources
     src/boys.cpp
-    src/boys_c.cpp
-    src/boys_half_native.cpp
+    src/boys_defaults.cpp
     src/boys_orders_simd.cpp
-    src/boys_probe.cpp
-    src/boys_simd.cpp
-    src/boys_transform.cpp)
+    src/boys_simd.cpp)
+if (BOYS_BUILD_C_API)
+    list(APPEND boysLibrarySources src/boys_c.cpp)
+endif()
+if (BOYS_BUILD_PROBE)
+    list(APPEND boysLibrarySources src/boys_probe.cpp)
+endif()
+add_library(boys ${boysLibrarySources})
+unset(boysLibrarySources)
 add_library(boys::boys ALIAS boys)
-target_include_directories(boys PUBLIC include PRIVATE src)
+# Two spellings of one directory: the source tree's absolute path for a consumer
+# that adds this tree, and `include` relative to the install prefix for the
+# exported package, which has no source directory of its own.
+target_include_directories(boys
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE src)
 target_compile_features(boys PUBLIC cxx_std_20)
-target_compile_definitions(boys PUBLIC BoysFp16=1)
+if (BOYS_FP16_SEAM)
+    target_compile_definitions(boys PUBLIC BoysFp16=1)
+endif()
 boys_strict_warnings(boys)
+
+# The option probe's own translation unit carries one instantiation per cell of
+# the option space — every combination of every class the library declares, which
+# is what makes its report an account of the space rather than of a sample of it —
+# and each instantiation is a function the object format gives a section of its
+# own. The count passes what a COFF object holds by default, so the compiler is
+# told to use the large-address form of the same file. It is MSVC's spelling only
+# because COFF is where the limit is: the ELF tools this project also builds with
+# carry no such ceiling and need no flag. It is set on this source rather than on
+# the target, because nothing else here comes near the limit and a flag spread
+# over targets that do not need it is a fact about the build nobody can trace back
+# to a measurement.
+if (MSVC AND BOYS_BUILD_PROBE)
+    set_source_files_properties(src/boys_probe.cpp PROPERTIES COMPILE_OPTIONS "/bigobj")
+endif()
 
 # --- The multiply-add route -------------------------------------------------
 # The scalar lanes' fused multiply-add is an instruction where the target has
@@ -183,6 +259,145 @@ if (BOYS_MULADD_SEPARATE)
 else()
     message(STATUS "boys: scalar multiply-add route = fused (one rounding)")
 endif()
+
+# --- What an unnamed call resolves to ----------------------------------------
+# The choices a call site that names no policy gets — the fit route, the
+# evaluation scheme, the packing axis, the division form and the fit granularity
+# on a host class, and the device lane's own division form and region-B
+# exponential beside them, because the two lanes' figures are two sets — are
+# compile-time values, read through include/boys/boys_build_defaults.hpp, whose
+# committed file carries the committed choices. This option points a build at a
+# header carrying its own seven, and the build then compiles those choices into
+# every entry that names none. Nothing is paid for this at run time and nothing
+# is dispatched: the choice was a template argument before and is one still, so
+# the compiler resolves exactly the call it resolved before, at the values this
+# build named.
+#
+# What such a header carries is stated in that header's own comment: the seven
+# names, and the machine, the date and the option probe's own figures beside
+# them, because a choice made there is a measurement taken on one host and a
+# reader has to be able to tell a tuned build from the committed one.
+#
+# NOT IN THIS TREE: the step that WRITES such a header. Running boys-option-probe
+# at configure time, reading the ranking it reports and emitting the header with
+# this host's figures is what this option exists to be written through, and it is
+# deliberately absent rather than stubbed: the option below takes a header the
+# build already has, and the message says which header is in force. A
+# cross-compiling configure cannot run the probe on the machine it is compiling
+# for at all, so it stays on the committed header and says so here.
+set(BOYS_BUILD_DEFAULTS "" CACHE FILEPATH
+    "Header carrying this build's default fit route, scheme, packing axis, \
+division form and fit granularity, and the device lane's own division form and \
+region-B exponential; empty builds the committed choices")
+
+if (BOYS_BUILD_DEFAULTS)
+    if (NOT EXISTS "${BOYS_BUILD_DEFAULTS}")
+        message(FATAL_ERROR "boys: BOYS_BUILD_DEFAULTS names "
+            "\"${BOYS_BUILD_DEFAULTS}\", which does not exist.")
+    endif()
+
+    # Copied under the name the headers include, into a directory that comes
+    # BEFORE include/ on the search path: the compiler then reads it as
+    # boys/boys_build_defaults.hpp and never reaches the committed file. The
+    # copy is a configure_file dependency, so editing the header reconfigures
+    # the build instead of leaving a stale copy behind.
+    set(BOYS_BUILD_DEFAULTS_DIR "${CMAKE_CURRENT_BINARY_DIR}/boys-build-defaults")
+    configure_file("${BOYS_BUILD_DEFAULTS}"
+        "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp" COPYONLY)
+    target_include_directories(boys BEFORE PUBLIC "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
+    # PUBLIC, so every target that links this one inherits it: a translation unit
+    # that reaches the committed header instead of the replacement says which
+    # build it is in and refuses to compile, rather than resolving one default
+    # while the library's own instantiations resolve another. BUILD_INTERFACE
+    # because the directory is this configure's: exported as it stands it makes
+    # every consumer of the installed package read a path under a build tree
+    # that no longer exists, which CMake refuses at generate time. What an
+    # installed consumer reads instead is the seam the install rules below put
+    # beside the headers - the one this build was compiled against.
+    #
+    # The seam's identity travels with the replacement: the sha256 of the file the
+    # option named. A build input that changes delivered bits has to be able to say
+    # which file it was, or a consumer whose regression baseline moved has no way
+    # to see that the seam is why. The path above is this configure's and dies with
+    # its build directory; a digest is content and travels, which is what makes two
+    # builds of one seam comparable across machines
+    # (include/boys/version.hpp, BuildDefaultsSeamIdentity()).
+    #
+    # Hashed here and not at build time because a configure-time fact is what this
+    # file's other build facts are, and because the copy above makes the file a
+    # dependency of the build system: editing it reconfigures, so the digest cannot
+    # go stale behind an edit. Read from the path resolved the way configure_file
+    # resolves it - relative to this source directory - so a configure run from
+    # another working directory hashes the file it copied and not a stranger.
+    get_filename_component(BOYS_BUILD_DEFAULTS_FILE "${BOYS_BUILD_DEFAULTS}" ABSOLUTE)
+    file(SHA256 "${BOYS_BUILD_DEFAULTS_FILE}" BOYS_BUILD_DEFAULTS_SEAM_SHA256)
+    # The same digest again as an identifier, because the front door names the namespace its
+    # default entries are compiled into from the seam, and a namespace is named by a token
+    # rather than by a string: two translation units that read two seams then define two
+    # different entries rather than one entry with two bodies. The string above is what a build
+    # reports as the seam it read (`include/boys/version.hpp`, BuildDefaultsSeamIdentity()).
+    set(BOYS_BUILD_DEFAULTS_SEAM_IDENT "seam_${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
+    target_compile_definitions(boys PUBLIC
+        BOYS_BUILD_DEFAULTS_REPLACED=1
+        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+        BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
+    message(STATUS "boys: build defaults = ${BOYS_BUILD_DEFAULTS} — the seven choices an "
+        "unnamed call resolves to are that header's, and they are a measurement on the machine "
+        "it was taken on. sha256 ${BOYS_BUILD_DEFAULTS_SEAM_SHA256}")
+elseif (CMAKE_CROSSCOMPILING)
+    message(STATUS "boys: build defaults = the committed header (the shipped choices); this is "
+        "a cross-compiling configure, which cannot measure the machine it compiles for.")
+else()
+    message(STATUS "boys: build defaults = the committed header (the shipped choices)")
+endif()
+
+# --- The contraction the library's arithmetic is compiled at -----------------
+# A bare `a * b + c` in the scalar arithmetic is one rounding or two according
+# to the target and the flags, and the two are different numbers. The figures
+# this tree publishes are the two-rounding arithmetic's: the accuracy gate holds
+# its bounds on a build that does not contract and reports three of them
+# exceeded on one that does, so that is the arithmetic the library is compiled
+# at here — stated, rather than left to whatever the host's compiler happens to
+# do.
+#
+# It takes a statement because the default is not the same on two machines.
+# aarch64 has the fused step in its baseline and its gcc contracts by default;
+# x86-64 has no fused step unless -mfma is passed, so the same source and the
+# same flags deliver two arithmetics, and the accuracy gate said so in its own
+# report: the x86 legs read `bare product-plus-add does not contract here` and
+# the arm64 legs `contracts here`. The lane that showed it is the half lane,
+# which runs the float engine's downward recursion — a bare product-plus-add
+# per step — against a budget of 1e-7 plus a half-ULP, which is one fp32
+# rounding wide.
+#
+# The value named is the two-rounding model and not the fused one. Naming the
+# fused model would ask for an instruction the x86-64 baseline does not have,
+# and on a target that does have it the fused arithmetic is already what the
+# fused route asks for, one call site at a time by name. This way each of the
+# two routes means one arithmetic on every host, and a bound measured on one is
+# a statement about the others.
+#
+# It reaches a consumer as well, where the arithmetic is compiled: every entry
+# is header-defined, so a translation unit that instantiates a kernel compiles
+# its own copy of these steps. The language guard keeps the option off C and
+# CUDA translation units, which do not compile the C++ arithmetic and whose
+# host libraries have their own flag vocabulary.
+#
+# MSVC's spelling is /fp:precise, which is its default and does not contract;
+# /fp:contract is not named because not every MSVC this library builds on
+# accepts it. Contraction there is opt-in, so the statement's work on that
+# toolchain is to refuse a project-level /fp:fast rather than to change a
+# default.
+if (MSVC)
+    set(_boys_contract_option "/fp:precise")
+else()
+    set(_boys_contract_option "-ffp-contract=off")
+endif()
+# Stated where the probe below measures, not only where the sources compile: a
+# build that states its arithmetic in one place and measures it in another is
+# measuring a different build than the one it ships.
+string(APPEND CMAKE_CXX_FLAGS " ${_boys_contract_option}")
+target_compile_options(boys PUBLIC "$<$<COMPILE_LANGUAGE:CXX>:${_boys_contract_option}>")
 
 # --- What this target does with a bare product-plus-add ----------------------
 # Whether `a * b + c` written bare rounds once or twice follows from the target
@@ -254,18 +469,70 @@ unset(_boys_contract_saved_flags)
 unset(_boys_contract_flags)
 endif()
 
+# One build fact, two carriers: the tier flags and the measured contraction answer
+# are properties of the PROGRAM, and two targets carry translation units of one
+# program - `boys` (the host library) and `boys-cuda` (the device lane, a target of
+# its own because it needs the toolkit). An interface target carries both facts
+# once and each library links it, so neither can be built at one tier beside the
+# other's other tier - which the guard in include/boys/isa_tiers.hpp refuses at a
+# program's start-up rather than letting the linker merge one body silently.
+add_library(boys-tier INTERFACE)
+# One name for the link line on both routes: the installed package hands this target out as
+# boys::boys-tier through its namespace, and an add_subdirectory consumer reaches the same
+# spelling through this alias rather than the bare target name (`boys` has its own above).
+add_library(boys::boys-tier ALIAS boys-tier)
+# An interface target has no translation units of its own to warn about; what it
+# needs is the audit's bookkeeping, which boys_strict_warnings cannot give it (it
+# sets PRIVATE options). The property is set directly, for the same reason.
+set_property(DIRECTORY APPEND PROPERTY BOYS_STRICT_TARGETS boys-tier)
+
+# This target is also the headers-only consumer's whole interface: the include
+# path, the C++20 floor, the fp16 seam and the contraction pin are the rest of
+# what a unit is compiled with, so a target that links this one alone compiles
+# the arithmetic the library was built at, with no archive on its link line
+# (README.md, "Consuming as a submodule"). `boys` spells the include path and
+# the standard out again because the header-only consumer check reads both off
+# the library target itself.
+target_include_directories(boys-tier
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:include>)
+target_compile_features(boys-tier INTERFACE cxx_std_20)
+if (BOYS_FP16_SEAM)
+    target_compile_definitions(boys-tier INTERFACE BoysFp16=1)
+endif()
+# The replacement seam the block above puts on `boys`, on the headers-only target too: the
+# comment above claims this target alone is a consumer's whole interface, and the seam is part
+# of that interface - a unit that links only this one must read the replacement and refuse the
+# committed header, exactly as one that links `boys`. The variables are that block's.
+if (BOYS_BUILD_DEFAULTS)
+    target_include_directories(boys-tier BEFORE INTERFACE
+        "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
+    target_compile_definitions(boys-tier INTERFACE
+        BOYS_BUILD_DEFAULTS_REPLACED=1
+        BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+        BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
+endif()
+# The contraction pin the section above states on `boys`, stated again on the
+# target a headers-only consumer links: its units compile the entries' own
+# steps, and a target whose fused step is in the baseline (aarch64) contracts a
+# bare product-plus-add at the compiler's default.
+target_compile_options(boys-tier INTERFACE
+    "$<$<COMPILE_LANGUAGE:CXX>:${_boys_contract_option}>")
+unset(_boys_contract_option)
+
 # 1 and 0 are the two measured answers and both are defined, so a reader asks the
 # value rather than whether the name exists. Neither is defined where no answer
 # was measured: a build that has not measured contraction does not get to assert
 # the claims the answer decides, and the tri-state is what keeps it from
 # inheriting the one that would be wrong rather than the one that claims least.
 if (BOYS_SCALAR_CONTRACTS)
-    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=1)
+    target_compile_definitions(boys-tier INTERFACE BOYS_SCALAR_CONTRACTS=1)
     message(STATUS "boys: this target contracts a bare product-plus-add (one rounding) — "
         "the scalar lanes' two multiply-add routes are one arithmetic here, and the "
         "claims a build carries are compiled against that answer.")
 elseif (NOT CMAKE_CROSSCOMPILING)
-    target_compile_definitions(boys PUBLIC BOYS_SCALAR_CONTRACTS=0)
+    target_compile_definitions(boys-tier INTERFACE BOYS_SCALAR_CONTRACTS=0)
     message(STATUS "boys: this target does not contract a bare product-plus-add (two "
         "roundings) — the scalar lanes' two routes are two arithmetics here, and the "
         "claims a build carries are compiled against that answer.")
@@ -273,6 +540,7 @@ else()
     message(STATUS "boys: contraction is not measured in a cross-compiling configure — "
         "no claims are compiled against it and BoysBackends() reports it at run time.")
 endif()
+target_link_libraries(boys PUBLIC boys-tier)
 
 # --- Architecture gate (the AVX2 tier is x86_64-only) ------------------------
 # The probe is a configure-time compiler check rather than a lookup on
@@ -293,66 +561,203 @@ check_cxx_source_compiles("
 int main() { return 0; }
 " BOYS_ARCH_X86_64)
 
+option(BOYS_ISA_AVX2
+    "compile the library - and, through the target, every consumer that links it - at the \
+AVX2+FMA+F16C tier; OFF builds the scalar tier across the whole tree"
+    ON)
+
 if (BOYS_ARCH_X86_64)
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=1)
 
-    # The flag set these TUs carry is two things at once, and only the first is
-    # why it is here. It lets the AVX2/FMA/F16C intrinsics compile - and, on
+    # The instruction-set tier is a property of the PROGRAM, not of a file: the
+    # entries are the caller's to compile now, and two translation units at two
+    # tiers cannot share one definition of them - the guard in
+    # include/boys/isa_tiers.hpp aborts such a program at startup rather than
+    # letting the linker merge one body silently. So the tier is set on the
+    # target and propagated PUBLIC, and a consumer that links `boys` inherits
+    # the one flag set this build was measured under; a consumer that needs the
+    # portable scalar tier configures -DBOYS_ISA_AVX2=OFF.
+    #
+    # The flag set is two things at once, and the second is why the contraction
+    # pin rides beside it. It lets the AVX2/FMA/F16C intrinsics compile - and, on
     # GCC and Clang, -mfma is also a licence to fuse a bare `a * b + c` into one
-    # rounding, which the rest of the build's flags do not give it.
-    #
-    # That licence is not this flag set's to spend. Whether a bare product-plus-
-    # add rounds once or twice is a property of the BUILD here: it was measured
-    # once, at the build's own flags, further up this file, and published as
-    # BOYS_SCALAR_CONTRACTS. A TU that carries the intrinsics' flags answers the
-    # same question a second time, and answers it faster than the build did - so
-    # the scalar code such a TU also carries (the fallback the packed orders axis
-    # runs outside its own interval, which is a scalar lane instantiated in that
-    # TU and not called out of line) is then a different arithmetic from the
-    # scalar lane a caller reaches, and the two part by a last bit. The
-    # measurement above is what makes that a disagreement rather than a
-    # description: a caller's own instantiation of the scalar lane is compiled at
-    # the build's flags, and the library's fallback is the value it has to
-    # reproduce.
-    #
-    # So the measured answer is pinned onto these TUs rather than inherited by
-    # them, and the arithmetic of everything they carry - vector bodies, whose
-    # FMA is written as an intrinsic and is unmoved by this, and scalar bodies,
-    # which are moved onto the build's answer - is the build's arithmetic.
-    if (MSVC)
-        # AVX2 intrinsics live in the SIMD TU only (F16C comes with /arch:AVX2);
-        # the entry points are runtime-checked via BoysAvx2Available(), which
-        # requires the FMA feature bit because the kernels are FMA chains.
-        #
-        # No contraction flag is added here: MSVC contracts only under /fp:fast,
-        # which is not what the measurement above runs under, so this flag set
-        # already carries the measured answer. /fp:contract is avoided for the
-        # reason the flag set is spelled this way at all - it is not accepted by
-        # every MSVC this library builds on.
-        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
-            COMPILE_OPTIONS "/arch:AVX2")
-    else()
-        # GCC does not imply F16C via -mavx2.
-        set(_boys_simd_flags "-mavx2;-mfma;-mf16c")
-        if (DEFINED BOYS_SCALAR_CONTRACTS)
-            if (BOYS_SCALAR_CONTRACTS)
-                list(APPEND _boys_simd_flags "-ffp-contract=fast")
-            else()
-                list(APPEND _boys_simd_flags "-ffp-contract=off")
+    # rounding, which the rest of the build's flags do not give it. That licence
+    # is not this flag set's to spend: measured on the two-build differential, a
+    # vector-tier unit built with the compiler's default contraction returns a
+    # last-bit-different value from the certified lane (29 rows gcc, 23 clang),
+    # while the same build with the pin returns the certified bits exactly
+    # (466 of 466 identical). A consumer that re-spells the flags itself, header
+    # only, owns that same pairing - docs/build-facts.md states the profile the
+    # figures belong to.
+    if (BOYS_ISA_AVX2)
+        if (MSVC)
+            # AVX2 intrinsics come with /arch:AVX2 (F16C included); no
+            # contraction flag is added because MSVC contracts only under
+            # /fp:fast, which is not what the measurement above runs under.
+            target_compile_options(boys-tier INTERFACE /arch:AVX2)
+            # The CUDA language does not take the C++ flag set: nvcc hands its own
+            # switches to the host pass, so a translation unit compiled by nvcc
+            # would build its shared inline bodies at the scalar tier beside the
+            # C++ units' vector ones - a mixed program, which the tier guard in
+            # include/boys/isa_tiers.hpp refuses at start-up (measured here: the
+            # CUDA-on gate aborted on exactly that). The flags travel to the host
+            # pass through -Xcompiler, one spelling per driver.
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/arch:AVX2>)
+        else()
+            # GCC does not imply F16C via -mavx2.
+            target_compile_options(boys-tier INTERFACE -mavx2 -mfma -mf16c)
+            if (DEFINED BOYS_SCALAR_CONTRACTS)
+                if (BOYS_SCALAR_CONTRACTS)
+                    target_compile_options(boys-tier INTERFACE -ffp-contract=fast)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=fast>)
+                else()
+                    target_compile_options(boys-tier INTERFACE -ffp-contract=off)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=off>)
+                endif()
             endif()
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-mavx2,-mfma,-mf16c>)
         endif()
-        # Left unpinned on a cross-compiling configure, where no answer was
-        # measured and the build states none: the flag set is then exactly the
-        # intrinsics' again, which is what the rest of that configure has too.
-        set_source_files_properties(src/boys_simd.cpp src/boys_orders_simd.cpp PROPERTIES
-            COMPILE_OPTIONS "${_boys_simd_flags}")
-        unset(_boys_simd_flags)
+    else()
+        message(STATUS "boys: BOYS_ISA_AVX2=OFF - the whole tree compiles the "
+            "scalar tier, and the vector-tier-only test and benchmark targets "
+            "do not apply to it")
     endif()
 else()
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=0)
     message(STATUS "boys: non-x86_64 target — the AVX2 tier is not built; the "
         "region kernels fall back to the certified scalar lanes and "
         "BoysAvx2Available() reports false.")
+endif()
+
+# The revision this tree is at, read at configure time, for the two programs here that write one
+# into a record: the host accuracy gate and the device one. A record naming no revision is
+# attributable to nothing and can be held to nothing - a renamed option cell once left the
+# committed probe report describing a probe that no longer existed, and no instrument could say
+# so because the report named no revision for a check to disagree with. Computed here and not
+# inside a block, because the host gate is built under the tests option and the device gate
+# under BUILD_CUDA.
+find_package(Git QUIET)
+if(GIT_FOUND)
+    execute_process(
+        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE BOYS_GATE_REVISION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _boys_git_status
+        ERROR_VARIABLE _boys_git_output)
+    # git being installed is not this directory being a work tree, and the two cases it
+    # leaves have opposite answers. A source tarball has no `.git` entry, the read failing
+    # there is what is expected, and the fallback below is the whole answer. A `.git` entry
+    # git could not read is a tree that has a revision and cannot name it: "unknown" is then
+    # false rather than a fallback, and the record the gate and the two probes write is
+    # refused by the checker after the run, when the run is spent. Every git query fails
+    # alike when the gitdir cannot be resolved, so the entry on disk separates the two, not
+    # another command.
+    if(NOT _boys_git_status STREQUAL "0" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
+        string(STRIP "${_boys_git_output}" _boys_git_output)
+        message(FATAL_ERROR
+            "boys: this source tree is a git work tree (\"${CMAKE_CURRENT_SOURCE_DIR}/.git\" "
+            "is present) but its revision could not be read. The accuracy gates stamp that "
+            "revision into the record they write, and \"unknown\" would leave the record "
+            "attributable to no tree, so the configure stops here rather than after a gate "
+            "run.\n"
+            "  command: \"${GIT_EXECUTABLE}\" rev-parse --short HEAD\n"
+            "  exit:    ${_boys_git_status}\n"
+            "  output:  ${_boys_git_output}\n"
+            "A source tree with no git, or with no .git entry - a tarball - is not this case, "
+            "and configures as it did before.")
+    endif()
+    unset(_boys_git_status)
+    unset(_boys_git_output)
+endif()
+if(NOT BOYS_GATE_REVISION)
+    set(BOYS_GATE_REVISION "unknown")
+endif()
+
+# The content a record's stamp carries: every file the program reads from, hashed at configure
+# time by the tool that recomputes those digests at check time. One implementation is what makes
+# the two comparable - a second hashing written here would have to agree with the first over
+# every byte of every file, and nothing would say when it did not.
+#
+# The version is not read here. A program prints the library's own, from the header it compiles
+# against, so that cell cannot disagree with the code that prints it; the content it was built
+# from is what a program cannot know by itself, and that is what these cells carry.
+#
+# The interpreter is asked for and not required, and its absence is the fallback below: a tree
+# configured without one carries the version and no digest, and the stamp says so visibly rather
+# than naming content it did not read. An interpreter that is here and a read that fails is the
+# opposite case and stops the configure, for the reason the revision read above does: a record
+# that cannot date itself is refused by the checker after the run, when the run is spent.
+#
+# The read is this tree's own: the two cells land in the stamp of the accuracy gate's record and
+# the option probe's report, and both programs are registered under BOYS_BUILD_TESTS. So the
+# recorder runs where this tree is top-level, and a consumer's configure runs neither the tool nor
+# its FATAL - both cells read "unknown", the fallback a tree without an interpreter already
+# carries, and no target of a consumer's build reads them.
+find_package(Python3 COMPONENTS Interpreter QUIET)
+foreach(_boys_record IN ITEMS probe gate)
+    string(TOUPPER "${_boys_record}" _boys_RECORD)
+    set(BOYS_${_boys_RECORD}_INPUTS "unknown")
+
+    if(BOYS_TOP_LEVEL AND Python3_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/record_stamp.py"
+                    --inputs ${_boys_record} --root "${CMAKE_CURRENT_SOURCE_DIR}"
+            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+            OUTPUT_VARIABLE _boys_cell
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            RESULT_VARIABLE _boys_status
+            ERROR_VARIABLE _boys_output)
+
+        if(NOT _boys_status STREQUAL "0")
+            string(STRIP "${_boys_output}" _boys_output)
+            message(FATAL_ERROR
+                "boys: this source tree carries tools/record_stamp.py and an interpreter, and "
+                "the files the ${_boys_record} record reads from could not be read. The digest "
+                "the record would carry would name content this tree does not have, and the "
+                "check that reads the record refuses one it cannot hold to a tree - after the "
+                "run.\n"
+                "  command: \"${Python3_EXECUTABLE}\" tools/record_stamp.py --inputs "
+                "${_boys_record} --root ${CMAKE_CURRENT_SOURCE_DIR}\n"
+                "  exit:    ${_boys_status}\n"
+                "  output:  ${_boys_output}\n"
+                "A source tree without the tool or without an interpreter is not this case: its "
+                "digest is \"unknown\" and its stamp says so.")
+        endif()
+
+        set(BOYS_${_boys_RECORD}_INPUTS "${_boys_cell}")
+    endif()
+
+    unset(_boys_cell)
+    unset(_boys_status)
+    unset(_boys_output)
+endforeach()
+
+# --- Feature pairs a build cannot split -------------------------------------
+# The suite, the examples and the option probe's drivers call the surfaces the three options above
+# can leave out, so a configure that asks for a driver and not for the surface it calls is refused
+# here, with both options named, rather than by a link error after a build.
+if (BOYS_BUILD_TESTS AND NOT BOYS_BUILD_C_API)
+    message(FATAL_ERROR "boys: BOYS_BUILD_TESTS builds tests/boys_c_test.cpp, which calls the C "
+        "linkage surface; set BOYS_BUILD_C_API=ON, or BOYS_BUILD_TESTS=OFF.")
+endif()
+if (BOYS_BUILD_TESTS AND NOT BOYS_BUILD_PROBE)
+    message(FATAL_ERROR "boys: BOYS_BUILD_TESTS builds tests/boys_probe_test.cpp and the "
+        "boys-option-probe driver, which call the option probe; set BOYS_BUILD_PROBE=ON, or "
+        "BOYS_BUILD_TESTS=OFF.")
+endif()
+if (BUILD_EXAMPLES AND NOT BOYS_BUILD_PROBE)
+    message(FATAL_ERROR "boys: BUILD_EXAMPLES builds examples/07_option_probe.cpp, which calls "
+        "the option probe; set BOYS_BUILD_PROBE=ON, or BUILD_EXAMPLES=OFF.")
+endif()
+if (BOYS_BUILD_TESTS AND NOT BOYS_FP16_SEAM)
+    message(FATAL_ERROR "boys: the test suite builds tests/boys_accuracy_gate.cpp, which names "
+        "the half entries through a policy on a path it does not guard; set BOYS_FP16_SEAM=ON, "
+        "or BOYS_BUILD_TESTS=OFF.")
 endif()
 
 # --- Tests (gtest; the reference grid is located via BoysDataDir) -----------
@@ -363,7 +768,6 @@ if (BOYS_BUILD_TESTS)
         tests/boys_test.cpp
         tests/boys_boundary_test.cpp
         tests/boys_accuracy_test.cpp
-        tests/boys_tier_test.cpp
         tests/boys_fixed_n_test.cpp
         tests/boys_all_n_test.cpp
         tests/boys_across_orders_test.cpp
@@ -372,18 +776,55 @@ if (BOYS_BUILD_TESTS)
         tests/f16_test.cpp
         tests/boys_half_native_test.cpp
         tests/boys_backend_test.cpp
+        # The multiply-add route's liveness: a lane that stops reading the build's
+        # route keeps compiling and keeps every suite that names the route green,
+        # so what these hold is the values each lane delivers, against the
+        # library's own summations at a named route (the reference arithmetic is
+        # tests/boys_muladd_route_reference.hpp, shared by the two).
+        tests/boys_muladd_route_test.cpp
+        tests/boys_muladd_route_simd_test.cpp
+        tests/boys_fixture_pins_test.cpp
         tests/boys_probe_test.cpp
-        tests/boys_transform_test.cpp)
+        tests/boys_build_defaults_test.cpp
+        tests/boys_transform_test.cpp
+        # The refusal's reason: every combination QueryCombination can be asked
+        # about, and every member of the device option space, held to the reason
+        # its own field documents. The device arm of this file is compiled in by
+        # the CUDA lane's target below; this is the host arm.
+        tests/boys_refusal_reason_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)
-    # BoysTierReference is the accuracy gate lane's 80-digit grid when the
-    # tree carries it; the tier tests fall back to BoysDataDir's grid at run
-    # time and print which reference they measured against either way.
+    # The directory the suite's reference grids are read from, the accuracy gate's
+    # 80-digit grid among them; a test that reads one skips when it is absent.
     target_compile_definitions(boys-tests PRIVATE
-        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
-        BoysTierReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_accuracy_gate_reference.csv")
+        BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
     boys_strict_warnings(boys-tests)
+
+    # tests/boys_muladd_route_simd_test.cpp includes the private header the
+    # packed backends are declared in, so this unit carries the intrinsics' flag
+    # set the way src/boys_simd.cpp does - the same set and the same pinning of
+    # the measured contraction answer, and for the same reason: the reference
+    # arithmetic it holds those backends to has to be the build's arithmetic,
+    # not this unit's own reading of a bare product-plus-add.
+    if (BOYS_ARCH_X86_64)
+        if (MSVC)
+            set_source_files_properties(tests/boys_muladd_route_simd_test.cpp PROPERTIES
+                COMPILE_OPTIONS "/arch:AVX2")
+        else()
+            set(_boys_simd_test_flags "-mavx2;-mfma;-mf16c")
+            if (DEFINED BOYS_SCALAR_CONTRACTS)
+                if (BOYS_SCALAR_CONTRACTS)
+                    list(APPEND _boys_simd_test_flags "-ffp-contract=fast")
+                else()
+                    list(APPEND _boys_simd_test_flags "-ffp-contract=off")
+                endif()
+            endif()
+            set_source_files_properties(tests/boys_muladd_route_simd_test.cpp PROPERTIES
+                COMPILE_OPTIONS "${_boys_simd_test_flags}")
+            unset(_boys_simd_test_flags)
+        endif()
+    endif()
 
     # The ACCURACY GATE (tests/boys_accuracy_gate.cpp) measures every
     # documented per-lane, per-region bound against the independent
@@ -393,73 +834,43 @@ if (BOYS_BUILD_TESTS)
     # of delivered error to documented bound with the location of the maximum.
     # It exits non-zero on any exceeded claim; passes that hold only because
     # the returned value is below what the format can hold are counted apart.
+    # Its far-representation book reads a second grid beside that one
+    # (tests/data/boys_far_gate_reference.csv, regenerated by
+    # tools/gen_boys_far_gate_reference.py), from the same tree directory and
+    # located the same way, because the far region's three arms dispatch on
+    # boundaries the first grid does not resolve.
     #
-    # The gate prints the revision it measured, read from the tree at configure
-    # time, so "verified at this revision" names one: a result pasted into a
-    # report months later would otherwise be attributable to nothing.
-    find_package(Git QUIET)
-    if(GIT_FOUND)
-        execute_process(
-            COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
-            WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-            OUTPUT_VARIABLE BOYS_GATE_REVISION
-            OUTPUT_STRIP_TRAILING_WHITESPACE
-            ERROR_QUIET)
-    endif()
-    if(NOT BOYS_GATE_REVISION)
-        set(BOYS_GATE_REVISION "unknown")
-    endif()
     add_executable(boys-accuracy-gate tests/boys_accuracy_gate.cpp)
     target_link_libraries(boys-accuracy-gate PRIVATE boys)
     target_include_directories(boys-accuracy-gate PRIVATE src)
     target_compile_features(boys-accuracy-gate PRIVATE cxx_std_23)
     target_compile_definitions(boys-accuracy-gate PRIVATE
         BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
-        BoysGateRevision="${BOYS_GATE_REVISION}")
+        BoysGateRevision="${BOYS_GATE_REVISION}"
+        # The content the run was taken from, beside the revision it names: the stamp carries
+        # both, and the checker holds the record to the digests.
+        BoysGateInputs="${BOYS_GATE_INPUTS}")
     boys_strict_warnings(boys-accuracy-gate)
 
-    # The run-time accuracy tier (BoysAllOrdersAtTier / QueryTier) arrives on a
-    # branch of its own, so the gate compiles its tier claims only where the
-    # headers this revision ships declare those entries. Asked of the compiler,
-    # not of a version string: a revision without the tier reports those claims
-    # as evidence-absent instead of failing to build, and a revision that has
-    # them cannot slip through unmeasured.
-    #
-    # The probe is a STATIC_LIBRARY try-compile, not an executable one, and
-    # that is the whole question: it compiles the entries' declarations and does
-    # not link them, because a probe that links tests whether THIS build links
-    # the library's definitions, and answers no for a revision that merely keeps
-    # the tier's code in a translation unit the probe does not compile. The
-    # definitions are tested where they belong --- the gate target links the
-    # library, so a declaration without a definition fails that link loudly
-    # instead of quietly dropping three claims into evidence-absent.
-    #
-    # The result is unset first so the probe runs on every configure: a cached
-    # no, left behind by an earlier revision, would be the silent direction.
-    include(CheckCXXSourceCompiles)
-    unset(BOYS_GATE_HAS_TIER CACHE)
-    set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-    set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
-    if (MSVC)
-        set(CMAKE_REQUIRED_FLAGS "/std:c++20 /EHsc")
-    else()
-        set(CMAKE_REQUIRED_FLAGS "-std=c++20")
+    # The DEVICE LANE's arm of that cross. The gate measures the device lane
+    # where the build carries it, through the CUDA surface's own entries, so
+    # this target links boys-cuda and states BOYS_GATE_CUDA in exactly the
+    # configuration that defines boys-cuda: the two conditions are one, and a
+    # build without the lane gets neither the arm nor the link. What the arm
+    # needs beyond the sources is what boys-cuda already carries - the toolkit's
+    # include directories (PUBLIC on that target) and the CUDA runtime the
+    # target's own objects are linked against - so nothing about the toolkit is
+    # repeated here.
+    # The device-callable half of that arm (tests/boys_accuracy_gate_fast_device.cu) is
+    # a translation unit of its own because a kernel that calls a __device__ entry may
+    # only be compiled as CUDA, and the gate's own extension is not. It is added here
+    # in the same configuration the two lines above state, so a build without the lane
+    # is a build with no kernel in this target and one compilation language fewer.
+    if (BUILD_CUDA)
+        target_link_libraries(boys-accuracy-gate PRIVATE boys-cuda)
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_CUDA=1)
+        target_sources(boys-accuracy-gate PRIVATE tests/boys_accuracy_gate_fast_device.cu)
     endif()
-    check_cxx_source_compiles("
-#include <boys/boys.hpp>
-int main() {
-    double out[33];
-    boys::BoysAllOrdersAtTier(boys::AccuracyTier::kRelaxed64, 32, 30.0, out);
-    const boys::TierCoverage c = boys::QueryTier(
-        boys::AccuracyTier::kRelaxed64, boys::AccuracyRegion::kC, 1e-12);
-    return (c.meets || c.reachable > 0.0) ? 0 : 1;
-}
-" BOYS_GATE_HAS_TIER)
-    set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
-    unset(_boys_probe_target_type)
-    unset(CMAKE_REQUIRED_FLAGS)
-    unset(CMAKE_REQUIRED_INCLUDES)
 
     # The route-refusal probe. The many-argument and fixed-order entries do not
     # carry the rational minimax route: their region bodies evaluate the shipped
@@ -471,9 +882,9 @@ int main() {
     # the gate reports rather than a sentence in a header, and a revision that
     # stopped refusing fails the row that reports it.
     #
-    # STATIC_LIBRARY again, for the same reason as the tier probe: this asks
-    # whether the declarations accept the policy, not whether this build links
-    # the definitions.
+    # STATIC_LIBRARY again: this asks whether the declarations accept the
+    # policy, not whether this build links the definitions.
+    include(CheckCXXSourceCompiles)
     unset(BOYS_GATE_BATCH_ACCEPTS_ROUTE CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -484,14 +895,14 @@ int main() {
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
-    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, &x, out, 1);
-    boys::BoysAllN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, &x, out, 1);
+    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
         1, &x, out, 1, boys::BoysSortedArgs{});
-    boys::BoysFixedN<1.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(0, &x, out, 1);
+    boys::BoysFixedN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(0, &x, out, 1);
     return 0;
 }
 " BOYS_GATE_BATCH_ACCEPTS_ROUTE)
@@ -519,10 +930,10 @@ int main() {
     #                          fill a lane with, so the axis cannot be formed
     #                          there at all.
     #
-    # The axis's other limits - a relaxed multiplier, and a route other than the
-    # shipped one - were built rather than argued away, so they carry no probe:
-    # the packing-axis rows of the gate measure every one of those combinations
-    # instead, which is the reading that says the axis answers them.
+    # The axis's other limit - a route other than the shipped one - was built
+    # rather than argued away, so it carries no probe: the packing-axis rows of
+    # the gate measure every such combination instead, which is the reading that
+    # says the axis answers them.
     unset(BOYS_GATE_FIXEDN_ACCEPTS_ORDERS CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -533,13 +944,13 @@ int main() {
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     double out[33] = {};
     const double x = 1.0;
     using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
-    boys::BoysFixedN<1.0, OrdersAxis>(0, &x, out, 1);
+    boys::BoysFixedN<OrdersAxis>(0, &x, out, 1);
     return 0;
 }
 " BOYS_GATE_FIXEDN_ACCEPTS_ORDERS)
@@ -567,9 +978,6 @@ int main() {
     # than the refusal it backs - it says the call does not build, not that it
     # cannot - and each verdict is printed after the probe that produced it,
     # because a statement placed above its probe reads a variable not yet set.
-    unset(BOYS_GATE_RATIONAL_RUNG_ACCEPTED CACHE)
-    unset(BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED CACHE)
-    unset(BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED CACHE)
     unset(BOYS_GATE_F32_ACCEPTS_ORDERS CACHE)
     set(_boys_probe_target_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
     set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
@@ -579,94 +987,46 @@ int main() {
     else()
         set(CMAKE_REQUIRED_FLAGS "-std=c++20")
     endif()
+    # The orders axis on the single-precision engines: the orders entry and the
+    # many-argument entry, both at the shipped route and scheme.
+    #
+    # Only the shapes that CAN carry the axis are probed here. A one-order entry
+    # has one order to pack and refuses the axis for that reason alone, which is
+    # a property of the call and not of the axis; asking it here would make this
+    # probe's verdict a fact about the shape while the gate reads it as a fact
+    # about the axis. That shape has the probe below, and its verdict is booked
+    # as the shape limit it is.
     check_cxx_source_compiles("
-#include <boys/boys.hpp>
-int main() {
-    double out[33] = {};
-    boys::BoysAllOrders<64.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0, out);
-    return 0;
-}
-" BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
-    # The single-precision lane's two axes at a rung are probed apart, because
-    # they are two different facts: the route a rung of the lane's fits would
-    # have to be derived for, and the scheme it already stores a table for.
-    check_cxx_source_compiles("
-#include <boys/boys.hpp>
-int main() {
-    float out[33] = {};
-    boys::BoysAllOrdersF32<8.0, boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, 1.0f, out);
-    return 0;
-}
-" BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED)
-    check_cxx_source_compiles("
-#include <boys/boys.hpp>
-int main() {
-    float out[33] = {};
-    boys::BoysAllOrdersF32<8.0,
-                           boys::EvalPolicy<boys::FitRoute::kChebyshev,
-                                            boys::EvalScheme::kHorner>>(1, 1.0f, out);
-    boys::BoysSingleF32<8.0,
-                        boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>>(
-        1, 1.0f);
-    return 0;
-}
-" BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED)
-    # The orders axis on the single-precision engines: the reference rung with
-    # the shipped route and scheme, and a relaxed rung of the same pair. The
-    # second call is the one that names the rung, so a probe that compiled only
-    # the first would not be measuring the axis at the multiplier the engine
-    # answers it at.
-    check_cxx_source_compiles("
-#include <boys/boys.hpp>
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
     float in[33] = {};
     float out[33] = {};
     using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
-    boys::BoysAllOrdersF32<1.0, OrdersAxis>(32, 1.0f, out);
-    boys::BoysAllOrdersF32<64.0, OrdersAxis>(32, 1.0f, out);
-    boys::BoysSingleF32<1.0, OrdersAxis>(1, 1.0f);
-    boys::BoysAllNF32<1.0, OrdersAxis>(1, in, out, 1);
+    boys::BoysAllOrdersF32<OrdersAxis>(32, 1.0f, out);
+    boys::BoysAllNF32<OrdersAxis>(1, in, out, 1);
     return 0;
 }
 " BOYS_GATE_F32_ACCEPTS_ORDERS)
+    # The one-order shape on that lane, which is the shape the probe above used
+    # to be failing on. Refused is the expected verdict: there is one order here
+    # and a packing axis has nothing to pack.
+    unset(BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS CACHE)
+    check_cxx_source_compiles("
+#include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
+int main() {
+    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+                                        boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
+    boys::BoysSingleF32<OrdersAxis>(1, 1.0f);
+    return 0;
+}
+" BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS)
     set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_probe_target_type}")
     unset(_boys_probe_target_type)
     unset(CMAKE_REQUIRED_FLAGS)
     unset(CMAKE_REQUIRED_INCLUDES)
 
-    if (NOT BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
-        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_REFUSES_RATIONAL_RUNG=1)
-    endif()
-
     # Each statement below reads a probe measured above.
-    if (BOYS_GATE_RATIONAL_RUNG_ACCEPTED)
-        message(STATUS "boys: the rational route at a relaxed rung is ACCEPTED by the probe")
-    else()
-        message(STATUS "boys: the rational route at a relaxed rung is REFUSED, measured by "
-            "compiling the call")
-    endif()
-
-    if (NOT BOYS_GATE_F32_ROUTE_AT_RUNG_ACCEPTED)
-        target_compile_definitions(boys-accuracy-gate PRIVATE
-            BOYS_GATE_REFUSES_F32_ROUTE_AT_RUNG=1)
-        message(STATUS "boys: the rational route at a relaxed rung on the single-precision "
-            "engines is REFUSED, measured by compiling the call")
-    else()
-        message(STATUS "boys: the single-precision engines ACCEPT the rational route at a "
-            "relaxed rung")
-    endif()
-
-    if (NOT BOYS_GATE_F32_SCHEME_AT_RUNG_ACCEPTED)
-        target_compile_definitions(boys-accuracy-gate PRIVATE
-            BOYS_GATE_REFUSES_F32_SCHEME_AT_RUNG=1)
-        message(STATUS "boys: a scheme other than the shipped one at a relaxed rung on the "
-            "single-precision engines is REFUSED, measured by compiling the call")
-    else()
-        message(STATUS "boys: the single-precision engines ACCEPT a second scheme at a relaxed "
-            "rung")
-    endif()
-
     if (BOYS_GATE_F32_ACCEPTS_ORDERS)
         message(STATUS "boys: the orders packing axis on the single-precision engines is ACCEPTED, "
             "measured by compiling the call")
@@ -676,13 +1036,30 @@ int main() {
             "measured by compiling the call")
     endif()
 
-    if (BOYS_GATE_HAS_TIER)
-        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_TIER=1)
-        message(STATUS "boys: the accuracy gate will measure the run-time accuracy tier")
+    if (NOT BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS)
+        target_compile_definitions(boys-accuracy-gate PRIVATE
+            BOYS_GATE_F32_SINGLE_REFUSES_ORDERS=1)
+        message(STATUS "boys: the one-order entry on the single-precision engines is REFUSED the "
+            "orders axis, measured by compiling the call")
     else()
-        message(STATUS "boys: this revision has no run-time accuracy tier; the gate's tier "
-            "claims are reported as evidence-absent")
+        message(STATUS "boys: the one-order entry on the single-precision engines ACCEPTS the "
+            "orders axis")
     endif()
+
+    # The uniform partition on the batched double-precision entries. Six probes
+    # stood here, one per cell of the entry book in tests/boys_accuracy_gate.cpp:
+    # the plane entry and its sorted overload on the arguments axis of the shipped
+    # route, and the fixed-order entry, at both schemes. Each compiled one cell's
+    # call and found that it did not build - the entries' RefuseUniformPartition -
+    # and the gate printed the refusal for that cell.
+    #
+    # The six cells are served at this revision: each entry hands a policy naming
+    # the grid to the per-argument path, whose body reads the grid, and the gate's
+    # entry book measures them over the whole committed grid. The probes came out
+    # with the refusals they measured, and nothing replaced them, because a row
+    # that measures a cell calls it: a revision that put one of those guards back
+    # would fail to build the gate, which is a louder reading than a probe's and
+    # one that names the file and line the call is in.
 
     # The BOUNDARY-CHECK standalone (tests/boys_boundary_standalone.cpp)
     # reproduces the measured recursion-boundary cells from the
@@ -697,23 +1074,22 @@ int main() {
     # tests/consumer_header_only.cpp). The suite above includes headers from
     # src/ and links the library, so it cannot see the two defects a consumer
     # meets first: a public header the umbrella does not reach, and an entry
-    # whose definition never left a .cpp file (a link error for every
-    # multiplier the library does not pre-instantiate). These two programs are
+    # whose definition never left a .cpp file (a link error for every entry
+    # the library does not pre-instantiate). These two programs are
     # consumers, and each is built so that its own defect has somewhere to
     # show:
     #
     #   boys-consumer-umbrella  includes ONLY <boys/boys.hpp>, first include,
     #     no internal header, and links the library. It exercises every entry
-    #     the public headers document - all three product modes, both QueryTier
-    #     overloads, both many-argument shapes, the fp16/bf16 lanes, the native
-    #     half lane - at multipliers the library does not pre-instantiate, and
-    #     judges every returned value against the bound its entry states, with
-    #     the committed 45-digit grid as the reference.
+    #     the public headers document - all three product modes, both
+    #     many-argument shapes, the fp16/bf16 lanes, the native
+    #     half lane - and judges every returned value against the bound its
+    #     entry states, with the committed 45-digit grid as the reference.
     #
     #   boys-consumer-header-only  proves the definitions really are reachable
-    #     from the headers: it names non-rung multipliers and links NOTHING.
-    #     Its meaning is the empty link line, so the target's link libraries
-    #     are asserted empty below rather than trusted.
+    #     from the headers alone, at either tier: it links NOTHING. Its meaning
+    #     is the empty link line, so the target's link libraries are asserted
+    #     empty below rather than trusted.
     #
     #   boys-consumer-defaults  is the shortcut's own check: the per-precision
     #     default each entry takes when the call site names no policy, written
@@ -725,14 +1101,12 @@ int main() {
     #
     #   boys-consumer-option-space  is the option space's own check: every
     #     combination the library's book reports as served is NAMED - a policy
-    #     type, one arm per name, no string and no lookup - with the accuracy
-    #     rung passed as the call's own argument, and every value that comes
-    #     back is judged against the figure the book states for that
-    #     combination and rung and compared bit for bit with the same cell's
+    #     type, one arm per name, no string and no lookup - and every value that
+    #     comes back is judged against the figure the book states for that
+    #     combination and compared bit for bit with the same cell's
     #     compile-time spelling. It prints the combinations served and named
-    #     per precision and the count of cells where the rung moved the values,
-    #     so the bit-for-bit comparison is visible as one that could have
-    #     failed.
+    #     per precision, so the bit-for-bit comparison is visible as one that
+    #     could have failed.
     #
     # Neither target adds src/ to its include path (the library publishes
     # include/ as PUBLIC and src/ as PRIVATE), and both say so: they carry an
@@ -770,17 +1144,243 @@ int main() {
     target_link_libraries(boys-consumer-defaults PRIVATE boys)
     boys_strict_warnings(boys-consumer-defaults)
 
+    # The default-versus-documentation check: the table a reader believes, against
+    # the constants the call sites resolve to. boys-consumer-defaults above checks
+    # that the named policy and the unnamed one are the same call, which is true
+    # whichever value the constant holds; this is the one that notices when the
+    # document stops describing the library.
+    add_executable(boys-consumer-defaults-match-docs tests/consumer_defaults_match_docs.cpp)
+    target_link_libraries(boys-consumer-defaults-match-docs PRIVATE boys)
+    target_compile_definitions(boys-consumer-defaults-match-docs PRIVATE
+        BoysSourceDir="${CMAKE_CURRENT_SOURCE_DIR}")
+    boys_strict_warnings(boys-consumer-defaults-match-docs)
+
     add_executable(boys-consumer-option-space tests/consumer_option_space.cpp)
     target_link_libraries(boys-consumer-option-space PRIVATE boys)
     target_compile_definitions(boys-consumer-option-space PRIVATE
         BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv")
     boys_strict_warnings(boys-consumer-option-space)
 
+    # --- What an unnamed call resolves to, and who compiles it ------------------
+    #
+    # A call site that names no policy compiles the entry where it is written: the default entries
+    # are inline in the headers, so a consumer that links no archive still compiles and links its
+    # call, and the consumer's own optimization level, target features and contraction setting are
+    # the consumer's to choose. An earlier architecture kept the entries out of line and the
+    # policy spellings out of the front door, and the owner ruled it out - the consumer compiles,
+    # and their flags are their choice - so the front door now reaches the kernel definitions and
+    # the gate below measures the new contract rather than stating it:
+    #
+    #  1. The front door alone carries a default call through compile AND link, with no archive on
+    #     the link line. That is the header-only consumer's first requirement, and it takes the
+    #     link step to measure: a header that declares an entry without defining it compiles, and
+    #     the failure arrives afterwards, where this probe looks for it.
+    #
+    #  2. A call that NAMES a policy compiles from boys/kernels.hpp. That is the ambitious
+    #     consumer's requirement, and the control for the first probe: a probe that failed for its
+    #     own reasons - a typo, a missing include path, a standard the compiler was never handed -
+    #     fails here too, so a refusal is read from the pair rather than from one measurement.
+    #
+    # Two statements the old comment made here are not made again, because the ruling moved their
+    # premise: the entries are no longer values the library froze under its own flags, and the
+    # seam no longer decides what links - an inline entry is satisfied by the translation unit
+    # that reads it. The two registrations below are re-scoped to that contract: the flag check
+    # pins one digest across the four profiles, the seam check each probe's own seam and rows.
+    if (BOYS_BUILD_TESTS)
+        unset(BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL CACHE)
+        unset(BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL CACHE)
+        set(_boys_gate_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+        set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/include")
+        set(_boys_gate_std "-std=c++20")
+        if (MSVC)
+            set(_boys_gate_std "/std:c++20 /EHsc")
+        endif()
+
+        set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
+        check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    boys::BoysAllOrders(0, 1.0, out);
+    return out[0] == 0.0;
+}
+" BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
+
+        set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
+        check_cxx_source_compiles("
+#include <boys/kernels.hpp>
+int main() {
+    double out[33] = {};
+    boys::BoysAllOrders<boys::EvalPolicy<>>(0, 1.0, out);
+    return out[0] == 0.0;
+}
+" BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+
+        # A failed check reads as the empty string and a passed one as 1, so the two findings are
+        # spelled as words before the message: a failure a reader has to decode from a blank is a
+        # failure reported badly.
+        if(BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
+            set(_boys_front_door "true")
+        else()
+            set(_boys_front_door "false")
+        endif()
+        if(BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+            set(_boys_kernels "true")
+        else()
+            set(_boys_kernels "false")
+        endif()
+        if(NOT BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
+                OR NOT BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+            message(FATAL_ERROR
+                "boys: a consumer that includes only boys/boys.hpp must compile AND link a "
+                "default call with no archive, and a consumer that includes boys/kernels.hpp "
+                "must compile a call that names a policy. Building boys::BoysAllOrders(0, 1.0, "
+                "out) from boys/boys.hpp alone returned ${_boys_front_door}; building the "
+                "named-policy call from boys/kernels.hpp returned ${_boys_kernels}. Both must be "
+                "true: the default entries are the consumer's to instantiate, so nothing a "
+                "consumer calls may be left for the archive to define.")
+        endif()
+        unset(_boys_front_door)
+        unset(_boys_kernels)
+        message(STATUS "boys: a default call compiles and links from boys/boys.hpp alone, with no "
+            "archive on the link line, and a call naming a policy compiles from boys/kernels.hpp, "
+            "measured by building both")
+
+        unset(CMAKE_REQUIRED_FLAGS)
+        unset(CMAKE_REQUIRED_INCLUDES)
+        set(CMAKE_TRY_COMPILE_TARGET_TYPE "${_boys_gate_type}")
+        unset(_boys_gate_type)
+
+        if (MSVC)
+            message(STATUS "boys: the flag-independence check is not built here — its variants "
+                "are -O2, -O3, -O3 -march=native with contraction off, and -O2 -mavx2 -mfma "
+                "-mf16c, and none of them is a spell this compiler takes. The entries are the "
+                "caller's to compile under the ruling, and the four readings are one arithmetic "
+                "source seen through four sets of flags; the check's premise is stated at its "
+                "registration below.")
+        else()
+            find_package(Python3 COMPONENTS Interpreter QUIET)
+            set(_boys_flag_variants o2 o3 native)
+            if (BOYS_ARCH_X86_64)
+                # The fourth reading is the SIMD flag set, and -mavx2 -mfma -mf16c are x86
+                # spells: a non-x86 host has no such variant to build rather than a broken one
+                # to skip. The checker compares whatever it is given, so three readings are a
+                # check.
+                list(APPEND _boys_flag_variants avx2)
+            endif()
+            set(_boys_flag_programs "")
+            foreach (variant IN LISTS _boys_flag_variants)
+                add_executable(boys-flag-independence-${variant}
+                    tests/boys_flag_independence.cpp)
+                target_link_libraries(boys-flag-independence-${variant} PRIVATE boys)
+                boys_strict_warnings(boys-flag-independence-${variant})
+                # The entries are the caller's to compile, so the four variants differ only in
+                # what the caller chose and never in contraction: every one carries the
+                # build's own -ffp-contract=off (inherited from the target's PUBLIC option, and
+                # spelled again where a level is named). A variant that varied contraction
+                # would read a different arithmetic and stop being a reading of this check.
+                if (variant STREQUAL "o2")
+                    # Stated last on the command line, so it replaces the build type's own level
+                    # rather than joining it: this variant is the one a caller gets from -O2.
+                    set(_boys_variant_flags -O2)
+                elseif (variant STREQUAL "o3")
+                    # The plain optimizer level a caller gets from -O3, so the two levels read
+                    # the same header arithmetic they will compile into their own unit.
+                    set(_boys_variant_flags -O3)
+                elseif (variant STREQUAL "native")
+                    set(_boys_variant_flags -O3 -march=native -ffp-contract=off)
+                else()
+                    set(_boys_variant_flags -O2 -mavx2 -mfma -mf16c)
+                endif()
+                # The -march=native variant can trip a clang diagnostic about the HOST CPU's own
+                # feature set - measured 2026-10-11 on CI's ubuntu-24.04 runner, "invalid
+                # feature combination: +avx10.1-256; will be promoted to avx10.1-512", an error
+                # under -Werror. What that says is a property of the runner's processor and of
+                # clang's feature table, never of this translation unit, which is what the
+                # variant exists to read; the suppression is scoped to that variant for that
+                # reason.
+                if (CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND variant STREQUAL "native")
+                    list(APPEND _boys_variant_flags -Wno-invalid-feature-combination)
+                endif()
+                target_compile_options(boys-flag-independence-${variant}
+                    PRIVATE ${_boys_variant_flags})
+                list(APPEND _boys_flag_programs $<TARGET_FILE:boys-flag-independence-${variant}>)
+            endforeach()
+            # The reading the four variants are held to: the entries are the caller's to compile,
+            # so the four agree because the arithmetic is one source and the ISA tiers are
+            # documented bit-equal to the scalar twins. A digest that differs across the variants
+            # is a finding to report, never something to weaken the check for; the profile the
+            # certified figures belong to is docs/build-facts.md's business rather than this
+            # check's.
+            if (Python3_FOUND)
+                add_test(NAME boys-flag-independence
+                    COMMAND ${Python3_EXECUTABLE}
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_flag_independence.py" --check
+                        ${_boys_flag_programs})
+            else()
+                message(STATUS "boys: the flag-independence check is not registered — it reads "
+                    "four programs' output, which needs a Python interpreter this configure did "
+                    "not find")
+            endif()
+
+            # The seam's half, at build time because it is a LINK: a translation unit that reads a
+            # seam compiles that seam's rows and says so. The tool compiles and links one probe
+            # twice with NO archive on the link line - the headers alone, which is the contract now
+            # that the default entries are inline - once against the committed table and once
+            # against a replaced one, and each run prints the seam it compiled into, the table it
+            # read and a digest of the default entries' bits over fixed points. What the check pins
+            # is that each probe prints the seam it was built for, that the two digests differ -
+            # the replaced rows moved the values - and that the replaced reading at F_3(1.25) is
+            # the value the replaced table prints. The refusal half the old text stated was a
+            # property of entries the library held: with the entries the caller's to compile, a
+            # translation unit reading another seam satisfies its own call, so that reading is gone
+            # and the reading above is the one this check carries.
+            #
+            # The replacement is the tuned fixture the example-transcript comment below quotes: it
+            # is copied into a directory searched before include/ and read under the defines a
+            # replaced configure carries, so the second probe really reads it. The value it is held
+            # to at F_3(1.25) is the fixture's own move, 0.055476132923077695 against the committed
+            # table's quoted 0.055476132923077584. Both seams are the tree's own files, so the
+            # reading is the same one on every leg; a build configured with BOYS_BUILD_DEFAULTS
+            # replaces neither, and its own seam is read by the suite's fixture pins and by the
+            # accuracy gate on that leg rather than here.
+            if (Python3_FOUND)
+                # The tool compiles and links its probes itself, so it is handed this
+                # configuration's own flags: the probes then compile the way this build compiles,
+                # and the digests are this configuration's rather than the tool's.
+                set(_boys_seam_flags "")
+                foreach(_boys_seam_flag_var CMAKE_CXX_FLAGS CMAKE_EXE_LINKER_FLAGS)
+                    separate_arguments(_boys_seam_flag_words UNIX_COMMAND
+                        "${${_boys_seam_flag_var}}")
+                    foreach(_boys_seam_flag_word IN LISTS _boys_seam_flag_words)
+                        list(APPEND _boys_seam_flags "--flag=${_boys_seam_flag_word}")
+                    endforeach()
+                endforeach()
+                add_test(NAME boys-seam-identity
+                    COMMAND ${Python3_EXECUTABLE}
+                        "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_seam_identity.py" --check
+                        --cxx "${CMAKE_CXX_COMPILER}"
+                        "--std=-std=c++20"
+                        "--include=${CMAKE_CURRENT_SOURCE_DIR}/include"
+                        --seam-ident seam_committed
+                        "--replacement=${CMAKE_CURRENT_SOURCE_DIR}/tests/build_defaults_tuned.hpp"
+                        "--replaced-value=0.055476132923077695"
+                        ${_boys_seam_flags})
+            else()
+                message(STATUS "boys: the seam-identity check is not registered — it compiles "
+                    "and links two calls, which needs a Python interpreter this configure did not "
+                    "find")
+            endif()
+        endif()
+    endif()
+
     add_test(NAME boys-tests COMMAND boys-tests)
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
     add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
     add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
     add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
+    add_test(NAME boys-consumer-defaults-match-docs COMMAND boys-consumer-defaults-match-docs)
     add_test(NAME boys-consumer-option-space COMMAND boys-consumer-option-space)
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
@@ -794,6 +1394,67 @@ int main() {
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
+    # The examples, run rather than only built: each one already decides for
+    # itself whether the number it printed is sane, so a program here that has
+    # rotted into printing nonsense fails a leg. boys-example-07-option-probe
+    # reports a timing, which is a property of the host and the clock rather
+    # than of this revision - so it fails on having measured nothing at all and
+    # never on which option came first (see the driver comment below).
+    if (BUILD_EXAMPLES)
+        foreach (example IN LISTS boysExamples)
+            add_test(NAME boys-example-${example} COMMAND boys-example-${example})
+        endforeach()
+
+        # The documents quote what these programs print, and the loop above runs them and compares
+        # nothing: a change that moves a printed digit used to leave README.md and
+        # docs/getting-started.md quoting the old one with every leg green. This test is the
+        # reading step - it runs each program and compares what it printed against the block the
+        # documents quote, and it fails both on a block that no longer matches and on a block it
+        # cannot associate with a program, which is how a check like this goes quiet.
+        #
+        # The programs come from the targets this build just made, through a generator expression,
+        # rather than from a path spelled here - so the test reads this configuration's binaries on
+        # whatever generator and platform is running it.
+        #
+        # Scoped to a build whose defaults are the committed ones. The quoted figures are what the
+        # evaluation an unnamed call resolves to prints, so a build that replaced that resolution
+        # through BOYS_BUILD_DEFAULTS prints other digits by construction - the tuned fixture moves
+        # F_3(1.25) from the quoted 0.055476132923077584 to 0.055476132923077695 - and the claim is
+        # not one that tree makes. Registering it there would be a leg that is red for being the
+        # configuration it declares itself to be.
+        #
+        # The same reasoning excludes a build on the separate multiply-add route. The quoted figures
+        # are the fused route's by construction, and a separate-route build prints the last digit
+        # differently: measured, examples/08_shell_quartet_batch.cpp prints 0.052602850434881915
+        # where docs/getting-started.md quotes 0.05260285043488188 - one token on one line, with
+        # every other example matching.
+        #
+        # The delivery kernel is deliberately NOT excluded. An AVX2 build and a build forced onto
+        # the scalar path were measured to print byte-identical stdout on all eight comparable
+        # examples, so this test holds across the kernels the CI legs actually use, and narrowing it
+        # to one kernel would give up that coverage for nothing.
+        #
+        # What IS excluded is a build whose compiler contracts the multiply-add. The figures are the
+        # non-contracting build's, and this is measured rather than assumed: on CI, every Release leg
+        # on gcc, clang and macOS failed this test on the last digit of F_3(1.25), while every Debug
+        # leg passed and MSVC passed at both - Release contracts, Debug does not, and MSVC does not
+        # at these settings. A document cannot be checked against a build it does not describe, so
+        # the test runs where the figures came from. `docs/build-facts.md` records the same
+        # distinction per leg as `contract.this-tu.fp64`.
+        find_package(Python3 COMPONENTS Interpreter QUIET)
+        if (Python3_FOUND AND MSVC AND NOT BOYS_BUILD_DEFAULTS AND NOT BOYS_MULADD_SEPARATE)
+            list(GET boysExamples 0 boysFirstExample)
+            add_test(NAME boys-example-transcripts
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_example_transcripts.py" --check
+                    --root "${CMAKE_CURRENT_SOURCE_DIR}"
+                    --examples-dir "$<TARGET_FILE_DIR:boys-example-${boysFirstExample}>")
+        elseif (NOT Python3_FOUND)
+            message(STATUS "boys: the example-transcript check is not registered with ctest - "
+                "no Python3 interpreter was found, and a check that is not run is not a check")
+        endif()
+    endif()
+
     # The option probe's driver: measures this build's evaluation options on
     # the machine it is run on and prints what it found, refusal included (see
     # the file preamble). Not a test and not registered as one — its result is
@@ -804,7 +1465,56 @@ int main() {
     add_executable(boys-option-probe benchmarks/boys_option_probe.cpp)
     target_link_libraries(boys-option-probe PRIVATE boys)
     target_compile_features(boys-option-probe PRIVATE cxx_std_20)
+    # The content the report was taken from, read at configure time: a report read months later
+    # is otherwise attributable to nothing, and nothing can hold one to the tree it describes.
+    # 9688c97 renamed every option cell and the committed report did not follow, because it
+    # named no revision for a check to disagree with. The driver prints the library's own
+    # version beside this digest, read from the header it compiles against.
+    target_compile_definitions(boys-option-probe PRIVATE
+        BoysProbeInputs="${BOYS_PROBE_INPUTS}")
     boys_strict_warnings(boys-option-probe)
+
+    # The defaults command: what this build's unnamed calls resolve to, class by
+    # class, read from the table the build carries (see the file preamble of
+    # tests/boys_defaults.cpp). Its answer is the same on every machine that
+    # compiles the same build — nothing is evaluated and nothing is timed — so
+    # unlike the two probes above it is registered as a ctest case as well as
+    # built, and a plain `ctest` reads what this configure resolved.
+    #
+    # The seam file in force is named by the configure and not by the file: a
+    # build that replaced the header must be able to say WHICH header produced
+    # its choices, and a report that could not would be the defect the seam
+    # exists to remove. So the path is a definition with a value this configure
+    # owns, and the copy the compiler actually reads is named beside it where
+    # there is one (the boys target copies the replacement before include/).
+    set(BOYS_DEFAULTS_HEADER_PATH "${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_build_defaults.hpp")
+    set(BOYS_DEFAULTS_HEADER_COPY "")
+    # The file itself, as a path a test can open at run time. It is the same file
+    # the sha256 definition was taken of and the same one configure_file copied,
+    # carried absolute because ctest runs from a build directory the option's own
+    # path is not relative to (CI passes tests/build_defaults_tuned.hpp relative
+    # to the source root). The defaults test reads it to hash it: the identity the
+    # library reports is the seam file's sha256, and only an independent reading
+    # of that file can hold the library to it
+    # (tests/boys_build_defaults_test.cpp).
+    set(BOYS_DEFAULTS_SEAM_FILE "${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_build_defaults.hpp")
+    if (BOYS_BUILD_DEFAULTS)
+        set(BOYS_DEFAULTS_HEADER_PATH "${BOYS_BUILD_DEFAULTS}")
+        set(BOYS_DEFAULTS_HEADER_COPY "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp")
+        set(BOYS_DEFAULTS_SEAM_FILE "${BOYS_BUILD_DEFAULTS_FILE}")
+    endif()
+    target_compile_definitions(boys-tests PRIVATE
+        BOYS_DEFAULTS_SEAM_FILE="${BOYS_DEFAULTS_SEAM_FILE}")
+
+    add_executable(boys-defaults tests/boys_defaults.cpp)
+    target_link_libraries(boys-defaults PRIVATE boys)
+    target_compile_features(boys-defaults PRIVATE cxx_std_20)
+    target_compile_definitions(boys-defaults PRIVATE
+        BOYS_DEFAULTS_HEADER_PATH="${BOYS_DEFAULTS_HEADER_PATH}"
+        BOYS_DEFAULTS_HEADER_COPY="${BOYS_DEFAULTS_HEADER_COPY}")
+    boys_strict_warnings(boys-defaults)
+
+    add_test(NAME boys-defaults COMMAND boys-defaults)
 
     # The dispatch assertion: each CI leg states what BoysAvx2Available() MUST
     # report for its architecture (1 on x86_64, 0 on arm64) and the probe fails
@@ -888,6 +1598,18 @@ int main() {
     # needs the table's path, and its verdict is about the table rather than
     # about this program.
     add_test(NAME boys-build-facts COMMAND boys-build-facts)
+
+    # The checked entries' own check (tests/boys_checked_test.cpp): the five
+    # double-precision shapes' Boys*Checked overloads against the entries they
+    # guard. Each checked call is held to the unchecked entry's own bits, to
+    # refusing what the unchecked entry runs with, to writing nothing when it
+    # refuses, and to naming the first element a refused batch refused.
+    add_executable(boys-checked-tests tests/boys_checked_test.cpp)
+    target_link_libraries(boys-checked-tests PRIVATE boys)
+    target_compile_features(boys-checked-tests PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-checked-tests)
+
+    add_test(NAME boys-checked-tests COMMAND boys-checked-tests)
 endif()
 
 # --- CUDA lane (optional; needs the toolkit) --------------------------------
@@ -908,6 +1630,17 @@ if (BUILD_CUDA)
         src/boys_cuda.cu
         src/boys_cuda_probe.cpp
         src/boys_cuda_probe_kernels.cu)
+    # The alias every other target here carries, so a consumer's link line reads
+    # boys::boys-cuda as the host targets read boys::boys - and so the export
+    # below has a namespaced name to hand out like the others.
+    add_library(boys::boys-cuda ALIAS boys-cuda)
+    # The tier and the measured contraction answer: this target's units link into
+    # the same programs as `boys`'s (the gate links both), so it carries the one
+    # flag set the program is built at, contract define included.
+    # The runtime rides the interface with the include path that reads it: a host-only
+    # consumer links this archive and needs cudart's symbols and headers, and the
+    # installed package answers both through the component's CUDAToolkit.
+    target_link_libraries(boys-cuda PUBLIC boys-tier CUDA::cudart)
     # The CUDA driver targets below compile C++ translation units that include
     # CUDA headers (tests/boys_cuda_test.cpp, tests/boys_cuda_accuracy_gate.cpp
     # and the default check's host half). nvcc finds its own headers wherever the
@@ -916,14 +1649,60 @@ if (BUILD_CUDA)
     # path, so the toolkit's include directories - which CMake reports once the
     # CUDA language above is enabled - are named here, PUBLIC, because what links
     # this library is what reads them.
+    # Wrapped, so this target exports like the host two do: the interface a package
+    # consumer reads spells include/ (their own install), the toolkit's directories
+    # are this configure's (an installed consumer's come from find_dependency), and
+    # src/ is private and travels nowhere. Each toolkit directory is wrapped on its
+    # own: one generator expression around the list drops the first entry's leading
+    # slash and resolves it against this source directory instead.
+    set(_boysCudaToolkitIncludes "")
+    foreach (_boysCudaToolkitDir IN LISTS CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES)
+        list(APPEND _boysCudaToolkitIncludes "$<BUILD_INTERFACE:${_boysCudaToolkitDir}>")
+    endforeach()
     target_include_directories(boys-cuda
-        PUBLIC include ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<INSTALL_INTERFACE:include>
+            ${_boysCudaToolkitIncludes}
         PRIVATE src)
-    target_compile_definitions(boys-cuda PUBLIC BoysFp16=1)
-    # Stated because this target links nothing that carries a standard into it:
-    # without it the host TU compiles at the compiler's default (C++14 on
-    # MSVC) and the library's headers do not build.
-    target_compile_features(boys-cuda PRIVATE cxx_std_20)
+    unset(_boysCudaToolkitIncludes)
+    if (BOYS_BUILD_DEFAULTS_DIR)
+        # A build's defaults are one seam and not a host half: the device lane's
+        # rows are read from the same list (boys_cuda_options.hpp) and the device
+        # lane names two choices of its own - the division form its entries take
+        # and the region-B exponential its tables read (kDefaultDeviceDivisionForm,
+        # kDefaultRegionBExp) - so a replacement carries all seven names, the
+        # host's five and the device lane's two. One that leaves a device name out
+        # is a compile error at that name and not a device default taken silently
+        # from the committed file.
+        #
+        # The seam's identity travels with it, and it is the same digest the boys
+        # target carries: the device lane reads the file the option named exactly
+        # as the host does, so a build whose two lanes reported different seams
+        # would be a build that had two. PUBLIC for the reason the definition
+        # above is PUBLIC - a consumer's own .cu reaches the headers either way,
+        # and boys_cuda.hpp includes boys.hpp, so both lanes are answered by the
+        # one accessor (include/boys/version.hpp, BuildDefaultsSeamIdentity()).
+        target_include_directories(boys-cuda BEFORE PUBLIC "$<BUILD_INTERFACE:${BOYS_BUILD_DEFAULTS_DIR}>")
+        target_compile_definitions(boys-cuda PUBLIC
+            BOYS_BUILD_DEFAULTS_REPLACED=1
+            BOYS_BUILD_DEFAULTS_SEAM_SHA256="${BOYS_BUILD_DEFAULTS_SEAM_SHA256}"
+            BOYS_BUILD_DEFAULTS_SEAM_IDENT=${BOYS_BUILD_DEFAULTS_SEAM_IDENT})
+    endif()
+    # The fp16 seam and the C++20 floor are carried by the tier target this one links, as the tier
+    # and the contraction answer are: they are the program's facts, and this lane is one of its
+    # units.
+    # The multiply-add route is one build fact with two lanes behind it, and
+    # this is the device's half: the kernels' translation unit reads the same
+    # selection the host's does, so a build that selected the separate route
+    # cannot leave the device arithmetic fused and report the host's route over
+    # it. PUBLIC for the reason the boys target states at the option: every
+    # device entry is header-defined, so a consumer's own .cu compiles the
+    # arithmetic the library reports, and the batch kernels here compile it with
+    # it. tests/boys_cuda_route_test.cu is what holds the two to each other.
+    if (BOYS_MULADD_SEPARATE)
+        target_compile_definitions(boys-cuda PUBLIC BOYS_MULADD_SEPARATE=1)
+    endif()
     # The probe's report states the toolkit that compiled these kernels and the
     # architectures they were compiled for. Both are configure-time facts, so
     # they are passed as text: nothing at run time can recover what nvcc was
@@ -940,6 +1719,27 @@ if (BUILD_CUDA)
         target_include_directories(boys-cuda-tests PRIVATE src)
         boys_strict_warnings(boys-cuda-tests)
         add_test(NAME boys-cuda-tests COMMAND boys-cuda-tests)
+
+        # The NEGATIVE CONTROL for the division-form check, and the same source
+        # file: BOYS_CUDA_TEST_DROP_DIVISION_FORM makes every launch run
+        # kExactDivision whatever form it asked for, so the check that demands the
+        # plain reciprocal differ from exact division somewhere has no difference
+        # to find. The control is registered on what that run PRINTS rather than on
+        # its exit status, because the whole point of the fixture is that the check
+        # fails: a run that matches the line below is a run in which the check was
+        # shown to be falsifiable, and a crash or a hang matches nothing.
+        add_executable(boys-cuda-tests-divform-control tests/boys_cuda_test.cpp)
+        target_compile_definitions(boys-cuda-tests-divform-control
+            PRIVATE BOYS_CUDA_TEST_DROP_DIVISION_FORM)
+        target_link_libraries(boys-cuda-tests-divform-control PRIVATE boys-cuda boys
+            gtest gtest_main)
+        target_include_directories(boys-cuda-tests-divform-control PRIVATE src)
+        boys_strict_warnings(boys-cuda-tests-divform-control)
+        add_test(NAME boys-cuda-tests-divform-control
+            COMMAND boys-cuda-tests-divform-control
+                --gtest_filter=BoysCudaTest.DivisionFormsDifferByBits)
+        set_tests_properties(boys-cuda-tests-divform-control PROPERTIES
+            PASS_REGULAR_EXPRESSION "exact vs plain 0 of")
 
         # The DEVICE OPTION PROBE's own test. It asserts nothing about a cost -
         # those are the card's - and asserts instead what a test can own about
@@ -958,14 +1758,13 @@ if (BUILD_CUDA)
         # hung run fails here instead of hanging. The tie test hunts a tie and
         # costs 52 minutes measured green on this card, 75 to 85 by the model
         # the file's own preamble states, and past 107 minutes on a machine with
-        # other work on it; the refusal test was 35.8 minutes measured before the
-        # probe began measuring every rung, and the rest of the suite is about
-        # fifteen minutes. The four hours below are about 1.5x the upper end of
+        # other work on it; the refusal test was 35.8 minutes measured, and the
+        # rest of the suite is about fifteen minutes. The four hours below are about 1.5x the upper end of
         # that, so the suite is not failed for running on a host other lanes are
         # using, and a run that has genuinely stopped is ended.
         #
-        # No CI leg builds CUDA (BUILD_CUDA is OFF in every one), so this is a
-        # local-robustness bound and not a CI one.
+        # The linux-cuda leg compiles this lane and runs none of it - it has no
+        # device - so this is still a local-robustness bound and not a CI one.
         set_tests_properties(boys-cuda-probe-tests PROPERTIES TIMEOUT 14400)
 
         # The DEVICE GATE (tests/boys_cuda_accuracy_gate.cpp) measures every
@@ -994,6 +1793,24 @@ if (BUILD_CUDA)
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
 
+        # The axis-sensitivity check built and NOT registered as a test: for every row of
+        # BoysDeviceOptions(), does the entry the row names read the axes the row states? It
+        # reports the members of each axis the row carries more than one of that deliver
+        # identical values - the shape a row whose entry ignores a stated axis has. It is built
+        # so the tree compiles these two sources and so the pre-commit hook can check them; it
+        # is not registered because it currently reports 120 cells on the scheme axis, every one
+        # of them a pair this library documents as one arithmetic under two names, so a test
+        # here would pin a red leg for a reason that is not the defect it exists to find. The
+        # registration waits on the scheme axis being settled. A device is needed to run it, as
+        # for the gate above, and `--collapse=<axis>` is its deliberate-defect control.
+        add_executable(boys-cuda-axis-sensitivity
+            tests/boys_cuda_axis_sensitivity.cpp
+            tests/boys_cuda_axis_sensitivity_device.cu)
+        target_link_libraries(boys-cuda-axis-sensitivity PRIVATE boys-cuda boys)
+        target_include_directories(boys-cuda-axis-sensitivity PRIVATE src)
+        target_compile_features(boys-cuda-axis-sensitivity PRIVATE cxx_std_23)
+        boys_strict_warnings(boys-cuda-axis-sensitivity)
+
         # The CUDA consumer's own check of the lane's default, in two
         # translation units because the lane's headers split that way: the host
         # half includes <boys/boys_cuda.hpp> - the batch entry's home - and the
@@ -1012,34 +1829,42 @@ if (BUILD_CUDA)
         boys_strict_warnings(boys-consumer-cuda-defaults)
         add_test(NAME boys-consumer-cuda-defaults COMMAND boys-consumer-cuda-defaults)
 
-        # The CUDA consumer's check of the lane's RUN-TIME RUNG, which is the
-        # accuracy axis of the entry the caller writes: every launched option the
-        # device book reports as served is named here with the rung as the call's
-        # own argument, every cell is evaluated twice - through that sibling and
-        # through the same entry's compile-time spelling at the same rung - and
-        # the two are compared bit for bit and judged against the committed
-        # high-precision grid within the bound the option's own book row states
-        # at that rung. It prints the combinations served and named per precision
-        # and the count of cells where the rung moved the value, so the bit-for-
-        # bit comparison is visible as one that could have failed.
-        #
-        # It is split in two translation units for the same reason the defaults
-        # check is: the host half includes <boys/boys_cuda.hpp>, which is a host
-        # header, and the kernel half includes <boys/boys_cuda_device.hpp>, which
-        # is what a .cu may include. The device half is where the resident-rung
-        # rule is run rather than argued about: the device-callable entry is asked
-        # for the rung that is resident and for one that is not, inside a kernel,
-        # and the check prints the value it wrote for the first and the refusal
-        # and the untouched output it left for the second.
-        add_executable(boys-consumer-cuda-rungs
-            tests/consumer_cuda_rungs_host.cpp
-            tests/consumer_cuda_rungs.cu)
-        target_link_libraries(boys-consumer-cuda-rungs PRIVATE boys-cuda boys)
-        target_compile_features(boys-consumer-cuda-rungs PRIVATE cxx_std_20)
-        target_compile_definitions(boys-consumer-cuda-rungs PRIVATE
-            BoysConsumerReference="${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_accuracy_gate_reference.csv")
-        boys_strict_warnings(boys-consumer-cuda-rungs)
-        add_test(NAME boys-consumer-cuda-rungs COMMAND boys-consumer-cuda-rungs)
+        # The multiply-add route's own check: the lane's arithmetic at both
+        # routes and at the build's selection, held to the exact references a
+        # host can state - the fused route to std::fma, the separate route to
+        # round(round(a*b) + c) - and the build's selection held to the route
+        # the lane reports. It is the one place the device's route is a measured
+        # result rather than a sentence in a header, and the build that
+        # -DBOYS_MULADD_SEPARATE=ON selects is the one where it can fail: there
+        # the delivered arithmetic must be the two-rounding one, and a lane that
+        # ran the fused step anyway reports the mismatch rather than passing.
+        add_executable(boys-cuda-route-tests
+            tests/boys_cuda_route_test.cpp
+            tests/boys_cuda_route_test.cu)
+        target_link_libraries(boys-cuda-route-tests PRIVATE boys-cuda boys)
+        target_compile_features(boys-cuda-route-tests PRIVATE cxx_std_20)
+        boys_strict_warnings(boys-cuda-route-tests)
+        add_test(NAME boys-cuda-route-tests COMMAND boys-cuda-route-tests)
+
+        # The refusal's reason, the device arm: the same source the suite builds as
+        # tests/boys_refusal_reason_test.cpp, with the arm that walks
+        # BoysDeviceOptions() compiled in. This configuration and no other is where
+        # the device option space can be held to its own field comment - the rows
+        # are defined by the lane (src/boys_cuda.cpp) - so the arm is stated here
+        # rather than guarded in a header. What it needs beyond the sources is what
+        # boys-cuda already carries, and it needs no device to run: it reads the
+        # lane's own table and the host query, so a machine that can build this lane
+        # can run this check.
+        add_executable(boys-cuda-refusal-reason-tests
+            tests/boys_refusal_reason_test.cpp)
+        target_link_libraries(boys-cuda-refusal-reason-tests PRIVATE boys-cuda boys
+            gtest gtest_main)
+        target_compile_features(boys-cuda-refusal-reason-tests PRIVATE cxx_std_20)
+        target_compile_definitions(boys-cuda-refusal-reason-tests
+            PRIVATE BOYS_REFUSAL_REASON_DEVICE=1)
+        boys_strict_warnings(boys-cuda-refusal-reason-tests)
+        add_test(NAME boys-cuda-refusal-reason-tests
+            COMMAND boys-cuda-refusal-reason-tests)
     endif()
 endif()
 
@@ -1061,7 +1886,6 @@ if (BUILD_BENCHMARKS)
     add_executable(boys-benchmark benchmarks/boys_benchmark.cpp)
     target_link_libraries(boys-benchmark PRIVATE boys benchmark::benchmark)
     target_include_directories(boys-benchmark PRIVATE src)
-    target_compile_definitions(boys-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-benchmark)
 
@@ -1071,7 +1895,6 @@ if (BUILD_BENCHMARKS)
     # the file preamble). Portable: it calls no intrinsics of its own.
     add_executable(boys-all-n-benchmark benchmarks/boys_all_n_benchmark.cpp)
     target_link_libraries(boys-all-n-benchmark PRIVATE boys)
-    target_compile_definitions(boys-all-n-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-all-n-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-all-n-benchmark)
 
@@ -1083,9 +1906,18 @@ if (BUILD_BENCHMARKS)
         benchmarks/boys_across_orders_benchmark.cpp)
     target_link_libraries(boys-across-orders-benchmark PRIVATE boys)
     target_include_directories(boys-across-orders-benchmark PRIVATE src)
-    target_compile_definitions(boys-across-orders-benchmark PRIVATE BoysFp16=1)
     target_compile_features(boys-across-orders-benchmark PRIVATE cxx_std_23)
     boys_strict_warnings(boys-across-orders-benchmark)
+
+    # The region-A transform lane's driver: one row per (arithmetic mode, band)
+    # over one argument set, the mode names read from the library
+    # (BoysProductModes()) rather than written out here. Portable: it calls the
+    # public header and no intrinsic of its own. This is the entry's cost
+    # harness; the accuracy gate is what reads the same entry for accuracy.
+    add_executable(boys-transform-benchmark benchmarks/boys_transform_benchmark.cpp)
+    target_link_libraries(boys-transform-benchmark PRIVATE boys)
+    target_compile_features(boys-transform-benchmark PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-transform-benchmark)
 
     # The AVX2 timing harness is x86_64-only, like the tier it measures. It is
     # a local-only target (never a CI leg), so on a non-x86_64 host it is
@@ -1096,11 +1928,13 @@ if (BUILD_BENCHMARKS)
             benchmarks/boys_unsorted_simd_benchmark.cpp)
         target_link_libraries(boys-unsorted-simd-benchmark PRIVATE boys)
         target_include_directories(boys-unsorted-simd-benchmark PRIVATE src)
-        target_compile_definitions(boys-unsorted-simd-benchmark PRIVATE BoysFp16=1)
         target_compile_features(boys-unsorted-simd-benchmark PRIVATE cxx_std_23)
         boys_strict_warnings(boys-unsorted-simd-benchmark)
+        # The mixed per-vector kernel compiles AVX2 intrinsics in its own TU -
+        # this file's source together with the shipped src/boys_simd.cpp it
+        # includes - so this flag set is what the shipped kernel's code is
+        # compiled with here, as it is for the library's own copy of that unit.
         if (MSVC)
-            # The mixed per-vector kernel compiles AVX2 intrinsics in its own TU.
             set_source_files_properties(benchmarks/boys_unsorted_simd_benchmark.cpp
                 PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
         else()
@@ -1121,7 +1955,6 @@ if (BUILD_BENCHMARKS)
             benchmarks/boys_cuda_benchmark_kernels.hpp)
         target_include_directories(boys-cuda-benchmark PRIVATE include src)
         target_link_libraries(boys-cuda-benchmark PRIVATE boys-cuda boys)
-        target_compile_definitions(boys-cuda-benchmark PRIVATE BoysFp16=1)
         boys_strict_warnings(boys-cuda-benchmark)
 
         # The device option probe's driver: argument parsing and printing only.
@@ -1129,8 +1962,14 @@ if (BUILD_BENCHMARKS)
         # the surface a consumer calls; this tool exists so a person can get the
         # same report at a terminal without writing a program. Local-only by
         # construction: it needs the device.
+        #
+        # It links the host library beside the device one because the report it
+        # prints reads the host's own tables: the division forms a device row is
+        # the member of are boys::BoysDivisionForms() (boys/boys.hpp), and a tool
+        # that printed the space without them would be printing a projection of
+        # this library rather than this library's report.
         add_executable(boys-device-probe benchmarks/boys_device_probe.cpp)
-        target_link_libraries(boys-device-probe PRIVATE boys-cuda)
+        target_link_libraries(boys-device-probe PRIVATE boys-cuda boys)
         target_compile_features(boys-device-probe PRIVATE cxx_std_20)
         boys_strict_warnings(boys-device-probe)
     endif()
@@ -1139,14 +1978,40 @@ elseif (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/third_party/benchmark/CMakeLists
         "so the benchmark drivers are not built (informational)")
 endif()
 
-# --- Generator byte-identity gate (top-level convenience targets) -----------
-# --check regenerates the Chebyshev tables and the reference grid into a temp
-# and byte-compares against the committed files (default paths: include/boys/
+# --- Examples: a consumer's first call, one question per file ---------------
+# Each file answers one question a new caller asks, in the order they ask it,
+# and prints the numbers that answer it. They are built here and REGISTERED
+# WITH CTEST above (in the test section, where enable_testing() is in scope),
+# so an example that stops compiling, or stops printing a number, fails a
+# build instead of quietly teaching a call that no longer works. The README
+# and docs/getting-started.md quote what these programs print and nothing
+# else, which is what keeps a documented figure reproducible.
+#
+# They link boys::boys and nothing else, and take no private include
+# directory: an example is the consumer's view, and it should break here if
+# that view ever stops being reachable from the public surface.
+if (BUILD_EXAMPLES)
+    foreach (example IN LISTS boysExamples)
+        add_executable(boys-example-${example} examples/${example}.cpp)
+        target_link_libraries(boys-example-${example} PRIVATE boys::boys)
+        boys_strict_warnings(boys-example-${example})
+    endforeach()
+elseif (NOT BOYS_TOP_LEVEL)
+    message(STATUS "boys: examples are not built (BUILD_EXAMPLES is OFF)")
+endif()
+
+# --- Generator consistency gate (top-level convenience targets) -------------
+# --check holds the committed tables to the record of the derivation that wrote
+# them (tests/data/boys_coefficients_provenance.txt) and to their own read-back
+# rules, and re-derives both artefacts into a temp and byte-compares them
+# against the committed files whenever that record's generator, pins or
+# environment does not match the tree (default paths: include/boys/
 # boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
 # in CI). The generator is deterministic (mpmath pinned in
-# requirements-boys.txt), so --check over the committed files is the
-# identity proof; CI additionally runs the no-args in-place regeneration
-# plus git diff --exit-code.
+# requirements-boys.txt), so the byte comparison over the committed files is the
+# identity proof and the record is what says when it still applies. A
+# regeneration writes the committed files and is local-only, which CONTRIBUTING.md
+# states as a rule; CI runs the checks and never the writes.
 if (BOYS_TOP_LEVEL)
     find_package(Python3 COMPONENTS Interpreter)
     if (Python3_FOUND)
@@ -1155,7 +2020,7 @@ if (BOYS_TOP_LEVEL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_boys_coefficients.py --check
                 --header ${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_coefficients.hpp
                 --reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv
-            COMMENT "Boys table/reference byte-identity check (needs mpmath)"
+            COMMENT "Boys table/reference consistency check (needs mpmath)"
             VERBATIM)
     endif()
 endif()
@@ -1189,6 +2054,88 @@ if (boysUngatedTargets)
     message(FATAL_ERROR "boys: first-party targets without the strict warning "
         "set: ${boysUngatedTargets}. Call boys_strict_warnings(<target>) right "
         "after each one is created (see BOYS_WERROR).")
+endif()
+
+# --- Install: the archive, its headers, and the package a consumer finds -----
+# Top-level only: a consumer that adds this tree already has the targets.
+#
+#     find_package(boys REQUIRED)
+#     target_link_libraries(app PRIVATE boys::boys)
+#
+# The headers, the compile definitions and the C++20 requirement all arrive
+# through that link, and boysConfig.cmake resolves its own location, so any
+# prefix works. The version file carries project(boys VERSION ...) with the
+# compatibility include/boys/version.hpp states.
+#
+# BOYS_BUILD_DEFAULTS is not installed: its replacement header is a build-tree
+# seam, and the definition it publishes makes a package built with one refuse
+# to compile rather than resolve other defaults silently.
+if (BOYS_TOP_LEVEL)
+    include(GNUInstallDirs)
+    include(CMakePackageConfigHelpers)
+
+    set(boysInstallCMakeDir "${CMAKE_INSTALL_LIBDIR}/cmake/boys")
+
+    install(TARGETS boys boys-tier
+        EXPORT boysTargets
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+
+    # The device lane ships in the same package when it was built: a consumer
+    # whose configure chose the CUDA path reaches it through the same
+    # find_package call, under the component that asks for a toolkit.
+    if (BUILD_CUDA)
+        install(TARGETS boys-cuda
+            EXPORT boysTargets
+            ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+            RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    endif()
+
+    # The whole directory, not a pattern list: every header under include/boys is
+    # public, and a list would silently drop the next one it was not told about.
+    # `include` is spelled, not taken from CMAKE_INSTALL_INCLUDEDIR, so the
+    # destination cannot disagree with the interface the target advertises.
+    install(DIRECTORY include/boys
+        DESTINATION include)
+
+    # After the directory, so it replaces the committed seam with the one this
+    # build was compiled against: a consumer of this package reads the choices
+    # the library in it was built from, which is what the build facts beside the
+    # headers already state. Installing the committed seam instead would hand a
+    # consumer a header naming seven choices no object file in the package obeys.
+    if (BOYS_BUILD_DEFAULTS)
+        install(FILES "${BOYS_BUILD_DEFAULTS_DIR}/boys/boys_build_defaults.hpp"
+            DESTINATION include/boys)
+    endif()
+
+    install(EXPORT boysTargets
+        FILE boysTargets.cmake
+        NAMESPACE boys::
+        DESTINATION "${boysInstallCMakeDir}")
+
+    # Read into the config by configure_package_config_file below: whether this package
+    # carries the device component its find_package answers for.
+    if (BUILD_CUDA)
+        set(BOYS_CONFIG_HAS_CUDA TRUE)
+    else()
+        set(BOYS_CONFIG_HAS_CUDA FALSE)
+    endif()
+
+    configure_package_config_file(cmake/boysConfig.cmake.in
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfig.cmake"
+        INSTALL_DESTINATION "${boysInstallCMakeDir}")
+
+    write_basic_package_version_file(
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfigVersion.cmake"
+        VERSION "${PROJECT_VERSION}"
+        COMPATIBILITY SameMajorVersion)
+
+    install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/boysConfigVersion.cmake"
+        DESTINATION "${boysInstallCMakeDir}")
 endif()
 
 # --- Docs (zero-warning Doxygen gate, top-level only) ------------------------

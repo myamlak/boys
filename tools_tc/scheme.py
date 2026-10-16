@@ -1,4 +1,4 @@
-"""The shipped evaluation scheme against the GEMM shape, at the SAME precision.
+"""The committed evaluation scheme against the GEMM shape, at the SAME precision.
 
 The library evaluates a band by a split Clenshaw recurrence (even/odd split of
 T_k(t) = T_k(v) for even k, t*D_j(v) for odd k). A tensor-core path replaces
@@ -6,7 +6,7 @@ that with a dot product C . T_k(t) - the GEMM shape. Those are two different
 rounding behaviours at the same precision, and this measures the gap, so that
 "the mode's precision" and "the evaluation scheme" can be told apart.
 
-Both schemes are reproduced exactly as the shipped code has them: float32
+Both schemes are reproduced exactly as the committed code has them: float32
 arithmetic with fmaf (computed as fma in double, then rounded - which is a
 correctly rounded f32 fma, since binary64 has more than 2p+2 bits over
 binary32), fp64 arithmetic with fma.
@@ -30,7 +30,7 @@ def _fmaf(a, b, c):
 
 
 def clenshaw_split(c, deg, t, rnd=None):
-    """The shipped ClenshawSplit, in fp64 (rnd None) or fp32 (rnd F32)."""
+    """The committed ClenshawSplit, in fp64 (rnd None) or fp32 (rnd F32)."""
     def R(x):
         return x if rnd is None else rnd(x)
     if deg == 0:
@@ -67,7 +67,7 @@ def run(lane, npts=ME.NPTS):
         worst_c = worst_d = 0.0
         for x in xs:
             r = float(ME.ref_value(cache, n, float(x)))
-            # the shipped t for each lane, in that lane's precision
+            # the committed t for each lane, in that lane's precision
             if rnd is None:
                 t = 2.0 * (float(x) - a) / (b - a) - 1.0
                 got = clenshaw_split([float(c) for c in cs], d, t, None)
@@ -93,7 +93,7 @@ def run(lane, npts=ME.NPTS):
 if __name__ == "__main__":
     for lane in ("double", "float"):
         res = run(lane)
-        print(f"=== {lane}: shipped split Clenshaw vs the GEMM-shaped dot product, "
+        print(f"=== {lane}: committed split Clenshaw vs the GEMM-shaped dot product, "
               f"same precision")
         for band in ("A1", "A2"):
             c = max((v[0] for (k, b, n), v in res.items() if k == "clenshaw" and b == band), default=0)

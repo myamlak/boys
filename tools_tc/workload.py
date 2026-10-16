@@ -2,7 +2,7 @@
 
 Counted, not estimated. Two measured inputs:
 
-  * the library's dispatch, counted from the shipped source (share.py): the
+  * the library's dispatch, counted from the committed source (share.py): the
     fused-op cost of a ladder and how much of it is the Chebyshev transform,
     as a function of (nmax, x);
   * the workload: a Boys-call count on a C24H50/def2-SVP system
@@ -77,7 +77,7 @@ def main():
             + b * ops(rb) + c * ops(rc) + z * 1.0
         rows.append((L, at, ar, rd["transform"] / ops(rd), ru["mmax"], ru["transform"] / ops(ru)))
     print(f"C24H50/def2-SVP, {total_calls} Boys calls "
-          f"(measured, and cross-checked against the shipped engine)")
+          f"(measured, and cross-checked against the committed engine)")
     print(f"{'L':>2s} {'A-table calls':>14s} {'share/tf':>9s} {'A-recur calls':>14s} "
           f"{'M below 2.0153':>15s} {'share/tf':>9s}")
     for (L, at, ar, s_at, m, s_ar) in rows:
