@@ -12264,12 +12264,9 @@ int main(int argc, char** argv) {
     {
         if (combDeviceLaneArmed[static_cast<std::size_t>(boys::Precision::kFp32Device)])
         {
-            // Both members of this lane's single-order class are spelled out at the arm: the
-            // float lane's single entry is one name the device table carries at two members,
-            // and a bare name states neither, so the reader that credits the run's coverage
-            // cannot place these cells at a member from a helper call. The fast member's arm
-            // is the launched entry the lane runs at that member, written where the credit is
-            // read.
+            // Both members of this lane's single-order class are spelled at the arm: the
+            // entry is one name the device table carries at two members, and the reader
+            // that credits the run's coverage places these cells only from a spelling.
             combDeviceSingleMember.template operator()<double, float>(
                 static_cast<int>(boys::Precision::kFp32Device),
                 "BoysCuda::SingleF32<RegionBExp::kFast>",
