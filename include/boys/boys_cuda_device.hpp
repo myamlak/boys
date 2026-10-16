@@ -132,6 +132,8 @@ struct Degrees {
 struct TableLane64 {
     const BoysDeviceTables* tables;
     Degrees deg;
+    // One cut at every order (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = true;
 
     __device__ __forceinline__ int Count(int order) const {
         return tables->pieceStart[order + 1] - tables->pieceStart[order];
@@ -198,6 +200,8 @@ struct TableLane64Mono {
     Degrees deg;
 
     static constexpr bool kMonomial = true;
+    // One cut at every order (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = true;
 
     __device__ __forceinline__ int Count(int order) const {
         return tables->pieceStart[order + 1] - tables->pieceStart[order];
@@ -475,6 +479,9 @@ struct RatLane64 {
     const BoysDeviceTables* tables;
 
     static constexpr bool kRational = true;
+    // One cut at every order where this lane reads the coarsest grid; the narrow route has its own
+    // cut per order (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = !kNarrow;
 
     __device__ __forceinline__ int Count(int order) const {
         return kNarrow ? tables->narrowPieceStart[order + 1] - tables->narrowPieceStart[order]

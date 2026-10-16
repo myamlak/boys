@@ -235,6 +235,8 @@ __device__ int dNarrowRatBDenDeg[detail::kNarrowBPieces];
 // F0 seed error reaches every output with gain at most 1 + 1.846e-17, region A at the top order.
 
 struct Lane64Full {
+    // One cut at every order (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = true;
     __device__ __forceinline__ int Count(int order) const {
         return cCount[order];
     }
@@ -349,6 +351,8 @@ struct Lane64Narrow {
 // difference the shared bodies see: they choose the summation with it (boys_cuda_arithmetic.hpp)
 // and read the degrees the lane hands them either way.
 struct Lane64MonoFull {
+    // One cut at every order (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = true;
     static constexpr bool kMonomial = true;
 
     __device__ __forceinline__ int Count(int order) const {
@@ -474,6 +478,9 @@ struct Lane32NarrowMono {
 
 struct Lane64RatFull {
     static constexpr bool kRational = true;
+    // One cut at every order over the coarsest piece grid, the same cA and cB the Chebyshev lane
+    // reads (boys_cuda_arithmetic.hpp, kCoarsestCutIsOneCut).
+    static constexpr bool kUniformCut = true;
 
     __device__ __forceinline__ int Count(int order) const {
         return cCount[order];

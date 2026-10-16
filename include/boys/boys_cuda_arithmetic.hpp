@@ -338,6 +338,48 @@ template <typename Lane>
 struct LaneRational<Lane, std::void_t<decltype(Lane::kRational)>>
     : std::bool_constant<Lane::kRational> {};
 
+// A lane whose region-A cut is one cut at every order: every order's pieces are the same pieces at
+// the same edges, so a value falls in the same piece of every order and that piece's fit is
+// summed at the same argument. A lane carries kUniformCut only where its table has been checked
+// to be one cut; a lane that does not carry it has its piece located per order.
+template <typename Lane, typename = void>
+struct LaneUniformCut : std::false_type {};
+
+template <typename Lane>
+struct LaneUniformCut<Lane, std::void_t<decltype(Lane::kUniformCut)>>
+    : std::bool_constant<Lane::kUniformCut> {};
+
+// The coarsest partition is one cut at every order: each order's pieces are the same pieces at the
+// same edges, and what moves down an order's column is its stored degree and coefficient offset.
+// That is the fact a lane's kUniformCut rests on, so it is checked here and not assumed - a
+// regeneration that cut one order differently has to be a build failure, not a wrong value.
+inline constexpr bool kCoarsestCutIsOneCut = [] {
+    const int pieces = kPieceStart[1] - kPieceStart[0];
+
+    for (int order = 0; order <= kMaxOrder; ++order)
+    {
+        if (kPieceStart[order + 1] - kPieceStart[order] != pieces)
+        {
+            return false;
+        }
+
+        for (int piece = 0; piece < pieces; ++piece)
+        {
+            if (kPieces[kPieceStart[order] + piece].a != kPieces[kPieceStart[0] + piece].a ||
+                kPieces[kPieceStart[order] + piece].b != kPieces[kPieceStart[0] + piece].b)
+            {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}();
+
+static_assert(kCoarsestCutIsOneCut,
+              "the coarsest partition must be one cut at every order: the lanes that read it "
+              "locate a value's piece once for every order they sum");
+
 template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
 __device__ __forceinline__ double DevicePieceSum(const Lane& lane,
                                                  const double* c,
@@ -376,6 +418,24 @@ __device__ __forceinline__ double DeviceSeed(const Lane& lane, int order, double
 
     const double t = 2.0 * (x - lane.A(order, p)) / (lane.B(order, p) - lane.A(order, p)) - 1.0;
 
+    if constexpr (LaneRational<Lane>::value)
+    {
+        return DeviceRatSum<kRoute>(lane.Coeffs(order, p),
+                                    lane.NumDeg(order, p),
+                                    lane.DenCoeffs(order, p),
+                                    lane.DenDeg(order, p),
+                                    t);
+    } else
+    {
+        return DevicePieceSum<kRoute>(lane, lane.Coeffs(order, p), lane.Deg(order, p), t);
+    }
+}
+
+// The same read as DeviceSeed at a piece the caller has already located: the pair (piece, t) is
+// what DeviceSeed itself would have found for this order, which is what the lane's kUniformCut
+// promises. The degree is taken per order as before - it is the cut that is shared, not the fit.
+template <backend::MulAddRoute kRoute = kDeviceMulAddRoute, typename Lane>
+__device__ __forceinline__ double DeviceSeedAtPiece(const Lane& lane, int order, int p, double t) {
     if constexpr (LaneRational<Lane>::value)
     {
         return DeviceRatSum<kRoute>(lane.Coeffs(order, p),
@@ -1194,6 +1254,33 @@ __device__ __forceinline__ void DeviceOrdersF64(
     const Lane& lane, int order, double xx, Store store) {
     if (xx < kX0)
     {
+        if constexpr (LaneUniformCut<Lane>::value)
+        {
+            // One locate for the whole column: this lane's cut is the same at every order, so the
+            // piece here is the piece DeviceSeed would have found for each of them.
+            const int count = lane.Count(0);
+            int p = count - 1;
+
+            for (int i = 0; i < count; ++i)
+            {
+                if (xx < lane.B(0, i))
+                {
+                    p = i;
+                    break;
+                }
+            }
+
+            const double t =
+                2.0 * (xx - lane.A(0, p)) / (lane.B(0, p) - lane.A(0, p)) - 1.0;
+
+            for (int l = 0; l <= order; ++l)
+            {
+                store(l, DeviceSeedAtPiece<kRoute>(lane, l, p, t));
+            }
+
+            return;
+        }
+
         for (int l = 0; l <= order; ++l)
         {
             store(l, DeviceSeed<kRoute>(lane, l, xx));
@@ -1212,6 +1299,36 @@ __device__ __forceinline__ void DeviceOrdersF32(
     const SeedLane& seedLane, const Lane& lane, int order, float xx, Store store) {
     if (xx < static_cast<float>(kX0))
     {
+        if constexpr (LaneUniformCut<SeedLane>::value)
+        {
+            // One locate for the whole column, over the seed lane the call reads: this lane's cut
+            // is the same at every order, so the piece here is the piece DeviceSeed would have
+            // found for each of them. The argument is the double one the seed lane reads, exactly
+            // as DeviceSeed reads it.
+            const double xd = static_cast<double>(xx);
+            const int count = seedLane.Count(0);
+            int p = count - 1;
+
+            for (int i = 0; i < count; ++i)
+            {
+                if (xd < seedLane.B(0, i))
+                {
+                    p = i;
+                    break;
+                }
+            }
+
+            const double t =
+                2.0 * (xd - seedLane.A(0, p)) / (seedLane.B(0, p) - seedLane.A(0, p)) - 1.0;
+
+            for (int l = 0; l <= order; ++l)
+            {
+                store(l, static_cast<float>(DeviceSeedAtPiece<kRoute>(seedLane, l, p, t)));
+            }
+
+            return;
+        }
+
         for (int l = 0; l <= order; ++l)
         {
             store(l, static_cast<float>(DeviceSeed<kRoute>(seedLane, l, static_cast<double>(xx))));
