@@ -125,7 +125,7 @@ std::string RowLine(const std::string& text, const std::string& name) {
 }
 
 // The members of the class the probe takes its default from: the certified double
-// lane's precision at the library's own full-accuracy multiplier, answering the
+// lane's precision at the one accuracy the library carries, answering the
 // all-orders question - the shape the workload is asked in. The key is that pair,
 // so a faster row of another precision or shape is a different class.
 std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeReport& report) {
@@ -1708,10 +1708,10 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneShapeAndRanksOnlyItsOwn) {
     }
 }
 
-// The report says in its own words what a class is and what its key is - one precision and one question shape,
-// decided at the library's own full-accuracy multiplier and by what an option hands back, never by comparing
-// one lane's documented figure against another's - and it says what the winner of a class is a claim about.
-// Every class the run made carries its key in its name.
+// The report says in its own words what a class is and what its key is - one precision and one
+// question shape, decided by what an option hands back, never by comparing one lane's documented
+// figure against another's - and it says what the winner of a class is a claim about. Every class
+// the run made carries its key in its name.
 TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionAndOneShape) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1917,9 +1917,9 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     ASSERT_FALSE(report.cells.empty());
     EXPECT_FALSE(report.granularities.empty());
 
-    // The multiplier is the library's full-accuracy setting and not an axis of
-    // the space: a class is the product of the axes the library reports and no
-    // factor stands for a choice the library does not offer.
+    // The accuracy is the library's one setting and not an axis of the space: a
+    // class is the product of the axes the library reports and no factor stands
+    // for a choice the library does not offer.
 
     // The space this book accounts for, class by class. A class is a precision and a question shape and not a
     // lane: the shapes do not admit the same axes and the two half formats are two classes. Every class is held

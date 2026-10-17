@@ -2160,7 +2160,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 /// region-B exponential are template arguments of the policy and have no
 /// run-time entry, so a consumer
 /// reaches them the way this does, by naming them. Every entry is built at the
-/// library's full-accuracy multiplier, which is the one accuracy it carries, and
+/// one accuracy the library carries, and
 /// the dispatch is the same cross the library's own accuracy
 /// gate measures, so a cell this probe reports as served is a cell some entry of
 /// this build really runs.
@@ -2203,7 +2203,7 @@ void CellEntry(Run&& run) noexcept {
 /// - so both the route and the axis are read off the cell rather than assumed.
 ///
 /// Every cell of this partition is served and evaluated through \c CellEntry, the
-/// one place this file names the policy's multiplier, so a cell named here and a
+/// one place this file names the policy, so a cell named here and a
 /// cell of any other partition are built by the same reading.
 ///
 /// A cell outside the partition's own lattice is not one any book of this probe
@@ -4000,7 +4000,7 @@ std::string JoinNames(const std::vector<std::string>& items) {
 }
 
 /// The columns of the measurements that are one class: the options of one
-/// precision, built at the library's own full-accuracy multiplier, and
+/// precision, built at the one accuracy the library carries, and
 /// answering one question shape.
 ///
 /// Membership is the shape, never a comparison of documented
@@ -4431,8 +4431,8 @@ void ClassEvidence(const std::vector<std::vector<double>>& rounds,
 /// A rival whose band straddles one cannot be placed, and the class reports it.
 ///
 /// The default comes from one class: the certified double lane's precision at the
-/// library's own full-accuracy multiplier, for the all-orders shape this probe's
-/// workload asks, whose members were all built at that multiplier and all hand
+/// one accuracy the library carries, for the all-orders shape this probe's
+/// workload asks, whose members were all built at that one accuracy and all hand
 /// back the
 /// same thing, so choosing among them trades nothing but speed. Where the class's
 /// own rounds order it, the default is that class's fastest row by the figure this
@@ -4651,8 +4651,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
 
     if (pool.empty() || doubles == nullptr)
     {
-        refuse(Text("no option of the certified double lane's precision at the library's own "
-                    "full-accuracy multiplier answering this workload's all-orders question was "
+        refuse(Text("no option of the certified double lane's precision "
+                    "answering this workload's all-orders question was "
                     "measured, and that class is the only pool this probe takes a default from: "
                     "naming any other option would be naming one in a "
                     "different arithmetic or for a caller asking a different question, and none "
@@ -4880,8 +4880,9 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         {
             note = Text("one entry, so this is not a ranking: nothing in this class was measured "
                         "against it, and it is the entry this class names by there being no "
-                        "alternative. It was built at m=%g and documents %.3g",
-                        kBoysFullAccuracyMultiplier, record.entry.bound);
+                        "alternative. It was built at the library's one accuracy and documents "
+                        "%.3g",
+                        record.entry.bound);
         } else if (report.pairedRounds < static_cast<int>(kMinimumPairedRounds))
         {
             note = Text("not ordered: the run took %d paired round(s), and a band over the lower "
@@ -4893,13 +4894,13 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         {
             note = Text("ordered: every one of the %zu option(s) behind '%s' was the slower of the "
                         "two in the middle half of the %d paired rounds, and the widest band in "
-                        "the class was %.2f%%. Every row of this class was built at m=%g and "
+                        "the class was %.2f%%. Every row of this class was built at the "
+                        "library's one accuracy and "
                         "answers the same question - %s - so this is the fastest option for that "
                         "question, and nothing in the class traded accuracy for "
                         "its place",
                         record.columns.size() - 1, record.entry.leader.c_str(), report.pairedRounds,
                         100.0 * record.outcome.widestBand,
-                        kBoysFullAccuracyMultiplier,
                         OptionProbeShapeQuestion(record.entry.shape));
         } else
         {
@@ -8442,8 +8443,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "  probe orders inside\n";
     text += "  A class is the set of options that are alternatives for one need a caller has: one "
             "precision\n";
-    text += "  (fp64, fp32, fp16 or bf16), built at the library's full-accuracy multiplier, and one "
-            "question\n";
+    text += "  (fp64, fp32, fp16 or bf16), built at the one accuracy the library carries, and "
+            "one question\n";
     text += "  shape — what the\n";
     text += "  option hands back. The five shapes here are, in the seam's own order:\n";
 
@@ -8480,7 +8481,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "across lanes\n";
     text += "  is how a class ends up empty by construction. Every row of a class was built at the "
             "same\n";
-    text += "  multiplier and answers the same question, so nothing inside it traded accuracy for "
+    text += "  accuracy and answers the same question, so nothing inside it traded accuracy for "
             "speed and\n";
     text += "  nothing inside it answers something else: the entry each class names is its fastest "
             "option at\n";
@@ -8592,8 +8593,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         {
             text += "             (this is the class the default below is taken from: the library's "
                     "own\n";
-            text += "             default precision at its own full-accuracy multiplier, "
-                    "answering this\n";
+            text += "             default precision at the one accuracy it carries, answering "
+                    "this\n";
             text += "             workload's own question shape. The other shape's class above "
                     "answers a\n";
             text += "             different question and its winner is a claim about that question "
@@ -8877,11 +8878,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     }
 
     text += "\nrecommendation\n";
-    text += Text("  the %s class — the certified double lane's precision at the library's own\n",
+    text += Text("  the %s class — the certified double lane's precision at the one accuracy\n",
                  doublesClass != nullptr ? doublesClass->name.c_str() : "fp64 all-orders");
-    text += "  full-accuracy multiplier, answering this workload's own question shape (one "
+    text += "  the library carries, answering this workload's own question shape (one "
             "argument per\n";
-    text += "  call, that argument's own ladder), every row of it built at that multiplier, so "
+    text += "  call, that argument's own ladder), every row of it built at that one accuracy, so "
             "nothing in it\n";
     text += "  traded accuracy for speed and nothing in it answers a different question. This is "
             "the pool\n";

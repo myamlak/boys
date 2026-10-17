@@ -140,7 +140,7 @@ double DoubleCellFigure(double figure, double rung, double value)
     return magnitude > 0.0 ? figure * rung / magnitude : figure;
 }
 
-// The contract's figure at one cell, composed here from a lane row and the multipliers the
+// The contract's figure at one cell, composed here from a lane row and the scale factors the
 // specification states. `BoysAccuracyGuaranteed` answers the same figure from the same row, and
 // the combination book holds the two to each other at the cell it asks about: two paths over one
 // statement, so a change to either moves both or the run goes red.

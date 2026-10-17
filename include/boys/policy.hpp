@@ -239,10 +239,10 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// spread over, so it changes nothing about which fit answers.
 ///
 /// A combination the build cannot serve - a member of a partition whose fits it does
-/// not hold, or a rung whose table it has not derived - is refused where it is named
+/// not hold, or a degree table it has not derived - is refused where it is named
 /// rather than at a kernel, because a fallback would return one partition's values
 /// under another's name. The single-precision lanes are not an exception: their
-/// narrow partition's rung tables are derived per partition at compile time like the
+/// narrow partition's tables are derived per partition at compile time like the
 /// double lane's.
 ///
 /// **Every axis is stated, and no parameter of this template carries a default.** A

@@ -376,7 +376,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // The rows are the tables' own counts and the certification's own figures, so a regeneration
     // that moved a piece, a degree or a delivered error moves the row. Every entry carries the
     // double lane's tables - the single-precision lanes read tables of their own - so a row here
-    // describes the double lane, and the uniform row states the one route and rung it is carried at.
+    // describes the double lane, and the uniform row states the one route it is carried at.
     static const std::array<FitGranularityInfo, 3> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
@@ -549,9 +549,9 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 
         built[2].granularity = FitGranularity::kUniform;
         built[2].name = GranularityName(FitGranularity::kUniform);
-        // Both routes and one rung. The table holds a Chebyshev fit per order per interval and one
+        // Both routes. The table holds a Chebyshev fit per order per interval and one
         // numerator/denominator pair per interval, so a cell naming either route is one this build
-        // answers; every rung is admissible because the cut's tail scan reaches the full degree, whose
+        // answers; every cell is admissible because the cut's tail scan reaches the full degree, whose
         // tail is zero. Both packing axes are instantiated over this interval-major grid.
         built[2].routes = kChebBit | kRatBit;
         built[2].axes = kBothAxes;
@@ -617,8 +617,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // The figures these rows carry are the absolute ones their runs measured; the contract is
     // ladder-scaled, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) (README, specification.md).
-    // Each is a lane's figure for one value over the whole of x >= 0 at the reference multiplier;
-    // the plain form's own term is stated apart, and only on the lanes that carry such a form.
+    // Each is a lane's figure for one value over the whole of x >= 0; the plain form's own term is
+    // stated apart, and only on the lanes that carry such a form.
     static const std::array<LaneContractInfo, 8> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
@@ -751,7 +751,7 @@ namespace {
 
 // The two figures the lanes whose contract is scaled by the value publish: the double
 // lanes' fraction of the ladder's first rung, and the float lanes' fraction of the
-// value's own F_n. They are the contract's multipliers and not measurements.
+// value's own F_n. They are the contract's scale factors and not measurements.
 constexpr double kDoubleRelativeFigure = 1e-13;
 constexpr double kFloatRelativeFigure = 0x1p-22;
 
@@ -762,17 +762,16 @@ struct Carriage {
 };
 
 // The single-precision lanes' carriage, read off the entries those lanes build. Both packing
-// axes are served on the shipped partition and on the narrow one, whose rungs are cuts of the
-// narrow pieces' own degree table, which this lane derives. The uniform partition is not served
-// on this lane at all: no entry of it reads a grid, and the entries here refuse a policy naming it.
+// axes are served on the shipped partition and on the narrow one, whose tables are cuts of the
+// narrow pieces' own degree table, which this lane derives. The uniform partition is served
+// too: the entries here read the grid it names, and no policy naming it is refused.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity) noexcept {
     // Every combination this library names is served on both axes and on the three partitions this
-    // lane reads, at every rung. A cut has to be read against the table the scheme actually sums:
-    // the Chebyshev cut under the Horner scheme's monomial table delivers outside the bound on 1964
-    // of 56694 cells at m = 64, and with the basis carried through no cell remains to refuse.
+    // lane reads. A cut is read against the table the scheme actually sums, and with the basis
+    // carried through no cell of the space is refused.
     const std::size_t r = static_cast<std::size_t>(route);
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
@@ -792,7 +791,8 @@ Carriage CarriesSingle(FitRoute route,
 // The device lane's rule, reading that lane's own entries rather than the double lane's beside
 // it: Precision::kFp32Device is the device lane's single-precision one. What it carries is read
 // off the fp32 rows of the option table (src/boys_cuda.cpp): both routes over all three
-// partitions, both packing axes, and no rung refused - a lane at m = 1 alone has none to refuse.
+// partitions, both packing axes, and every combination served - the lane carries one accuracy
+// and derives each partition's table.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
@@ -812,10 +812,11 @@ Carriage CarriesDevice(FitRoute route,
 
     // The uniform grid's rational member is a row of this lane now on both precisions - fitted over
     // each lane's own grid, emitted beside the Chebyshev one and read by entries of its own - so no
-    // arm here refuses it, and none can test an accuracy: this lane answers at m = 1 alone.
+    // arm here refuses it, and none can test an accuracy: this lane answers at the one accuracy the
+    // library carries.
 
-    // No arm below tests an accuracy, and none can: this lane answers at m = 1 alone,
-    // which is the one accuracy each of its entries is built at.
+    // No arm below tests an accuracy, and none can: this lane answers at the one accuracy the
+    // library carries, which is the accuracy each of its entries is built at.
 
     return {true, ""};
 }
