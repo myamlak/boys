@@ -188,8 +188,10 @@ never the wider one.
 **The figure is a fraction of the ladder's first rung, so read against the value it is not uniform.**
 The bound binds by that arm wherever the order's own value is tiny, and the returned `F_n` is held to
 `1e-13` of its own value only below the region-C boundary, `x = 28.98933773882074`, and again above
-`x ≈ 93` at `n = 32`; in between the bound is up to 140 % of the value, at the worst cell
-`n = 32, x = 31`. Until 4.0.0 it instead carried a constant floor, `5.5e-14`, which the
+`x ≈ 93` at `n = 32`; in between the bound `1e-13 · F_0(x)` permits 4.85 times the value at the
+worst cell, `n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the
+value 3.2822575294956117e-15, and the delivered error there measured 1.40 times the value,
+4.582e-15, 0.288 of the bound. Until 4.0.0 it instead carried a constant floor, `5.5e-14`, which the
 ladder-scaled figure replaces. The bound holds above the lane format's smallest normal — 2^-1022 for
 the double lanes, 2^-126 for the float ones — below which the return is subnormal or zero, the
 format's own floor is what answers there, and no accuracy is claimed. Every figure below holds for

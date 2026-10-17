@@ -15412,7 +15412,7 @@ int main(int argc, char** argv) {
                     "most a factor of two. It is a reading\n              of the partition the "
                     "header carries, and that partition is a placeholder: equal\n"
                     "              width at one degree, over %d intervals from kX1 to the right "
-                    "edge at %g\n              marked a placeholder in that file, with the\n"
+                    "edge at %g,\n              a placeholder marked in that file, with the\n"
                     "              derived partition spliced in where\n"
                     "              it lands. So the row says "
                     "what the shipped placeholder delivers and not what\n              the far "

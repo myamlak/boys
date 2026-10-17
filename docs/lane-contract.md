@@ -1673,8 +1673,10 @@ class's row may differ from them. The committed transcript of the full protocol 
 `tests/data/boys_option_probe_report.txt`, a later run of the same protocol on this host: it ranks
 the whole space, its tables carry every member of the scheme and partition axes, and on it the
 uniform partition leads the fp64 single class — 56.09 against 246.21 ns per argument for the fastest
-narrow row. The route and the packing axis carry the settings the library has always shipped and
-have not been ranked against a timing. Which member is faster is a property of the host, its flags
+narrow row on the shipped Chebyshev route; the report's overall narrow minimum is 240.22 on the
+rational route (`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
+the settings the library has always shipped and have not been ranked against a timing. Which member
+is faster is a property of the host, its flags
 and its card, and the probe is what a consumer runs where they deploy. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a

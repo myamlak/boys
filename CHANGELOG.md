@@ -8,11 +8,11 @@ in a sentence, and `boys::VersionString()` answers it at run time.
 
 **The double lane's accuracy contract is read against the ladder's first rung.** For every
 `n <= 32` and `x >= 0` the error of a returned value is at or below the larger of `1e-13 · F_n(x)`
-and `1e-13 · F_0(x)`. Releases before 4.0.0 carried one absolute figure for the whole range,
-`5.5e-14`, instead. The change breaks a caller who pinned on that figure, and the new form is not
+and `1e-13 · F_0(x)`. Releases before 4.0.0 carried absolute figures instead, the widest
+`5.5e-14`. The change breaks a caller who pinned on that figure, and the new form is not
 uniform read against the returned value: the value is held to `1e-13` of `F_n(x)` below the
-region-C boundary and again above `x ≈ 93` at `n = 32`, and in between the error reaches 140 % of
-the value at the worst cell, `n = 32, x = 31`. The float lane states the larger
+region-C boundary and again above `x ≈ 93` at `n = 32`, and in between the delivered error reaches
+140 % of the value at the worst cell, `n = 32, x = 31`. The float lane states the larger
 of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the plain-reciprocal form;
 the half lanes keep their own figures. `docs/specification.md#accuracy-contract` is the contract,
 lane by lane, and it names the two combinations that hold the wider arm rather than the figure read
@@ -57,9 +57,10 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 - `boys-cuda-accuracy-gate` answers for the device lane against the same committed reference grid,
   and the option probe and the device probe measure their whole spaces
   (`tests/data/boys_option_probe_report.txt`, `tests/data/boys_device_probe_report.txt`).
-- `benchmarks/boys_libint2_benchmark.cpp` is the committed comparator: `BoysAllOrders` against
-  libint2 v2.13.1's `FmEval_Chebyshev7<double>` at matched accuracy. A figure from it is one host's,
-  and `docs/consumer-perspective.md` states what may be read off a timing.
+- The libint2 v2.13.1 comparison, `BoysAllOrders` against `FmEval_Chebyshev7<double>` at matched
+  accuracy, was measured while preparing this release; its comparator is not carried in this tree.
+  A figure from it is one host's, and `docs/consumer-perspective.md` states what may be read off a
+  timing.
 
 ## Before 4.0.0
 

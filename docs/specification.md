@@ -26,8 +26,10 @@ not: a budget spent where the value is tiny is spent where nothing needs it. Wha
 not give is a figure the returned value holds to in its own right: on the committed grid the double
 entries' delivered error is 3.496e-14 of `F_n(x)` at the worst cell below the region-C boundary,
 `x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again above `x ≈ 93`;
-between those, the bound is a larger fraction of the value, up to 140 % of it at the worst cell,
-`n = 32, x = 31`.
+between those, the bound `1e-13 · F_0(x)` permits 4.85 times the value at the worst cell,
+`n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the value
+3.2822575294956117e-15, and the delivered error there measured 1.40 times the value, 4.582e-15,
+0.288 of the bound.
 
 B binds above the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the
 float ones. Below it the returned value is subnormal or zero, the format's own floor is what
@@ -151,7 +153,9 @@ where the file's own criterion chose a cell. A run's name is `<machine>-<date>`,
 transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
 same protocol on this host, and it ranks the whole space — its tables carry every member of the
 scheme and partition axes, and on it the uniform partition leads the fp64 single class, 56.09
-against 246.21 ns per argument for the fastest narrow row. The route and the packing axis carry
+against 246.21 ns per argument for the fastest narrow row on the shipped Chebyshev route; the
+report's overall narrow minimum is 240.22 on the rational route
+(`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
 the settings the library has always shipped and have not been ranked against a timing. The option
 probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
@@ -708,7 +712,8 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 ## Version
 
 This tree is **version 4.0.0**. That number is written down once, in `CMakeLists.txt`'s
-`project(boys VERSION ...)`, and the test suite fails if anything else disagrees with it. A caller
+`project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
+disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).
@@ -725,7 +730,7 @@ two wherever the ladder's first rung exceeds the cell's own value, and near the 
 where the value is close to 1, it permits about twice the absolute error the constant did. A
 published guarantee that a consumer pinned on changed, which is a break, and the version carries it.
 
-The version badge at the top of this file shows the latest *release tag*. It names the same version
+The version badge at the top of the README shows the latest *release tag*. It names the same version
 when a release is cut, and can be older than the tree you are reading.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
