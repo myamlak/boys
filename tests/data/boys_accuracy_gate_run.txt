@@ -51,7 +51,7 @@ the certified fit routes, measured:
   cells where naming this build's default route or a route outside the
   enumeration differed from the default entry: 0
   cells outside the non-default route's own rows that naming it changed:
-  0; inside one: 10550
+  0; inside one: 10497
   cells of the routes' sweep where the value is at or below the format's
   own floor: 0
 
@@ -110,8 +110,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 4.0.0
-accuracy gate, inputs src=c15cfe935f4916a7,include=be7eb95dbd396f13,gate=0097970efe116091,grid=970db44ddb6a7da5,cmake=94772fae93b4be80
+accuracy gate, version 5.0.0
+accuracy gate, inputs src=fc1a3663b24d2990,include=89d907df8d48c16c,gate=8ebcc5295a49c6e3,grid=970db44ddb6a7da5,cmake=bcb93d5c1923a0e3
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -124,10 +124,10 @@ per-lane, per-region: delivered error / documented bound
   double batch             fixed-n      59301    35057  1.4 / 4.85               0.288 (n=32, x=31)          24244     3804
   double batch             all-n       118602    70114  1.4 / 4.85               0.288 (n=32, x=31)          48488     7608
   double batch             all-n at-orders    89985    54668  1.4 / 4.85               0.288 (n=32, x=31)          35317     4929
-  float single             all          59301    24833  8.3e-08 / 2.38e-07       0.195 (n=0, x=2.08827)      34468    17791
-  float batch              all          59301    24833  6.17e-07 / 2.38e-07      0.701 (n=0, x=9.74055)      34468    17791
+  float single             all          59301    25378  8.3e-08 / 2.38e-07       0.325 (n=0, x=2.08827)      33923    17791
+  float batch              all          59301    25378  4.08e-07 / 2.38e-07      0.722 (n=0, x=11.151)       33923    17791
   float batch              all, orders axis    59301    25378  1.29e-07 / 2.38e-07      0.543 (n=0, x=1.46214)      33923    17791
-  float batch              all-n        59301    24833  6.17e-07 / 2.38e-07      0.701 (n=0, x=9.74055)      34468    17791
+  float batch              all-n        59301    25378  4.08e-07 / 2.38e-07      0.722 (n=0, x=11.151)       33923    17791
   fp16 store-half          single       47256    25307  0.000122 / 0.000122      0.999 (n=0, x=9.29688)      21949    21949
   fp16 store-half          batch        59301    25307  0.000122 / 0.000122      0.999 (n=0, x=9.29688)      33994    33994
   bf16 store-half          single       59301    25644  0.000976 / 0.000977      0.999 (n=0, x=3.79688)      33657    17791
@@ -222,7 +222,7 @@ documented claims, each with one verdict:
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] float single and batch: 2^-22 of F_n(x), or its 1.5e-7 floor where that is the larger, in every region, and 1e-7 beside it in the plain-reciprocal form - the lane's own bar, not 1e-13 scaled
       README accuracy contract
-      worst 0.701 of budget at (n=0, x=9.74055): delivered 6.168e-07 against 2.384e-07
+      worst 0.722 of budget at (n=0, x=11.151): delivered 4.083e-07 against 2.384e-07
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [met over the stated domain] domain: the arguments where |F_n(x)| > 1e-7 + one half-ULP of the returned value, and no others - the restriction the half lanes' paragraph in docs/lane-contract.md states. The row judges at that base, which is the region target the half lanes' fits are cut for and is tighter than the 1.5e-7 the library publishes for them, so its domain is wider than the published claim's and a pass here is the stronger result
       fp16 and bf16 store-half lanes: 1.5e-7 + one half-ULP, single and batch - the fp32 engine's arithmetic stated absolutely, which is the arithmetic these lanes run, plus the half-ULP term their store adds
@@ -355,17 +355,17 @@ documented claims, each with one verdict:
       tree command, run by the operator, not by this binary: `ctest --test-dir build --output-on-failure`
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
 
-  cells: 957873 comparison cells across every lane, region and order, of which 430598 (45.0%) carry a bound at least as large as the value itself, so any return in range passes there and the cell cannot discriminate; the no-cell-over-budget statement above is carried by the remaining 527275 (55.0%). This is the vacuous column aggregated, not a separate finding, and it is the number to read before reading the green rows
+  cells: 957873 comparison cells across every lane, region and order, of which 428963 (44.8%) carry a bound at least as large as the value itself, so any return in range passes there and the cell cannot discriminate; the no-cell-over-budget statement above is carried by the remaining 528910 (55.2%). This is the vacuous column aggregated, not a separate finding, and it is the number to read before reading the green rows
 
   RESULT: 32 of 32 claims met at this revision (26 verified outright, 6 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build, 0 recorded and not judged; none of the last five counted as met)
           of those, 28 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
-          carried by the 527275 of 957873 comparison cells (55.0%) that can discriminate: the other 430598 carry a bound at least as large as the value itself, so read the two numbers together
-  the floor's share of the claim book: 7312 of the 527275 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - the reading is over the arm the figure alone gives and inside the floor - so the figure alone would have failed them and no row shows it; the other 519963 meet the figure itself
-  carried by the floor, by row (3 row(s), 3 worst shown):  float batch / all, orders axis (7310)  float batch / all (1)  float batch / all-n (1)
-  worst of them: float batch / all  n=0  x=9.7405490875244141  err=1.7514e-07 (6.17e-07 of the value)  arm=1.677e-07  floor=2.5e-07  err/arm=1.04  err/floor=0.701
+          carried by the 528910 of 957873 comparison cells (55.2%) that can discriminate: the other 428963 carry a bound at least as large as the value itself, so read the two numbers together
+  the floor's share of the claim book: 7985 of the 528910 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - the reading is over the arm the figure alone gives and inside the floor - so the figure alone would have failed them and no row shows it; the other 520925 meet the figure itself
+  carried by the floor, by row (4 row(s), 4 worst shown):  float batch / all, orders axis (7310)  float batch / all (335)  float batch / all-n (335)  float single / all (5)
+  worst of them: float batch / all  n=0  x=11.150964736938477  err=1.08354e-07 (4.08e-07 of the value)  arm=6.32744e-08  floor=1.5e-07  err/arm=1.71  err/floor=0.722
 
   the routes are counted apart from the lanes: the lane RESULT above reads 32 of 32
-  claims carried by 527275 of 957873 comparison cells, and the route rows and the float lane's
+  claims carried by 528910 of 957873 comparison cells, and the route rows and the float lane's
   policy rows contribute 460592 cells of their own, none of them in that total
 
 the carriage of a named route by each entry that takes a policy: over the arguments
@@ -1726,8 +1726,8 @@ band, kFlatHi to 32, and the table's span end, 116 to 117, which is where it end
               scheme_bound, which is what keeps the row's verdict about the scheme rather than
               about two grids' luck; the round-up is at most a factor of two. It is a reading
               of the partition the header carries, and that partition is a placeholder: equal
-              width at one degree, over 22 intervals from kX1 to the right edge at 117
-              marked a placeholder in that file, with the
+              width at one degree, over 22 intervals from kX1 to the right edge at 117,
+              a placeholder marked in that file, with the
               derived partition spliced in where
               it lands. So the row says what the shipped placeholder delivers and not what
               the far region guarantees. A bound can be written for the axis once the derived

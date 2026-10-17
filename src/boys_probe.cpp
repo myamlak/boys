@@ -5745,13 +5745,10 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         (void)warm;
     }
 
-    // The unit calibration: the pass that decides how many calls one timed unit of each option is
-    // made of, so every unit is about the same wall time. It is timed over a REDUCED argument
-    // count - an option's cost per argument does not move by a factor of two between a sixteenth
-    // of the workload and the whole of it. Each option is called once before its timed call: the
-    // first call touches its tables and buffers cold, and a count chosen from that reading would
-    // be too low once the same calls run warm. Nothing measured here enters a figure; the count
-    // does.
+    // The unit calibration: how many calls one timed unit of each option holds, so every unit is
+    // about the same wall time. Each option is warmed before its timed call - a count chosen from
+    // a cold reading would be too low once the same calls run warm. Nothing here enters a figure;
+    // the count does.
     const double unitCalibrationBegin = NowSeconds();
     std::vector<double> unitNsPerArgument(options_.size(), 0.0);
     std::vector<int> unitRepeats(options_.size(), 1);
