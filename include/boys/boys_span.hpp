@@ -57,6 +57,9 @@ namespace detail {
 /// \param count   the values the call writes
 /// \param stride  the distance between them
 /// \param outSize the values the out span holds
+///
+/// \returns true when every value the write lands is inside the span, false when
+///          one falls past its end
 inline bool StridedSpanAdmits(std::size_t count, std::size_t stride,
                               std::size_t outSize) noexcept {
     if (count == 0)
@@ -78,6 +81,9 @@ inline bool StridedSpanAdmits(std::size_t count, std::size_t stride,
 ///
 /// \param count  the values the call writes
 /// \param stride the distance between them
+///
+/// \returns the out-span extent the write asks, saturated at the largest
+///          representable size
 inline std::size_t StridedSpanNeeded(std::size_t count, std::size_t stride) noexcept {
     if (count == 0)
     {
@@ -101,6 +107,8 @@ inline std::size_t StridedSpanNeeded(std::size_t count, std::size_t stride) noex
 /// \param count   the arguments the call walks
 /// \param planes  the value planes one argument writes
 /// \param outSize the values the out span holds
+///
+/// \returns true when the span holds `count * planes` values, false otherwise
 inline bool PlanesAdmit(std::size_t count, std::size_t planes,
                         std::size_t outSize) noexcept {
     if (count == 0 || planes == 0)
@@ -117,6 +125,9 @@ inline bool PlanesAdmit(std::size_t count, std::size_t planes,
 ///
 /// \param count  the arguments the call walks
 /// \param planes the value planes one argument writes
+///
+/// \returns the out-span extent the call asks, saturated at the largest
+///          representable size
 inline std::size_t PlanesNeeded(std::size_t count, std::size_t planes) noexcept {
     const std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
 
