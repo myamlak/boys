@@ -738,14 +738,18 @@ template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
 using DefaultPolicy = typename DefaultPolicyFor<kPrecision, kShape, kDevice>::Type;
 /// One precision lane's contract, as a report states it.
 ///
-/// \c bound is the base figure the lane documents for one value over the whole
-/// of x >= 0, and it is the guarantee rather than a measurement. \c additive is
-/// a term the lane documents beside it - zero where the lane has none - so the
-/// figure a lane promises is \c bound plus \c additive, which is what
-/// \c BoysAccuracyGuaranteed answers with. Every figure here is the one the
-/// README's contract table publishes for the lane, and the four are stated
-/// together so that the table, the accuracy gate and the accessor above them are
-/// one number rather than four transcriptions of one.
+/// \c bound is the absolute figure the lane published for one value over the
+/// whole of x >= 0. On the lanes whose contract is scaled by the value it is
+/// the measured reading those runs produced - 5.5e-14 on the double lanes -
+/// and not the machine-readable promise: `BoysAccuracyGuaranteed` answers the
+/// contract at the cell it is asked about, which is `1e-13 * F_0(x)` on the
+/// double lanes, and this list is where the measured figure is documented.
+/// \c additive is a term the lane documents beside that base - zero where the
+/// lane has none - so the absolute figure a lane measured is \c bound plus
+/// \c additive. Every figure here is the one the README's contract table
+/// publishes for the lane, and the rows are stated together so that the table,
+/// the accuracy gate and the accessor above them are one number rather than
+/// four transcriptions of one.
 ///
 /// \c source states the terms the base figure does not carry, because a row
 /// whose bound is not a flat constant over its domain has to say so rather than
@@ -807,26 +811,47 @@ enum class AccuracyReading : std::uint8_t {
 
 /// The accuracy one combination of this library's option space provides.
 ///
-/// \c value is the figure, as an absolute error per value of F_n, and a number
-/// only where \c available is true; where the library does not carry the
-/// combination there is no figure to read and \c value is 0.0 with \c reason
-/// set, so a caller cannot mistake a refusal for an accuracy.
+/// \c value is the figure the combination's contract carries **at the cell the
+/// accessor was asked about**, as an absolute error per value of F_n, and a
+/// number only where \c available is true; where the library does not carry the
+/// combination, or the cell is outside the documented domain, there is no figure
+/// to read and \c value is 0.0 with \c reason set, so a caller cannot mistake a
+/// refusal for an accuracy.
 ///
 /// \ingroup boys
 struct AccuracyFigure {
-    double value = 0.0; ///< the figure, or 0.0 where none is available
+    double value = 0.0; ///< the figure at the cell asked about, or 0.0 where none is available
     bool available = false; ///< whether the library carries the combination
     AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which of the two figures this is
     const char* source = ""; ///< the table the figure was read from
     const char* reason = ""; ///< why no figure is available, empty where one is
 };
 
-/// The accuracy a combination is guaranteed: an upper bound the lane documents
-/// for it.
+/// The accuracy a combination is guaranteed: the bound the lane's contract
+/// publishes at one cell.
 ///
-/// The figure to rely on: the lane's contract table publishes it, plus the
-/// lane's own additive term where it documents one. A combination the library
-/// does not carry has no figure and says so.
+/// The figure to rely on, at `(n, x)`: the lane's published form evaluated
+/// there. On the double lanes that form is the larger of `1e-13 * F_n(x)` and
+/// `1e-13 * F_0(x)`; F falls with the order, so the arm scaled by the ladder's
+/// first rung is the wider one, and the figure moves with the argument. On the
+/// float lanes it is the larger of `2^-22 * F_n(x)` and 1.5e-7. A lane's
+/// published term beside the base is carried where its row states one - the
+/// plain reciprocal's own rounding on the lanes that publish it, and the fast
+/// region-B exponential's contribution on the device float lane - and the
+/// division form and the region-B exponential are the two arguments that can
+/// move it, because both are arithmetics rather than spellings.
+///
+/// **The measured absolute figures are documentation and not this answer.** The
+/// double lane's runs put its error at 5.5e-14 at worst, and `BoysLaneContracts()`
+/// publishes that figure as the lane's measured reading; the contract at x = 0
+/// is 1e-13, and only the contract is a promise. A machine-readable answer rested
+/// on the measured figure would tell a caller that 6e-14 is guaranteed where the
+/// contract admits 1e-13.
+///
+/// The half lanes' published form adds half of the last representable digit of
+/// the value the call returns. That term is a property of the returned value and
+/// not of the call, so it stays in \c source: the figure is the call's, and the
+/// lane's rows are where the half digit is stated.
 ///
 /// The bound is the lane's and not the axes': a way to read any of the axes that
 /// narrowed it would be a bound this build does not certify, and the per-axis
@@ -834,26 +859,23 @@ struct AccuracyFigure {
 /// the delivered figure - see \c BoysAccuracyDelivered - the one to rank two
 /// combinations by.
 ///
-/// The division form and the region-B exponential are the two arguments that can
-/// move the figure, because both are arithmetics rather than spellings. On a
-/// lane whose plain reciprocal rounds once more per step, the figure that form
-/// is guaranteed is the lane's base plus the term its row publishes for it; a
-/// caller who names no form gets the figure of the library's default form. The
-/// region-B exponential is the same shape one axis over: a row states the member
-/// its term beside the base is under, so naming the other member is answered
-/// without that term.
-///
 /// \param precision   the lane
+/// \param n           the order, 0..kMaxBoysOrder
+/// \param x           the argument, >= 0 and not NaN
 /// \param route       the fit route
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
 /// \param form        how the recursion divides
 /// \param exp         which exponential seeds a region-B ladder
-/// \returns the figure, and whether the library carries the combination
+/// \returns the figure at \p n and \p x, and whether the library carries the
+///          combination; a cell outside the documented domain is refused with a
+///          reason and no figure
 ///
 /// \ingroup boys
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      int n,
+                                      double x,
                                       FitRoute route,
                                       EvalScheme scheme,
                                       PackAxis axis,
@@ -897,17 +919,17 @@ constexpr bool GuaranteeAxesAreEnumerators() noexcept
 /// arguments, so a seven-tuple this build's table does not carry is a compile
 /// error rather than a query answered with a reason.
 ///
-/// The figure is the one \c BoysAccuracyGuaranteed answers with, read from the
-/// same table at the same seven axes; what the assertion adds is that every axis
-/// is an enumerator at all, which is the one part of the run-time answer a
-/// compiler can settle. What the rows add to that answer - which partition
-/// stores which route, which lane is instantiated over which packing axis - is
-/// read from rows rather than from enumerations, and a stated tuple the rows
-/// leave clear is answered by the run-time accessor's own refusal, with its own
-/// sentence and \c available false, rather than by a diagnostic here. No row of
-/// the table leaves a lane or a partition clear at an enumerator's value, so
-/// the two answers coincide at every tuple a caller can write out of
-/// enumerators.
+/// The figure is the one \c BoysAccuracyGuaranteed answers with at the same
+/// cell, read from the same table at the same seven axes; what the assertion
+/// adds is that every axis is an enumerator at all, which is the one part of the
+/// run-time answer a compiler can settle. What the rows add to that answer -
+/// which partition stores which route, which lane is instantiated over which
+/// packing axis - is read from rows rather than from enumerations, and a stated
+/// tuple the rows leave clear is answered by the run-time accessor's own refusal,
+/// with its own sentence and \c available false, rather than by a diagnostic
+/// here. No row of the table leaves a lane or a partition clear at an
+/// enumerator's value, so the two answers coincide at every tuple a caller can
+/// write out of enumerators.
 ///
 /// \tparam kPrecision   the lane
 /// \tparam kRoute       the fit route
@@ -916,12 +938,15 @@ constexpr bool GuaranteeAxesAreEnumerators() noexcept
 /// \tparam kGranularity the interval partition
 /// \tparam kForm        how the recursion divides
 /// \tparam kExp         which exponential seeds a region-B ladder
-/// \returns the figure, and whether the library carries the combination
+/// \param n            the order, 0..kMaxBoysOrder
+/// \param x            the argument, >= 0 and not NaN
+/// \returns the figure at \p n and \p x, and whether the library carries the
+///          combination
 ///
 /// \ingroup boys
 template <Precision kPrecision, FitRoute kRoute, EvalScheme kScheme, PackAxis kAxis,
           FitGranularity kGranularity, DivisionForm kForm, RegionBExp kExp>
-AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
+AccuracyFigure BoysAccuracyGuaranteedStated(int n, double x) noexcept
 {
     static_assert(detail::GuaranteeAxesAreEnumerators<kPrecision, kRoute, kScheme, kAxis, kGranularity,
                                                       kForm, kExp>(),
@@ -931,19 +956,20 @@ AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
                   "its own enumerators; BoysAccuracyGuaranteed answers such a tuple at run time "
                   "with the same refusal and no figure");
 
-    return BoysAccuracyGuaranteed(kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp);
+    return BoysAccuracyGuaranteed(kPrecision, n, x, kRoute, kScheme, kAxis, kGranularity, kForm,
+                                  kExp);
 }
 
-/// The bound a class's default policy carries: what a caller holding the
-/// default has, without reconstructing the axes to ask about it.
+/// The bound a class's default policy carries at one cell: what a caller holding
+/// the default has, without reconstructing the axes to ask about it.
 ///
 /// The axes it asks with are the ones \c DefaultPolicy<kPrecision, kShape,
 /// kDevice> resolves to - the class's own row where the seam states one, and the
 /// seam's own names at that lane's budget where the seam states no row list at
 /// all, the device lane's two included on a class of the device half - so this
 /// is the same figure, from the same table, as a caller gets by naming the
-/// policy's axes by hand. It is a table read and not a measurement: nothing is
-/// evaluated and nothing is timed.
+/// policy's axes by hand. It is a table read and a contract evaluation and not a
+/// measurement: nothing is timed.
 ///
 /// \c kDevice defaults to \c Device::kHost, which is what a name that does not
 /// spell a device resolves on; a caller naming \c Device::kDevice and one of the
@@ -953,15 +979,18 @@ AccuracyFigure BoysAccuracyGuaranteedStated() noexcept
 /// \tparam kShape the question shape
 /// \tparam kDevice which side of the interface the class is on; \c Device::kHost
 ///         where a caller does not spell one
-/// \returns the figure, and whether this build carries the combination
+/// \param n the order, 0..kMaxBoysOrder
+/// \param x the argument, >= 0 and not NaN
+/// \returns the figure at \p n and \p x, and whether this build carries the
+///          combination
 ///
 /// \ingroup boys
 template <Precision kPrecision, Shape kShape, Device kDevice = Device::kHost>
-inline AccuracyFigure DefaultGuarantee() noexcept
+inline AccuracyFigure DefaultGuarantee(int n, double x) noexcept
 {
     using Policy = DefaultPolicy<kPrecision, kShape, kDevice>;
 
-    return BoysAccuracyGuaranteed(kPrecision, Policy::kRoute, Policy::kScheme, Policy::kPack,
+    return BoysAccuracyGuaranteed(kPrecision, n, x, Policy::kRoute, Policy::kScheme, Policy::kPack,
                                   Policy::kGranularity, Policy::kDivision, Policy::kRegionBExp);
 }
 
@@ -1038,20 +1067,20 @@ enum class ToleranceVerdict : std::uint8_t {
 struct CombinationCoverage {
     ToleranceVerdict verdict = ToleranceVerdict::kNotCarried; ///< which figure met the request
     double requested = 0.0; ///< the absolute error the caller asked for
-    double bound = 0.0; ///< the figure the lane documents for the combination, 0.0 where refused
+    double bound = 0.0; ///< the figure the lane's contract carries at the cell asked about, 0.0 where refused
     double delivered = 0.0; ///< the figure the combination was measured to deliver, 0.0 where none
     bool deliveredKnown = false; ///< whether a measured figure is held for the combination
     const char* source = ""; ///< the table the figure that decided the verdict was read from
     const char* reason = ""; ///< why there is no verdict, empty where there is one
 };
 
-/// Whether a combination provides the accuracy the caller needs, asked at the
-/// tolerance the caller names rather than answered as a figure to compare.
+/// Whether a combination provides the accuracy the caller needs at one cell, asked
+/// at the tolerance the caller names rather than answered as a figure to compare.
 ///
-/// The verdict is decided by the bound first: a combination whose bound is at or
-/// below the request is \c kGuaranteedInside, which is the only state a
-/// calculation's safety can rest on. Where the bound is above it the measurement
-/// decides, and a combination measured at or below the request is
+/// The verdict is decided by the bound first: a combination whose bound at
+/// `(n, x)` is at or below the request is \c kGuaranteedInside, which is the only
+/// state a calculation's safety can rest on. Where the bound is above it the
+/// measurement decides, and a combination measured at or below the request is
 /// \c kDeliveredInside - at the target in what it delivers, and not covered by
 /// its guarantee. Where neither is, the answer is \c kOutside. Both figures and
 /// the request are returned, so the answer can always be checked against the
@@ -1060,9 +1089,13 @@ struct CombinationCoverage {
 ///
 /// The figures are the same ones the two accessors answer with, read from the
 /// library's own tables: this entry computes nothing of its own and holds no
-/// second list of numbers.
+/// second list of numbers. The bound is the contract at the cell asked about and
+/// not a measured absolute figure: a request the contract admits is answered yes
+/// even where the lane's runs measured better.
 ///
 /// \param precision   the lane
+/// \param n           the order, 0..kMaxBoysOrder
+/// \param x           the argument, >= 0 and not NaN
 /// \param route       the fit route
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
@@ -1070,7 +1103,8 @@ struct CombinationCoverage {
 /// \param tolerance   the absolute error the caller needs, > 0
 /// \returns           the verdict and the figures it was made on; \c
 ///                    kNotCarried, no figures and a reason where the library
-///                    does not carry the combination
+///                    does not carry the combination or the cell is outside the
+///                    documented domain
 /// \pre               \p tolerance is positive and finite. A request that is
 ///                    zero, negative or not a number is answered \c kOutside
 ///                    where the combination is carried, as no figure is at or
@@ -1080,6 +1114,8 @@ struct CombinationCoverage {
 ///
 /// \ingroup boys
 CombinationCoverage QueryCombination(Precision precision,
+                                     int n,
+                                     double x,
                                      FitRoute route,
                                      EvalScheme scheme,
                                      PackAxis axis,

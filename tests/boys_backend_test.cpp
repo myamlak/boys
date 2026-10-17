@@ -530,7 +530,7 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
             for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
             {
                 const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-                    boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
+                    boys::Precision::kFp64, 0, 0.0, route.route, scheme.scheme, axis.axis,
                     boys::FitGranularity::kUniform);
                 const bool claimed =
                     boys::FitGranularityHasRoute(*uniform, route.route) &&

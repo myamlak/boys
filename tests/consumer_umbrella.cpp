@@ -2739,13 +2739,13 @@ void CheckOptionAccuracy(Report& report) {
                     for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
                     {
                         const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
-                            lane.precision, route.route, scheme.scheme, axis.axis,
+                            lane.precision, 0, 0.0, route.route, scheme.scheme, axis.axis,
                             partition.granularity);
                         const boys::AccuracyFigure delivered = boys::BoysAccuracyDelivered(
                             lane.precision, route.route, scheme.scheme, axis.axis,
                             partition.granularity);
                         const boys::CombinationCoverage asked = boys::QueryCombination(
-                            lane.precision, route.route, scheme.scheme, axis.axis,
+                            lane.precision, 0, 0.0, route.route, scheme.scheme, axis.axis,
                             partition.granularity, guaranteed.value);
 
                         if (!guaranteed.available)
@@ -2802,7 +2802,7 @@ void CheckOptionAccuracy(Report& report) {
                         }
 
                         const boys::CombinationCoverage half = boys::QueryCombination(
-                            lane.precision, route.route, scheme.scheme, axis.axis,
+                            lane.precision, 0, 0.0, route.route, scheme.scheme, axis.axis,
                             partition.granularity, guaranteed.value * 0.5);
 
                         if (half.verdict == boys::ToleranceVerdict::kGuaranteedInside)
@@ -2845,7 +2845,7 @@ void CheckOptionAccuracy(Report& report) {
     // against the library's figures. The requests run from above the bound to below both, so
     // every verdict but a refusal is reached, and the measured figure only where it is tighter.
     const boys::AccuracyFigure servedBound = boys::BoysAccuracyGuaranteed(
-        servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity);
+        servedPrecision, 0, 0.0, servedRoute, servedScheme, servedAxis, servedGranularity);
     const boys::AccuracyFigure servedDelivered = boys::BoysAccuracyDelivered(
         servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity);
     const double smaller = std::min(servedBound.value,
@@ -2889,7 +2889,7 @@ void CheckOptionAccuracy(Report& report) {
     for (std::size_t i = 0; i < requests.size(); ++i)
     {
         const boys::CombinationCoverage asked = boys::QueryCombination(
-            servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity,
+            servedPrecision, 0, 0.0, servedRoute, servedScheme, servedAxis, servedGranularity,
             requests[i]);
         const char* const verdict = asked.verdict == boys::ToleranceVerdict::kGuaranteedInside
                                         ? "yes, at the bound"
@@ -2912,10 +2912,10 @@ void CheckOptionAccuracy(Report& report) {
     }
 
     const boys::CombinationCoverage above =
-        boys::QueryCombination(servedPrecision, servedRoute, servedScheme, servedAxis,
+        boys::QueryCombination(servedPrecision, 0, 0.0, servedRoute, servedScheme, servedAxis,
                                servedGranularity, servedBound.value * 2.0);
     const boys::CombinationCoverage below = boys::QueryCombination(
-        servedPrecision, servedRoute, servedScheme, servedAxis, servedGranularity,
+        servedPrecision, 0, 0.0, servedRoute, servedScheme, servedAxis, servedGranularity,
         smaller * 0.5);
 
     Require(report, above.verdict == boys::ToleranceVerdict::kGuaranteedInside && above.bound != 0.0,
@@ -2927,7 +2927,7 @@ void CheckOptionAccuracy(Report& report) {
     // A combination the library refuses: no figure, no verdict, and the reason
     // is the library's own sentence rather than a second vocabulary.
     const boys::CombinationCoverage refusedAsk =
-        boys::QueryCombination(refusedPrecision, refusedRoute, refusedScheme, refusedAxis,
+        boys::QueryCombination(refusedPrecision, 0, 0.0, refusedRoute, refusedScheme, refusedAxis,
                                refusedGranularity, 1e-12);
 
     std::printf("  a combination this build refuses, asked the same question: %s\n",
@@ -2945,10 +2945,11 @@ void CheckOptionAccuracy(Report& report) {
     // kind of refusal: not work this library has not done, but a combination
     // that is not a member of the space at all. The sentence says which.
     const boys::CombinationCoverage noLane =
-        boys::QueryCombination(static_cast<boys::Precision>(99), servedRoute, servedScheme,
+        boys::QueryCombination(static_cast<boys::Precision>(99), 0, 0.0, servedRoute, servedScheme,
                                servedAxis, servedGranularity, 1e-12);
     const boys::AccuracyFigure noLaneFigure = boys::BoysAccuracyGuaranteed(
-        static_cast<boys::Precision>(99), servedRoute, servedScheme, servedAxis, servedGranularity);
+        static_cast<boys::Precision>(99), 0, 0.0, servedRoute, servedScheme, servedAxis,
+        servedGranularity);
 
     std::printf("    a precision with no lane: the accessor returns no figure (%s), and the "
                 "query agrees: %s\n",

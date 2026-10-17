@@ -431,10 +431,13 @@ and not one row in four spellings — the device's half lane is not the host's, 
 lanes of their own with a figure each, and its double lane's figure
 is its own statement rather than the host's row read across. `boys::BoysLaneContracts()` publishes
 one row per lane, and the entry that answers "what does this combination guarantee" is
-`boys::BoysAccuracyGuaranteed`, which takes the whole combination and returns an `AccuracyFigure`:
+`boys::BoysAccuracyGuaranteed`, which takes the whole combination and the cell
+`(n, x)` and returns an `AccuracyFigure`:
 
 ```cpp
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      int n,
+                                      double x,
                                       FitRoute route,
                                       EvalScheme scheme,
                                       PackAxis axis,

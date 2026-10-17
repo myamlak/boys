@@ -1125,15 +1125,9 @@ double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::siz
     return widest;
 }
 
-/// The base the half lanes' rows are judged against: the figure the library
-/// publishes for the lane. |F_n(x)| <= 1, so the largest half-ULP a return can
-/// carry is 2^-11 for a binary16 return and 2^-8 for a bfloat16 one.
-double HalfLaneBase() noexcept
-{
-    return BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp16)].bound;
-}
-
-/// The half-ULP representation term of each half format, as above.
+/// The half-ULP representation term of each half format: |F_n(x)| <= 1, so the
+/// largest half-ULP a return can carry is 2^-11 for a binary16 return and 2^-8
+/// for a bfloat16 one.
 constexpr double kHalfFormatTerm = 0x1p-11;
 constexpr double kBf16FormatTerm = 0x1p-8;
 
@@ -1164,15 +1158,19 @@ constexpr double HalfFormatTermOf(OptionPrecision precision) noexcept {
 /// The figure one row of one precision is judged against, read from the
 /// library.
 ///
-/// The lanes document different figures and none substitutes for another: the
-/// double lane's is the error its entries can reach over the
-/// whole domain, the single-precision lane's is its own row of
-/// \c BoysLaneContracts, the half lanes' is the
-/// engine budget's base plus the largest half of a
-/// representable digit their returns can carry, and the device lane's is its own
-/// row of that table plus the term its row states beside
-/// the base. The lane is an argument here because a row judged against another
-/// lane's figure is worse than no row.
+/// The lanes document different absolute figures and none substitutes for another:
+/// the double lane's is the error its runs measured over the whole domain, the
+/// single-precision lane's is its own row of \c BoysLaneContracts, the half
+/// lanes' is the engine budget's base plus the largest half of a representable
+/// digit their returns can carry, and the device lane's is its own row of that
+/// table plus the term its row states beside the base. The lane is an argument
+/// here because a row judged against another lane's figure is worse than no row.
+///
+/// **This is the lane's published absolute figure and not the contract at a
+/// cell.** The contract is scaled by the value and `BoysAccuracyGuaranteed`
+/// answers it at the cell it is asked about; this report compares one absolute
+/// worst over a whole workload against the one absolute figure the lane
+/// published, which is the stricter bar of the two near x = 0.
 ///
 /// The form is an argument for the same reason: the plain reciprocal rounds once
 /// more per step on the lanes whose rows publish a term for it, so a form-aware
@@ -1181,10 +1179,11 @@ constexpr double HalfFormatTermOf(OptionPrecision precision) noexcept {
 /// by it.
 ///
 /// \param precision   the class the row is ranked in
-/// \param route       the row's fit route
-/// \param scheme      the row's evaluation scheme
-/// \param axis        the row's packing axis
-/// \param granularity the row's partition
+/// \param route       the row's fit route (the bound is the lane's, so this is
+///                    taken for the call's own symmetry and not read)
+/// \param scheme      the row's evaluation scheme (as \p route)
+/// \param axis        the row's packing axis (as \p route)
+/// \param granularity the row's partition (as \p route)
 /// \param form        the division form the row's arithmetic runs in
 ///
 /// \returns the figure, per value of F_n
@@ -1194,80 +1193,24 @@ double LaneCellBound(OptionPrecision precision,
                      PackAxis axis,
                      FitGranularity granularity,
                      DivisionForm form) {
-    const double multiplier = kBoysFullAccuracyMultiplier;
+    // The bound is the lane's and no other axis moves it: the four structural axes are the call
+    // site's symmetry with the accessor's own axes and are named by its documentation.
+    (void)route;
+    (void)scheme;
+    (void)axis;
+    (void)granularity;
 
-    switch (precision)
-    {
-    case OptionPrecision::kFp32:
-    {
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp32, route, scheme, axis, granularity, form);
+    const LaneContractInfo& row =
+        BoysLaneContracts()[static_cast<std::size_t>(LaneOf(precision))];
 
-        if (figure.available)
-        {
-            return figure.value;
-        }
+    // The plain reciprocal's own rounding and the region-B member's contribution sit beside the
+    // base on the rows that publish them. The report's cells run at the host's default
+    // exponential unless a cell names another, which the report's own rows carry.
+    const double plain = form == DivisionForm::kPlainReciprocal ? row.plainAdditive : 0.0;
+    const double member = kDefaultHostRegionBExp == row.additiveMember ? row.additive : 0.0;
 
-        // Unreachable from this probe's own book, which enumerates a cell only
-        // where the same call answered a figure; the fallback is the same
-        // arithmetic that answer is formed from, so a cell that somehow reached
-        // here is judged at its lane's figure rather than at a zero.
-        return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32)].bound;
-    }
-
-    case OptionPrecision::kFp32Device:
-    {
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp32Device, route, scheme, axis, granularity, form);
-
-        if (figure.available)
-        {
-            return figure.value;
-        }
-
-        // Unreachable: the caller enumerates a cell only where the call above answered a
-        // figure. The fallback is this lane's own row, not the double lane's - a row judged
-        // against another lane's arithmetic would state a promise no device entry makes.
-        const LaneContractInfo& row =
-            BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32Device)];
-
-        return multiplier * row.bound + row.additive;
-    }
-
-    case OptionPrecision::kFp16:
-    case OptionPrecision::kBf16:
-    {
-        // The half lanes run the single-precision engine at one budget, so the figure is that
-        // lane's own row at the form it evaluates in, plus the format's half digit. Reading the
-        // row rather than rebuilding it keeps the plain reciprocal's own term in it.
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp16, route, scheme, axis, granularity, form);
-
-        return (figure.available ? figure.value : multiplier * HalfLaneBase()) +
-               HalfFormatTermOf(precision);
-    }
-
-    case OptionPrecision::kFp64:
-    {
-        // The double lane's row, read through the same accessor every other class
-        // reads: its figure is the lane's own documented one, and a cell of it is
-        // judged at the lane's figure rather than at the batch entry's alone.
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp64, route, scheme, axis, granularity, form);
-
-        if (figure.available)
-        {
-            return figure.value;
-        }
-
-        break;
-    }
-    }
-
-    // Unreachable: the caller enumerates a cell only where the calls above answered a
-    // figure. The lane's own row rather than a zero, times the multiplier the report reads
-    // this figure's provenance from.
-    return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp64)].bound;
+    return kBoysFullAccuracyMultiplier * (row.bound + plain) + member +
+           HalfFormatTermOf(precision);
 }
 /// The name the library prints a route under, read from its own route table
 /// rather than written here, so a coverage line cannot name a route the library
@@ -2055,10 +1998,11 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
 
                             // The form and the exponential are not asked about: they are how a step divides and how
                             // a seed is evaluated, not which entry runs, so the carriage answer is the same for every
-                            // member of either axis.
+                            // member of either axis. The cell is not asked about either: carriage does not depend on
+                            // it, and (0, 0) is inside every lane's documented domain.
                             const AccuracyFigure carriage =
-                                BoysAccuracyGuaranteed(lane, cell.route, cell.scheme, cell.pack,
-                                                       cell.granularity);
+                                BoysAccuracyGuaranteed(lane, 0, 0.0, cell.route, cell.scheme,
+                                                       cell.pack, cell.granularity);
 
                             cell.sorted = false;
                             cell.served = carriage.available;

@@ -31,12 +31,14 @@ int main()
         worst = std::fmax(worst, std::fabs(named_ladder[k] - default_ladder[k]));
     }
 
-    // The two are different sums of the same approximation of F, so they agree
-    // to well inside the error the library guarantees for either. The ask reads
-    // the named policy's own axes, its division form included.
+    // The two are different sums of the same approximation of F, so they agree to
+    // well inside the error the library guarantees for either. The ask reads the
+    // named policy's own axes at the top order; the double lane's contract is
+    // scaled by F_0(x), so it is one figure for every order at this argument.
     const double bound = boys::BoysAccuracyGuaranteed(
-                             boys::Precision::kFp64, Named::kRoute, Named::kScheme, Named::kPack,
-                             Named::kGranularity, Named::kDivision, Named::kRegionBExp)
+                             boys::Precision::kFp64, nmax, x, Named::kRoute, Named::kScheme,
+                             Named::kPack, Named::kGranularity, Named::kDivision,
+                             Named::kRegionBExp)
                              .value;
     std::printf("worst disagreement: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;

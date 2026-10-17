@@ -484,9 +484,9 @@ TEST(ProbeTest, NothingTheLibraryOffersGoesUnreported) {
 }
 
 // The reference bound the report prints is the library's, not a number written
-// in the probe: it is what the library's own accessor answers for the anchor cell at
-// the anchor's own axes - the cell every ratio is in units of, and not another
-// combination's figure standing beside it.
+// in the probe: it is the double lane's published absolute figure, from its row of
+// BoysLaneContracts - the figure every ratio is in units of. The contract at a
+// cell is BoysAccuracyGuaranteed's answer, not this report's bar.
 TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -494,12 +494,10 @@ TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
 
     ASSERT_NE(anchor, nullptr) << "the report anchors on a row that is not one of its own";
 
-    const boys::AccuracyFigure figure =
-        boys::BoysAccuracyGuaranteed(boys::Precision::kFp64, anchor->route, anchor->scheme,
-                                     anchor->pack, anchor->granularity, anchor->division);
+    const boys::LaneContractInfo& lane =
+        boys::BoysLaneContracts()[static_cast<std::size_t>(boys::Precision::kFp64)];
 
-    ASSERT_TRUE(figure.available) << figure.reason;
-    EXPECT_DOUBLE_EQ(report.referenceBound, figure.value);
+    EXPECT_DOUBLE_EQ(report.referenceBound, lane.bound);
     EXPECT_DOUBLE_EQ(report.referenceBound, anchor->bound)
         << "the anchor's own bar is not the figure the report prints as the comparison's floor";
 }
@@ -572,46 +570,28 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
     }
 }
 
-// A row is judged against the figure the policy it runs publishes, asserted against the library's own answer and
-// never a number written here: the class's own cell is what its call compiles when it names no policy, so bar
-// and figure come from one combination, while a bar composed from another names an arithmetic no entry under
-// that row runs - at a plain-reciprocal seam a bar at (shipped partition, refined reciprocal) is 1.5e-7 where 2.5e-7 is published.
+// A row is judged against the figure the lane published, asserted against the
+// library's own row and never a number written here: the plain reciprocal's term
+// sits beside the base where the row publishes one, the region-B member's where
+// it is named, and the half formats add their own half digit.
 TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
-    // The batch rows: the entry takes no policy, so the bar is the class's own guarantee,
-    // each format asking it of its own class. The two half formats add their own term
-    // beside the base their lane publishes.
-    const double fp32Own =
-        boys::DefaultGuarantee<boys::Precision::kFp32, boys::Shape::kAllOrders>().value;
+    const std::span<const boys::LaneContractInfo> lanes = boys::BoysLaneContracts();
+    const auto laneFigure = [&lanes](boys::Precision lane, boys::DivisionForm form) {
+        const boys::LaneContractInfo& row = lanes[static_cast<std::size_t>(lane)];
+        const double plain =
+            form == boys::DivisionForm::kPlainReciprocal ? row.plainAdditive : 0.0;
+        const double member =
+            boys::kDefaultHostRegionBExp == row.additiveMember ? row.additive : 0.0;
 
-    const std::pair<const char*, double> batchRows[] = {
-        {"batch-fp32", fp32Own},
-        {"f16-io",
-         boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-11},
-        {"bf16-io",
-         boys::DefaultGuarantee<boys::Precision::kBf16, boys::Shape::kAllOrders>().value + 0x1p-8},
+        return row.bound + plain + member;
     };
 
-    for (const auto& [name, expected] : batchRows) {
-        const OptionProbeMeasurement* row = Find(report, name);
-
-        if (row == nullptr) {
-            continue;
-        }
-
-        EXPECT_DOUBLE_EQ(row->bound, expected)
-            << name << "'s bar is the figure of the policy its call resolves to";
-    }
-
-    // The cells: the form is a template argument of the engine's entries, so a cell's bar is
-    // the library's figure for the cell's own axes at the cell's own form. The half lanes add
-    // their format's term, and the double lane's figure carries no form dimension.
-    for (const OptionProbeMeasurement& row : report.measurements) {
-        if (row.name == "batch-fp32" || row.name == "f16-io" || row.name == "bf16-io") {
-            continue;
-        }
-
+    // The batch rows: the entry takes no policy, so the bar is the class's own row,
+    // each format asking it of its own class. The two half formats add their own term
+    // beside the base their lane publishes.
+    const auto expectedBar = [&laneFigure](const OptionProbeMeasurement& row) {
         boys::Precision lane = boys::Precision::kFp64;
         double formatTerm = 0.0;
 
@@ -623,17 +603,32 @@ TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
         } else if (row.precision == boys::OptionPrecision::kBf16) {
             lane = boys::Precision::kFp16;
             formatTerm = 0x1p-8;
-        } else {
+        }
+
+        return laneFigure(lane, row.division) + formatTerm;
+    };
+
+    for (const char* name : {"batch-fp32", "f16-io", "bf16-io"}) {
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        if (row == nullptr) {
             continue;
         }
 
-        const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-            lane, row.route, row.scheme, row.pack, row.granularity, row.division);
+        EXPECT_DOUBLE_EQ(row->bound, expectedBar(*row))
+            << name << "'s bar is the figure of the lane its call resolves to";
+    }
 
-        ASSERT_TRUE(figure.available) << row.name << " is measured at a combination the library "
-                                                  "answers no figure for";
+    // The cells: the form is a template argument of the engine's entries, so a cell's bar is
+    // the lane's figure at the cell's own form. The half lanes add their format's term, and
+    // the double lane's figure carries no form dimension.
+    for (const OptionProbeMeasurement& row : report.measurements) {
+        if (row.precision == boys::OptionPrecision::kFp32Device ||
+            row.precision == boys::OptionPrecision::kFp64) {
+            continue;
+        }
 
-        EXPECT_DOUBLE_EQ(row.bound, figure.value + formatTerm)
+        EXPECT_DOUBLE_EQ(row.bound, expectedBar(row))
             << row.name << " is judged at another form's figure";
     }
 }

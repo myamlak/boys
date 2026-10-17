@@ -1157,9 +1157,16 @@ template <boys::Precision kPrecision,
           boys::DivisionForm kForm,
           boys::RegionBExp kExp>
 CellAnswers AskBoth() {
+    // One cell serves every tuple: the stated entry and the run-time accessor are compared at
+    // the same (n, x), and what this test holds is that the two answers are one answer.
+    constexpr int kCellN = 0;
+    constexpr double kCellX = 0.0;
+
     return CellAnswers{
-        boys::BoysAccuracyGuaranteedStated<kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp>(),
-        boys::BoysAccuracyGuaranteed(kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp)};
+        boys::BoysAccuracyGuaranteedStated<kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp>(
+            kCellN, kCellX),
+        boys::BoysAccuracyGuaranteed(kPrecision, kCellN, kCellX, kRoute, kScheme, kAxis, kGranularity,
+                                     kForm, kExp)};
 }
 
 template <std::size_t kCell>

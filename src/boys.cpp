@@ -655,11 +655,13 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // entries read the double lane's piece tables and region-B seed. It stands apart from the host
         // row because it is a different lane, and a kFp64Device class reads this lane's own statement.
         {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
-         "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
-         "publish it in the contract's ladder-scaled form, "
-         "\"|error| <= max(1e-13 * F_n(x), 1e-13 * F_0(x))\" "
-         "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
-         "It is the host double lane's number because it is the same arithmetic over the same "
+         "the CUDA double lane's contract (docs/specification.md, the accuracy contract (CUDA "
+         "fp64)): the same contract as the CPU double lanes, the larger of 1e-13 * F_n(x) and "
+         "1e-13 * F_0(x), at the cell asked on "
+         "this lane's own entries, which publish it in that form "
+         "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). The lane's own runs measured 5.5e-14 "
+         "at worst, and that figure is documentation rather than the promise. It is the host "
+         "double lane's number because it is the same arithmetic over the same "
          "pieces; it is this row's because the lane is this lane's - a device class asked for "
          "its bound is answered here and not by the host row beside this one. The lane carries "
          "the division axis like every device lane, and the accuracy gate reads every cell of "
@@ -746,6 +748,12 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
 }
 
 namespace {
+
+// The two figures the lanes whose contract is scaled by the value publish: the double
+// lanes' fraction of the ladder's first rung, and the float lanes' fraction of the
+// value's own F_n. They are the contract's multipliers and not measurements.
+constexpr double kDoubleRelativeFigure = 1e-13;
+constexpr double kFloatRelativeFigure = 0x1p-22;
 
 // Whether this revision carries a combination, and why not where it does not.
 struct Carriage {
@@ -863,6 +871,8 @@ Carriage CarriesDeviceF16(FitRoute route,
 } // namespace
 
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      int n,
+                                      double x,
                                       FitRoute route,
                                       EvalScheme scheme,
                                       PackAxis axis,
@@ -880,6 +890,19 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
     if (index >= lanes.size())
     {
         figure.reason = "no lane of this library has that precision";
+
+        return figure;
+    }
+
+    // The contract is a statement about the documented domain and the figure is
+    // the contract evaluated at the cell: a cell outside it is refused rather
+    // than answered with a number the entries are not defined at.
+    if (n < 0 || n > kMaxBoysOrder || !(x >= 0.0))
+    {
+        figure.reason =
+            "the cell named is outside the documented domain: every entry takes an order in "
+            "[0, kMaxBoysOrder] and an argument x >= 0 that is not a NaN, and no figure is "
+            "stated outside it";
 
         return figure;
     }
@@ -974,8 +997,40 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
     // same figure.
     const double memberTerm = exp == lane.additiveMember ? lane.additive : 0.0;
 
+    // The lane's published form at the cell. The double lanes' is the ladder's first rung
+    // scaled by 1e-13, so the F_n arm never binds; the float lanes' scales the value's own
+    // F_n over the row's floor; the half lanes' is their row's base, whose half-digit term
+    // is a term of the returned value and stays in the row's sentence.
+    const double base = [&] {
+        switch (precision)
+        {
+        case Precision::kFp64:
+        case Precision::kFp64Device:
+        {
+            const double ladder = BoysSingle(0, x);
+            const double order = BoysSingle(n, x);
+
+            return std::max(kDoubleRelativeFigure * order, kDoubleRelativeFigure * ladder);
+        }
+        case Precision::kFp32:
+        case Precision::kFp32Device:
+        {
+            const double order = BoysSingle(n, x);
+
+            return std::max(kFloatRelativeFigure * order, lane.bound);
+        }
+        case Precision::kFp16:
+        case Precision::kBf16:
+        case Precision::kFp16Device:
+        case Precision::kBf16Device:
+            return lane.bound;
+        }
+
+        return lane.bound;
+    }();
+
     figure.available = true;
-    figure.value = lane.bound + formTerm + memberTerm;
+    figure.value = base + formTerm + memberTerm;
 
     // The sentence moves with the figure. `source` names the forms the base is for, so on
     // a lane whose plain form carries its own term the figure above is not the one that
@@ -994,8 +1049,9 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
                                      FitGranularity granularity) noexcept
 {
     // A combination this build refuses has no delivered figure for the same reason it has
-    // no bound.
-    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
+    // no bound. The cell asked here is one the contract is defined at; only the carriage
+    // answer is read from it, and the delivered figure below does not depend on it.
+    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, 0, 0.0, route, scheme, axis, granularity);
 
     figure.reading = AccuracyReading::kDelivered;
     figure.value = 0.0;
@@ -1085,6 +1141,8 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
 }
 
 CombinationCoverage QueryCombination(Precision precision,
+                                     int n,
+                                     double x,
                                      FitRoute route,
                                      EvalScheme scheme,
                                      PackAxis axis,
@@ -1095,7 +1153,7 @@ CombinationCoverage QueryCombination(Precision precision,
     // refusals are theirs.
     CombinationCoverage coverage;
     const AccuracyFigure guaranteed =
-        BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
+        BoysAccuracyGuaranteed(precision, n, x, route, scheme, axis, granularity);
 
     coverage.requested = tolerance;
     coverage.source = guaranteed.source;

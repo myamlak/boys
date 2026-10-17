@@ -8,11 +8,22 @@
 /// The library's accuracy accessors are the archive's - `BoysLaneContracts`,
 /// `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered` and `QueryCombination` are
 /// declared in boys/boys_decl.hpp and defined in src/boys.cpp - and a consumer
-/// that links no archive cannot call them. What this header answers is the same
-/// two numbers those entries do, the bound the contract carries and the figure
-/// the arithmetic was measured to deliver, read from a table that lives in the
-/// headers and from the preprocessor state this translation unit was compiled
-/// at. Nothing here evaluates the function, and nothing here needs a binary.
+/// that links no archive cannot call them. What this header answers is the two
+/// measured figures those entries carry, the absolute figure each lane was
+/// published with and the figure the arithmetic was measured to deliver, read
+/// from a table that lives in the headers and from the preprocessor state this
+/// translation unit was compiled at. Nothing here evaluates the function, and
+/// nothing here needs a binary.
+///
+/// **The bound here is the lane's measured absolute figure, not the contract at
+/// a cell.** `BoysAccuracyGuaranteed` evaluates the lane's published form at the
+/// `(n, x)` it is asked about - on the double lane `1e-13 * F_0(x)`, which is
+/// `1e-13` at x = 0 - so the two differ, and neither is wrong: the archive's is
+/// the promise a calculation rests on at the cell it evaluates, and this
+/// header's is the reading the lane's runs produced over its whole domain. A
+/// caller who needs the contract at a cell has the function value in hand and
+/// takes the archive's entry; a caller asking what his build measured reads this
+/// one.
 ///
 /// **This header is not in boys/boys.hpp's chain.** A unit that includes the
 /// front door pulls boys_decl.hpp, and through it accuracy.hpp, but never this
@@ -581,10 +592,11 @@ constexpr std::span<const LaneFigureHere> BoysLaneFiguresHere() noexcept {
 ///
 /// \ingroup boys
 struct ClassAccuracyHere {
-    /// The figure the class's policy is guaranteed: the lane's row with the terms
+    /// The figure this build states for the class: the lane's row with the terms
     /// the division form and region-B exponential this call names add - the
-    /// class's own by default. It is a bound and not a measurement, and it is the
-    /// same figure `BoysAccuracyGuaranteed` answers with at the same seven axes.
+    /// class's own by default. It is the lane's measured absolute figure and not
+    /// `BoysAccuracyGuaranteed`'s answer, which is the contract evaluated at the
+    /// cell it is asked about.
     AccuracyFigure bound;
 
     /// The figure this build's arithmetic was measured to deliver for the class:
@@ -615,8 +627,10 @@ struct ClassAccuracyHere {
 /// The class is a (precision, shape, device) triple, the same key the
 /// default-policy table is read by, and the figures are the class's own: the
 /// eight lanes this library carries have eight rows, and the class's row of
-/// `DefaultPolicyFor` supplies the terms the bound is read at. This is what
-/// `DefaultGuarantee` answers with, at the same seven axes, without the archive.
+/// `DefaultPolicyFor` supplies the terms the figure is read at. The bound is the
+/// measured absolute figure this build states for the class, and not the
+/// archive's `DefaultGuarantee(n, x)`, which evaluates the contract at a cell:
+/// this header's table has no function value to scale by.
 ///
 /// Two of the seven policy axes move the bound, and both are parameters here:
 /// the division form, because the plain reciprocal rounds once more per step and

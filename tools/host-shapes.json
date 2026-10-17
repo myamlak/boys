@@ -325,7 +325,7 @@
   "FitGranularityHasAxis": "a bit test on a partition row's axis mask",
   "BoysFitGranularities": "the interval-partition rows",
   "BoysLaneContracts": "the per-lane contract rows",
-  "BoysAccuracyGuaranteed": "the figure a lane documents for a combination",
+  "BoysAccuracyGuaranteed": "the contract's figure at the cell asked, for a combination",
   "BoysAccuracyGuaranteedStated": "the figure a combination's own row states at compile time, read from the same table at another rung",
   "BoysAccuracyDelivered": "the figure a combination's rows were measured to deliver",
   "GuaranteeAxesAreEnumerators": "a constexpr test on whether seven axis cells are inside their enumerations, the refusal BoysAccuracyGuaranteed makes at run time",

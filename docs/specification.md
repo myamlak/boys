@@ -273,13 +273,16 @@ entries are not the host lane's beside it, which is why the default-policy table
 keys a device class by the device lane: that table is keyed `(device, precision, shape)`, and the
 device classes it holds are the twelve of those four lanes by the three questions the device option
 probe ranks.
-`BoysAccuracyGuaranteed(...)` returns the bound a
-combination carries — its lane's figure, plus the lane's own additive term where it
-documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
-which is the one to rank two combinations by. They are different questions, and the `reading` field
-of the returned `AccuracyFigure` says which answer a figure is. A combination the library does not
-carry has no figure: both accessors say so and give the library's own reason rather than returning a
-number.
+`BoysAccuracyGuaranteed(precision, n, x, ...)` returns the bound a combination carries **at the
+cell it is asked about** — the lane's published form evaluated at `(n, x)`, plus the lane's own
+additive term where it documents one — and `BoysAccuracyDelivered(...)` returns the figure it was
+measured to deliver, which is the one to rank two combinations by. They are different questions, and
+the `reading` field of the returned `AccuracyFigure` says which answer a figure is. The bound is the
+contract and not the measured absolute figure: at x = 0 the double lane's figure is `1e-13`, and the
+`5.5e-14` the lane's runs measured is documentation (`BoysLaneContracts()` publishes it and the
+lane-contract page states where it crosses the contract). A combination the library does not carry,
+or a cell outside the documented domain, has no figure: both accessors say so and give the library's
+own reason rather than returning a number.
 
 **Choosing a combination is a name.** The four structural axes —
 route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
@@ -295,7 +298,8 @@ float shape takes a route and no scheme — `BoysSingleF32WithRoute<kRoute>(n, x
 there is a template argument rather than a call argument.
 
 **A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
-takes the same axes and the absolute error the caller needs, and answers with a verdict beside
+takes the same axes, the cell `(n, x)`, and the absolute error the caller needs, and answers with a
+verdict beside
 the numbers it was made on: `kGuaranteedInside` where the bound is at or below the tolerance,
 `kDeliveredInside` where the bound is above it and the figure the combination's fits were measured
 to deliver is at or below it, `kOutside` where neither is, and `kNotCarried` where the library does not have

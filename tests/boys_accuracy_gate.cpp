@@ -143,6 +143,46 @@ double DoubleCellFigure(double figure, double rung, double value)
     return magnitude > 0.0 ? figure * rung / magnitude : figure;
 }
 
+// The contract's figure at one cell, composed here from a lane row and the multipliers the
+// specification states. `BoysAccuracyGuaranteed` answers the same figure from the same row, and
+// the combination book holds the two to each other at the cell it asks about: two paths over one
+// statement, so a change to either moves both or the run goes red.
+double ContractAt(const boys::LaneContractInfo& lane,
+                  int n,
+                  double x,
+                  boys::DivisionForm form,
+                  boys::RegionBExp exp)
+{
+    double base = lane.bound;
+
+    switch (lane.precision)
+    {
+    case boys::Precision::kFp64:
+    case boys::Precision::kFp64Device:
+        // The larger of 1e-13 * F_n(x) and 1e-13 * F_0(x); F falls with the order, so the
+        // ladder's first rung is the wider arm and is evaluated here as the contract states it.
+        base = std::max(1e-13 * boys::BoysSingle(n, x), 1e-13 * boys::BoysSingle(0, x));
+
+        break;
+    case boys::Precision::kFp32:
+    case boys::Precision::kFp32Device:
+        base = std::max(std::ldexp(1.0, -22) * boys::BoysSingle(n, x), lane.bound);
+
+        break;
+    case boys::Precision::kFp16:
+    case boys::Precision::kBf16:
+    case boys::Precision::kFp16Device:
+    case boys::Precision::kBf16Device:
+        break;
+    }
+
+    const double plain =
+        form == boys::DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
+    const double member = exp == lane.additiveMember ? lane.additive : 0.0;
+
+    return base + plain + member;
+}
+
 // The floor a relative figure binds above: the smallest normal of each budget's format (DBL_MIN,
 // 2^-1022; FLT_MIN, 2^-126). Below it the return is subnormal or zero and no accuracy is claimed.
 constexpr double kDoubleFloor = 2.2250738585072014e-308;
@@ -10264,6 +10304,13 @@ int main(int argc, char** argv) {
         // beside its base, and it is printed so a figure above the base cannot read as a defect.
         double judgedBound = 0.0;
         double accessorBound = 0.0;
+        // The gate's own composition of the contract at the cell the accessor was asked at, at
+        // this row's form and member: the accessor's answer and this figure are one number or the
+        // run is red. It is not the sweep's bar (`bound`): the sweep judges cells against a bar,
+        // and the accessor answers the contract at one cell.
+        double contractBound = 0.0;
+        double contractFormBound = 0.0;
+        double contractPlainBound = 0.0;
         // The same answer for the form this build's unnamed calls divide in, which is what the
         // tolerance query and BoysAccuracyDelivered read: neither names a form, so both read the
         // build's default, and the query's `bound` is this figure, not `accessorBound`.
@@ -11834,11 +11881,14 @@ int main(int argc, char** argv) {
                     {
                         for (const boys::PackAxisInfo& axisRow : boys::BoysPackAxes())
                         {
-                            // What this lane's own carrier says about the
-                            // member: a refusal is the cross's owed row, and
-                            // this arm is not the instrument that decides it.
+                            // What this lane's own carrier says about the member: a
+                            // refusal is the cross's owed row, and this arm is not the
+                            // instrument that decides it. Carriage is the lane's and
+                            // does not depend on the cell, so (0, 0) is asked.
                             const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                                 static_cast<boys::Precision>(lane),
+                                0,
+                                0.0,
                                 route,
                                 schemeRow.scheme,
                                 axisRow.axis,
@@ -12695,10 +12745,35 @@ int main(int argc, char** argv) {
                     {
                         const boys::PackAxisInfo& axisRow =
                             boys::BoysPackAxes()[static_cast<std::size_t>(ai)];
+
+                        // The measured cell this combination's row was read at. It carries the
+                        // row's delivered figures, and the accessor is asked at the one cell below.
+                        const CombCell* const measuredCell = [&] {
+                            for (const CombCell& m : combMeasured)
+                            {
+                                if (m.lane == lane &&
+                                    m.route == static_cast<int>(route) &&
+                                    m.scheme == static_cast<int>(scheme) &&
+                                    m.partition == static_cast<int>(partition.granularity) &&
+                                    m.axis == static_cast<int>(axisRow.axis))
+                                {
+                                    return &m;
+                                }
+                            }
+
+                            return static_cast<const CombCell*>(nullptr);
+                        }();
+
+                        // The accessor is asked at n = 0, x = 0, the one cell every lane's
+                        // contract is defined at and the cell the gate's own composition below
+                        // uses. The contract moves with the cell, so the two sides must name the
+                        // same one; the per-cell contract is what the lane rows above measure.
+                        constexpr int cellN = 0;
+                        constexpr double cellX = 0.0;
+
                         // The division form is named, and it is the one argument this call was
                         // leaving to the build: the accessor answers the figure for the form it is
-                        // given, and the figure this row is judged by is the lane's base, so the two
-                        // are one number. The region-B member is named for the same reason.
+                        // given. The region-B member is named for the same reason.
 #ifdef BOYS_GATE_CUDA
                         // The member the device arm read this row at, which is the member
                         // its figure was taken at (kCombDeviceRowMember above). A build
@@ -12710,6 +12785,8 @@ int main(int argc, char** argv) {
 #endif
                         const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
+                            cellN,
+                            cellX,
                             route,
                             scheme,
                             axisRow.axis,
@@ -12722,6 +12799,8 @@ int main(int argc, char** argv) {
                         // default one, and the tolerance query's own `bound` is this figure.
                         const boys::AccuracyFigure guaranteedForm =
                             boys::BoysAccuracyGuaranteed(static_cast<boys::Precision>(lane),
+                                                         cellN,
+                                                         cellX,
                                                          route,
                                                          scheme,
                                                          axisRow.axis,
@@ -12732,6 +12811,8 @@ int main(int argc, char** argv) {
                         // arm judged that form by the bar this figure is held to below.
                         const boys::AccuracyFigure guaranteedPlain = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
+                            cellN,
+                            cellX,
                             route,
                             scheme,
                             axisRow.axis,
@@ -12755,6 +12836,18 @@ int main(int argc, char** argv) {
                         c.accessorBound = guaranteed.value;
                         c.accessorFormBound = guaranteedForm.value;
                         c.accessorPlainBound = guaranteedPlain.value;
+                        // The gate's own composition of the same contract at the same cell: the
+                        // two are compared below and are one number or the run is red.
+                        c.contractBound =
+                            ContractAt(combLaneRows[static_cast<std::size_t>(lane)], cellN, cellX,
+                                       boys::DivisionForm::kRefinedReciprocal, rowExp);
+                        c.contractFormBound = ContractAt(combLaneRows[static_cast<std::size_t>(lane)],
+                                                         cellN, cellX,
+                                                         boys::kDefaultDivisionForm,
+                                                         boys::kDefaultHostRegionBExp);
+                        c.contractPlainBound =
+                            ContractAt(combLaneRows[static_cast<std::size_t>(lane)], cellN, cellX,
+                                       boys::DivisionForm::kPlainReciprocal, rowExp);
                         c.accessorDelivered = delivered.value;
                         c.accessorDeliveredKnown = delivered.available;
 
@@ -12764,6 +12857,8 @@ int main(int argc, char** argv) {
                         // entry compares the request with the figure it reports - `guaranteedForm`.
                         const boys::CombinationCoverage askedAtBound =
                             boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                   cellN,
+                                                   cellX,
                                                    route,
                                                    scheme,
                                                    axisRow.axis,
@@ -12771,6 +12866,8 @@ int main(int argc, char** argv) {
                                                    guaranteedForm.value);
                         const boys::CombinationCoverage askedAtHalf =
                             boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                   cellN,
+                                                   cellX,
                                                    route,
                                                    scheme,
                                                    axisRow.axis,
@@ -12784,42 +12881,26 @@ int main(int argc, char** argv) {
                         c.toleranceDeliveredKnown = askedAtBound.deliveredKnown;
                         c.toleranceReason = askedAtBound.reason;
 
-                        const CombCell* cell = nullptr;
-
-                        for (const CombCell& m : combMeasured)
+                        if (measuredCell != nullptr)
                         {
-                            if (m.lane == lane &&
-                                m.route == static_cast<int>(route) &&
-                                m.scheme == static_cast<int>(scheme) &&
-                                m.partition == static_cast<int>(partition.granularity) &&
-                                m.axis == static_cast<int>(axisRow.axis))
-                            {
-                                cell = &m;
-
-                                break;
-                            }
-                        }
-
-                        if (cell != nullptr)
-                        {
-                            c.cells = cell->cells;
-                            c.below = cell->below;
-                            c.over = cell->over;
-                            c.delivered = cell->delivered;
-                            c.bound = cell->bound;
-                            c.judgedBound = cell->judgedTo > cell->bound ? cell->judgedTo
-                                                                        : cell->bound;
-                            c.worstN = cell->worstN;
-                            c.worstX = cell->worstX;
-                            c.worstForm = cell->worstForm;
-                            c.forms = cell->forms;
-                            c.plainBar = cell->plainBar;
+                            c.cells = measuredCell->cells;
+                            c.below = measuredCell->below;
+                            c.over = measuredCell->over;
+                            c.delivered = measuredCell->delivered;
+                            c.bound = measuredCell->bound;
+                            c.judgedBound = measuredCell->judgedTo > measuredCell->bound ? measuredCell->judgedTo
+                                                                        : measuredCell->bound;
+                            c.worstN = measuredCell->worstN;
+                            c.worstX = measuredCell->worstX;
+                            c.worstForm = measuredCell->worstForm;
+                            c.forms = measuredCell->forms;
+                            c.plainBar = measuredCell->plainBar;
 
                             for (std::size_t f = 0; f < kCombForms; ++f)
                             {
-                                c.formWorst[f] = cell->formWorst[f];
-                                c.formWorstN[f] = cell->formWorstN[f];
-                                c.formWorstX[f] = cell->formWorstX[f];
+                                c.formWorst[f] = measuredCell->formWorst[f];
+                                c.formWorstN[f] = measuredCell->formWorstN[f];
+                                c.formWorstX[f] = measuredCell->formWorstX[f];
                             }
                             c.state = c.over == 0
                                           ? "certified and published"
@@ -12829,13 +12910,13 @@ int main(int argc, char** argv) {
                             // and no others: a reason for a number that is not the number beside it.
                             std::string barTerms;
 
-                            if (cell->plainTerm > 0.0)
+                            if (measuredCell->plainTerm > 0.0)
                             {
                                 barTerms += "the plain reciprocal's own rounding, which that "
                                             "form adds beside the base";
                             }
 
-                            if (cell->valueTerm > 0.0)
+                            if (measuredCell->valueTerm > 0.0)
                             {
                                 if (!barTerms.empty())
                                 {
@@ -12853,24 +12934,24 @@ int main(int argc, char** argv) {
                             // figure per form is owed the numbers they were read from.
                             std::string formFigures;
 
-                            if (combIsDeviceLane(lane) && cell->forms > 1)
+                            if (combIsDeviceLane(lane) && measuredCell->forms > 1)
                             {
                                 const double baseWorst =
-                                    std::max(cell->formWorst[0],
-                                             cell->formWorst[2]);
+                                    std::max(measuredCell->formWorst[0],
+                                             measuredCell->formWorst[2]);
 
                                 formFigures = Fmt(
                                     ": %.6g at worst over the forms that share the lane's "
                                     "base, and %.6g under the plain reciprocal at n=%d, "
                                     "x=%.6g",
                                     baseWorst,
-                                    cell->formWorst[1],
-                                    cell->formWorstN[1],
-                                    cell->formWorstX[1]);
+                                    measuredCell->formWorst[1],
+                                    measuredCell->formWorstN[1],
+                                    measuredCell->formWorstX[1]);
                             }
 
                             const char* formClause =
-                                cell->forms > 1 && formFigures.empty()
+                                measuredCell->forms > 1 && formFigures.empty()
                                     ? ", and the row was read at every form"
                                     : "";
 
@@ -12973,7 +13054,7 @@ int main(int argc, char** argv) {
         {
             ++combAccessorHostOnly;
 
-            if (c.accessorBound != c.bound)
+            if (c.accessorBound != c.contractBound)
             {
                 ++combAccessorDisagreeing;
             }
@@ -12981,15 +13062,15 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (c.accessorBound != c.bound)
+        if (c.accessorBound != c.contractBound)
         {
             ++combAccessorDisagreeing;
         }
 
-        // The same equality for the form a row publishes its own figure for: the bar the arm
-        // judged that form by is the accessor's answer for it, which is what makes the row's
-        // per-form figure one a consumer reads rather than one this gate composed.
-        if (c.accessorPlainBound != c.plainBar)
+        // The same equality for the form a row publishes its own figure for: the figure the
+        // contract states at that form is what the accessor answers for it, which is what makes
+        // the row's per-form figure one a consumer reads rather than one this gate composed.
+        if (c.accessorPlainBound != c.contractPlainBound)
         {
             ++combAccessorDisagreeing;
         }
@@ -13095,19 +13176,19 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---- the accessor beside the figure it is judged by ---------------------
-    // One row per lane: `bound` is the figure the lane documents for the combination, `delivered`
-    // what the combination's own rows were measured to deliver, and `row bound` and `call measured`
-    // are the same two questions asked of this row by this gate. The figures are one number.
-    std::printf("\n  the accessor beside the figure the row is judged by, one combination per "
-                "lane.\n  `bound` is what a caller may rely on, `delivered` is what the "
-                "combination's fits were\n  measured to deliver, and the last two are the same "
-                "two questions asked of the row by this\n  gate:\n");
+    // ---- the accessor beside the contract this gate composes -----------------
+    // One row per lane: `bound` is the accessor's figure at n = 0, x = 0, `delivered` what the
+    // combination's fits were measured to deliver, and `contract` and `call measured` are the
+    // same two questions asked of the row by this gate.
+    std::printf("\n  the accessor beside the contract this gate composes, one combination per "
+                "lane.\n  `bound` is what a caller may rely on at n = 0, x = 0, `delivered` is "
+                "what the\n  combination's fits were measured to deliver, and the last two are "
+                "the same two questions\n  asked of the row by this gate:\n");
     std::printf("  %-58s %-14s %-14s %-14s %-14s %s\n",
                 "combination",
                 "bound",
                 "delivered",
-                "row bound",
+                "contract",
                 "call measured",
                 "state and the source the accessor read");
 
@@ -13146,7 +13227,8 @@ int main(int argc, char** argv) {
                                               ? Fmt("%.6g", shown->accessorDelivered)
                                               : std::string("no figure");
         const std::string rowBoundText =
-            shown->bound > 0.0 ? Fmt("%.6g", shown->bound) : std::string("not judged");
+            shown->contractBound > 0.0 ? Fmt("%.6g", shown->contractBound)
+                                       : std::string("not judged");
         const std::string measuredText =
             shown->cells > 0 ? Fmt("%.6g", shown->delivered) : std::string("not measured");
 

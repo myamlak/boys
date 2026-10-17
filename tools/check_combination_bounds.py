@@ -37,9 +37,10 @@ WHAT IS READ FROM THE LIBRARY, AND WHAT IS NOT:
   * the figures are what ``BoysAccuracyGuaranteed`` and ``DefaultGuarantee`` answer.
 
 HOW THE FIGURES ARE OBTAINED, AND WHY THAT IS NOT A PROBE. This check compiles one small driver
-against the revision's own sources and runs it once. The driver evaluates no F_n, times nothing and
-emits no seam: it calls the two accessors above, of which the header says "it is a table read and
-not a measurement: nothing is evaluated and nothing is timed", and prints what they answer. It is
+against the revision's own sources and runs it once. The driver times nothing and emits no seam: it
+calls the two accessors above, of which the header says the figure is a table read and a contract
+evaluation and not a measurement - the accessor evaluates F_0(x) and F_n(x) to carry the lane's
+contract to the cell it is asked about - and prints what they answer at n = 0, x = 0. It is
 neither ``boys-option-probe`` nor ``boys-device-probe`` and it does not measure the option space;
 it reads one. The compile is the slow part, and a compile is not a probe.
 
@@ -486,7 +487,8 @@ void Figure(const char* kind, const char* label, int lane, int route, int scheme
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice>
 void Default(int index, const char* label) {{
     using Policy = boys::DefaultPolicy<kLane, kShape, kDevice>;
-    const boys::AccuracyFigure figure = boys::DefaultGuarantee<kLane, kShape, kDevice>();
+    // The figure is the contract at n = 0, x = 0, the cell every lane's contract is defined at.
+    const boys::AccuracyFigure figure = boys::DefaultGuarantee<kLane, kShape, kDevice>(0, 0.0);
 
     std::printf("DEFAULT%c%d%c%s%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%.17g%c%s%c%s\\n",
                 kSep, index, kSep, label, kSep, static_cast<int>(kLane), kSep,
@@ -569,7 +571,7 @@ int main() {{
                                 Figure("FIG", lanes[l].name,
                                        static_cast<int>(lanes[l].precision), r, s, a, p, f, e,
                                        boys::BoysAccuracyGuaranteed(
-                                           lanes[l].precision,
+                                           lanes[l].precision, 0, 0.0,
                                            static_cast<boys::FitRoute>(r),
                                            static_cast<boys::EvalScheme>(s),
                                            static_cast<boys::PackAxis>(a),
@@ -591,7 +593,7 @@ int main() {{
     for (int l = 0; l < static_cast<int>(lanes.size()); ++l) {{
         Figure("GUARD", lanes[l].name, static_cast<int>(lanes[l].precision), 0, 0, axes, 0, 0, 0,
                boys::BoysAccuracyGuaranteed(
-                   lanes[l].precision, boys::FitRoute::kChebyshev,
+                   lanes[l].precision, 0, 0.0, boys::FitRoute::kChebyshev,
                    boys::EvalScheme::kSplitClenshaw, static_cast<boys::PackAxis>(axes),
                    boys::FitGranularity::kCoarsest, boys::DivisionForm::kExactDivision,
                    boys::RegionBExp::kAccurate));

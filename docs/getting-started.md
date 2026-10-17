@@ -87,7 +87,7 @@ const double f = boys::BoysSingle(n, x);
 ```
 
     F_3(1.25) = 0.055476132923076911
-    guaranteed error <= 5.5e-14  (from throughout, every region)
+    guaranteed error <= 7e-14  (from throughout, every region)
     BoysAllOrders agrees to 0
 
 The second line is the lane's own figure, read out of the library at run time rather than typed into a
@@ -122,7 +122,7 @@ boys::BoysAllOrders(nmax, x, ladder);         // ladder[k] = F_k(x)
     4   0.0075174716662425286
     5   0.0053514087962663534
     6   0.0040954447623731041
-    worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
+    worst gap against BoysSingle: 0 (guaranteed error <= 4.7e-14)
 
 The heading is the program's own: it names the top order the call asked for and the argument, and
 each row below it is one order, from 0 up to that top order.
@@ -149,7 +149,7 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
     x = 4       out[ 4] = 0.017525782161992999
     x = 12.5    out[ 6] = 0.0012030139279729933
     x = 30      out[ 8] = 0.00013483513281472914
-    worst gap against BoysSingle: 0 (guaranteed error <= 5.5e-14)
+    worst gap against BoysSingle: 0 (guaranteed error <= 1.6e-14)
 
 The stride is why the entry exists: the answer can go straight into a column of a larger structure,
 with no intermediate copy. Leave it out and it defaults to 1.
@@ -178,7 +178,7 @@ boys::BoysAllNAtOrders(n, x, out, count);       // each argument at its own top 
     values the padded call produces:        45
     produced for nothing:                   17
     cells compared against the padded call:  28, worst difference 0
-    guaranteed error per value:             5.5e-14  (throughout, every region)
+    guaranteed error per value, tightest over this batch: 1.98e-14  (throughout, every region)
     every value positive and at most one
 
 This is the entry to reach for when the arguments are the batch and the orders are the ladder: it
@@ -297,16 +297,16 @@ comparing a table by eye.
 
 ```cpp
 const boys::CombinationCoverage answer = boys::QueryCombination(
-    boys::Precision::kFp64, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
+    boys::Precision::kFp64, 0, 0.0, boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner,
     boys::PackAxis::kArguments, boys::FitGranularity::kNarrow,
     tolerance);
 ```
 
-    the double entry, every order, as it stands:
+    the double entry at x = 0, where the contract is widest, every order:
       requested    verdict                  guaranteed   measured
-      1e-12        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
-      1e-10        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
-      1e-08        YES - guaranteed       5.5e-14      2.4e-14  [throughout, every region]
+      1e-12        YES - guaranteed       1e-13        2.4e-14
+      1e-10        YES - guaranteed       1e-13        2.4e-14
+      1e-08        YES - guaranteed       1e-13        2.4e-14
     1e-20 is answered NO
 
 The distinction the verdict makes matters for a calculation. **`YES - guaranteed` means the bound the

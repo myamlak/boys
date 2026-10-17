@@ -9,7 +9,7 @@ has never looked at it. This check is that statement.
 WHAT IS COMPARED, AND WHERE EACH SIDE COMES FROM
 
   * the combinations that exist are the axes of the library's own guarantee,
-    ``BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form, exp)``
+    ``BoysAccuracyGuaranteed(precision, n, x, route, scheme, axis, granularity, form, exp)``
     (include/boys/boys.hpp). Every axis member is read from the table the library
     publishes for it - ``BoysFitRoutes``/``BoysFitRoutesF32``, ``BoysEvalSchemes``,
     ``BoysPackAxes``, ``BoysFitGranularities``, ``BoysDivisionForms``, ``BoysRegionBExps``
@@ -1063,18 +1063,22 @@ def carried_universe(library: "Library") -> tuple[dict[str, str], list[str]]:
 
             lane_guarded = [g for g in guards if "lanes.size()" in g]
             carriage_guarded = [g for g in guards if "carriage.carried" in g]
+            cell_guarded = [g for g in guards if "kMaxBoysOrder" in g]
 
             read["the accessor: answers"] = (
                 f"{len(early)} return(s) before it answers, "
-                f"{len(lane_guarded)} guarded on the lane enumeration and "
-                f"{len(carriage_guarded)} on the carriage")
+                f"{len(lane_guarded)} guarded on the lane enumeration, "
+                f"{len(carriage_guarded)} on the carriage and "
+                f"{len(cell_guarded)} on the cell domain")
 
-            if len(lane_guarded) != 1 or len(carriage_guarded) != 1 or len(early) != 2:
+            if (len(lane_guarded) != 1 or len(carriage_guarded) != 1 or len(cell_guarded) != 1
+                    or len(early) != 3):
                 findings.append(
                     f"the accessor refuses at {len(early)} point(s) before it answers, "
-                    f"{len(lane_guarded)} of them guarded on the lane enumeration and "
-                    f"{len(carriage_guarded)} on the carriage, so a tuple built out of the "
-                    f"tables can be refused by a guard this check has not read")
+                    f"{len(lane_guarded)} of them guarded on the lane enumeration, "
+                    f"{len(carriage_guarded)} on the carriage and {len(cell_guarded)} on the "
+                    f"cell domain, so a tuple built out of the tables can be refused by a guard "
+                    f"this check has not read")
 
             # The double lane has no carriage rule of its own: its enumeration guard is written
             # out in the accessor's own body, so the axes that guard tests are read here rather
