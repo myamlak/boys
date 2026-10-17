@@ -31,7 +31,7 @@
 namespace {
 
 using boys::BoysBudget;
-using boys::EvalPolicy;
+using boys::SeamPolicy;
 using boys::EvalScheme;
 using boys::FitGranularity;
 using boys::FitRoute;
@@ -348,7 +348,7 @@ void EvalFp64(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, double x, double* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
                boys::BoysAllOrders<Policy>(nmax, x, out);
            });
 }
@@ -357,7 +357,7 @@ void EvalFp32(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, float x, float* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
                boys::BoysAllOrdersF32<Policy>(nmax, x, out);
            });
 }
@@ -367,7 +367,7 @@ void EvalFp16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, boys::F16 x, boys::F16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
                boys::BoysAllOrdersF16<Policy>(nmax, x, out);
            });
 }
@@ -376,7 +376,7 @@ void EvalBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, boys::Bf16 x, boys::Bf16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
                boys::BoysAllOrdersBf16<Policy>(nmax, x, out);
            });
 }

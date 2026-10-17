@@ -487,7 +487,7 @@ enum class Precision : std::uint8_t {
 ///
 /// The host lanes are the entries of this header; the device lane is the CUDA
 /// surface (boys/boys_cuda.hpp), which a build carries only where it is
-/// configured for it. A host row names the five axes an \c EvalPolicy holds;
+/// configured for it. A host row names the five axes an \c SeamPolicy holds;
 /// the device lane's own choice - its region-B exponential - is not among them.
 ///
 /// \ingroup boys
@@ -588,7 +588,7 @@ struct DefaultPolicyRow {
     static constexpr bool kCarried = false;
 };
 
-// The macro takes all seven axis cells because EvalPolicy's parameters carry defaults and
+// The macro takes all seven axis cells because SeamPolicy's parameters carry defaults and
 // StatedEvalPolicy's do not: a row naming six compiles the seventh from a default it never
 // chose, and a cell left out fails in the class rather than the list - the two added owe the same.
 /// \cond

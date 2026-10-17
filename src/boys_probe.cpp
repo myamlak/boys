@@ -790,7 +790,7 @@ struct ClassRow {
 };
 
 /// The row a class the seam states no row for is read and named against: the
-/// build's own point, which is the combination \c EvalPolicy names.
+/// build's own point, which is the combination \c SeamPolicy names.
 ///
 /// A seam that carries a row list is read instead of the one the five compose, so
 /// a class its list omits has no default policy at all and fails to compile where
@@ -2187,7 +2187,7 @@ template <typename Run,
           RegionBExp kExp>
 void CellEntry(Run&& run) noexcept {
     constexpr BoysBudget kBudget = BoysBudget::kFloat;
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
+    using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     run.template operator()<Policy>();
 }
@@ -2435,7 +2435,7 @@ template <typename Run,
           DivisionForm kDivision,
           RegionBExp kExp>
 void CellEntrySingle(Run&& run) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
+    using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     run.template operator()<Policy>();
 }
@@ -2473,7 +2473,7 @@ void CellUniformSingle(Run&& run,
     // was not stored then, and that is what changed.
     const auto with_scheme = [&]<FitRoute kRoute, EvalScheme kScheme>() {
         const auto with_pack = [&]<PackAxis kPack>() {
-            using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, FitGranularity::kUniform,
+            using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, FitGranularity::kUniform,
                                       kDivision, kExp>;
 
             run.template operator()<Policy>();
@@ -4197,7 +4197,7 @@ constexpr const char* ExpCell(RegionBExp exp) noexcept;
 /// The seven axes of one measured combination, each named in the probe's own spelling
 /// of the library's member — the route, the scheme, the budget the entry's engine runs
 /// at, the packing axis, the partition, the division form and the region-B
-/// exponential, in the order an \c EvalPolicy carries them.
+/// exponential, in the order an \c SeamPolicy carries them.
 ///
 /// A row's own name states the axes its combination moves away from the class's
 /// default and leaves the rest implicit, which is what keeps a name short enough to

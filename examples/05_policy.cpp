@@ -13,7 +13,7 @@ int main()
     const int nmax = 4;
     const double x = 2.5;
 
-    using Named = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+    using Named = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                    boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
                                    boys::FitGranularity::kCoarsest,
                                    boys::DivisionForm::kExactDivision>;

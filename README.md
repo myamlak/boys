@@ -251,7 +251,7 @@ By what you want, not by what the library calls things:
 The complete list, with every overload, is the entry-point table in the
 [API reference](https://myamlak.github.io/boys/).
 
-**Choosing among the evaluation settings?** An `EvalPolicy` carries five option axes — the fit route,
+**Choosing among the evaluation settings?** A `SeamPolicy` carries five option axes — the fit route,
 the evaluation scheme, the packing axis, the interval granularity and the division form — and
 [docs/getting-started.md](docs/getting-started.md#what-does-each-setting-change) tabulates what each
 one changes, what the tree has measured about it, and where its figures are. Which member is fastest
@@ -283,7 +283,7 @@ the bound at worst.
 **Two combinations the option space offers do not hold the bound read against `F_n(x)` alone.** The
 double entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low
 end of the span it serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. The two are
-a lean partition's extended-band ladder (`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>`
+a lean partition's extended-band ladder (`FitGranularity::kCoarsest`, `kNarrow`, and `SeamPolicy<>`
 as it resolves) and the rational-minimax route's high-order intervals; each holds the ladder-scaled
 bound, at a worst measured `0.12` and `0.48` of it.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on

@@ -1332,7 +1332,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
     // Each policy below is one class's row with a single axis replaced, so the reading it
     // carries is about that axis and nothing else about the class.
     using OtherScheme =
-        boys::EvalPolicy<SingleDefault::kRoute,
+        boys::SeamPolicy<SingleDefault::kRoute,
                          kOtherScheme,
                          SingleDefault::kBudget,
                          SingleDefault::kPack,
@@ -1340,7 +1340,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
                          SingleDefault::kDivision,
                          SingleDefault::kRegionBExp>;
     using OtherRoute =
-        boys::EvalPolicy<kOtherRoute,
+        boys::SeamPolicy<kOtherRoute,
                          SingleDefault::kScheme,
                          SingleDefault::kBudget,
                          SingleDefault::kPack,
@@ -1348,7 +1348,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
                          SingleDefault::kDivision,
                          SingleDefault::kRegionBExp>;
     using BatchOtherScheme =
-        boys::EvalPolicy<AllOrdersDefault::kRoute,
+        boys::SeamPolicy<AllOrdersDefault::kRoute,
                          kOtherBatchScheme,
                          AllOrdersDefault::kBudget,
                          AllOrdersDefault::kPack,
@@ -1356,7 +1356,7 @@ void CheckFloatPolicies(Report& report, const std::vector<Cell>& cells) {
                          AllOrdersDefault::kDivision,
                          AllOrdersDefault::kRegionBExp>;
     using BatchOtherRoute =
-        boys::EvalPolicy<kOtherBatchRoute,
+        boys::SeamPolicy<kOtherBatchRoute,
                          AllOrdersDefault::kScheme,
                          AllOrdersDefault::kBudget,
                          AllOrdersDefault::kPack,
@@ -2283,9 +2283,9 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     using AllOrdersDefault =
         boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
-    using SplitClenshawPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using SplitClenshawPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                                  boys::EvalScheme::kSplitClenshaw>;
-    using HornerPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using HornerPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
 
     // The scheme each class does not run, named the same way the float lane's section
     // names it: which of the two words is the other one is the row's, and the reading
@@ -2301,7 +2301,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     // Each other-scheme policy is its own class's row with the scheme replaced, so what
     // the readings below separate is the scheme and nothing else about the class.
     using OtherSchemePolicy =
-        boys::EvalPolicy<SingleDefault::kRoute,
+        boys::SeamPolicy<SingleDefault::kRoute,
                          kOtherScheme,
                          SingleDefault::kBudget,
                          SingleDefault::kPack,
@@ -2309,7 +2309,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
                          SingleDefault::kDivision,
                          SingleDefault::kRegionBExp>;
     using BatchOtherSchemePolicy =
-        boys::EvalPolicy<AllOrdersDefault::kRoute,
+        boys::SeamPolicy<AllOrdersDefault::kRoute,
                          kOtherBatchScheme,
                          AllOrdersDefault::kBudget,
                          AllOrdersDefault::kPack,
@@ -2443,7 +2443,7 @@ void CheckEvalSchemes(Report& report, const std::vector<Cell>& cells) {
     Covered("boys::BoysEvalSchemes");
     Covered("boys::BoysEvalSchemeFits");
     Covered("boys::BoysEvalSchemeDelivered");
-    Covered("boys::EvalPolicy");
+    Covered("boys::SeamPolicy");
     Covered("boys::FitRoute");
     Covered("boys::kDefaultFitRoute");
 }
@@ -2466,7 +2466,7 @@ void CheckGranularityLane(Report& report, const std::vector<Cell>& cells) {
         DefaultPolicy::kGranularity == boys::FitGranularity::kCoarsest
             ? boys::FitGranularity::kNarrow
             : boys::FitGranularity::kCoarsest;
-    using OtherPolicy = boys::EvalPolicy<DefaultPolicy::kRoute,
+    using OtherPolicy = boys::SeamPolicy<DefaultPolicy::kRoute,
                                          DefaultPolicy::kScheme,
                                          DefaultPolicy::kBudget,
                                          DefaultPolicy::kPack,

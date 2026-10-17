@@ -389,7 +389,7 @@ at a target near 1e-10, not at 1e-14; the denominator there is 5.14888e-11 / 8.5
 measured truncation over the bound.**
 
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
-`FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
+`FitGranularity::kNarrow` is a field of `SeamPolicy` and a name the report can print. Its tables are
 the generated header's, reachable through the same entries as the shipped partition. Its
 certification is the accuracy gate's own block: one row per partition, scheme and call shape, each
 judged against the bar the published table holds for the cell it ran in, with the worst cell named
@@ -431,7 +431,7 @@ row is judged at. The block reports its own carrying fraction, 4125493 of 571008
 the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
 itself, so no error can exceed them, and they are not counted in the rows above.
 
-**What is carried, and what is still refused.** The narrow partition is a field of `EvalPolicy` and
+**What is carried, and what is still refused.** The narrow partition is a field of `SeamPolicy` and
 a name the report prints, and every double-precision entry this library has reads it: the stored fits
 directly, the batch entry's seeding fallback, the single-order entry, the plane entry, and the
 across-orders packed lane. The rational route's own narrow pair tables, its across-orders packed
@@ -473,7 +473,7 @@ the committed reference, every order and every sample of the row's interval.
 
 **The same two routes are open on the policy, and there the scheme comes with them.** The lane's
 `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
-`BoysAllNAtOrdersF32` take the `EvalPolicy` the double lane's entries take, so the route is a
+`BoysAllNAtOrdersF32` take the `SeamPolicy` the double lane's entries take, so the route is a
 template argument there as it is on `BoysSingleF32WithRoute`, and the scheme — the choice between the
 Chebyshev
 table and the monomial form of the same fits — is offered beside it. Every pair this lane stores is
@@ -940,7 +940,7 @@ accuracy gate carries one measured row per scheme and stored fit beside its own 
 
 **The scheme and the fit route compose.** A fit route names the fits that serve the regions and a
 scheme names the summation a fit's coefficients are read in; a call site selects the pair with one
-`EvalPolicy`, and every pair of the two enumerations is carried. The figures in this section are the
+`SeamPolicy`, and every pair of the two enumerations is carried. The figures in this section are the
 Chebyshev family's, at either scheme. A route whose own fit has one stored form — the rational
 minimax family's monomial numerator and denominator — evaluates that fit the same way under either
 scheme, and the scheme still reaches the parts of a call the route's own fits do not serve, which

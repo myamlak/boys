@@ -53,10 +53,10 @@ constexpr boys::DivisionForm kSeamDeviceDivisionForm = BOYS_BUILD_DEFAULT_DEVICE
 constexpr boys::RegionBExp kSeamDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE_REGION_B_EXP;
 
 // The policy the seam's five compose: the point a class with no row resolves to, and the type
-// EvalPolicy<> names. Not what every unnamed entry resolves to - an entry resolves to its class's row,
+// SeamPolicy<> names. Not what every unnamed entry resolves to - an entry resolves to its class's row,
 // which is this combination only where the row spells it (include/boys/boys.hpp expands the row list
 // or the five, never both). Its RegionBExp is boys::kDefaultHostRegionBExp, which no host macro names.
-using SeamPolicy = boys::EvalPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
+using SeamFive = boys::SeamPolicy<BOYS_BUILD_DEFAULT_FIT_ROUTE,
                                     BOYS_BUILD_DEFAULT_EVAL_SCHEME,
                                     boys::BoysBudget::kFloat,
                                     BOYS_BUILD_DEFAULT_PACK_AXIS,
@@ -112,26 +112,26 @@ static_assert(boys::kDefaultRegionBExp == boys::RegionBExp::kAccurate,
 #endif
 
 // --- Link two: the policy the five constants compose --------------------------
-// EvalPolicy's template defaults are the five constants, so EvalPolicy<> is the host combination the
+// SeamPolicy's template defaults are the five constants, so SeamPolicy<> is the host combination the
 // seam names; a device class composes the device lane's own two beside four of these rather than this
 // type (include/boys/boys_build_defaults.hpp).
-static_assert(kSeamFitRoute == boys::EvalPolicy<>::kRoute,
+static_assert(kSeamFitRoute == boys::SeamPolicy<>::kRoute,
               "an entry that names no fit route does not resolve to the one the seam names: "
-              "EvalPolicy<>'s default route reads another value");
-static_assert(kSeamEvalScheme == boys::EvalPolicy<>::kScheme,
+              "SeamPolicy<>'s default route reads another value");
+static_assert(kSeamEvalScheme == boys::SeamPolicy<>::kScheme,
               "an entry that names no evaluation scheme does not resolve to the one the seam "
-              "names: EvalPolicy<>'s default scheme reads another value");
-static_assert(kSeamPackAxis == boys::EvalPolicy<>::kPack,
+              "names: SeamPolicy<>'s default scheme reads another value");
+static_assert(kSeamPackAxis == boys::SeamPolicy<>::kPack,
               "an entry that names no packing axis does not resolve to the one the seam names: "
-              "EvalPolicy<>'s default axis reads another value");
-static_assert(kSeamDivisionForm == boys::EvalPolicy<>::kDivision,
+              "SeamPolicy<>'s default axis reads another value");
+static_assert(kSeamDivisionForm == boys::SeamPolicy<>::kDivision,
               "an entry that names no division form does not resolve to the one the seam names: "
-              "EvalPolicy<>'s default form reads another value");
-static_assert(kSeamFitGranularity == boys::EvalPolicy<>::kGranularity,
+              "SeamPolicy<>'s default form reads another value");
+static_assert(kSeamFitGranularity == boys::SeamPolicy<>::kGranularity,
               "an entry that names no fit granularity does not resolve to the one the seam names: "
-              "EvalPolicy<>'s default partition reads another value");
-static_assert(std::is_same_v<boys::EvalPolicy<>, SeamPolicy>,
-              "EvalPolicy<> does not compose the seam's own five values");
+              "SeamPolicy<>'s default partition reads another value");
+static_assert(std::is_same_v<boys::SeamPolicy<>, SeamFive>,
+              "SeamPolicy<> does not compose the seam's own five values");
 
 // --- Link three: the four names a precision is selected by --------------------
 // Each name is what the entries of that precision run when the call site names no policy, so each
@@ -269,50 +269,50 @@ TEST(BuildDefaultsTest, TheSeamNamesAreTheValuesThisBuildResolves) {
                 "an unnamed call resolves");
 
     const bool routesAgree = kSeamFitRoute == boys::kDefaultFitRoute &&
-                             kSeamFitRoute == boys::EvalPolicy<>::kRoute;
+                             kSeamFitRoute == boys::SeamPolicy<>::kRoute;
     const bool schemesAgree = kSeamEvalScheme == boys::kDefaultEvalScheme &&
-                              kSeamEvalScheme == boys::EvalPolicy<>::kScheme;
+                              kSeamEvalScheme == boys::SeamPolicy<>::kScheme;
     const bool packsAgree =
-        kSeamPackAxis == boys::kDefaultPackAxis && kSeamPackAxis == boys::EvalPolicy<>::kPack;
+        kSeamPackAxis == boys::kDefaultPackAxis && kSeamPackAxis == boys::SeamPolicy<>::kPack;
     const bool formsAgree = kSeamDivisionForm == boys::kDefaultDivisionForm &&
-                            kSeamDivisionForm == boys::EvalPolicy<>::kDivision;
+                            kSeamDivisionForm == boys::SeamPolicy<>::kDivision;
     const bool granularitiesAgree = kSeamFitGranularity == boys::kDefaultFitGranularity &&
-                                    kSeamFitGranularity == boys::EvalPolicy<>::kGranularity;
+                                    kSeamFitGranularity == boys::SeamPolicy<>::kGranularity;
 
     std::printf("  %-16s %s\n",
                 "fit route",
                 Cells(routesAgree,
                       RouteName(kSeamFitRoute),
                       RouteName(boys::kDefaultFitRoute),
-                      RouteName(boys::EvalPolicy<>::kRoute))
+                      RouteName(boys::SeamPolicy<>::kRoute))
                     .c_str());
     std::printf("  %-16s %s\n",
                 "eval scheme",
                 Cells(schemesAgree,
                       boys::EvalSchemeName(kSeamEvalScheme),
                       boys::EvalSchemeName(boys::kDefaultEvalScheme),
-                      boys::EvalSchemeName(boys::EvalPolicy<>::kScheme))
+                      boys::EvalSchemeName(boys::SeamPolicy<>::kScheme))
                     .c_str());
     std::printf("  %-16s %s\n",
                 "packing axis",
                 Cells(packsAgree,
                       boys::PackAxisName(kSeamPackAxis),
                       boys::PackAxisName(boys::kDefaultPackAxis),
-                      boys::PackAxisName(boys::EvalPolicy<>::kPack))
+                      boys::PackAxisName(boys::SeamPolicy<>::kPack))
                     .c_str());
     std::printf("  %-16s %s\n",
                 "division form",
                 Cells(formsAgree,
                       boys::DivisionFormName(kSeamDivisionForm),
                       boys::DivisionFormName(boys::kDefaultDivisionForm),
-                      boys::DivisionFormName(boys::EvalPolicy<>::kDivision))
+                      boys::DivisionFormName(boys::SeamPolicy<>::kDivision))
                     .c_str());
     std::printf("  %-16s %s\n",
                 "fit granularity",
                 Cells(granularitiesAgree,
                       boys::GranularityName(kSeamFitGranularity),
                       boys::GranularityName(boys::kDefaultFitGranularity),
-                      boys::GranularityName(boys::EvalPolicy<>::kGranularity))
+                      boys::GranularityName(boys::SeamPolicy<>::kGranularity))
                     .c_str());
 
     EXPECT_TRUE(routesAgree);
@@ -374,7 +374,7 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
 
             boys::BoysAllOrders(nmax, x, unnamed.data());
             boys::BoysAllOrders<OrdersClass>(nmax, x, classDefault.data());
-            boys::BoysAllOrders<SeamPolicy>(nmax, x, seam.data());
+            boys::BoysAllOrders<SeamFive>(nmax, x, seam.data());
 
             for (int order = 0; order <= nmax; ++order) {
                 const std::size_t sorder = static_cast<std::size_t>(order);
@@ -398,7 +398,7 @@ TEST(BuildDefaultsTest, AnUnnamedCallIsItsClasssDefault) {
                 ++singleClassMoved;
             }
 
-            if (boys::BoysSingle(4, x) != boys::BoysSingle<SeamPolicy>(4, x)) {
+            if (boys::BoysSingle(4, x) != boys::BoysSingle<SeamFive>(4, x)) {
                 ++singleSeamMoved;
             }
         }

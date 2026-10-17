@@ -202,7 +202,7 @@ name reads as "narrower, therefore more careful". It is not. `kNarrow` and `kCoa
 interval into pieces of different widths and carry a different number of pieces; **both meet the same
 published error bound.** Choosing the wrong one changes the work, not the accuracy. It costs you
 nothing visible: both compile, both run, both are correct, so you would never find out you had picked
-backwards. `kNarrow` is the seam's own name — what the policy `EvalPolicy<>` resolves to — and not
+backwards. `kNarrow` is the seam's own name — what the policy `SeamPolicy<>` resolves to — and not
 the partition a call site that names no policy reads: that one is its class's row, and every double
 row in this build carries `kUniform`. `kCoarsest` is what the program below names. If you have not
 measured a preference, name no policy at all and take the default. The bound the library publishes
@@ -213,7 +213,7 @@ values below are the program's own ladder, at the one argument and the one top o
 itself at the top of the file.
 
 ```cpp
-using Named = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+using Named = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
                                boys::FitGranularity::kCoarsest,
                                boys::DivisionForm::kExactDivision>;
@@ -453,11 +453,11 @@ computes. The rest can only be named where the call is compiled:
 |---|---|---|
 | which stored fit serves the interval | no | template argument only - `BoysAllOrdersWithRoute<kRoute>` on the ladder shape, `BoysSingleF32WithRoute<kRoute>` on the float lane's single |
 | how the coefficients are summed | **yes** | the scheme-carrying overload of `BoysAllOrdersWithRoute` takes it as a value - the ladder shape; the float lane's single-order entry takes a route and no scheme |
-| the internal precision budget | no | template argument only — `EvalPolicy`'s third parameter |
-| the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `EvalPolicy`'s fourth parameter |
-| how finely the fitted interval is cut | no | template argument only — `EvalPolicy`'s fifth parameter |
-| how the recursion divides | no | template argument only — `EvalPolicy`'s sixth parameter |
-| which exponential seeds a region-B ladder | no | template argument only — `EvalPolicy`'s seventh parameter |
+| the internal precision budget | no | template argument only — `SeamPolicy`'s third parameter |
+| the packing axis (whether a vector register holds four arguments or four orders) | no | template argument only — `SeamPolicy`'s fourth parameter |
+| how finely the fitted interval is cut | no | template argument only — `SeamPolicy`'s fifth parameter |
+| how the recursion divides | no | template argument only — `SeamPolicy`'s sixth parameter |
+| which exponential seeds a region-B ladder | no | template argument only — `SeamPolicy`'s seventh parameter |
 
 The settings that cannot be named at run time are fixed when the translation unit is compiled.
 **There is no run-time entry for them.** A choice that has to be made per input record needs an `if`

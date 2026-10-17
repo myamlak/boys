@@ -77,7 +77,7 @@ ladder-scaled arm and not by a figure read against `F_n(x)`:
 
 | Family | What it holds | The cell it is worst at |
 |---|---|---|
-| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves | the ladder-scaled bound, `0.12` of it at worst | the ladder's cell, n = 32, x = 10.7846; the documented cell n = 32, x = 10.7836 delivers 3.93e-09 · F_n(x), and a fit's cell, n = 8, x = 2.1613, delivers 6.68e-14 · F_n(x) |
+| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `SeamPolicy<>` as it resolves | the ladder-scaled bound, `0.12` of it at worst | the ladder's cell, n = 32, x = 10.7846; the documented cell n = 32, x = 10.7836 delivers 3.93e-09 · F_n(x), and a fit's cell, n = 8, x = 2.1613, delivers 6.68e-14 · F_n(x) |
 | the rational-minimax route's high-order intervals | the ladder-scaled bound, `0.48` of it at worst | n = 2, x = 10.7936; the documented cell n = 32, x = 11.6879 delivers 4.69e-09 · F_n(x) |
 
 So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x)**, and
@@ -285,12 +285,19 @@ or a cell outside the documented domain, has no figure: both accessors say so an
 own reason rather than returning a number.
 
 **Choosing a combination is a name.** The four structural axes —
-route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
+route, scheme, partition, packing axis — are the fields of a `SeamPolicy`, so a combination is a type
 the call site writes once and the compiler resolves where it is written: 8 lanes × 24 axis
 combinations, **192 combinations, each reachable as a name**. Naming one costs nothing at the call —
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those axes are not call arguments. All of them are named and all of them are evaluated by
 `tests/consumer_option_space.cpp`, which prints the counts per precision.
+
+**`SeamPolicy<>` is the explicitly-spelled policy — the seven names the build's seam header states —
+and not what a call site that names no policy runs:** an entry whose call site names no policy
+compiles `DefaultPolicy<Precision, Shape>`, its class's own row, and the two disagree wherever the
+row's cells differ from the seam's. A caller who wants the seam's own point writes `SeamPolicy<>`; a
+caller who wants the class's row names nothing.
+
 A caller holding a route and a scheme as values names the route where the call is compiled and the
 scheme at the call instead:
 `BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)` on the ladder shape. The single-order
@@ -414,12 +421,12 @@ the entry runs the default route and returns its values bit for bit, so the lane
 1e-15 is untouched. A route name the build does not serve evaluates the default route rather than
 returning something the caller did not ask for. **No speed is claimed for either route.**
 
-The route composes with the evaluation scheme into one `EvalPolicy`, which every templated
+The route composes with the evaluation scheme into one `SeamPolicy`, which every templated
 double-precision entry takes. The route entry itself names the route where the call is compiled and
 takes the scheme as a value:
 `BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)`. The float
 lane's single-order shape takes a route and no scheme, `BoysSingleF32WithRoute<kRoute>(n, x)` — a
-scheme there is the `EvalPolicy` below.
+scheme there is the `SeamPolicy` below.
 
 [lane-contract.md](lane-contract.md#the-two-fit-routes) carries this in full: the table of
 routes with each one's stored count, measured error and bar; the criterion each is accepted against;
@@ -435,7 +442,7 @@ one thing changed — which fit supplies the lane's region-A seed and its region
 no coefficient under either route, so naming one there changes nothing.
 
 **The same choice is open through a policy as well, and there it carries the scheme too.** The lane's
-entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
+entries take the `SeamPolicy` above, so a caller who templates on it names the route and the scheme as
 the first two template arguments instead of calling `BoysSingleF32WithRoute`. Both fields are read:
 the route selects which family supplies the lane's fits, and the scheme selects which of
 that family's stored forms is summed, so naming another pair there is answered rather than refused.
@@ -505,7 +512,7 @@ accuracy should read the two measured figures and pick; the default is unchanged
 ### The packing axis
 
 A packed lane keeps four doubles in a register and the call has to supply four of something. That
-something is a choice, and it is the fourth field of `EvalPolicy`: `PackAxis::kArguments`, the
+something is a choice, and it is the fourth field of `SeamPolicy`: `PackAxis::kArguments`, the
 shipped axis, puts four arguments at one order in a register, and `PackAxis::kOrders` puts four
 orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)` actually has, since
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
@@ -573,7 +580,7 @@ environment in front of it, and otherwise verifies that record and the header's 
 
 ### Interval granularity
 
-How narrowly the fitted domain is cut into pieces is the fifth field of `EvalPolicy`, and it is a
+How narrowly the fitted domain is cut into pieces is the fifth field of `SeamPolicy`, and it is a
 choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
 halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
 not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
@@ -720,7 +727,7 @@ and *whose* compiler and flags is not one answer for the whole library, because 
 call you write. An entry that names no policy at the fp64 lanes, and any policy whose packing axis
 is the orders one, is instantiated in the library and takes the library's flags. A policy naming the
 arguments packing axis, and the default fp32 ladder and batch, are instantiated in your translation
-unit and take yours: the `With*` helpers all derive from `EvalPolicy<>`, whose packing axis is the
+unit and take yours: the `With*` helpers all derive from `SeamPolicy<>`, whose packing axis is the
 arguments one, so a call written through them is compiled where it is called. What moves a value is
 FMA being available together with contraction being permitted; where it moves, it moves by less than
 the absolute bound the lane publishes, and largest in relative terms at the smallest values the lane

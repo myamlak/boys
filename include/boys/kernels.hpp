@@ -24,7 +24,7 @@ namespace boys {
 
 /// The front door's \c BoysSingle at a policy the caller names.
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
+/// \tparam Policy the evaluation policy (\c SeamPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions, and a single-precision engine's budget, selected together.
 ///         The default is this call's own class row - \c DefaultPolicy at the
@@ -307,7 +307,7 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 #if BoysFp16
 /// The front door's \c BoysSingleF16 at a policy the caller names.
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
+/// \tparam Policy the evaluation policy (\c SeamPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions and the packing axis, selected together;
 ///

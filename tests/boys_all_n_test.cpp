@@ -607,7 +607,7 @@ namespace {
 // The policy the orders axis is named with on this entry.
 template <boys::EvalScheme kScheme>
 using OrdersAxisPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
 // The certified scalar single lane the axis's fallback runs: the axis's own policy with the packing
@@ -616,7 +616,7 @@ using OrdersAxisPolicy =
 // Every other cell is the axis's, so a rung and a form fall back to their own arithmetic.
 template <boys::EvalScheme kScheme>
 using OrdersAxisSingleLane =
-    boys::EvalPolicy<OrdersAxisPolicy<kScheme>::kRoute,
+    boys::SeamPolicy<OrdersAxisPolicy<kScheme>::kRoute,
                      kScheme,
                      OrdersAxisPolicy<kScheme>::kBudget,
                      boys::PackAxis::kArguments,
@@ -649,7 +649,7 @@ std::vector<double> RunOrdersAxis(const std::vector<double>& xs, int nmax, bool 
 
 // The default policy still names the committed axis, so a call site that names no
 // axis compiles the entry it always did.
-static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
+static_assert(boys::SeamPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved: a call site that names no axis must compile the "
               "committed path");
 static_assert(OrdersAxisPolicy<boys::EvalScheme::kSplitClenshaw>::kPack == boys::PackAxis::kOrders,
@@ -714,7 +714,7 @@ TEST(BoysAllNTest, OrdersAxisIsThePerArgumentEntryBitForBit) {
 // arithmetic, not a second one. So every far cell is that entry's value bit for bit, in both
 // overloads, at every top order, and at the lengths either side of the lane's width.
 TEST(BoysAllNTest, FarLaneIsThePerArgumentBodyBitForBit) {
-    using FarLane = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using FarLane = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                      boys::EvalScheme::kHorner,
                                      boys::BoysBudget::kFloat,
                                      boys::PackAxis::kArguments,
@@ -929,7 +929,7 @@ TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();
     std::vector<double> got(count * (static_cast<std::size_t>(nmax) + 1));
-    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+    boys::BoysAllN<boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
         nmax, gGrid.xs.data(), got.data(), count);
     std::size_t differingFromEntry = 0;
     std::size_t differingFromCommitted = 0;
@@ -938,9 +938,9 @@ TEST(BoysAllNTest, TheRationalRouteIsCarriedAndIsThePerArgumentEntry) {
     {
         std::array<double, 33> rational{};
         std::array<double, 33> committed{};
-        boys::BoysAllOrders<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+        boys::BoysAllOrders<boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
             nmax, gGrid.xs[i], rational.data());
-        boys::BoysAllOrders<boys::EvalPolicy<>>(nmax, gGrid.xs[i], committed.data());
+        boys::BoysAllOrders<boys::SeamPolicy<>>(nmax, gGrid.xs[i], committed.data());
 
         for (int l = 0; l <= nmax; ++l)
         {
@@ -969,7 +969,7 @@ TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
     const int nmax = boys::kMaxBoysOrder;
     const std::size_t count = gGrid.xs.size();
     std::vector<double> got(count * (static_cast<std::size_t>(nmax) + 1));
-    boys::BoysAllN<boys::EvalPolicy<boys::kDefaultFitRoute>>(
+    boys::BoysAllN<boys::SeamPolicy<boys::kDefaultFitRoute>>(
         nmax, gGrid.xs.data(), got.data(), count);
     const std::vector<double> plain = RunEntry(gGrid, false, true);
     std::size_t differing = 0;

@@ -14,7 +14,7 @@
 /// One cell of an evaluation policy replaced, every other cell derived from a base
 /// rather than written down.
 ///
-/// \c EvalPolicy is seven positional template parameters and a parameter list has no
+/// \c SeamPolicy is seven positional template parameters and a parameter list has no
 /// holes: a caller who wants the last of them replaced writes the six before it, and
 /// those six are then the values that caller wrote and not the build's. The aliases
 /// below take the cell the caller has an opinion about and a policy to derive the rest
@@ -28,13 +28,13 @@
 ///                                      boys::DefaultPolicy<boys::Precision::kFp64,
 ///                                                          boys::Shape::kAllOrders>>;
 ///
-/// **Where a caller names no base, the base is \c EvalPolicy<>, which is the build's
-/// own point and not a class's row.** \c EvalPolicy<> is the seven the build's seam
+/// **Where a caller names no base, the base is \c SeamPolicy<>, which is the build's
+/// own point and not a class's row.** \c SeamPolicy<> is the seven the build's seam
 /// header (`boys/boys_build_defaults.hpp`) names; what an entry compiles when its call
 /// site names no policy is \c DefaultPolicy<Precision, Shape>, the class's own row, and
 /// the cells of that row need not be the seam's. A caller who wants that row with one
 /// cell replaced names it as the base, as \c Q does above; a caller who names none gets
-/// the point \c EvalPolicy<> is. Neither form writes a cell its caller did not choose.
+/// the point \c SeamPolicy<> is. Neither form writes a cell its caller did not choose.
 ///
 /// Each alias is the type its long spelling is, so a call through one is compiled as
 /// the call through the other, to the last bit.
@@ -249,7 +249,7 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
 /// spelling that omits a cell is therefore a compile error here, whatever wrote it:
 /// this is the name the default-policy table's rows expand, so a row with a cell
 /// missing fails at the class rather than at the macro that expanded it. The
-/// defaulted spelling is \c EvalPolicy below.
+/// defaulted spelling is \c SeamPolicy below.
 ///
 /// \tparam kFitRoute      the fit route
 /// \tparam kEvalScheme    the scheme the fit's coefficients are summed in
@@ -299,16 +299,17 @@ struct StatedEvalPolicy {
     static constexpr RegionBExp kRegionBExp = kExp;
 };
 
-/// The evaluation policy at the values a call site that names none resolves on:
-/// every axis of \c StatedEvalPolicy, each parameter defaulted, so a caller may name
-/// the one axis it has an opinion about and keep the rest.
+/// The policy a caller spells out explicitly: every axis of \c StatedEvalPolicy,
+/// each parameter defaulted to the name the build's seam header
+/// (`boys/boys_build_defaults.hpp`) carries, so a caller may name the one axis it
+/// has an opinion about and keep the rest.
 ///
-/// **An entry's template default is its class's row, not this name.** Each default
-/// below is the name the build's seam header (`boys/boys_build_defaults.hpp`)
-/// defines, so a build that replaces the seam moves this alias with it, while an
-/// entry defaults to \c DefaultPolicy<kPrecision, kShape>, which the table's row
-/// resolves. A caller who wants the class's own policy names no policy at the call
-/// site; a caller who wants this build's own point names this alias.
+/// **This is not "the default".** An entry's template default is its class's row,
+/// \c DefaultPolicy<kPrecision, kShape>, and the cells of that row need not be the
+/// seam's. This alias is the seam's own point: the seven names the header states,
+/// which a class's row may hold or differ from. A caller who wants this build's
+/// point writes \c SeamPolicy<>; a caller who wants the class's row names no
+/// policy at the call site.
 ///
 /// \ingroup boys
 template <FitRoute kFitRoute = kDefaultFitRoute,
@@ -318,7 +319,7 @@ template <FitRoute kFitRoute = kDefaultFitRoute,
           FitGranularity kFitGranularity = kDefaultFitGranularity,
           DivisionForm kDivisionForm = kDefaultDivisionForm,
           RegionBExp kExp = kDefaultHostRegionBExp>
-using EvalPolicy = StatedEvalPolicy<kFitRoute, kEvalScheme, kEngineBudget, kPackedAxis, kFitGranularity,
+using SeamPolicy = StatedEvalPolicy<kFitRoute, kEvalScheme, kEngineBudget, kPackedAxis, kFitGranularity,
                                     kDivisionForm, kExp>;
 
 /// The constraint the entries put on a policy, so a combination the library does not
@@ -345,7 +346,7 @@ concept EvalPolicyLike = requires {
 /// the shortcut for a consumer who has chosen a precision and does not want to
 /// choose anything else.
 ///
-/// Each name is \c EvalPolicy<> at one lane's budget: the point the build's seam
+/// Each name is \c SeamPolicy<> at one lane's budget: the point the build's seam
 /// header names, and never a class's row. A caller may write
 /// \c BoysSingle<DefaultPolicyFp64>(n, x) to name that point explicitly, and it is
 /// the call a call site that named no policy gets exactly where the table's row for
@@ -378,19 +379,19 @@ concept EvalPolicyLike = requires {
 /// is run on, and not a figure this header can restate.
 ///
 /// \ingroup boys
-using DefaultPolicyFp64 = EvalPolicy<>;
+using DefaultPolicyFp64 = SeamPolicy<>;
 
 /// The float lane's default policy. See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
-using DefaultPolicyFp32 = EvalPolicy<>;
+using DefaultPolicyFp32 = SeamPolicy<>;
 
 /// The fp16 lane's default policy: the seam's five at the half lane's budget. A
 /// class's own default is \c DefaultPolicy<Precision::kFp16, Shape>, which the
 /// table may state with other cells. See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
-using DefaultPolicyFp16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
+using DefaultPolicyFp16 = SeamPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
 /// The bf16 lane's default policy: the seam's five at the same half budget, and the
 /// same policy type as \c DefaultPolicyFp16, because the two half formats are one
@@ -400,7 +401,7 @@ using DefaultPolicyFp16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysB
 /// See \c DefaultPolicyFp64.
 ///
 /// \ingroup boys
-using DefaultPolicyBf16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
+using DefaultPolicyBf16 = SeamPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysBudget::kFp16>;
 
 
 /// The fit route replaced: the base's policy, with \c kRoute taken from the argument
@@ -411,11 +412,11 @@ using DefaultPolicyBf16 = EvalPolicy<kDefaultFitRoute, kDefaultEvalScheme, BoysB
 /// caller names it, at the fit the three select.
 ///
 /// \tparam kFitRoute the route the derived policy evaluates
-/// \tparam Base      the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base      the policy to derive from; \c SeamPolicy<>, the build's own
 ///                   point, where the caller names none
 ///
 /// \ingroup boys
-template <FitRoute kFitRoute, EvalPolicyLike Base = EvalPolicy<>>
+template <FitRoute kFitRoute, EvalPolicyLike Base = SeamPolicy<>>
 using WithFitRoute = StatedEvalPolicy<kFitRoute, Base::kScheme, Base::kBudget, Base::kPack,
                                       Base::kGranularity, Base::kDivision, Base::kRegionBExp>;
 
@@ -426,11 +427,11 @@ using WithFitRoute = StatedEvalPolicy<kFitRoute, Base::kScheme, Base::kBudget, B
 /// evaluation and not the fit that is evaluated.
 ///
 /// \tparam kEvalScheme the scheme the derived policy sums its fits in
-/// \tparam Base        the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base        the policy to derive from; \c SeamPolicy<>, the build's own
 ///                     point, where the caller names none
 ///
 /// \ingroup boys
-template <EvalScheme kEvalScheme, EvalPolicyLike Base = EvalPolicy<>>
+template <EvalScheme kEvalScheme, EvalPolicyLike Base = SeamPolicy<>>
 using WithEvalScheme = StatedEvalPolicy<Base::kRoute, kEvalScheme, Base::kBudget, Base::kPack,
                                         Base::kGranularity, Base::kDivision, Base::kRegionBExp>;
 
@@ -442,11 +443,11 @@ using WithEvalScheme = StatedEvalPolicy<Base::kRoute, kEvalScheme, Base::kBudget
 /// differ in it alone compile the same call.
 ///
 /// \tparam kEngineBudget the budget a single-precision engine runs at
-/// \tparam Base          the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base          the policy to derive from; \c SeamPolicy<>, the build's own
 ///                       point, where the caller names none
 ///
 /// \ingroup boys
-template <BoysBudget kEngineBudget, EvalPolicyLike Base = EvalPolicy<>>
+template <BoysBudget kEngineBudget, EvalPolicyLike Base = SeamPolicy<>>
 using WithBudget = StatedEvalPolicy<Base::kRoute, Base::kScheme, kEngineBudget, Base::kPack,
                                     Base::kGranularity, Base::kDivision, Base::kRegionBExp>;
 
@@ -458,11 +459,11 @@ using WithBudget = StatedEvalPolicy<Base::kRoute, Base::kScheme, kEngineBudget, 
 /// lane fills.
 ///
 /// \tparam kPackedAxis the axis a packed evaluation vectorises over
-/// \tparam Base        the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base        the policy to derive from; \c SeamPolicy<>, the build's own
 ///                     point, where the caller names none
 ///
 /// \ingroup boys
-template <PackAxis kPackedAxis, EvalPolicyLike Base = EvalPolicy<>>
+template <PackAxis kPackedAxis, EvalPolicyLike Base = SeamPolicy<>>
 using WithPackAxis = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBudget, kPackedAxis,
                                       Base::kGranularity, Base::kDivision, Base::kRegionBExp>;
 
@@ -474,11 +475,11 @@ using WithPackAxis = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBudget
 /// cell moves the stored coefficients a call reads and not only its arithmetic.
 ///
 /// \tparam kFitGranularity how narrowly the derived policy cuts the fitted domain
-/// \tparam Base            the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base            the policy to derive from; \c SeamPolicy<>, the build's own
 ///                         point, where the caller names none
 ///
 /// \ingroup boys
-template <FitGranularity kFitGranularity, EvalPolicyLike Base = EvalPolicy<>>
+template <FitGranularity kFitGranularity, EvalPolicyLike Base = SeamPolicy<>>
 using WithFitGranularity = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBudget, Base::kPack,
                                             kFitGranularity, Base::kDivision, Base::kRegionBExp>;
 
@@ -490,11 +491,11 @@ using WithFitGranularity = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::k
 /// differ from each other in the last bits they deliver as well as in what they cost.
 ///
 /// \tparam kDivisionForm how the derived policy performs the recursion's divisions
-/// \tparam Base          the policy to derive from; \c EvalPolicy<>, the build's own
+/// \tparam Base          the policy to derive from; \c SeamPolicy<>, the build's own
 ///                       point, where the caller names none
 ///
 /// \ingroup boys
-template <DivisionForm kDivisionForm, EvalPolicyLike Base = EvalPolicy<>>
+template <DivisionForm kDivisionForm, EvalPolicyLike Base = SeamPolicy<>>
 using WithDivisionForm = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBudget, Base::kPack,
                                           Base::kGranularity, kDivisionForm, Base::kRegionBExp>;
 
@@ -505,11 +506,11 @@ using WithDivisionForm = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBu
 /// region B returns and nothing an earlier region returns.
 ///
 /// \tparam kExp which exponential the derived policy's region-B ladder is seeded with
-/// \tparam Base the policy to derive from; \c EvalPolicy<>, the build's own point, where
+/// \tparam Base the policy to derive from; \c SeamPolicy<>, the build's own point, where
 ///              the caller names none
 ///
 /// \ingroup boys
-template <RegionBExp kExp, EvalPolicyLike Base = EvalPolicy<>>
+template <RegionBExp kExp, EvalPolicyLike Base = SeamPolicy<>>
 using WithRegionBExp = StatedEvalPolicy<Base::kRoute, Base::kScheme, Base::kBudget, Base::kPack,
                                         Base::kGranularity, Base::kDivision, kExp>;
 

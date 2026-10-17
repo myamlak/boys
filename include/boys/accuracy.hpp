@@ -101,7 +101,7 @@ inline constexpr FitRoute kDefaultFitRoute = BOYS_BUILD_DEFAULT_FIT_ROUTE;
 /// are the split Clenshaw route's and are not offered under the other scheme.
 ///
 /// The scheme is one axis of the evaluation and the fit route (FitRoute) is
-/// another, and the two are named together by an EvalPolicy. They select
+/// another, and the two are named together by a SeamPolicy. They select
 /// different things: the route names the fits that serve the regions, and the
 /// scheme names the summation a fit's coefficients are read in. A fit whose
 /// coefficients have two stored forms is summed by either scheme; a fit whose
@@ -508,7 +508,7 @@ inline constexpr DivisionForm kDefaultDeviceDivisionForm = BOYS_BUILD_DEFAULT_DE
 /// arithmetic and differ in what the vector lanes hold, so they are not rungs of
 /// one design and neither replaces the other.
 ///
-/// The axis is one field of an \c EvalPolicy. Naming the orders axis on an entry
+/// The axis is one field of an \c SeamPolicy. Naming the orders axis on an entry
 /// that has one order is a combination this library does not carry and is refused
 /// where it is named: a packed lane keeps four orders of one argument and such a
 /// call produces one.

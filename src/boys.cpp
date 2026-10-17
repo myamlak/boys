@@ -32,10 +32,10 @@ bool BoysAvx2Available() noexcept {
     return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
 }
 
-template float BoysSingleF32<EvalPolicy<>>(int n, float x) noexcept;
-template void BoysAllOrdersF32<EvalPolicy<>>(
+template float BoysSingleF32<SeamPolicy<>>(int n, float x) noexcept;
+template void BoysAllOrdersF32<SeamPolicy<>>(
     int nmax, float x, float* out) noexcept;
-template void BoysAllNF32<EvalPolicy<>>(
+template void BoysAllNF32<SeamPolicy<>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 // The far ladders' asking leg: the arm a host without the fused instruction set reaches, prebuilt

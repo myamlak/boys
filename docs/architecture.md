@@ -83,7 +83,7 @@ case names, and this page does not guess past that.
 
 An axis is a choice a call site can name. Five are the host call site's — the fit route, the
 evaluation scheme, the packing axis, the fit granularity and the division form — and they are the
-five axes a host `EvalPolicy` holds. The region-B exponential is the device lane's own choice and
+five axes a host `SeamPolicy` holds. The region-B exponential is the device lane's own choice and
 is named at the device entry rather than in the host policy. The multiply-add route is the build's,
 and no call site names it.
 

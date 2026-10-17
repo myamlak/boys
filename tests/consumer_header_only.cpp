@@ -289,7 +289,7 @@ using HalfClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllO
 /// the call below can take.
 template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme,
           boys::FitGranularity kGranularity = Row::kGranularity>
-using MovedFrom = boys::EvalPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
+using MovedFrom = boys::SeamPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
                                    kGranularity, Row::kDivision, Row::kRegionBExp>;
 
 /// Whether a policy is off every class row the calls below reach.

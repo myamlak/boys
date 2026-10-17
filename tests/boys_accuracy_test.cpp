@@ -316,14 +316,14 @@ void SweepFloatSingle() {
 // A policy composed from the five is another arithmetic from the class's own once a row spells
 // anything but the five: the two calls would then differ in their route and division form as well.
 using FloatSingleClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
-using Fp16SingleBudget = boys::EvalPolicy<FloatSingleClass::kRoute,
+using Fp16SingleBudget = boys::SeamPolicy<FloatSingleClass::kRoute,
                                           FloatSingleClass::kScheme,
                                           boys::BoysBudget::kFp16,
                                           FloatSingleClass::kPack,
                                           FloatSingleClass::kGranularity,
                                           FloatSingleClass::kDivision,
                                           FloatSingleClass::kRegionBExp>;
-using Fp16BatchBudget = boys::EvalPolicy<FloatBatchClass::kRoute,
+using Fp16BatchBudget = boys::SeamPolicy<FloatBatchClass::kRoute,
                                          FloatBatchClass::kScheme,
                                          boys::BoysBudget::kFp16,
                                          FloatBatchClass::kPack,
@@ -419,7 +419,7 @@ void SweepFloatBatch() {
 // reading that separates the Horner coefficients and their arithmetic from the shipped
 // split-Clenshaw lane.
 void SweepDoubleBatchHorner() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
     std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
@@ -452,7 +452,7 @@ void SweepDoubleBatchHorner() {
 // asserts an even degree and says so), so the Clenshaw path asserted in debug and computed silently
 // wrong values in release while a bound for it sat published.
 template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDoubleBatchUniform() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                     kScheme,
                                     boys::BoysBudget::kFloat,
                                     boys::PackAxis::kArguments,
@@ -485,7 +485,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
 // reading where the route is cheapest rather than dearest. It shares the index arithmetic
 // with the ladder above through one FlatLocate, so what this separates is the order lookup.
 template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDoubleSingleUniform() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                     kScheme,
                                     boys::BoysBudget::kFloat,
                                     boys::PackAxis::kArguments,
@@ -508,7 +508,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
 }
 
 void SweepDoubleSingleHorner() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
 
     for (const ReferenceRow& row : gReference)

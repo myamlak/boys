@@ -1,7 +1,7 @@
 #pragma once
 
 // The template bodies behind boys/boys.hpp's accuracy-multiplier surface (that header includes
-// this file last, never alone). EvalPolicy (backend.hpp) carries every caller choice - route,
+// this file last, never alone). SeamPolicy (backend.hpp) carries every caller choice - route,
 // scheme, budget - and each entry compiles twice under if constexpr: at m = 1 the certified body,
 // pinned bit-for-bit; at m > 1 the seeds run at boys_effective_degrees.hpp's degrees.
 
@@ -5176,14 +5176,14 @@ void BoysAllOrdersWithRoute(EvalScheme scheme, int nmax, double x, double* out) 
 
     // A scheme outside the enumeration is the split Clenshaw's body, which is the declared
     // fallback: the Horner test is an equality and the fallthrough is that body.
-    using HornerPolicy = EvalPolicy<kSelected,
+    using HornerPolicy = SeamPolicy<kSelected,
                                     EvalScheme::kHorner,
                                     SelectorClass::kBudget,
                                     SelectorClass::kPack,
                                     SelectorClass::kGranularity,
                                     SelectorClass::kDivision,
                                     SelectorClass::kRegionBExp>;
-    using SplitClenshawPolicy = EvalPolicy<kSelected,
+    using SplitClenshawPolicy = SeamPolicy<kSelected,
                                            EvalScheme::kSplitClenshaw,
                                            SelectorClass::kBudget,
                                            SelectorClass::kPack,
@@ -5216,7 +5216,7 @@ float BoysSingleF32WithRoute(int n, float x) noexcept {
     constexpr bool kServed = kRoute == FitRoute::kChebyshev || kRoute == FitRoute::kRationalMinimax;
     constexpr FitRoute kSelected = kServed ? kRoute : SingleOrderClass::kRoute;
 
-    using RoutePolicy = EvalPolicy<kSelected,
+    using RoutePolicy = SeamPolicy<kSelected,
                                    SingleOrderClass::kScheme,
                                    SingleOrderClass::kBudget,
                                    SingleOrderClass::kPack,

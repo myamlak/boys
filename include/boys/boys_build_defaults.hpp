@@ -79,7 +79,8 @@
 /// the precision lane an entry is built at, and the question that entry answers -
 /// and a row is the combination that class's entries compile when the call site
 /// names no policy. The names above are the **fallback** and not the whole
-/// answer: a class this list carries no row for resolves to those seven - the
+/// answer: they are the point `boys::SeamPolicy<>` spells. A class this list
+/// carries no row for resolves to those seven - the
 /// host's five at its own lane's budget, and, on a device class, the device
 /// lane's two as well.
 ///

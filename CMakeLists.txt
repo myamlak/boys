@@ -903,10 +903,10 @@ if (BOYS_BUILD_TESTS)
 int main() {
     double out[33] = {};
     const double x = 1.0;
-    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(1, &x, out, 1);
-    boys::BoysAllN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+    boys::BoysAllN<boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(1, &x, out, 1);
+    boys::BoysAllN<boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
         1, &x, out, 1, boys::BoysSortedArgs{});
-    boys::BoysFixedN<boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(0, &x, out, 1);
+    boys::BoysFixedN<boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(0, &x, out, 1);
     return 0;
 }
 " BOYS_GATE_BATCH_ACCEPTS_ROUTE)
@@ -952,7 +952,7 @@ int main() {
 int main() {
     double out[33] = {};
     const double x = 1.0;
-    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+    using OrdersAxis = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
     boys::BoysFixedN<OrdersAxis>(0, &x, out, 1);
     return 0;
@@ -1005,7 +1005,7 @@ int main() {
 int main() {
     float in[33] = {};
     float out[33] = {};
-    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+    using OrdersAxis = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
     boys::BoysAllOrdersF32<OrdersAxis>(32, 1.0f, out);
     boys::BoysAllNF32<OrdersAxis>(1, in, out, 1);
@@ -1019,7 +1019,7 @@ int main() {
     check_cxx_source_compiles("
 #include <boys/boys.hpp>\n#include <boys/kernels.hpp>   // the policy-taking spelling these probes ask about
 int main() {
-    using OrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+    using OrdersAxis = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat, boys::PackAxis::kOrders>;
     boys::BoysSingleF32<OrdersAxis>(1, 1.0f);
     return 0;
@@ -1216,7 +1216,7 @@ int main() {
 #include <boys/kernels.hpp>
 int main() {
     double out[33] = {};
-    boys::BoysAllOrders<boys::EvalPolicy<>>(0, 1.0, out);
+    boys::BoysAllOrders<boys::SeamPolicy<>>(0, 1.0, out);
     return out[0] == 0.0;
 }
 " BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)

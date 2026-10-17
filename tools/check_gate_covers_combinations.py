@@ -1451,7 +1451,7 @@ def compiles(source: str, scratch: pathlib.Path, include: pathlib.Path) -> bool:
 
 
 def policy(precision: str, pack: str) -> str:
-    return (f"boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
+    return (f"boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
             f"boys::BoysBudget::{BUDGET[precision]}, boys::PackAxis::{pack}, "
             f"boys::FitGranularity::kNarrow, boys::DivisionForm::kRefinedReciprocal, "
             f"boys::RegionBExp::kFast>")

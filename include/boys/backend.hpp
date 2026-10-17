@@ -35,7 +35,7 @@
 /// (FitRoute), the scheme the fit's coefficients are summed in (EvalScheme), a
 /// single-precision engine's budget (BoysBudget), the axis a packed evaluation
 /// vectorises over (PackAxis) and how narrowly the fitted domain is cut into pieces
-/// (FitGranularity) - is carried as ONE parameter (EvalPolicy) rather than one per
+/// (FitGranularity) - is carried as ONE parameter (SeamPolicy) rather than one per
 /// axis, so a further axis is a field on the policy rather than a parameter on
 /// every entry, engine and kernel between the call site and the fit.
 ///

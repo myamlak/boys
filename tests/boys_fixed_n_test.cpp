@@ -469,7 +469,7 @@ TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
 namespace {
 
 template <boys::FitRoute kRoute>
-using RoutePolicy = boys::EvalPolicy<kRoute>;
+using RoutePolicy = boys::SeamPolicy<kRoute>;
 
 } // namespace
 

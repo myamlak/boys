@@ -572,16 +572,16 @@ const char* RouteLaneF32(boys::FitRoute route, boys::AccuracyRegion region) {
 
 // The policy the scheme book's rows are measured under: the shipped Chebyshev
 // route at the scheme the row names. That is the pair BoysEvalSchemeFits()
-// reports, and the pair a call site reaches by naming one EvalPolicy.
+// reports, and the pair a call site reaches by naming one SeamPolicy.
 template <boys::EvalScheme kScheme>
-using SchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
+using SchemePolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme>;
 
 // The same pair with the partition named: the packed region-A lane holds one stored table and
 // one recurrence, so it is the shipped partition's and no other's - a probe that left the
 // partition to the default would read the partition while claiming to read the scheme.
 template <boys::EvalScheme kScheme>
 using SchemeLanePolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev,
                      kScheme,
                      boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments,
@@ -591,7 +591,7 @@ using SchemeLanePolicy =
 // partition named, which is the whole of the axis.
 template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
 using GranularityPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev,
                      kScheme,
                      boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments,
@@ -637,7 +637,7 @@ double PartitionFitValue(boys::EvalLane lane, int n, double x) {
 // which is the axis's only difference from SchemePolicy.
 template <boys::EvalScheme kScheme>
 using OrdersPackPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
 // The stored fit one lane names, summed by one scheme, on the shipped partition.
@@ -776,19 +776,19 @@ void RunProbe(const Reference& ref, int n, double x)
         // engine, divides through the form the policy names. Naming each form here separates a
         // formula from the entry that reaches it - the engine's answer would make all three agree.
         {
-            using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PExact = boys::SeamPolicy<boys::kDefaultFitRoute,
                                             boys::kDefaultEvalScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::kDefaultPackAxis,
                                             boys::kDefaultFitGranularity,
                                             boys::DivisionForm::kExactDivision>;
-            using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PPlain = boys::SeamPolicy<boys::kDefaultFitRoute,
                                             boys::kDefaultEvalScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::kDefaultPackAxis,
                                             boys::kDefaultFitGranularity,
                                             boys::DivisionForm::kPlainReciprocal>;
-            using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PRefined = boys::SeamPolicy<boys::kDefaultFitRoute,
                                               boys::kDefaultEvalScheme,
                                               boys::BoysBudget::kFloat,
                                               boys::kDefaultPackAxis,
@@ -2296,7 +2296,7 @@ int main(int argc, char** argv) {
     // The entry the orders-axis claim measures: the float ladder over the
     // orders packing axis, named once here because the claim's figure is read
     // off it and the sweep below instantiates it.
-    using FloatOrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using FloatOrdersAxis = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                              boys::EvalScheme::kSplitClenshaw,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders>;
@@ -3001,8 +3001,8 @@ int main(int argc, char** argv) {
                     for (int n = 0; n <= nmax; ++n)
                     {
                         ++cells;
-                        const double a = boys::BoysSingle< boys::EvalPolicy<kRoute>>(n, ref.x[i]);
-                        const double b = boys::BoysSingle< boys::EvalPolicy<>>(n, ref.x[i]);
+                        const double a = boys::BoysSingle< boys::SeamPolicy<kRoute>>(n, ref.x[i]);
+                        const double b = boys::BoysSingle< boys::SeamPolicy<>>(n, ref.x[i]);
 
                         if (std::memcmp(&a, &b, sizeof(double)) != 0)
                         {
@@ -3022,8 +3022,8 @@ int main(int argc, char** argv) {
                 {
                     std::array<double, 33> a{};
                     std::array<double, 33> b{};
-                    boys::BoysAllOrders< boys::EvalPolicy<kRoute>>(nmax, ref.x[i], a.data());
-                    boys::BoysAllOrders< boys::EvalPolicy<>>(nmax, ref.x[i], b.data());
+                    boys::BoysAllOrders< boys::SeamPolicy<kRoute>>(nmax, ref.x[i], a.data());
+                    boys::BoysAllOrders< boys::SeamPolicy<>>(nmax, ref.x[i], b.data());
 
                     for (int n = 0; n <= nmax; ++n)
                     {
@@ -3056,9 +3056,9 @@ int main(int argc, char** argv) {
                     permArgs.size() * (static_cast<std::size_t>(nmax) + 1);
                 std::vector<double> a(planeSize);
                 std::vector<double> b(planeSize);
-                boys::BoysAllN< boys::EvalPolicy<kRoute>>(
+                boys::BoysAllN< boys::SeamPolicy<kRoute>>(
                     nmax, permArgs.data(), a.data(), permArgs.size());
-                boys::BoysAllN< boys::EvalPolicy<>>(
+                boys::BoysAllN< boys::SeamPolicy<>>(
                     nmax, permArgs.data(), b.data(), permArgs.size());
 
                 for (std::size_t k = 0; k < planeSize; ++k)
@@ -3085,8 +3085,8 @@ int main(int argc, char** argv) {
                         ++cells;
                         double a = 0.0;
                         double b = 0.0;
-                        boys::BoysFixedN< boys::EvalPolicy<kRoute>>(n, &ref.x[i], &a, 1);
-                        boys::BoysFixedN< boys::EvalPolicy<>>(n, &ref.x[i], &b, 1);
+                        boys::BoysFixedN< boys::SeamPolicy<kRoute>>(n, &ref.x[i], &a, 1);
+                        boys::BoysFixedN< boys::SeamPolicy<>>(n, &ref.x[i], &b, 1);
 
                         if (std::memcmp(&a, &b, sizeof(double)) != 0)
                         {
@@ -3161,7 +3161,7 @@ int main(int argc, char** argv) {
             };
 
             std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
-            boys::BoysAllN< boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+            boys::BoysAllN< boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
                 nmax, ref.x.data(), planes.data(), count);
 
             for (std::size_t i = 0; i < count; ++i)
@@ -3179,7 +3179,7 @@ int main(int argc, char** argv) {
 
             for (int n = 0; n <= nmax; ++n)
             {
-                boys::BoysFixedN< boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+                boys::BoysFixedN< boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
                     n, ref.x.data(), columns.data() + static_cast<std::size_t>(n) * count, count);
             }
 
@@ -3196,14 +3196,14 @@ int main(int argc, char** argv) {
         }
 
         // ---- the selector's two-argument form: route and scheme named together, the
-        // pair a compile-time call site reaches through one EvalPolicy. The values must be the same
+        // pair a compile-time call site reaches through one SeamPolicy. The values must be the same
         // values, not merely inside the same bound.
         const auto runtimePair = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
             // The entry a call site writes for this pair: the policy names the route and the
             // scheme and leaves the other axes to the class, which is the reading the entry
             // itself makes for the axes its caller did not name (boys_impl.hpp,
             // BoysAllOrdersWithRoute).
-            using Counterpart = boys::EvalPolicy<kRoute,
+            using Counterpart = boys::SeamPolicy<kRoute,
                                                  kScheme,
                                                  RouteClass::kBudget,
                                                  RouteClass::kPack,
@@ -3808,21 +3808,21 @@ int main(int argc, char** argv) {
         constexpr boys::DivisionForm kPolicyForm = boys::kDefaultDivisionForm;
 
         using ShippedPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kCoarsest,
                              kPolicyForm>;
         using HornerPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kHorner,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kCoarsest,
                              kPolicyForm>;
         using RationalPair =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -3832,14 +3832,14 @@ int main(int argc, char** argv) {
         // region-B seed: the partition is the only difference from the pairs
         // above, and naming it is the whole of that axis.
         using NarrowPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kNarrow,
                              kPolicyForm>;
         using NarrowRationalPair =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -4202,13 +4202,13 @@ int main(int argc, char** argv) {
     int narrowRatClaims[3] = {-1, -1, -1};
     {
         using NarrowRational =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kNarrow>;
         using ShippedRational =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -6150,7 +6150,7 @@ int main(int argc, char** argv) {
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
             constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
             constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
-            using Policy = boys::EvalPolicy<kRoute,
+            using Policy = boys::SeamPolicy<kRoute,
                                             kScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::PackAxis::kOrders,
@@ -6735,7 +6735,7 @@ int main(int argc, char** argv) {
     const auto sweepEntryBook =
         [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis>(
             BatchEntry kind, EntryBookRow& row) {
-            using Policy = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
+            using Policy = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
                                             boys::FitGranularity::kUniform>;
 
             const auto open = [&]() {
@@ -8496,19 +8496,19 @@ int main(int argc, char** argv) {
     double formWorstX = 0.0;
 
     {
-        using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PExact = boys::SeamPolicy<boys::kDefaultFitRoute,
                                         boys::kDefaultEvalScheme,
                                         boys::BoysBudget::kFloat,
                                         boys::kDefaultPackAxis,
                                         boys::kDefaultFitGranularity,
                                         boys::DivisionForm::kExactDivision>;
-        using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PPlain = boys::SeamPolicy<boys::kDefaultFitRoute,
                                         boys::kDefaultEvalScheme,
                                         boys::BoysBudget::kFloat,
                                         boys::kDefaultPackAxis,
                                         boys::kDefaultFitGranularity,
                                         boys::DivisionForm::kPlainReciprocal>;
-        using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PRefined = boys::SeamPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::kDefaultPackAxis,
@@ -9101,7 +9101,7 @@ int main(int argc, char** argv) {
                  "an entry that takes a policy reads the route that policy names, wherever the "
                  "route's own selector takes over: naming it changes the values it answers with, "
                  "and naming the default changes none of them",
-                 "README.md, \"the route names the fits\"; include/boys/boys.hpp, EvalPolicy and "
+                 "README.md, \"the route names the fits\"; include/boys/boys.hpp, SeamPolicy and "
                  "the entries' \\tparam Policy",
                  routeCarriageMissed == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu entries that were handed the rational route answered it with "
@@ -9138,7 +9138,7 @@ int main(int argc, char** argv) {
                  "the selector's route-and-scheme form answers each pair as the "
                  "compile-time entry for that pair does, value for value",
                  "include/boys/boys.hpp, BoysAllOrdersWithRoute<kRoute>(scheme, ...) and "
-                 "EvalPolicy; boys_impl.hpp, BoysAllOrdersWithRoute for the axes the pair does "
+                 "SeamPolicy; boys_impl.hpp, BoysAllOrdersWithRoute for the axes the pair does "
                  "not name",
                  routeRuntimeDiff == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu cell(s) differ between the run-time pair selector and the "
@@ -9230,7 +9230,7 @@ int main(int argc, char** argv) {
                  "policies cover in common; the batch entry's region-A rows, whose value comes "
                  "from the double lane's fit at the pair the policy names, are reported apart "
                  "rather than required to change",
-                 "include/boys/boys.hpp, EvalPolicy and the float entries' \\tparam Policy; "
+                 "include/boys/boys.hpp, SeamPolicy and the float entries' \\tparam Policy; "
                  "boys_impl.hpp, FloatBatchRegionASeed",
                  (f32PolicyNotCarried == 0 && f32PolicyUncovered == 0) ? Verdict::Verified
                                                                         : Verdict::Exceeded,
@@ -9770,7 +9770,7 @@ int main(int argc, char** argv) {
          "site unswept and unrefused, which is what the run-time probe is read for"},
         {"the region-A transform lane (BoysRegionAProduct and its modes)",
          "no evaluation policy at all",
-         "its modes are the lane's own arguments rather than an EvalPolicy, so a "
+         "its modes are the lane's own arguments rather than a SeamPolicy, so a "
          "scheme is not among the axes a caller can name there. Its claims are the transform "
          "rows above, judged against that lane's own table"},
         {"the packed and half-precision lanes reached through the batch entries",
@@ -10668,22 +10668,22 @@ int main(int argc, char** argv) {
             constexpr boys::BoysBudget kBudget =
                 kFamily < 2 ? boys::BoysBudget::kFloat : boys::BoysBudget::kFp16;
 
-            using PExactA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PExactA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kExactDivision,
                                             boys::RegionBExp::kAccurate>;
-            using PPlainA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PPlainA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kPlainReciprocal,
                                             boys::RegionBExp::kAccurate>;
-            using PRefinedA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PRefinedA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                               boys::DivisionForm::kRefinedReciprocal,
                                               boys::RegionBExp::kAccurate>;
-            using PExactF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PExactF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kExactDivision,
                                             boys::RegionBExp::kFast>;
-            using PPlainF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PPlainF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kPlainReciprocal,
                                             boys::RegionBExp::kFast>;
-            using PRefinedF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PRefinedF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                               boys::DivisionForm::kRefinedReciprocal,
                                               boys::RegionBExp::kFast>;
 
@@ -14655,9 +14655,9 @@ int main(int argc, char** argv) {
             boys::PackAxis kAxis>(const std::array<std::size_t, 4>& refDiffer,
                                   bool plane,
                                   const char* entryName) {
-            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+            using GridReading = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis,
                                                  boys::FitGranularity::kUniform>;
-            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+            using NarrowReading = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis,
                                                    boys::FitGranularity::kNarrow>;
 
             PartitionCarriageRowF32 row;
@@ -14720,10 +14720,10 @@ int main(int argc, char** argv) {
     // and the two entries are swept on both axes under it.
     const auto sweepPartitionF32Arm =
         [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
-            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+            using GridReading = boys::SeamPolicy<kRoute, kScheme, kBudget,
                                                  boys::PackAxis::kArguments,
                                                  boys::FitGranularity::kUniform>;
-            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+            using NarrowReading = boys::SeamPolicy<kRoute, kScheme, kBudget,
                                                    boys::PackAxis::kArguments,
                                                    boys::FitGranularity::kNarrow>;
 

@@ -427,7 +427,7 @@ def compiled(tree: pathlib.Path, source: str, timeout: float = 900) -> bool:
 
 def control_unit(precision: str, shape: str, pack: str) -> str:
     """A translation unit instantiating one class's entry at one packing axis member."""
-    policy = (f"boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
+    policy = (f"boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
               f"boys::BoysBudget::{BUDGET[precision]}, boys::PackAxis::{pack}, "
               f"boys::FitGranularity::kNarrow, boys::DivisionForm::kRefinedReciprocal, "
               f"boys::RegionBExp::kFast>")

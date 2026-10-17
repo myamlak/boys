@@ -1226,7 +1226,7 @@ template <EvalScheme kScheme,
           FitGranularity kGranularity,
           DivisionForm kForm>
 void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
+    using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
 
     // Past the fits one ladder replaces the per-order loop below: nmax steps where that loop pays
@@ -1867,7 +1867,7 @@ template <EvalScheme kScheme, FitRoute kRoute, BoysBudget kBudget,
           DivisionForm kForm = kDefaultDivisionForm>
 void F32ScalarOrders(int nmax, float x, float* out) noexcept {
     using Policy =
-        EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
+        SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -1991,7 +1991,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                 return;
             }
 
-            UniformAllOrdersF32<boys::EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kOrders,
+            UniformAllOrdersF32<boys::SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kOrders,
                                                  kGranularity, kForm>>(nmax, x, out);
 
             return;
@@ -2310,7 +2310,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
         // is named in the policy because this body reads one policy and not one policy's table.
         static constexpr auto kDegrees =
             RegionADegreeTableOf<
-                                 EvalPolicy<kRoute, kScheme, BoysBudget::kFloat,
+                                 SeamPolicy<kRoute, kScheme, BoysBudget::kFloat,
                                             PackAxis::kOrders, kGranularity, kForm>,
                                  BoysRole::kDoubleSingle>();
 
@@ -2368,7 +2368,7 @@ template <EvalScheme kScheme, FitRoute kRoute, BoysBudget kBudget,
           FitGranularity kGranularity, DivisionForm kForm>
 void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     using Policy =
-        EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
+        SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -2388,7 +2388,7 @@ template <EvalScheme kScheme,
           FitGranularity kGranularity,
           DivisionForm kForm>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
+    using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)

@@ -88,7 +88,7 @@ std::vector<float> RegionAGridF32() {
 // entry at the same policy with the shipped packing axis, the axis the default
 // policy names.
 template <class Policy> float PerOrder(int n, float x) noexcept {
-    using ArgsAxis = boys::EvalPolicy<Policy::kRoute,
+    using ArgsAxis = boys::SeamPolicy<Policy::kRoute,
                                        Policy::kScheme,
                                        Policy::kBudget,
                                        boys::PackAxis::kArguments>;
@@ -200,7 +200,7 @@ template <class Policy> void SweepPolicy(const char* name, SweepTotals& totals) 
 // policy answered with kFloat degrees would deliver the looser figure under the
 // tighter name.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::BoysBudget kBudget>
-using Orders = boys::EvalPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
+using Orders = boys::SeamPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
 
 } // namespace
 
@@ -209,7 +209,7 @@ static_assert(Orders<boys::FitRoute::kChebyshev,
                      boys::EvalScheme::kSplitClenshaw,
                      boys::BoysBudget::kFloat>::kPack == boys::PackAxis::kOrders,
               "the orders policy does not name the orders axis");
-static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
+static_assert(boys::SeamPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved");
 
 // Every configuration the lane carries: three schemes on the shipped route and
@@ -430,7 +430,7 @@ namespace {
 // uniform partition's own domain ends inside of.
 template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
 using SingleF32 =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, kGranularity, boys::DivisionForm::kExactDivision>;
 
 // What the uniform partition answers over the band between the grid's join and
