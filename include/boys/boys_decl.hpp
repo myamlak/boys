@@ -140,9 +140,9 @@
 /// 1.5e-7 should prefer the F32 lane there. The fp16, bf16 and native-half
 /// kernels are AVX2-only, like the double lane's packed ones.
 ///
-/// Every entry evaluates at the one accuracy this library carries, the full
-/// static accuracy of the certified lane, and every entry is bit-identical to
-/// the certified lane's bodies.
+/// Every entry evaluates at the one accuracy this library carries; entries that
+/// differ in an axis are certified individually and are not bit-identical to one
+/// another.
 ///
 /// **Threading.** Every entry is single-threaded and a pure function of its
 /// arguments: it spawns no threads and reads no shared mutable state (the CUDA
@@ -614,7 +614,7 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 #else
 /// A build that names only the five axes - a fixture overriding one of them,
 /// say - carries the table those five make: one row per class the host's entries
-/// reach, the device half's nine below them, and no row besides, every cell the
+/// reach, the device half's twelve below them, and no row besides, every cell the
 /// build's own choice. This is not a fallback for a class a table omits: the rows
 /// are written out by this list rather than looked up, and a build that writes
 /// its own table and omits a class still fails to compile for it.
@@ -629,8 +629,17 @@ BOYS_BUILD_DEFAULT_ROWS(BOYS_DEFAULT_POLICY_ROW)
 /// stored in. A row for a class no entry names is a combination nothing asks for,
 /// and an entry added at a class this list does not carry fails to compile until
 /// its row is written.
-#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,                                LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,                                               kDefaultFitGranularity, kDefaultDivisionForm,                                         kDefaultHostRegionBExp, RowBasis::kChosen, "")
-#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders) X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN) X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN) X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders) X(kBf16, kSingle) X(kBf16, kFixedN) X(kBf16, kAllN) X(kBf16, kAllNAtOrders) X(kBf16, kAllOrders)
+#define BOYS_DEFAULT_POLICY_BUILD_ROW(kPrecision, kShape)                                           \
+    BOYS_DEFAULT_POLICY_ROW(kHost, kPrecision, kShape, kDefaultFitRoute, kDefaultEvalScheme,        \
+                            LaneFallbackBudget<Precision::kPrecision>(), kDefaultPackAxis,          \
+                            kDefaultFitGranularity, kDefaultDivisionForm,                           \
+                            kDefaultHostRegionBExp, RowBasis::kChosen, "")
+#define BOYS_DEFAULT_POLICY_BUILD_ROWS(X)                                                           \
+    X(kFp64, kSingle) X(kFp64, kFixedN) X(kFp64, kAllN) X(kFp64, kAllNAtOrders)                     \
+    X(kFp64, kAllOrders) X(kFp32, kSingle) X(kFp32, kFixedN) X(kFp32, kAllN)                        \
+    X(kFp32, kAllNAtOrders) X(kFp32, kAllOrders) X(kFp16, kSingle) X(kFp16, kFixedN)                \
+    X(kFp16, kAllN) X(kFp16, kAllNAtOrders) X(kFp16, kAllOrders) X(kBf16, kSingle)                  \
+    X(kBf16, kFixedN) X(kBf16, kAllN) X(kBf16, kAllNAtOrders) X(kBf16, kAllOrders)
 BOYS_DEFAULT_POLICY_BUILD_ROWS(BOYS_DEFAULT_POLICY_BUILD_ROW)
 #undef BOYS_DEFAULT_POLICY_BUILD_ROWS
 #undef BOYS_DEFAULT_POLICY_BUILD_ROW
@@ -1103,17 +1112,17 @@ struct CombinationCoverage {
 /// \param scheme      the evaluation scheme
 /// \param axis        the packing axis
 /// \param granularity the interval partition
-/// \param tolerance   the absolute error the caller needs, > 0
+/// \param tolerance   the absolute error the caller needs
 /// \returns           the verdict and the figures it was made on; \c
 ///                    kNotCarried, no figures and a reason where the library
 ///                    does not carry the combination or the cell is outside the
 ///                    documented domain
-/// \pre               \p tolerance is positive and finite. A request that is
-///                    zero, negative or not a number is answered \c kOutside
-///                    where the combination is carried, as no figure is at or
-///                    below it, and \c kNotCarried where it is not; a request
-///                    of positive infinity is answered \c kGuaranteedInside,
-///                    as every figure this library holds is at or below it.
+/// \note              A request that is zero, negative or not a number is
+///                    answered \c kOutside where the combination is carried, as
+///                    no figure is at or below it, and \c kNotCarried where it
+///                    is not; a request of positive infinity is answered \c
+///                    kGuaranteedInside, as every figure this library holds is
+///                    at or below it.
 ///
 /// \ingroup boys
 CombinationCoverage QueryCombination(Precision precision,
