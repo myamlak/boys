@@ -204,12 +204,103 @@ constexpr int EffectiveDegree(const CoeffArray& coeffs,
     return deg;
 }
 
-// Which of a piece table's two stored forms the scan reads. Declared above the
-// derivations because each names it with explicit template arguments over a
-// dependent array, which a compiler would not find if it were declared below.
-template <TailBasis kBasis, typename Table>
-constexpr const auto& TailTable(const Table& chebyshev, const Table& monomial) noexcept {
-    return (kBasis == TailBasis::kChebyshev) ? chebyshev : monomial;
+// Which of a table's two stored forms the scan reads. Each selector names its own table's
+// arrays, because passing both would evaluate both and a translation unit that builds one
+// scheme's degree tables would odr-use the other form's array.
+template <TailBasis kBasis>
+constexpr const auto& TailNarrowATable() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return kNarrowACoeffs;
+    }
+    else
+    {
+        return kNarrowAMonoCoeffs;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailNarrowAF32Table() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return f32::kNarrowACoeffsF32;
+    }
+    else
+    {
+        return f32::kNarrowAMonoCoeffsF32;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailNarrowBTable() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return kNarrowBcoeffs;
+    }
+    else
+    {
+        return kNarrowBMonoCoeffs;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailNarrowBF32Table() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return f32::kNarrowBcoeffsF32;
+    }
+    else
+    {
+        return f32::kNarrowBMonoCoeffsF32;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailShippedTable() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return kCoeffs;
+    }
+    else
+    {
+        return kMonoCoeffs;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailShippedF32Table() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return f32::kCoeffs;
+    }
+    else
+    {
+        return f32::kMonoCoeffs;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailSeedTable() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return kBcoeffs;
+    }
+    else
+    {
+        return kMonoBcoeffs;
+    }
+}
+
+template <TailBasis kBasis>
+constexpr const auto& TailSeedF32Table() noexcept {
+    if constexpr (kBasis == TailBasis::kChebyshev)
+    {
+        return f32::kBcoeffs;
+    }
+    else
+    {
+        return f32::kMonoBcoeffs;
+    }
 }
 
 /// The narrow partition's own effective-degree tables. The narrow pieces carry
@@ -223,7 +314,7 @@ template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
     {
-        constexpr const auto& coeffs = TailTable<kBasis>(kNarrowACoeffs, kNarrowAMonoCoeffs);
+        constexpr const auto& coeffs = TailNarrowATable<kBasis>();
         std::array<int, std::size(kNarrowAPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -246,8 +337,7 @@ constexpr auto NarrowRegionADegrees() noexcept {
     {
         // The single-precision lane's own narrow pieces, in whichever of the
         // two forms its scheme sums.
-        constexpr const auto& coeffs = TailTable<kBasis>(f32::kNarrowACoeffsF32,
-                                                         f32::kNarrowAMonoCoeffsF32);
+        constexpr const auto& coeffs = TailNarrowAF32Table<kBasis>();
         std::array<int, std::size(f32::kNarrowAPiecesF32)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -284,8 +374,7 @@ template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto NarrowRegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
-        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? kNarrowBcoeffs
-                                                                         : kNarrowBMonoCoeffs;
+        constexpr const auto& coeffs = TailNarrowBTable<kBasis>();
         std::array<int, static_cast<std::size_t>(kNarrowBPieces) * (kMaxOrder + 1)> degrees{};
 
         for (int piece = 0; piece < kNarrowBPieces; ++piece)
@@ -304,8 +393,7 @@ constexpr auto NarrowRegionBDegrees() noexcept {
         return degrees;
     } else
     {
-        constexpr const auto& coeffs = (kBasis == TailBasis::kChebyshev) ? f32::kNarrowBcoeffsF32
-                                                                        : f32::kNarrowBMonoCoeffsF32;
+        constexpr const auto& coeffs = TailNarrowBF32Table<kBasis>();
         std::array<int, static_cast<std::size_t>(f32::kNarrowBPiecesF32) * (kMaxOrder + 1)>
             degrees{};
 
@@ -529,7 +617,7 @@ template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionADegrees() noexcept {
     if constexpr (RoleUsesDoubleTables(kRole))
     {
-        constexpr const auto& coeffs = TailTable<kBasis>(kCoeffs, kMonoCoeffs);
+        constexpr const auto& coeffs = TailShippedTable<kBasis>();
         std::array<int, std::size(kPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -552,7 +640,7 @@ constexpr auto RegionADegrees() noexcept {
     {
         // The single-precision roles' own table, in whichever of its two stored
         // forms the scheme sums.
-        constexpr const auto& coeffs = TailTable<kBasis>(f32::kCoeffs, f32::kMonoCoeffs);
+        constexpr const auto& coeffs = TailShippedF32Table<kBasis>();
         std::array<int, std::size(f32::kPieces)> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -579,7 +667,7 @@ template <BoysRole kRole, TailBasis kBasis = TailBasis::kChebyshev>
 constexpr auto RegionBDegrees() noexcept {
     if constexpr (kRole == BoysRole::kDoubleSingle || kRole == BoysRole::kDoubleBatch)
     {
-        constexpr const auto& coeffs = TailTable<kBasis>(kBcoeffs, kMonoBcoeffs);
+        constexpr const auto& coeffs = TailSeedTable<kBasis>();
         std::array<int, kMaxOrder + 1> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
@@ -595,7 +683,7 @@ constexpr auto RegionBDegrees() noexcept {
     {
         // The single-precision lane's own seed, in the form its scheme sums;
         // one row, as the double lane's is, so the scan is the same one.
-        constexpr const auto& coeffs = TailTable<kBasis>(f32::kBcoeffs, f32::kMonoBcoeffs);
+        constexpr const auto& coeffs = TailSeedF32Table<kBasis>();
         std::array<int, kMaxOrder + 1> degrees{};
 
         for (int order = 0; order <= kMaxOrder; ++order)
