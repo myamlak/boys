@@ -1,9 +1,9 @@
 #pragma once
 
-// The template bodies behind boys/boys.hpp's accuracy-multiplier surface (that header includes
-// this file last, never alone). SeamPolicy (backend.hpp) carries every caller choice - route,
-// scheme, budget - and each entry compiles twice under if constexpr: at m = 1 the certified body,
-// pinned bit-for-bit; at m > 1 the seeds run at boys_effective_degrees.hpp's degrees.
+// The template bodies behind boys/boys.hpp's evaluation surface (that header includes this file
+// last, never alone). SeamPolicy (policy.hpp) carries every caller choice - route, scheme,
+// budget - and each entry compiles one body at the one accuracy this library carries: the
+// certified body, whose seeds read the degrees stored in boys_effective_degrees.hpp.
 
 /// \cond
 // Not API: the kernel the entries are compiled from. The header ships only
@@ -39,7 +39,7 @@ namespace detail {
 constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2
 constexpr float kBoysHalfSqrtPiF32 = 0.88622693f; // sqrt(pi)/2, single lane
 
-// Every derived family here (Chebyshev, the rational route's derived members, both rung forms)
+// Every derived family here (Chebyshev, the rational route's derived members, both stored forms)
 // reads any granularity but the shipped one as the narrow; the grid's two members carry the grid
 // alone. The trap: resolving a policy's partition through a derived family answers a grid-naming
 // policy from the narrow pieces, silently - one question below asks it, so a new path fails there.
@@ -262,14 +262,14 @@ typename B::Packed FitSum(const typename B::Value* cheb,
 // degrees and piece intervals being compile-time facts of the generated tables and only the piece
 // an (order, argument) falls in run-time. The axes meet in RouteFit, where an uncarried pair fails.
 
-// The extended band's per-(n, x) dispatch, in the m = 1 double lanes only: an order n takes the
+// The extended band's per-(n, x) dispatch, in the double lanes only: an order n takes the
 // extended seed exactly when x >= kTierThresholds[n], whatever the entry point or the batch's
 // other orders. Each threshold is the certified boundary of the smallest kmax row covering it
 // (the rows 4/8/16/32), so BoysAllOrders(n,x)[n] == BoysSingle(n,x) == BoysAllOrders(m>=n,x)[n].
 
 // The extended-band seed: F_0(x) on [kExtendedBX0, kX0), summed by the named
-// scheme (see ChebyshevValue), dispatched per (n, x) at kTierThresholds in the m = 1
-// double lanes. The m > 1 branch and the float lanes keep their own dispatch.
+// scheme (see ChebyshevValue), dispatched per (n, x) at kTierThresholds in the
+// double lanes. The float lanes keep their own dispatch.
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBExtendedSeed(double x) noexcept {
     const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
@@ -1621,6 +1621,11 @@ struct RationalFit {
             num = backend::ScalarFp64::MulAdd(num, t, detail::kRatBnum[j]);
         }
 
+        if constexpr (detail::kRatBdenDeg == 0)
+        {
+            return num;
+        }
+
         double den = detail::kRatBden[detail::kRatBdenDeg - 1];
 
         for (int j = detail::kRatBdenDeg - 2; j >= 0; --j)
@@ -1964,7 +1969,7 @@ inline const detail::f32::RatPiece& FindNarrowRatBPieceF32(float x) noexcept {
 // Float-lane region-A seed; see ChebyshevValue. The scheme picks which of the two parallel
 // coefficient tables the piece is summed from, the pieces matching under either.
 
-// Forced inline so MSVC's size heuristic does not drop the inlined piece scan the m = 1 F32-single
+// Forced inline so MSVC's size heuristic does not drop the inlined piece scan the F32-single
 // engine's full-accuracy code shape needs; semantics are unaffected. __forceinline is MSVC-only;
 // GCC/Clang spell the same intent with always_inline.
 #if defined(_MSC_VER)
@@ -2300,7 +2305,7 @@ inline float RegionBSeedF32(float x) noexcept {
     }
 }
 
-// The coefficient table a scheme's summation reads is the table a rung's truncation is judged
+// The coefficient table a scheme's summation reads is the table a degree cut is judged
 // against: ClenshawSplit reads the Chebyshev table, HornerMono the monomial one, and the two hold
 // the same polynomial as different numbers. A degree table is certified against one of them
 // (boys_effective_degrees.hpp), so a call site picks the table by the scheme its policy names.
@@ -2377,7 +2382,7 @@ inline double ShippedRegionBSeedWithDegrees(double x,
         t);
 }
 
-// The region-B seed at the degree the rung certifies for the peak order the caller is
+// The region-B seed at the stored degree for the peak order the caller is
 // about to reach, over the partition named. The shipped seed is one polynomial over the
 // whole region, so its table is indexed by that order; the narrow partition's seed is one
 // polynomial per piece, and its table carries the order beside the piece.
@@ -2423,16 +2428,16 @@ inline double RegionBSeedWithDegrees(double x,
     }
 }
 
-// The effective-degree tables a policy's rung reads, over the partition the policy names: the table
-// a rung is measured against is the partition's own, which makes a rung a reading of the partition
-// the caller chose rather than of the shipped one. Both bodies ask the shared question first and
+// The effective-degree tables a policy reads, over the partition the policy names: the table is
+// the partition's own, so a policy reads its own partition's degrees rather than the shipped one's.
+// Both bodies ask the shared question first and
 // then name their own partitions, so an unnamed one fails the read, not takes the last arm's table.
 template <EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionADegreeTableOf() noexcept {
     static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
                       Policy::kGranularity),
-                  "this table is what a rung cuts the Chebyshev family's region-A fit with, and "
-                  "a policy naming the uniform grid has no rung of it: the grid's cells are "
+                  "this table is what the Chebyshev family's region-A fit is read at, and "
+                  "a policy naming the uniform grid has none: the grid's cells are "
                   "read interval-major at the degrees they were fitted at, so there is no "
                   "piece-indexed degree of this shape to cut them at");
     if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
@@ -2470,8 +2475,8 @@ template <EvalPolicyLike Policy, BoysRole kRole>
 constexpr auto RegionBDegreeTableOf() noexcept {
     static_assert(FitAnswersPartition<ChebyshevFit<Policy::kScheme, Policy::kGranularity>>(
                       Policy::kGranularity),
-                  "this table is what a rung cuts the Chebyshev family's region-B fit with, and "
-                  "a policy naming the uniform grid has no rung of it: the grid reads its own "
+                  "this table is what the Chebyshev family's region-B fit is read at, and "
+                  "a policy naming the uniform grid has none: the grid reads its own "
                   "cells at the degrees they were fitted at. The degrees below are the shipped "
                   "partition's, which the grid's region-B read shares by construction");
     if constexpr (Policy::kGranularity == FitGranularity::kCoarsest)
@@ -2488,8 +2493,8 @@ constexpr auto RegionBDegreeTableOf() noexcept {
     {
         // The same fit as the shipped arm, by construction and not by fallback: region B's
         // seed is one fit over [kX0, kFlatHi) at every granularity except the narrow one, so the
-        // table a rung would cut it with is the shipped table's. The assertion above keeps a
-        // policy naming the grid from reaching a rung at all.
+        // table a cut would use is the shipped table's. The assertion above keeps a
+        // policy naming the grid from reaching a cut at all.
         return RegionBDegrees<kRole, SchemeTailBasis<Policy::kScheme>()>();
     }
     else
@@ -2503,7 +2508,7 @@ constexpr auto RegionBDegreeTableOf() noexcept {
 
 // The shipped seed read at a degree handed in directly, which is how the gate's
 // granularity book asks a stored row: the partition-naming form above is what the
-// rung bodies call, and this one is the shipped partition's reading of the same fit.
+// bodies call, and this one is the shipped partition's reading of the same fit.
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
     const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
@@ -2588,7 +2593,7 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
     }
 }
 
-// The region-B seed at the degree the rung certifies for the peak order the caller is about to
+// The region-B seed at the stored degree for the peak order the caller is about to
 // reach, over the partition named: one polynomial over the whole region for the shipped partition,
 // one per piece for the narrow one. ShippedRegionBSeedF32WithDegrees below is that seed at a cut
 // degree, the counterpart of ShippedRegionBSeedWithDegrees.
@@ -2652,8 +2657,9 @@ inline float RegionBSeedF32WithDegrees(float x,
 
 // A float-lane single-order call reads a coefficient in exactly two places: the region-A seed and
 // the region-B seed. This names which pair of fits those two are. The routes are alternatives,
-// not rungs: the rational one changes the coefficients those two intervals are evaluated from and
-// nothing else, its pieces being the family's own cover of each order's interval.
+// not accuracy levels: the rational one changes the coefficients those two intervals are
+// evaluated from and nothing else, its pieces being the family's own cover of each order's
+// interval.
 
 // Rational-route piece lookup; see FindPieceF32.
 inline const detail::f32::RatPiece& FindRatPieceF32(int order, float x) noexcept {
@@ -2711,6 +2717,11 @@ inline float RegionBSeedRationalF32(float x) noexcept {
     for (int j = detail::f32::kRatBnumDeg - 1; j >= 0; --j)
     {
         num = backend::ScalarFp32::MulAdd(num, t, detail::f32::kRatBnum[j]);
+    }
+
+    if constexpr (detail::f32::kRatBdenDeg == 0)
+    {
+        return num;
     }
 
     float den = detail::f32::kRatBden[detail::f32::kRatBdenDeg - 1];
@@ -2870,8 +2881,8 @@ inline float RationalSeedF32AtCut(std::size_t index, int numDeg, int denDeg, flo
     }
 }
 
-// One narrow rational piece of this lane at a cut pair; the degree pair is the rung's and the
-// piece, its interval and its stored degrees are the narrow partition's own. The denominator's
+// One narrow rational piece of this lane at a degree pair; the pair indexes the piece, whose
+// interval and stored degrees are the narrow partition's own. The denominator's
 // coefficients sit above the *stored* numerator here as they do in the shipped table.
 inline float RationalPieceNarrowF32AtCut(std::size_t index,
                                          int numDeg,
@@ -3299,7 +3310,7 @@ void AllOrdersBody(int nmax, double x, double* out) noexcept {
             }
 
             // Seeds the downward recursion, so its error is the batch's: the degree
-            // is the batch role's, as it is in the Chebyshev rung's own batch body.
+            // is the batch role's, as it is in the Chebyshev body's own batch path.
             double f = PolicyRegionAValue<Policy>(nmax, x);
             out[nmax] = f;
             const double expx = 0.5 * std::exp(-x);
@@ -3415,8 +3426,8 @@ double SingleOrder(int n, double x) noexcept {
     return ladder[n];
 }
 
-// Each engine takes the policy and the multiplier, and nothing else: the fit family, the scheme
-// and the single-precision budget arrive as the policy's fields.
+// Each engine takes the policy, and nothing else: the fit family, the scheme and the
+// single-precision budget arrive as the policy's fields.
 
 // The uniform partition is carried by the all-orders and single-order bodies, which read its table
 // directly: every other body recurses over the orders - a seed stepped upward or a piece stepped
@@ -3454,10 +3465,10 @@ constexpr void RequireShippedRoute() noexcept
                   "instead, and this shape is not instantiated for one");
 }
 
-// A relaxed rung truncates a stored row to a per-order effective degree, and each partition
-// carries its own table: the shipped row's degrees are cut from the shipped pieces' coefficients,
-// the narrow row's from the narrow pieces', both derived by one criterion over the two tables of
-// coefficients (boys_effective_degrees.hpp).
+// A stored row carries its degrees per order, and each partition carries its own table: the
+// shipped row's degrees are cut from the shipped pieces' coefficients, the narrow row's from the
+// narrow pieces', both derived by one criterion over the two tables of coefficients
+// (boys_effective_degrees.hpp).
 
 template <EvalPolicyLike Policy>
 double BoysSingleImpl(int n, double x) noexcept {
@@ -3468,10 +3479,9 @@ double BoysSingleImpl(int n, double x) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0);
 
-    // m = 1 is the full-accuracy body selected at compile time: no branch, indirection or runtime
-    // dispatch sits on that path - a relaxed rung is a separate instantiation one branch below, not a
-    // test the full-accuracy call pays for. The uniform partition is selected at every multiplier: its
-    // cells are stored at the grid's own degrees, so it is the reference reading, both members admissible.
+    // The body is selected at compile time: no branch, indirection or runtime dispatch sits on
+    // the path. The uniform partition is selected the same way: its cells are stored at the
+    // grid's own degrees, so it is the reference reading, both members admissible.
     {
         return SingleOrder<Policy>(n, x);
     }
@@ -3507,10 +3517,11 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
                           Policy::kRoute == FitRoute::kRationalMinimax,
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
-        // The across-orders packed lane carries every combination the axis offers: either route's region-A
-        // fits, either partition of the shipped route's, any rung, any of the three division forms, the
-        // five choices reaching the lane as its template arguments. The form is one of them because the
-        // lane hands the orders it does not pack to the scalar single lane, whose recurrence steps divide.
+        // The across-orders packed lane carries every combination the axis offers: either route's
+        // region-A fits, either partition of the shipped route's, any granularity, any of the three
+        // division forms, the four choices reaching the lane as its template arguments. The form
+        // is one of them because the lane hands the orders it does not pack to the scalar single
+        // lane, whose recurrence steps divide.
         if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
             // Above kFlatHi the uniform partition has one answer whatever the scheme, route and
@@ -3528,7 +3539,7 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
                             Policy::kGranularity,
                             Policy::kDivision>(nmax, x, out);
     } else {
-        // The uniform partition is here at every multiplier: its ladder is the reference reading,
+        // The uniform partition is served here too: its ladder is the reference reading,
         // and the body below carries the partition's own branch. On the orders axis the branch above
         // reaches this same partition's ladder, one argument at a time.
         AllOrdersBody<Policy>(nmax, x, out);
@@ -3537,10 +3548,9 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
 
 /// The fixed-n vector engine: F_n at every argument of an array, one fixed order (the batch
 /// shape of angular-momentum-grouped inner loops; the strided output layout belongs to the
-/// public surface in boys.hpp). The region bodies below mirror
-/// BoysSingleImpl's verbatim - the m = 1 branch is the certified scalar single-lane code, the
-/// relaxed branch the same bodies at BoysRole::kDoubleSingle - so every output element returns
-/// the corresponding BoysSingle call's value, and the same bits on a build whose bare
+/// public surface in boys.hpp). The region bodies below mirror BoysSingleImpl's, the certified
+/// scalar single-lane code at BoysRole::kDoubleSingle, so every output element
+/// returns the corresponding BoysSingle call's value, and the same bits on a build whose bare
 /// product-plus-add is two roundings. On a build that contracts that form the compiler decides
 /// per call site whether to fuse it: a value can move by a unit in the last place and no
 /// further. Keep the two engines' bodies in lockstep - identical source is what holds them
@@ -3661,8 +3671,8 @@ void BoysFixedNImpl(
 // recursion's and the float band is measured. The policy reaches this engine as the pair of fits
 // its two seeds are read from and the table they are summed out of, one body per route.
 
-// Past the reference multiplier the same two names pick the same two fits, cut where the rung's
-// criterion certifies them.
+// The two route names pick the two fits this lane carries, read at the degrees the stored rows
+// carry.
 template <EvalPolicyLike Policy>
 float BoysSingleF32Impl(int n, float x) noexcept {
     // The orders axis is refused here on the same reading as the double entry's refusal: this shape
@@ -3676,14 +3686,13 @@ float BoysSingleF32Impl(int n, float x) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
     assert(x >= 0.0f);
 
-    // The uniform partition's own domain, taken before the route and the rung below rather than
-    // through them: the grid is a table no other body here reads, so this branch keeps a policy naming
-    // it from being answered by the narrow fits the engine below reaches; above the join the region
-    // tests inside that engine answer.
+    // The uniform partition's own domain, taken before the route and the degree table below rather
+    // than through them: the grid is a table no other body here reads, so this branch keeps a policy
+    // naming it from being answered by the narrow fits the engine below reaches; above the join the
+    // region tests inside that engine answer.
 
-    // A rung is not refused here and the multiplier is not read: the grid's cells are stored at the
-    // degrees it was fitted at, so a relaxed call is served them uncut - a saving left on the table
-    // rather than a value missed.
+    // The grid's cells are stored at the degrees it was fitted at, so the entry reads them
+    // uncut.
     if constexpr (Policy::kGranularity == FitGranularity::kUniform)
     {
         if (x < detail::f32::kFlatHiF32)
@@ -3716,8 +3725,6 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     // The uniform partition's whole domain, both packing axes: the grid's ladder gives the per-order
     // value at every order, which is what the across-orders packed lane carries into its lanes, so one
     // reading answers either axis - the axis changing which lane runs, not which fit is read.
-
-    // The multiplier is not read, for the reason the single-order entry states.
     if constexpr (Policy::kGranularity == FitGranularity::kUniform)
     {
         if (x < detail::f32::kFlatHiF32)
@@ -3744,8 +3751,8 @@ void BoysAllOrdersF32Impl(int nmax, float x, float* out) noexcept {
     {
         // The across-orders packed lane: eight orders of one argument in one vector register, the shape
         // BoysAllOrdersF32(nmax, x, out) has and the axis the caller named. It carries the same tables and
-        // arithmetic as this engine, so the axis changes which lane runs, not which fit is read. At a
-        // relaxed multiplier it serves all four (scheme, route) pairs on either partition.
+        // arithmetic as this engine, so the axis changes which lane runs, not which fit is read. It
+        // serves all four (scheme, route) pairs on either partition.
         BoysAllOrdersF32Packed<Policy::kScheme,
                                Policy::kRoute,
                                Policy::kBudget,
@@ -3967,14 +3974,13 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 /// beside it so the pair stays measurable. The uniform grid stores its coefficients with the order
 /// innermost, so its lane reads one coefficient index at a time and has no fetch to choose.
 ///
-/// Below kX0 only. Past it the entry runs the certified scalar single lane one order at a time, at the
-/// policy the caller named, so a relaxed multiplier falls back to that rung of that route rather than to
-/// the reference one.
+/// Below kX0 only. Past it the entry runs the certified scalar single lane one order at a time,
+/// at the policy the caller named.
 ///
 /// The four choices a policy makes reach the lane as template arguments: the scheme picks which
-/// polynomial table and which summation the shipped route's fits are read with, the route which region-A
-/// fits the lane carries, the accuracy multiplier the degree a fit is read at, and the partition the
-/// table those fits are cut into.
+/// polynomial table and which summation the shipped route's fits are read with, the route which
+/// region-A fits the lane carries, the partition the table those fits are cut into, and the
+/// division form the recurrence steps use.
 ///
 /// \param nmax highest order, 0..kMaxBoysOrder
 /// \param x    the argument
@@ -3998,8 +4004,8 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept;
 // what the BoysSortedArgs overload declares and why one comparison per argument states it.
 
 // A path is served by one of two kernel shapes. The ungrouped one walks one argument at a time
-// with the per-argument entry's own bodies, kept in lockstep with the batch's nmax, so at m = 1 the
-// batch values ARE that entry's values, bit for bit. The grouped one runs the region-A lane over a
+// with the per-argument entry's own bodies, kept in lockstep with the batch's nmax, so the batch
+// values ARE that entry's values, bit for bit. The grouped one runs the region-A lane over a
 // homogeneous run, one order at a time.
 
 // Which shape serves region A is decided by measurement: over a 65536-argument run against a plain
@@ -4019,9 +4025,8 @@ enum class BoysPath : std::uint8_t {
 constexpr int kBoysPathCount = 5;
 
 // The path of one argument, in the per-argument entry's dispatch order. The region-A band split
-// arrives as the caller's tierSplit: at m = 1 the scalar dispatch splits the band at the first
-// extended-seed tier, and that split is a path of its own; at m > 1 the band does not exist and the
-// whole region is one path.
+// arrives as the caller's tierSplit: the scalar dispatch splits the band at the first
+// extended-seed tier, and that split is a path of its own.
 inline BoysPath BoysClassifyPath(double x, double tierSplit) noexcept {
     if (x == 0.0)
     {
@@ -4623,9 +4628,8 @@ void BoysAllNSortedPartitionedImpl(int nmax,
 ///                       policy. The uniform partition is here too, and none of the three has anything
 ///                       for the region grouping to group.
 ///
-/// Every value either shape returns is inside the bound the entry documents. A relaxed multiplier on the
-/// orders axis reaches its rung the same way the shipped axis's does, in the engine itself
-/// (BoysAllOrdersImpl), so this entry states neither.
+/// Every value either shape returns is inside the bound the entry documents. The orders axis
+/// reads its fits through the engine itself (BoysAllOrdersImpl), as the shipped axis does.
 template <EvalPolicyLike Policy>
 void BoysAllNImpl(int nmax,
                   const double* x,
@@ -4657,7 +4661,7 @@ void BoysAllNImpl(int nmax,
         // above serves it instead.
 
         // The grid has no region walk to group - an order is read from its own interval's coefficients,
-        // nothing is built from another order, so there is no seed to share and no rung to cut.
+        // nothing is built from another order, so there is no seed to share and no cut to make.
         static_cast<void>(workspace);
         BoysAllNRunPerArgument<Policy>(nmax, x, out, count);
     }
@@ -5227,7 +5231,7 @@ float BoysSingleF32WithRoute(int n, float x) noexcept {
     return BoysSingleF32<RoutePolicy>(n, x);
 }
 
-// The combination named in the type and the rung named in the call: the rung
+// The combination named in the type and the policy resolved at the call: the
 // ladder is the one place the two selections meet, and a caller pays for it in
 // one branch, with the four structural axes resolved at the call site.
 
@@ -5259,8 +5263,8 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 
 
 #if BoysFp16
-// The fp16/bf16 lanes forward the multiplier and the policy to the F32 engine with the fp16
-// budget: at m = 1 the engine branch is the certified F32 path verbatim, so the lanes are
+// The fp16/bf16 lanes forward the policy to the F32 engine with the fp16
+// budget: the engine branch is the certified F32 path verbatim, so the lanes are
 // bit-unchanged. The policy is the caller's, defaulted to the lane's own, because every
 // combination this lane's book carries is a policy a consumer can name.
 
@@ -5489,7 +5493,7 @@ void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t co
     }
 }
 
-// The half lanes' rung-argument entries: the fp16 engine's ladder through the
+// The half lanes' per-argument entries: the fp16 engine's ladder through the
 // store this lane makes, at the policy named, so the two selections meet here as
 // they do on the double lane.
 
