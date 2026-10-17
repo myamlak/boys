@@ -82,9 +82,14 @@ int main() {
           fp64Single.bound.reading == AccuracyReading::kGuaranteed);
 
     const ClassAccuracyHere fp32Single = BoysAccuracyHere<Precision::kFp32, Shape::kSingle>();
-    // The class's own default form is the plain reciprocal, so its bound carries that form's
-    // documented 1e-7 term beside the 1.5e-7 base: 2.5e-7, the accuracy contract's plain form.
-    Check("fp32 single bound at its default form", fp32Single.bound.value, 2.5e-7);
+    // The class's own default form is the build's and not a literal: the committed
+    // float single row divides in the plain reciprocal and carries that form's
+    // documented 1e-7 term; a replacement that moves the row answers at its member,
+    // read here from the policy, with both figures the documents' own.
+    constexpr DivisionForm fp32SingleForm =
+        DefaultPolicy<Precision::kFp32, Shape::kSingle>::kDivision;
+    Check("fp32 single bound at its default form", fp32Single.bound.value,
+          fp32SingleForm == DivisionForm::kPlainReciprocal ? 2.5e-7 : 1.5e-7);
     Check("fp32 single bound at the refined form",
           BoysAccuracyHere<Precision::kFp32, Shape::kSingle, Device::kHost,
                            DivisionForm::kRefinedReciprocal>().bound.value,
