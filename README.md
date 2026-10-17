@@ -173,12 +173,26 @@ directory, C++20, the tier flags, the contraction answer and the fp16 seam. For 
 alone, with no archive on the link line, link `boys::boys-tier` instead - the same interface, and
 the entries' bodies come inline from the headers.
 
-Installed, after a top-level build and `cmake --install`:
+Installed, from a top-level build:
+
+    cmake --install build --prefix /where/you/want/it   # or -DCMAKE_INSTALL_PREFIX= at configure time
+
+That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
+below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
+`boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
+build carried the device lane; the version file accepts any `4.x` package for a request of `4.0.0`.
+The install rules are written at the top level only, so a consumer that adds this tree as a
+subdirectory already has the targets and needs no package:
 
 ```cmake
 find_package(boys REQUIRED)
 target_link_libraries(app PRIVATE boys::boys)     # or boys::boys-tier, for the headers alone
 ```
+
+With the test suite on, the vendored GoogleTest's own install rules run as part of the top-level
+install: its headers and its four libraries land in the same prefix, and an install from a directory
+whose suite targets were never built stops on `gmock.lib`. Build the tree you install, or configure
+with `-DBOYS_BUILD_TESTS=OFF` as the first recipe does.
 
 Each optional, named one at a time:
 
