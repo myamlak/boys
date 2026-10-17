@@ -259,8 +259,8 @@ other two — the engine budget and the region-B exponential — are named at th
 **A call's bound is its lane's; what these axes move is what a call delivers and what it costs.** One
 member of one axis states a term beside a lane's base rather than a figure of its own, and the table
 says where. **Which member is fastest is a property of your machine, its flags and its card**, so the
-library's rule is that the option probe ranks the combinations where they will run: the program is
-`examples/07_option_probe.cpp`, whose transcript is in the section above, and the recorded run of its
+library's rule is that the option probe ranks the combinations where they will run: its transcript
+is in the section above, and the recorded run of its
 full protocol is `tests/data/boys_option_probe_report.txt`. Every row of that report names the member
 of each axis it measured. The table says what each axis decides, what the tree has measured about it,
 and where the figures are. **It does not rank the members** — the section above says why no page can.
