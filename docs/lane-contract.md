@@ -432,9 +432,8 @@ pieces the same way, so either route, under either scheme and on either packing 
 call this build compiles rather than a table still owed. Nothing of the axis cross is refused: the
 combinations book reads none refused, and the members it
 counts apart are the device lane's — the ones the gate target that produced that run was not linked
-against the device library for. That lane is
-where an earlier revision of this paragraph named a debt, and the lane's own tables answer for it
-now: its narrow partition is cut and uploaded beside the shipped one, its orders-axis entries are
+against the device library for. That lane is carried in full: its narrow partition is cut and
+uploaded beside the shipped one, its orders-axis entries are
 carried, and the routes and schemes of both families are served on its arguments axis.
 What no path here does is substitute: the two partitions are different fits of the same function over
 the same interval, so a call answered from one under the other's name would return the shipped
