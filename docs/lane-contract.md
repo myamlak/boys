@@ -775,8 +775,8 @@ a consumer can call evaluates through it: the single-precision batch entry packs
 across-orders lane), the half lane's own batch entry runs an f16-native ladder rather than this
 backend, and the packed half kernels that do use it are called by this tree's tests and benchmarks
 and by nothing else. So the route's float half is a report about an arithmetic the library compiles,
-not a choice a caller can reach — the third gap, and the one that is a work item rather than a
-property of the axis.
+not a choice a caller can reach: what is missing is an entry a consumer can call that evaluates
+through the float backend, which is a work item rather than a property of the axis.
 
 The across-orders lane (`include/boys/boys_orders_lanes.hpp`) is a packed lane the route reaches: its
 steps read the selection the build made, so its values move between the routes — **5,067 of 32,868**
