@@ -10,6 +10,10 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
+This tree is **version 4.0.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
+`project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
+CMake: `boys::VersionString()` answers it.
+
 ## Your first call
 
 Copy this into `try.cpp`, build it, run it. It prints the numbers below. They come from a build that
@@ -175,7 +179,7 @@ the entries' bodies come inline from the headers.
 
 Installed, from a top-level build:
 
-    cmake --install build --prefix /where/you/want/it   # or -DCMAKE_INSTALL_PREFIX= at configure time
+    cmake --install build --prefix /where/you/want/it     # or set the prefix at configure time
 
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
