@@ -152,6 +152,67 @@ int main() {
     Check("fp64 batch states no delivered figure",
           !BoysAccuracyHere<Precision::kFp64, Shape::kFixedN>().delivered.available);
 
+    // ArithmeticInForceName on the four measured states a build can report. Each is
+    // constructed rather than read, so the name is held to the state it is given and
+    // not to this translation unit's own profile. The states are the two selections
+    // times the two contraction measurements; on the separate selection the route in
+    // force is the fused route only where contraction is measured.
+    {
+        using boys::backend::MulAddRoute;
+
+        const auto state = [](MulAddRoute selected, bool contracts, MulAddRoute inForce) {
+            ArithmeticInForce arithmetic;
+            arithmetic.selectedRoute = selected;
+            arithmetic.contractionMeasured = true;
+            arithmetic.contracts = contracts;
+            arithmetic.routeInForceKnown = true;
+            arithmetic.routeInForce = inForce;
+            return arithmetic;
+        };
+
+        const ArithmeticInForce separateContracting =
+            state(MulAddRoute::kSeparate, true, MulAddRoute::kFused);
+        const ArithmeticInForce separateTwo =
+            state(MulAddRoute::kSeparate, false, MulAddRoute::kSeparate);
+        const ArithmeticInForce fusedContracting =
+            state(MulAddRoute::kFused, true, MulAddRoute::kFused);
+        const ArithmeticInForce fusedTwo =
+            state(MulAddRoute::kFused, false, MulAddRoute::kFused);
+
+        Check("separate selection that contracts is named the fused route by contraction",
+              Names(ArithmeticInForceName(separateContracting), "the fused route by contraction"));
+        Check("separate selection that does not contract is named the separate route",
+              Names(ArithmeticInForceName(separateTwo), "the separate route"));
+        Check("fused selection that contracts is named the contracted arithmetic",
+              Names(ArithmeticInForceName(fusedContracting), "the contracted arithmetic"));
+        Check("fused selection that does not contract is named the fused route",
+              Names(ArithmeticInForceName(fusedTwo), "the fused route"));
+
+        // Each name states the route its own routeInForce carries: the fused route's
+        // sentence names the fused route, and the separate route's names only the
+        // separate route.
+        const auto agrees = [](const ArithmeticInForce& arithmetic) {
+            const std::string_view name = ArithmeticInForceName(arithmetic);
+            const bool fused = name.find("fused route") != std::string_view::npos;
+            const bool separate = name.find("separate route") != std::string_view::npos;
+            if (arithmetic.routeInForce == MulAddRoute::kFused)
+            {
+                return fused;
+            }
+
+            return separate && !fused;
+        };
+
+        Check("the named route agrees with routeInForce (separate selection, contracting)",
+              agrees(separateContracting));
+        Check("the named route agrees with routeInForce (separate selection, two roundings)",
+              agrees(separateTwo));
+        Check("the named route agrees with routeInForce (fused selection, contracting)",
+              agrees(fusedContracting));
+        Check("the named route agrees with routeInForce (fused selection, two roundings)",
+              agrees(fusedTwo));
+    }
+
     if (gFailed != 0)
     {
         std::printf("FAIL: %d figure(s) disagree with the documents they are stated from\n",

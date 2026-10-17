@@ -246,9 +246,15 @@ inline const char* ArithmeticInForceName(const ArithmeticInForce& arithmetic) no
 
     if (arithmetic.selectedRoute == backend::MulAddRoute::kSeparate)
     {
-        return "the fused route by contraction: the separate route is selected and a bare "
-               "product-plus-add is one rounding here (measured), so the selection compiles onto "
-               "the fused step";
+        if (arithmetic.contracts)
+        {
+            return "the fused route by contraction: the separate route is selected and a bare "
+                   "product-plus-add is one rounding here (measured), so the selection compiles "
+                   "onto the fused step";
+        }
+
+        return "the separate route: the separate route is selected and a bare product-plus-add "
+               "is two roundings here (measured), so every step is the separate step";
     }
 
     if (!arithmetic.contractionMeasured)
