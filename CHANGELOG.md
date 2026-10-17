@@ -20,21 +20,23 @@ against `F_n(x)`.
 
 **The coefficient file gains the uniform-grid tables** (`include/boys/boys_coefficients.hpp`): one
 derived grid over `[0, 31.0)` of width `1/16` — 496 intervals — each order fitted at its interval's
-own degree, cap 5, serving `FitGranularity::kUniform`. **The shipped partition's own tables are
-byte-identical between v2.0.0 and v4.0.0**: the file grew by the uniform grid's rows, and the
-coefficients the shipped partition is read from did not move. What moved is the unnamed call's
-default — it now reaches the narrow partition, read by Horner on the monomial form. The generator
-and its provenance record (`tests/data/boys_coefficients_provenance.txt`) are committed beside them.
+own degree, cap 5, serving `FitGranularity::kUniform`. **The shipped partitions' tables are carried
+beside the grid's rows, not replaced by them**: the file's growth is the uniform grid, and the rows
+the coarsest and narrow partitions are read from are carried unchanged. What an unnamed call reaches
+is its class's row rather than the seam's seven: every host double row in this build names the
+uniform grid, read by Horner on the monomial form, while the seam's fallback (`SeamPolicy<>`) names
+the narrow partition. The generator and its provenance record
+(`tests/data/boys_coefficients_provenance.txt`) are committed beside them.
 
-**The accuracy rung is not offered.** The axis permitted 4096 times the error for a few per cent of
-time, and the library does not carry it: the slot the device handle reserves for it is read by no
+**The accuracy rung is not offered.** The axis traded accuracy for time, and the library does not
+carry it: the slot the device handle reserves for it is read by no
 entry.
 
 **The shipped defaults are measured rather than assumed.** `boys-option-probe --emit-defaults`
 writes a build's own winners, and `BOYS_BUILD_DEFAULTS` points a build at that header. The committed
-defaults are one host's measured choices, and the run behind them is
-`tests/data/boys_option_probe_report.txt`. The far region's default representation is the bare
-asymptotic recurrence above the fitted grid's edge.
+defaults are one host's measured choices; each row names the run it came from, and a later run of
+the same protocol on that host is the transcript `tests/data/boys_option_probe_report.txt`. The far
+region's default representation is the bare asymptotic recurrence above the fitted grid's edge.
 
 **Every option the policy space carries is reachable and stated.** Each combination either carries
 its own measured bound or refuses to compile with a sentence saying why, and `README.md`'s "Which
@@ -61,4 +63,4 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 
 ## Before 4.0.0
 
-The tags `v1.1.4` and `v2.0.0` predate this file.
+The tag `v1.1.4` predates this file.
