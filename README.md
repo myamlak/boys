@@ -251,6 +251,12 @@ By what you want, not by what the library calls things:
 The complete list, with every overload, is the entry-point table in the
 [API reference](https://myamlak.github.io/boys/).
 
+**Choosing among the evaluation settings?** An `EvalPolicy` carries five option axes — the fit route,
+the evaluation scheme, the packing axis, the interval granularity and the division form — and
+[docs/getting-started.md](docs/getting-started.md#what-does-each-setting-change) tabulates what each
+one changes, what the tree has measured about it, and where its figures are. Which member is fastest
+is a property of your machine and its flags: the option probe ranks them where they will run.
+
 **Calling it on a GPU?** The last two rows are the two routes onto a card, and
 [docs/gpu-guide.md](docs/gpu-guide.md) is written for you: which route answers which problem, what a
 device call looks like, what you must allocate and pass, what the library refuses and why that is a
