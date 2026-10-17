@@ -42,11 +42,57 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <span>
 
 namespace boys {
 
 namespace detail {
+
+/// Whether \p outSize values admit \p count values written \p stride apart: the
+/// last of them lands at `(count - 1) * stride`, and the question is asked as a
+/// division so that a product which would wrap the size type is refused rather
+/// than admitted.
+///
+/// \param count   the values the call writes
+/// \param stride  the distance between them
+/// \param outSize the values the out span holds
+inline bool StridedSpanAdmits(std::size_t count, std::size_t stride,
+                              std::size_t outSize) noexcept {
+    if (count == 0)
+    {
+        return true;
+    }
+
+    if (outSize == 0)
+    {
+        return false;
+    }
+
+    return stride == 0 || (count - 1) <= (outSize - 1) / stride;
+}
+
+/// The extent \p count values written \p stride apart ask of the out span,
+/// saturating at the largest representable size so a refusal can name a bound
+/// where the true product does not fit one.
+///
+/// \param count  the values the call writes
+/// \param stride the distance between them
+inline std::size_t StridedSpanNeeded(std::size_t count, std::size_t stride) noexcept {
+    if (count == 0)
+    {
+        return 0;
+    }
+
+    const std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+
+    if (stride != 0 && count - 1 > (kMax - 1) / stride)
+    {
+        return kMax;
+    }
+
+    return (count - 1) * stride + 1;
+}
 
 /// Refuses a span shorter than the call writes: one line naming the call, the
 /// span and the two extents, then an abort.
@@ -123,7 +169,9 @@ inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept {
 /// \param n      the order
 /// \param x      the arguments
 /// \param out    receives the values, `(x.size() - 1) * stride.value + 1` of them; a
-///               shorter span is refused with a line naming both extents
+///               shorter span is refused with a line naming both extents, and so
+///               is one whose stride would carry the last value past the end of
+///               the size type
 /// \param stride the distance between the elements the values are written to,
 ///               spelled through \c BoysStride{} because the count comes from
 ///               \p x here; a bare number in this position is a compile error
@@ -134,14 +182,10 @@ inline void BoysFixedN(int n,
                        std::span<const double> x,
                        std::span<double> out,
                        BoysStride stride = {}) noexcept {
-    if (x.size() >= 1)
+    if (!detail::StridedSpanAdmits(x.size(), stride.value, out.size()))
     {
-        const std::size_t needed = (x.size() - 1) * stride.value + 1;
-
-        if (out.size() < needed)
-        {
-            detail::RefuseShortSpan("BoysFixedN", "out", needed, out.size());
-        }
+        detail::RefuseShortSpan("BoysFixedN", "out",
+                                detail::StridedSpanNeeded(x.size(), stride.value), out.size());
     }
 
     BoysFixedN<Policy>(n, x.data(), out.data(), x.size(), stride.value);
