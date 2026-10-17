@@ -43,7 +43,7 @@ Nine words carry the design. Each means something narrower here than it means el
   one order, the committed axis, or four orders at one argument (\ref boys::PackAxis).
 - **partition** — how the fitted intervals are cut into pieces, and one of the axes a call site
   names. Three are carried: the committed cut (`FitGranularity::kCoarsest`), the narrower cut the
-  proved truncation bound places, which is the default (`FitGranularity::kNarrow`), and a fixed grid
+  proved truncation bound places, which is the seam's default (`FitGranularity::kNarrow`), and a fixed grid
   of one uniform width over the whole fitted domain, every order fitted independently at one degree
   and no order built from another (`FitGranularity::kUniform`). All three cut one fit, so naming one
   changes the work and the storage, not the accuracy (\ref boys::FitGranularity).
@@ -181,8 +181,8 @@ above are the surface.
 
 ## Accuracy contract
 
-The bound at a cell is **`1e-13 · F_0(x)`**, for every supported n, x and lane: the ladder's first
-rung scaled by `1e-13`. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the pair is
+The bound at a cell on the double lanes is **`1e-13 · F_0(x)`**, for every supported n and x: the
+ladder's first rung scaled by `1e-13`. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the pair is
 never the wider one.
 
 **The figure is a fraction of the ladder's first rung, so read against the value it is not uniform.**
