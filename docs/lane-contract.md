@@ -1281,6 +1281,12 @@ the seed's own `erfc(sqrt(x))` error. The third is a stored scaled table, read r
 and its figure is the one the library publishes in its own row. A gate that measures the first
 through the default entry measures one of the three and speaks for all of them.
 
+**That third row's figure is a reading and not a bound.** The stored table's partition is a
+placeholder — equal width at one degree, over 22 intervals from `kX1` to the right edge at 117.0,
+marked a placeholder in `include/boys/boys_coefficients.hpp` — and its figure is a swept maximum over
+that placeholder, so the row says what the shipped placeholder delivers and not what the far region
+guarantees. The bound over the far region is the recurrence's own: 1e-13 of the ladder's first rung.
+
 **The across-arguments lane belongs to this region.** Above the fits the recurrence is a ladder, so
 the orders axis has no lane to trade away there, and the far region is where an argument-packing
 lane is free. The batch entries hold four arguments — the width of the tier's own double register —
@@ -1364,7 +1370,10 @@ report prints each under, are the rows of `BoysDivisionForms()`.
 
 For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result.
 **Nothing relaxes it**: region C carries the lane's own figure, 1e-13 of the value, like every other
-region.
+region. The region is served by the three arithmetics *The far region's own lane* above describes,
+and one of them — the stored scaled table — reads a partition the header marks a placeholder, so the
+figure that table's own row states is a reading of that placeholder rather than a bound; the region's
+bound is the recurrence's.
 
 Its accuracy is set by where the asymptotic form starts being used. Moving that start point trades
 accuracy against nothing: the evaluation costs the same wherever the boundary sits, so moving it
