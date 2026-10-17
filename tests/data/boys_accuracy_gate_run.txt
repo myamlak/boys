@@ -1,5 +1,5 @@
 boys accuracy gate
-reference    : /mnt/c/Users/myaml/dev/_boys-ci9d5f043/tests/data/boys_accuracy_gate_reference.csv
+reference    : tests/data/boys_accuracy_gate_reference.csv
                33 orders x 1797 arguments = 59301 points
 default rows : the committed header's (BOYS_BUILD_DEFAULTS_REPLACED is not defined), so every
                published figure is judged here
@@ -8,7 +8,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
+verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
@@ -110,10 +110,10 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, revision 40bb830
+accuracy gate, revision d1d538d
 accuracy gate, version 4.0.0
-accuracy gate, inputs src=fc41523ff0b45f9f,include=11e6fca3d4a57d55,gate=4ea7ee80c300ac90,grid=970db44ddb6a7da5,cmake=87d0eb893ab4c8b6
-  reference: /mnt/c/Users/myaml/dev/_boys-ci9d5f043/tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
+accuracy gate, inputs src=fc41523ff0b45f9f,include=5aabe6a4481c411b,gate=f47c2a017a7e7350,grid=970db44ddb6a7da5,cmake=84a1ff37f3edb5ac
+  reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
   ------------------------------------------------------------------------------------------------------------------------------
@@ -1728,7 +1728,8 @@ band, kFlatHi to 32, and the table's span end, 116 to 117, which is where it end
               about two grids' luck; the round-up is at most a factor of two. It is a reading
               of the partition the header carries, and that partition is a placeholder: equal
               width at one degree, over 22 intervals from kX1 to the right edge at 117
-              marked PROVISIONAL in the same file, with the derived partition spliced in where
+              marked a placeholder in that file, with the
+              derived partition spliced in where
               it lands. So the row says what the shipped placeholder delivers and not what
               the far region guarantees. A bound can be written for the axis once the derived
               partition's own rows carry what it delivers; until then this row is a reading,
