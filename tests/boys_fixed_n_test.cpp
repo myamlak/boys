@@ -5,7 +5,10 @@
 
 #include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
+// The scaled far table: the sweep reaches past the grid's top, where the entry runs the ladder.
+#include "boys/boys_coefficients_d_far.hpp"
 #include "boys/boys_impl.hpp"
+#include "boys/boys_span.hpp"
 
 #include <algorithm>
 #include <array>
@@ -17,7 +20,9 @@
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <limits>
 #include <random>
+#include <span>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -469,7 +474,7 @@ TEST(BoysFixedNTest, AlignmentContractHoldsFromNaturalUp) {
 namespace {
 
 template <boys::FitRoute kRoute>
-using RoutePolicy = boys::EvalPolicy<kRoute>;
+using RoutePolicy = boys::SeamPolicy<kRoute>;
 
 } // namespace
 
@@ -538,6 +543,53 @@ TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
     }
 
     EXPECT_EQ(differing, 0u) << "naming the default route moved a value";
+}
+
+// The span overload's extent guard. A short span with a huge stride asks for a buffer past the
+// end of the size type; the product that asks the question must not wrap, so the guard is the
+// division check and the call is refused rather than admitted. It is exercised directly: the
+// refusal path aborts, and this suite runs no child-process test.
+TEST(BoysFixedNTest, TheSpanOverloadRefusesAStrideThatWouldOverflow) {
+    using boys::detail::StridedSpanAdmits;
+    using boys::detail::StridedSpanNeeded;
+
+    constexpr std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+
+    // Two arguments a stride of kMax apart: the last lands at kMax, one past the
+    // end of the size type, and a product computed as (count - 1) * stride wraps
+    // to 0 - admitting the call. Three arguments at half the size type plus one
+    // wrap the product to 2. The division check refuses both.
+    EXPECT_FALSE(StridedSpanAdmits(2, kMax, kMax));
+    EXPECT_FALSE(StridedSpanAdmits(3, kMax / 2 + 1, kMax));
+
+    // The extent a refusal names is a saturated bound, not a wrapped product.
+    EXPECT_EQ(StridedSpanNeeded(2, kMax), kMax);
+
+    // The guard admits exactly the calls whose last value is inside the span.
+    EXPECT_TRUE(StridedSpanAdmits(2, 4, 5));
+    EXPECT_FALSE(StridedSpanAdmits(2, 4, 4));
+    EXPECT_TRUE(StridedSpanAdmits(3, 2, 5));
+    EXPECT_FALSE(StridedSpanAdmits(3, 2, 4));
+
+    // Boundaries: no arguments ask for nothing, an empty span admits no argument,
+    // and a zero stride writes the first slot only.
+    EXPECT_TRUE(StridedSpanAdmits(0, kMax, 0));
+    EXPECT_FALSE(StridedSpanAdmits(1, kMax, 0));
+    EXPECT_TRUE(StridedSpanAdmits(3, 0, 1));
+    EXPECT_FALSE(StridedSpanAdmits(3, 0, 0));
+    EXPECT_EQ(StridedSpanNeeded(0, kMax), 0u);
+    EXPECT_EQ(StridedSpanNeeded(2, 4), 5u);
+
+    // The admitted path of the overload itself writes the strided layout of the
+    // pointer entry: two arguments at stride 4 land in slots 0 and 4 of five.
+    const std::array<double, 2> args = {0.5, 3.0};
+    std::array<double, 5> out = {};
+    BoysFixedN(7, std::span<const double>(args), std::span<double>(out), boys::BoysStride{4});
+    EXPECT_EQ(out[0], BoysSingle(7, args[0]));
+    EXPECT_EQ(out[4], BoysSingle(7, args[1]));
+    EXPECT_EQ(out[1], 0.0);
+    EXPECT_EQ(out[2], 0.0);
+    EXPECT_EQ(out[3], 0.0);
 }
 
 } // namespace

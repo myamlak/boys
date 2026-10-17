@@ -17,6 +17,7 @@
 #include "boys/backend.hpp"
 #include "boys/boys_backend_simd.hpp"
 #include "boys/boys_coefficients.hpp"
+#include "boys/dependent_false.hpp"
 #include "boys/isa_tiers.hpp"
 
 #include <cassert>
@@ -24,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <type_traits>
 
 namespace boys::detail {
 
@@ -359,9 +361,9 @@ struct StoredDegree {
     static int At(std::size_t, int stored) noexcept { return stored; }
 };
 
-// A rung's reading: every stored fit at the degree the truncation criterion
-// certifies for that fit's piece at the rung's multiplier. The table is flat over
-// the piece table, so one index names the piece.
+// A stored reading: every stored fit at the degree the truncation criterion
+// certifies for that fit's piece. The table is flat over the piece table, so one
+// index names the piece.
 template <typename Table>
 struct RungDegree {
     const Table& table;
@@ -560,6 +562,32 @@ inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, doub
     }
 }
 
+// The shipped partition's two stored forms. A scheme reads one of them, and the
+// selector names only that one: an argument is evaluated whatever the callee does
+// with it, and a translation unit that instantiates one scheme must not odr-use
+// the other form's array.
+template <bool kHorner>
+const double* ShippedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, CoarseMonoGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_coarse_mono.hpp: include that "
+                      "header in the translation unit that names this scheme");
+        return kMonoCoeffs.data();
+    }
+    else
+    {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, CoarseChebGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_coarse_cheb.hpp: include that "
+                      "header in the translation unit that names this scheme");
+        return kCoeffs.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute,
           OrdersScheme kScheme,
           bool kComposed,
@@ -567,8 +595,7 @@ template <backend::MulAddRoute kMulAddRoute,
 void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees degrees) noexcept {
     // Both tables are cut identically, so the geometry is the same whichever
     // one the scheme reads: a scheme picks a table and a summation.
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kMonoCoeffs.data() : kCoeffs.data();
+    const double* const table = ShippedCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     const OrderPiece& piece = FindPiece(0, x);
     const int index = static_cast<int>(&piece - kPieces.data()) - kPieceStart[0];
@@ -631,25 +658,70 @@ static_assert(std::size(kFlatMonoCoeffs) == std::size(kFlatCoeffs),
               "degrees - so a scheme picks a table and a summation and changes no geometry");
 
 // The transposed twin is a permutation of those blocks and its read rule is a stride, so a
-// twin emitted with the wrong one is a compile error here rather than a wrong value at a
-// caller: the first interval's order 0 and order 1 are read out of both shapes.
+// twin emitted with the wrong one is a compile error rather than a wrong value at a caller.
+// Its extents are checked here; the permutation itself is checked in
+// tests/boys_coefficients_pair_check.cpp, the one translation unit that includes both tables.
 static_assert(std::size(kFlatTransposedCoeffs) ==
                       static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock &&
                   std::size(kFlatTransposedMonoCoeffs) ==
                       static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock,
               "the transposed twin holds one padded block per interval, addressed by its own "
               "row and block strides, so the interval-major form's offsets do not reach it");
-static_assert(kFlatTransposedCoeffs[0] == kFlatCoeffs[0] &&
-                  kFlatTransposedCoeffs[kFlatTwinRow] == kFlatCoeffs[1] &&
-                  kFlatTransposedCoeffs[1] == kFlatCoeffs[kFlatDegs[0] + 1],
-              "the twin's k-th coefficient of order l is the interval-major table's k-th "
-              "coefficient of that order: the coefficient index steps by kFlatTwinRow and the "
-              "order by one");
 static_assert(FlatDegreesCarried(),
               "every interval of the uniform grid must be fitted at a degree between 4 and the "
               "read cap: below 4 the split Clenshaw recurrence this lane sums the far orders "
               "with is not written, and a degree above the cap is beyond the coefficients the "
               "interval stores");
+
+// The uniform grid's two stored forms, each with its own selector: the interval-major
+// table for the scalar tail and the transposed twin for the group walk. One scheme reads
+// one form of each, and the selector keeps the other form's array out of the
+// instantiation.
+template <bool kHorner>
+const double* FlatCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, UniformMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_d_uniform_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return kFlatMonoCoeffs.data();
+    }
+    if constexpr (!kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, UniformChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_d_uniform_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return kFlatCoeffs.data();
+    }
+}
+
+template <bool kHorner>
+const double* FlatTransposedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(kCoefficientGroupPresent<DependentGroup<std::integral_constant<bool, kHorner>,
+                                                              UniformMonoTransposedGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_uniform_mono_transposed.hpp: "
+                      "include that header in the translation unit that names this scheme");
+        return kFlatTransposedMonoCoeffs.data();
+    }
+    if constexpr (!kHorner)
+    {
+        static_assert(kCoefficientGroupPresent<DependentGroup<std::integral_constant<bool, kHorner>,
+                                                              UniformChebTransposedGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_uniform_cheb_transposed.hpp: "
+                      "include that header in the translation unit that names this scheme");
+        return kFlatTransposedCoeffs.data();
+    }
+}
 
 // One group of four orders out of the transposed twin: the four orders' k-th coefficients
 // are four consecutive doubles at a stride of one order count, so the fetch is a load where
@@ -707,10 +779,8 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
     // The groups read the transposed twin and the tail the interval-major form: four orders'
     // coefficients are consecutive in one and one order's own are consecutive in the other.
     const double* const transposed =
-        (kScheme == OrdersScheme::kHorner) ? kFlatTransposedMonoCoeffs.data()
-                                           : kFlatTransposedCoeffs.data();
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
+        FlatTransposedCoeffTable<kScheme == OrdersScheme::kHorner>();
+    const double* const table = FlatCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     const FlatPoint at = FlatLocate(x);
     const int orderStride = kFlatDeg + 1;
@@ -785,14 +855,36 @@ __m256d NarrowGroup(const double* table, __m128i offsets, int deg, __m256d tv) n
     }
 }
 
+// The narrow partition's two stored forms; see ShippedCoeffTable.
+template <bool kHorner>
+const double* NarrowACoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, NarrowMonoGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_narrow_mono.hpp: include that "
+                      "header in the translation unit that names this scheme");
+        return kNarrowAMonoCoeffs.data();
+    }
+    if constexpr (!kHorner)
+    {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, NarrowChebGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_narrow_cheb.hpp: include that "
+                      "header in the translation unit that names this scheme");
+        return kNarrowACoeffs.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, class Degrees>
 void NarrowOrdersBody(int nmax,
                       double x,
                       double* out,
                       std::size_t stride,
                       Degrees degrees) noexcept {
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+    const double* const table = NarrowACoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -1009,8 +1101,7 @@ void RationalOrdersBody(int nmax,
                         Degrees degrees) noexcept {
     constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
 
-    const double* const shippedTable =
-        (kScheme == EvalScheme::kHorner) ? kMonoCoeffs.data() : kCoeffs.data();
+    const double* const shippedTable = ShippedCoeffTable<kScheme == EvalScheme::kHorner>();
     const OrderPiece& piece = FindPiece(0, x);
     const int index = static_cast<int>(&piece - kPieces.data()) - kPieceStart[0];
     const int orderStride = kPieces[kPieceStart[1] + index].offset - piece.offset;
@@ -1018,6 +1109,12 @@ void RationalOrdersBody(int nmax,
     const std::size_t firstFlat = static_cast<std::size_t>(kPieceStart[0] + index);
 
     const double* const base = shippedTable + piece.offset;
+    static_assert(
+        kCoefficientGroupPresent<
+            DependentGroup<std::integral_constant<EvalScheme, kScheme>, CoarseRatGroup>> ||
+            kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
+        "this route reads boys/boys_coefficients_d_coarse_rat.hpp: include that header "
+        "in the translation unit that names this scheme");
     const double* const ratCoeffs = kRatACoeffs.data();
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
 
@@ -1107,8 +1204,13 @@ void NarrowRationalOrdersBody(int nmax,
                               Degrees degrees) noexcept {
     constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
 
-    const double* const table =
-        (kScheme == EvalScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+    const double* const table = NarrowACoeffTable<kScheme == EvalScheme::kHorner>();
+    static_assert(
+        kCoefficientGroupPresent<
+            DependentGroup<std::integral_constant<EvalScheme, kScheme>, NarrowRatGroup>> ||
+            kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
+        "this route reads boys/boys_coefficients_d_narrow_rat.hpp: include that header "
+        "in the translation unit that names this scheme");
     const double* const ratCoeffs = kNarrowRatACoeffs.data();
 
     int served = 0;
@@ -1144,7 +1246,7 @@ void NarrowRationalOrdersBody(int nmax,
             if (l >= served)
             {
                 // None of the four takes the route's pair: the whole group is
-                // the narrow partition's own fit at this rung's degrees.
+                // the narrow partition's own fit at the degrees the table carries.
                 int deg = 0;
                 __m128i offsets{};
                 __m256d tv{};
@@ -1219,14 +1321,14 @@ inline bool NarrowOrdersLaneApplies(double x) noexcept {
 
 // The certified scalar single lane at the policy the axis names: what the entry is outside the
 // packed interval, on a host without the vector tier, and against a table that does not carry
-// the lane's premise. The multiplier, route, partition and form are the entry's own, so a rung
-// falls back to that rung of the per-order lane and not to the full-accuracy one.
+// the lane's premise. The route, partition and form are the entry's own, so the fallback answers
+// with the per-order lane's own policy.
 template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity,
           DivisionForm kForm>
 void ScalarOrders(int nmax, double x, double* out, std::size_t stride) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
+    using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
 
     // Past the fits one ladder replaces the per-order loop below: nmax steps where that loop pays
@@ -1564,9 +1666,8 @@ struct F32StoredDegree {
     static int At(std::size_t, int stored) noexcept { return stored; }
 };
 
-// A rung's reading: every stored fit at the degree the truncation criterion
-// certifies for that fit's piece at the rung's multiplier, flat over the float
-// lane's piece table.
+// A stored reading: every stored fit at the degree the truncation criterion
+// certifies for that fit's piece, flat over the float lane's piece table.
 template <typename Table>
 struct F32RungDegree {
     const Table& table;
@@ -1577,10 +1678,58 @@ struct F32RungDegree {
     }
 };
 
+// The float partition's two stored forms; see ShippedCoeffTable.
+template <bool kHorner>
+const float* F32ShippedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_coarse_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return f32::kMonoCoeffs.data();
+    }
+    if constexpr (!kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_coarse_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return f32::kCoeffs.data();
+    }
+}
+
+template <bool kHorner>
+const float* F32NarrowACoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_narrow_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return f32::kNarrowAMonoCoeffsF32.data();
+    }
+    if constexpr (!kHorner)
+    {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_narrow_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
+        return f32::kNarrowACoeffsF32.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
-    const float* const table =
-        (kScheme == OrdersScheme::kHorner) ? f32::kMonoCoeffs.data() : f32::kCoeffs.data();
+    const float* const table = F32ShippedCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -1607,9 +1756,8 @@ void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
 // same reason: a cut degree is certified against the coefficients it is cut from.
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32NarrowOrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
-    const float* const table = (kScheme == OrdersScheme::kHorner)
-                                   ? f32::kNarrowAMonoCoeffsF32.data()
-                                   : f32::kNarrowACoeffsF32.data();
+    const float* const table =
+        F32NarrowACoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -1648,15 +1796,14 @@ struct F32RatGroup {
     int denMax;
 };
 
-// The pair a lane reads: the stored degrees, which is the reference rung's
-// reading - every stored fit read whole.
+// The pair a lane reads: the stored degrees - every stored fit read whole.
 struct F32StoredPairs {
     static int Num(std::size_t, int stored) noexcept { return stored; }
     static int Den(std::size_t, int stored) noexcept { return stored; }
 };
 
-// A rung's reading: the pair the pair criterion certifies for that piece at the
-// rung's multiplier, flat over the rational cover's piece table.
+// A stored reading: the pair the pair criterion certifies for that piece, flat over
+// the rational cover's piece table.
 template <typename Pairs>
 struct F32RungPairs {
     const Pairs& pairs;
@@ -1694,9 +1841,9 @@ F32RatGroup BuildF32RatGroup(int l, float x, CutPairs cuts) noexcept {
 }
 
 // The same group over the narrow cover: the lookup and offsets are the narrow table's, the
-// degrees, cuts and mapped arguments the shipped group's. The cut is this partition's own, so a
-// rung here is the rung the per-order lane answers at: reading pieces whole parted the two lanes
-// on 901 of 2304 values at m = 64 and 2296 of 2304 at m = 65536.
+// degrees and mapped arguments the shipped group's. The cut is this partition's own, read
+// from the pair table the per-order lane reads for it, so both lanes answer a piece at the same
+// pair.
 template <class CutPairs>
 F32RatGroup BuildF32NarrowRatGroup(int l, float x, CutPairs cuts) noexcept {
     F32RatGroup group{{}, {}, {}, {}, {}, 0, 0};
@@ -1792,6 +1939,10 @@ __m256 F32RationalGroup(const F32RatGroup& group, const float* coeffs) noexcept 
 // tail's value is the vector's for the lane it stands for.
 template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
+    static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32CoarseRatGroup>> ||
+                      kAlwaysFalse<CutPairs>,
+                  "this route reads boys/boys_coefficients_f32_coarse_rat.hpp: include that "
+                  "header in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
@@ -1817,10 +1968,14 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
 
 // The shipped body above, reading the family's own cover: what changes is which piece
 // table the lanes look their piece up in, which coefficient array the offsets index and
-// which pairs table the rung's cut is read from. The tail is the shipped body's too, at
+// which pair table the cut is read from. The tail is the shipped body's too, at
 // this partition's own table, so its value is the group reader's for the same lane.
 template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
+    static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32NarrowRatGroup>> ||
+                      kAlwaysFalse<CutPairs>,
+                  "this route reads boys/boys_coefficients_f32_narrow_rat.hpp: include that "
+                  "header in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
@@ -1849,9 +2004,8 @@ inline bool F32OrdersLaneApplies(float x) noexcept {
     return !(x >= static_cast<float>(kX0));
 }
 
-// The certified scalar single lane at the reference multiplier and the default
-// policy: what the measurement entries answer outside the packed interval and
-// on a host without the vector tier.
+// The certified scalar single lane at the default policy: what the measurement entries
+// answer outside the packed interval and on a host without the vector tier.
 inline void F32ScalarOrdersDefault(int nmax, float x, float* out) noexcept {
     for (int l = 0; l <= nmax; ++l)
     {
@@ -1867,7 +2021,7 @@ template <EvalScheme kScheme, FitRoute kRoute, BoysBudget kBudget,
           DivisionForm kForm = kDefaultDivisionForm>
 void F32ScalarOrders(int nmax, float x, float* out) noexcept {
     using Policy =
-        EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
+        SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -1939,8 +2093,8 @@ void F32OrdersByRoute(OrdersScheme scheme, FitRoute route, int nmax, float x, fl
                                                                         F32StoredDegree{});
 }
 
-// The float engines' entry on the orders axis (boys_impl.hpp): scheme, route, accuracy
-// multiplier, budget and division form, each a template argument. The division form selects
+// The float engines' entry on the orders axis (boys_impl.hpp): scheme, route, budget,
+// partition and division form, each a template argument. The division form selects
 // nothing this body evaluates, so it is threaded to the scalar single lane the fallbacks hand
 // their orders to. kF32Composed picks the fetch, the two being the same lane value for value.
 constexpr bool kF32Composed = false;
@@ -1959,8 +2113,8 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     {
         // The fixed grid: its cells are fitted per order with no recurrence to enter and no stride for
         // a gather to step, so the ladder this lane carries is the scalar body the arguments axis reads.
-        // The rung is not read and the route picks the fit rather than the lane. Branches of one
-        // `if constexpr`, not an early return: this build refuses the unreachable-code warning.
+        // No stored table is read here and the route picks the fit rather than the lane. Branches of
+        // one `if constexpr`, not an early return: this build refuses the unreachable-code warning.
         if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
             F32ScalarOrders<kScheme, kRoute, kBudget, kGranularity, kForm>(
@@ -1991,7 +2145,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                 return;
             }
 
-            UniformAllOrdersF32<boys::EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kOrders,
+            UniformAllOrdersF32<boys::SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kOrders,
                                                  kGranularity, kForm>>(nmax, x, out);
 
             return;
@@ -1999,10 +2153,9 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     } else if constexpr (kRoute == FitRoute::kChebyshev &&
                          kGranularity == FitGranularity::kCoarsest)
     {
-        // The reference rung of the shipped route on the shipped partition is the lane exactly as it
-        // stands: the same body the measurement entries above run, the budget inert because the
-        // region-A seed is the double lane's. The partition is in the condition because this body
-        // reads the shipped table.
+        // The shipped route on the shipped partition has a body of its own: the same body the
+        // measurement entries above run, the budget inert because the region-A seed is the double
+        // lane's. The partition is in the condition because this body reads the shipped table.
         if (x == 0.0f)
         {
             for (int l = 0; l <= nmax; ++l)
@@ -2068,7 +2221,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
                 static constexpr auto kPairsA =
-                    RationalRegionAF32Degrees<kRole>();
+                    RationalRegionAF32Degrees<kRole, decltype(kDegreesA)>();
 
                 F32RationalBody<backend::detail::kSelectedRoute>(
                     nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
@@ -2088,11 +2241,11 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
 
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
-                // The rung's own pairs, cut from the narrow partition's coefficients at
-                // this rung's multiplier and role - the table the scalar lane's rung body
-                // reads, so the two answer a rung with the same values.
+                // The stored pairs, cut from the narrow partition's coefficients at the
+                // role's stored degrees - the table the scalar lane reads, so the two
+                // answer a piece with the same values.
                 static constexpr auto kPairsA =
-                    NarrowRationalRegionAF32Degrees<kRole>();
+                    NarrowRationalRegionAF32Degrees<kRole, decltype(kDegreesA)>();
 
                 F32NarrowRationalBody<backend::detail::kSelectedRoute>(
                     nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
@@ -2176,10 +2329,10 @@ void BoysAllOrdersSimdAtForm(
     OrdersByScheme<backend::detail::kSelectedRoute, kComposed>(scheme, nmax, x, out, stride);
 }
 
-// The entry the public surface's orders axis dispatches to (boys_impl.hpp). The multiplier picks
-// the degree a fit is read at and the partition the table it is read from; the division form
-// selects nothing here. The stored fit is summed from the transposed twin where the partition
-// carries one, one coefficient index at a time, both fetches being one lane value for value.
+// The entry the public surface's orders axis dispatches to (boys_impl.hpp). The partition picks
+// the table a fit is read from, and every stored fit is read at the degree that table holds;
+// the division form selects nothing here. The stored fit is summed from the transposed twin
+// where the partition carries one, one coefficient index at a time, lane value for value.
 template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity,
@@ -2239,10 +2392,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             {
                 const FlatPoint at = FlatLocate(x);
                 const double* const rows =
-                    ((OrdersSchemeOf(kScheme) == OrdersScheme::kHorner) ? kFlatMonoCoeffs
-                                                                        : kFlatCoeffs)
-                        .data() +
-                    at.block;
+                    FlatCoeffTable<OrdersSchemeOf(kScheme) == OrdersScheme::kHorner>() + at.block;
 
                 out[0] = ScalarFit<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
                                    kFlatDeg>(rows, kFlatDeg, at.t);
@@ -2270,9 +2420,9 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     } else if constexpr (kRoute == FitRoute::kChebyshev &&
                          kGranularity == FitGranularity::kCoarsest)
     {
-        // The shipped route's reference rung on the shipped partition, at the form the caller named: the
-        // same body and tables. The form is passed through rather than defaulted because the fallback
-        // past the interval is where the two forms part.
+        // The shipped route on the shipped partition has a body of its own, at the form the caller
+        // named: the same body and tables. The form is passed through rather than defaulted because
+        // the fallback past the interval is where the two forms part.
         BoysAllOrdersSimdAtForm<true, kForm>(OrdersSchemeOf(kScheme), nmax, x, out, 1);
         return;
     } else
@@ -2305,12 +2455,12 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             }
         }
 
-        // The degrees this partition's fits are read at. The criterion's budget is zero at the reference
-        // rung, which leaves every fit at its stored degree, so the one table covers every rung. The form
-        // is named in the policy because this body reads one policy and not one policy's table.
+        // The degrees this partition's fits are read at. Every stored fit is read at its stored
+        // degree, so the one table covers every cell the entry serves. The form is named in the
+        // policy because this body reads one policy and not one policy's table.
         static constexpr auto kDegrees =
             RegionADegreeTableOf<
-                                 EvalPolicy<kRoute, kScheme, BoysBudget::kFloat,
+                                 SeamPolicy<kRoute, kScheme, BoysBudget::kFloat,
                                             PackAxis::kOrders, kGranularity, kForm>,
                                  BoysRole::kDoubleSingle>();
 
@@ -2318,11 +2468,12 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
         {
             // The narrow partition is a partition of the shipped route's own region-A
             // fits, read with the per-order rule the route's per-argument body applies:
-            // below an order's own end of region A the partition's fit answers at this
-            // rung's degree, at and above it the route's pair at this rung's cut.
+            // below an order's own end of region A the partition's fit answers at that stored
+            // degree, at and above it the route's pair at the pair's own cut.
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
-                static constexpr auto kPairs = RationalRegionANarrowDegrees();
+                static constexpr auto kPairs =
+                    RationalRegionANarrowDegrees<decltype(kDegrees)>();
 
                 NarrowRationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                     nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
@@ -2334,7 +2485,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             }
         } else if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
-            static constexpr auto kPairs = RationalRegionADegrees();
+            static constexpr auto kPairs = RationalRegionADegrees<decltype(kDegrees)>();
 
             RationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                 nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
@@ -2368,7 +2519,7 @@ template <EvalScheme kScheme, FitRoute kRoute, BoysBudget kBudget,
           FitGranularity kGranularity, DivisionForm kForm>
 void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
     using Policy =
-        EvalPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
+        SeamPolicy<kRoute, kScheme, kBudget, PackAxis::kArguments, kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)
     {
@@ -2388,7 +2539,7 @@ template <EvalScheme kScheme,
           FitGranularity kGranularity,
           DivisionForm kForm>
 void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
+    using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, PackAxis::kArguments,
                               kGranularity, kForm>;
 
     for (int l = 0; l <= nmax; ++l)

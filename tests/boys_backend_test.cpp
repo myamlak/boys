@@ -6,6 +6,8 @@
 #include "boys/backend.hpp"
 
 #include "boys/kernels.hpp"
+// The grid's rational member reads its own table, which the default set does not open.
+#include "boys/boys_coefficients_d_uniform_rat.hpp"
 
 #include <algorithm>
 #include <array>
@@ -240,17 +242,17 @@ TEST(BackendTest, ThePackedPairAppearsExactlyWithTheVectorTier) {
 
 } // namespace
 
-// Every axis the entries select is one field of EvalPolicy with its own default, and the pins below are
+// Every axis the entries select is one field of SeamPolicy with its own default, and the pins below are
 // the committed names - the configuration every bound in this repository was measured at - where
 // boys/boys_build_defaults.hpp is the committed header. All five axes are read from it, the packing
 // axis, division form and partition included (BOYS_BUILD_DEFAULTS, CONTRIBUTING.md).
-static_assert(boys::EvalPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
+static_assert(boys::SeamPolicy<>{}.kBudget == boys::BoysBudget::kFloat,
               "the default engine budget moved");
 
 #if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
-static_assert(boys::EvalPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
+static_assert(boys::SeamPolicy<>{}.kRoute == boys::FitRoute::kChebyshev,
               "the default fit route moved");
-static_assert(boys::EvalPolicy<>{}.kScheme == boys::EvalScheme::kHorner,
+static_assert(boys::SeamPolicy<>{}.kScheme == boys::EvalScheme::kHorner,
               "the default evaluation scheme moved");
 
 static_assert(boys::kDefaultFitRoute == boys::FitRoute::kChebyshev,
@@ -377,10 +379,10 @@ TEST(BackendTest, TheUnnamedCallIsTheDefaultThisBuildWasCompiledWith) {
     using Class = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAllOrders>;
 
     // The point the seam's own five compose: the fallback a class the table carries no row
-    // for resolves to, and the type the library names EvalPolicy<>. Not what an entry
+    // for resolves to, and the type the library names SeamPolicy<>. Not what an entry
     // resolves to in general - an entry resolves to its class's row, which is this
     // combination only where that row spells it.
-    using Fallback = boys::EvalPolicy<>;
+    using Fallback = boys::SeamPolicy<>;
 
     static_assert(SameCall<&BoysAllOrders<>, &BoysAllOrders<Class>>,
                   "an entry that names no policy does not name its own class's row: the class is "
@@ -530,7 +532,7 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
             for (const boys::PackAxisInfo& axis : boys::BoysPackAxes())
             {
                 const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-                    boys::Precision::kFp64, route.route, scheme.scheme, axis.axis,
+                    boys::Precision::kFp64, 0, 0.0, route.route, scheme.scheme, axis.axis,
                     boys::FitGranularity::kUniform);
                 const bool claimed =
                     boys::FitGranularityHasRoute(*uniform, route.route) &&
@@ -580,12 +582,12 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     constexpr int kNmax = boys::kMaxBoysOrder;
     constexpr std::array<double, 7> kArguments = {0.5, 1.0, 2.0, 6.0, 12.0, 24.0, 34.0};
 
-    using UniformPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using UniformPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                            boys::EvalScheme::kHorner,
                                            boys::BoysBudget::kFloat,
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kUniform>;
-    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using NarrowPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                           boys::EvalScheme::kHorner,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kArguments,
@@ -621,12 +623,12 @@ TEST(BackendTest, TheUniformPartitionDeclaresWhatTheBuildServes) {
     // interval and the narrow member's per narrow piece, so an entry answering a uniform rational
     // policy from the narrow pairs would return certified numbers under the grid's name. The two are
     // the same family read over different partitions, which is what makes the comparison meaningful.
-    using UniformRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using UniformRatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
                                               boys::PackAxis::kArguments,
                                               boys::FitGranularity::kUniform>;
-    using NarrowRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using NarrowRatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                              boys::EvalScheme::kHorner,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kArguments,
@@ -696,7 +698,7 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     using boys::BoysAllOrders;
     using boys::BoysAllOrdersF32;
     using boys::DivisionForm;
-    using boys::EvalPolicy;
+    using boys::SeamPolicy;
 
     constexpr auto kRoute = boys::kDefaultFitRoute;
     constexpr auto kScheme = boys::kDefaultEvalScheme;
@@ -704,10 +706,10 @@ TEST(BackendTest, TheDivisionFormReachesTheLaddersItDocuments) {
     constexpr auto kPack = boys::kDefaultPackAxis;
     constexpr auto kGran = boys::kDefaultFitGranularity;
 
-    using DExact = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kExactDivision>;
-    using DPlain = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kPlainReciprocal>;
+    using DExact = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kExactDivision>;
+    using DPlain = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kPlainReciprocal>;
     using DRefined =
-        EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
+        SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, DivisionForm::kRefinedReciprocal>;
 
     // Arguments below each lane's kX0, where the downward recursion runs, and above it, where the upward
     // ladders do. The downward set carries both of the accuracy gate's own cells where the plain form's
@@ -915,12 +917,12 @@ static_assert(!boys::detail::FitAnswersPartition<GridFit>(static_cast<boys::FitG
 // routing is removed or the predicate weakened - the call below then hits the partitioned path, the
 // one property a run-time test cannot have: a substitution that compiles is measured as a value.
 TEST(BackendTest, TheGuardedBatchedEntriesReadTheGridsOwnTable) {
-    using UniformPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using UniformPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                            boys::EvalScheme::kHorner,
                                            boys::BoysBudget::kFloat,
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kUniform>;
-    using NarrowPolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using NarrowPolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                           boys::EvalScheme::kHorner,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kArguments,

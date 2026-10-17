@@ -79,7 +79,8 @@
 /// the precision lane an entry is built at, and the question that entry answers -
 /// and a row is the combination that class's entries compile when the call site
 /// names no policy. The names above are the **fallback** and not the whole
-/// answer: a class this list carries no row for resolves to those seven - the
+/// answer: they are the point `boys::SeamPolicy<>` spells. A class this list
+/// carries no row for resolves to those seven - the
 /// host's five at its own lane's budget, and, on a device class, the device
 /// lane's two as well.
 ///
@@ -89,10 +90,9 @@
 /// and this list carries a row for each: one row for both would be a default the
 /// other format reads.
 ///
-/// **The rung is not a key, because the rung is the caller's and not the
-/// library's.** A caller chooses the accuracy before the call and this table
-/// answers what the library then picks, so each class's row is the one its own
-/// m = 1 class measured.
+/// **The table has no accuracy column: this library carries one accuracy, and
+/// each class's row is the class's own default.** No entry takes an accuracy
+/// choice, so a row is what that class compiles and nothing else.
 ///
 /// **EVERY CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one is a
 /// build error rather than a call answered by something else: `boys::DefaultPolicyFor`
@@ -101,13 +101,14 @@
 /// `boys-option-probe --emit-defaults` and `boys-device-probe --emit-defaults` are
 /// what write them all.
 ///
-/// **The host rows are measurements taken on one machine.** They are the option
-/// probe's winners for this host - 12 logical processors, the AVX2+FMA tier
-/// present, seed 47, 5 passes of 5 rounds over 16384 arguments to order 32 - run
-/// 2026-10-12, and the figure beside each is that class's time per
-/// argument. They all carry one record name: this host's own word and the day the
-/// run was stamped with. A row is a property of the machine it was measured on, so
-/// a build on another host has its own winners and the probe is what finds them.
+/// **The host rows are measurements taken on one machine.** Their route, scheme, packing axis,
+/// partition and exponential cells are the option probe's winners for this host - 12 logical
+/// processors, the AVX2+FMA tier present, seed 47, 5 passes of 5 rounds over 16384 arguments to
+/// order 32 - run 2026-10-12, and the figure beside each was that class's time per argument. The
+/// float lane's five rows carry a stated division form in place of the run's; the criterion above
+/// the row list is that cell's source, and it is the one cell of those rows the run did not
+/// decide. A row is a property of the machine it was measured on, so a build on another host has
+/// its own winners and the probe is what finds them.
 ///
 /// **The device rows are runs' own winners.** Every member of the space - the
 /// library's 352 device option rows crossed with its three division forms - was
@@ -130,18 +131,30 @@
 /// rather than a sentence beside it.** The basis is `RowBasis::kMeasured` where a
 /// run ranked the class and the combination below is a winner that run took, and
 /// `RowBasis::kChosen` where the combination is a default this file states: the
-/// fallback the seven names make, a class a run ranked no cell of, or a class
-/// whose one entry stood alone. The record names the run the row came from, as
+/// fallback the seven names make, a class a run ranked no cell of, a class
+/// whose one entry stood alone, or a run's winner whose division form the
+/// criterion below moved. The record names the run the row came from, as
 /// `<machine>-<date>`, and it is empty exactly where no run stands behind the row.
 /// A name and not a revision: a revision is a second thing to rewrite on every
 /// re-record, and a row that carried one would describe the tree reading it rather
-/// than the run that produced it. The record a name points at is the file that run
-/// wrote, kept under `tests/data/`, which carries the revision the run was taken
-/// at and the paths the measurement depends on.
+/// than the run that produced it. A row's name states the run it came from, and the
+/// probe's committed transcripts are kept under `tests/data/`. The option report
+/// there is a later run of the same protocol on this host, not the host rows' own
+/// transcript.
 ///
 /// The marker above a row is prose and carries the rest: on a measurement, the
 /// figure the class's winner took and how it was reached; on a choice, why the run
 /// wrote the combination it states.
+///
+/// **The float lane's rows name the refined reciprocal, and that cell is a stated
+/// choice.** The lane's plain reciprocal rounds once more per step and publishes its own 1e-7
+/// term beside the lane's 1.5e-7 base, so a row naming it carries a 2.5e-7 figure, while the
+/// certified-bound model places the engine's fits at a 1e-7 seed. The refined reciprocal
+/// recovers the exact quotient and is bit-identical to exact division, so a row naming it
+/// publishes the lane's 1.5e-7 base, and the model's 1e-7 fit-placement figure plus the
+/// format's half digit is what remains. The five float rows are `RowBasis::kChosen` with no run
+/// behind them: their other cells are the 2026-10-12 run's winners, and the form is this file's
+/// statement.
 ///
 /// Cells are written as enumerator names, bare where the row's own key is what the
 /// enumeration's name means and qualified where an axis is, and the list is
@@ -157,10 +170,11 @@
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 90.26 ns per argument on this host, reached by vote */\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
     X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: 165.49 ns per argument on this host, reached by vote */\
     X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
@@ -181,22 +195,26 @@
     X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
       RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 234.55 ns per argument on this host, reached by refined */\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 92.17 ns per argument on this host, reached by vote */\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
     X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 524.24 ns per argument on this host, reached by refined */\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
     X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 96.20 ns per argument on this host, reached by vote */\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
     X(kHost, kFp32, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* measured: 330.03 ns per argument on this host, reached by refined */\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\

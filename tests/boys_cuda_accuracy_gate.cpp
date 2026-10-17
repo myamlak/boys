@@ -27,13 +27,9 @@
 #include <cuda_runtime.h>
 
 // The grid is located as the CPU gate locates it, so a build that bypasses CMake
-// still says which revision it measured rather than naming one it did not read.
+// still reads the tree's data rather than a path it names for itself.
 #ifndef BoysDataDir
 #define BoysDataDir "tests/data"
-#endif
-
-#ifndef BoysGateRevision
-#define BoysGateRevision "unknown"
 #endif
 
 // The fp16 device entries and the host launchers that reach them sit behind the BoysFp16 seam
@@ -846,17 +842,17 @@ void MeasureDeviceRowF16(const Reference& ref,
 void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
     const double pairBound = 2.0 * kBoundDoubleBatch;
 
-    using NarrowPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using NarrowPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kArguments,
                                           boys::FitGranularity::kNarrow>;
-    using OrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using OrdersPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kOrders,
                                           boys::FitGranularity::kCoarsest>;
-    using NarrowOrdersPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using NarrowOrdersPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                                 boys::kDefaultEvalScheme,
                                                 boys::BoysBudget::kFloat,
                                                 boys::PackAxis::kOrders,
@@ -865,22 +861,22 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
     // The same partition and packing axes over the monomial basis: the scheme
     // axis names which of the lane's two stored forms a body sums, so a row of
     // it is read against the host entry that sums the other one.
-    using MonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using MonoPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                         boys::EvalScheme::kHorner,
                                         boys::BoysBudget::kFloat,
                                         boys::PackAxis::kArguments,
                                         boys::FitGranularity::kCoarsest>;
-    using OrdersMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using OrdersMonoPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
                                               boys::PackAxis::kOrders,
                                               boys::FitGranularity::kCoarsest>;
-    using NarrowMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using NarrowMonoPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                               boys::EvalScheme::kHorner,
                                               boys::BoysBudget::kFloat,
                                               boys::PackAxis::kArguments,
                                               boys::FitGranularity::kNarrow>;
-    using NarrowOrdersMonoPolicy = boys::EvalPolicy<boys::kDefaultFitRoute,
+    using NarrowOrdersMonoPolicy = boys::SeamPolicy<boys::kDefaultFitRoute,
                                                     boys::EvalScheme::kHorner,
                                                     boys::BoysBudget::kFloat,
                                                     boys::PackAxis::kOrders,
@@ -890,22 +886,22 @@ void SweepDeviceChoices(const Reference& ref, const Grid& grid) {
     // names select one arithmetic, so the four policies below are the shapes'
     // four and not eight: a row of the route is read against the host lane at
     // the route, the shape's partition and the shape's packing axis.
-    using RatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using RatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                        boys::kDefaultEvalScheme,
                                        boys::BoysBudget::kFloat,
                                        boys::PackAxis::kArguments,
                                        boys::FitGranularity::kCoarsest>;
-    using OrdersRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using OrdersRatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                              boys::kDefaultEvalScheme,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders,
                                              boys::FitGranularity::kCoarsest>;
-    using NarrowRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using NarrowRatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                              boys::kDefaultEvalScheme,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kArguments,
                                              boys::FitGranularity::kNarrow>;
-    using NarrowOrdersRatPolicy = boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+    using NarrowOrdersRatPolicy = boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                                                    boys::kDefaultEvalScheme,
                                                    boys::BoysBudget::kFloat,
                                                    boys::PackAxis::kOrders,
@@ -3693,10 +3689,10 @@ std::array<std::size_t, 4> CarriageSeparation(const Reference& ref,
 /// own return: the two policies name the lane's grid and its narrow member.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 std::array<std::size_t, 4> F32Separation(const Reference& ref) {
-    using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+    using GridReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
                                          boys::PackAxis::kArguments,
                                          boys::FitGranularity::kUniform>;
-    using NarrowReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+    using NarrowReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kNarrow>;
 
@@ -3716,10 +3712,10 @@ std::array<std::size_t, 4> F32Separation(const Reference& ref) {
 /// the lane's own rows do.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 std::array<std::size_t, 4> F64Separation(const Reference& ref) {
-    using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+    using GridReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
                                          boys::PackAxis::kArguments,
                                          boys::FitGranularity::kUniform>;
-    using NarrowReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
+    using NarrowReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat,
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kNarrow>;
 
@@ -3736,10 +3732,10 @@ std::array<std::size_t, 4> F64Separation(const Reference& ref) {
 /// this reference holds return.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
 std::array<std::size_t, 4> F16Separation(const Reference& ref) {
-    using GridReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
+    using GridReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
                                          boys::PackAxis::kArguments,
                                          boys::FitGranularity::kUniform>;
-    using NarrowReading = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
+    using NarrowReading = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFp16,
                                            boys::PackAxis::kArguments,
                                            boys::FitGranularity::kNarrow>;
 
@@ -6304,7 +6300,6 @@ int main(int argc, char** argv) {
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
-    std::printf("revision     : %s\n", BoysGateRevision);
     std::printf("device       : %s (compute capability %d.%d, %zu MiB)\n",
                 prop.name,
                 prop.major,

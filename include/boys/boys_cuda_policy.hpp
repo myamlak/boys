@@ -72,8 +72,8 @@
 /// ladder to cut (`DevicePacking::kNotApplicable`, stated of their rows), the route
 /// and the scheme of those shapes are the lane's own arithmetic and not a choice
 /// (`DeviceEntryAxesOf`, "the route and the scheme are the lane's own"), and the
-/// build's budget is not an axis of this surface at all - its kernels read stored
-/// tables rather than a compiled multiplier. The seam row for such a class names
+/// build's budget is not an axis of this surface at all - its kernels read the
+/// stored tables, and no budget scales a degree. The seam row for such a class names
 /// cells those classes do not read, and the row's own arithmetic is read where the
 /// row is: the layer reads the row's cells for the axes the class carries, which is
 /// what makes `BoysCuda::AllNF64WithPolicy<>` reach a real kernel.

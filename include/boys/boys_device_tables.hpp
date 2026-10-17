@@ -41,8 +41,7 @@ namespace boys {
 /// here because the tables it is read with are here, and the policy table's device
 /// rows name the other spelling where this header is not carried.
 ///
-/// The device lane's other defaults are the accuracy multiplier
-/// \c kBoysFullAccuracyMultiplier, the same name the CPU entries default to, and
+/// The device lane's two default options are the region-B exponential above and
 /// the division form \c boys::kDefaultDeviceDivisionForm, which is declared
 /// beside the host's own in `boys/accuracy.hpp` because the policy table's
 /// device rows name it in `boys/boys.hpp`.
@@ -50,13 +49,14 @@ namespace boys {
 /// \ingroup boys
 inline constexpr RegionBExp kDefaultRegionBExp = kDefaultDeviceRegionBExp;
 
-/// The six degree tables an entry can read, in the order the handle's relaxed
-/// degree arrays hold them.
+/// The six degree tables the handle's relaxed degree arrays are cut into, in the
+/// order those arrays hold them.
 ///
-/// Relaxation is a property of a lane and not of a precision: two lanes of one
-/// precision carry different seed-error amplifications, so the same multiplier
-/// buys them different effective degrees and each lane's region-A and region-B
-/// tables are cut separately.
+/// The arrays are reserved: the handle holds one per lane and no entry of this
+/// library reads a relaxed degree, so this names the layout of data the handle
+/// carries and not an arithmetic in use. A lane is a member because two lanes of
+/// one precision can carry different seed-error amplifications, so a relaxation
+/// would cut each lane's region-A and region-B tables separately.
 ///
 /// It names that layout; it is not a choice a caller makes. An entry reads the
 /// table of the lane it serves, and no lane is a parameter of any call.

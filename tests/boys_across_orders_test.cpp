@@ -27,6 +27,16 @@
 
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
+// The partitions this test compares against the shipped axis: the uniform grid's Chebyshev forms
+// (both stored forms), the narrow Chebyshev form, and the shipped partition's three routes. None
+// is in the set `<boys/boys.hpp>` opens.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
+#include "boys/boys_coefficients_d_narrow_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb_transposed.hpp"
+#include "boys/boys_coefficients_d_uniform_rat.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"
 
@@ -474,26 +484,26 @@ namespace {
 // The policy the public axis is named with, on the shipped tables.
 template <boys::EvalScheme kScheme>
 using OrdersPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders, boys::FitGranularity::kCoarsest>;
 
 // The same axis with the rational route named: one of the two opened calls.
 template <boys::EvalScheme kScheme>
 using RationalOrdersPolicy =
-    boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders, boys::FitGranularity::kCoarsest>;
 
 // The rational route read one order at a time: the lane the routed axis's own reading has to be.
 template <boys::EvalScheme kScheme>
 using RationalPerOrderPolicy =
-    boys::EvalPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kRationalMinimax, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kCoarsest>;
 
 // The per-order lane the entry falls back to outside the packed interval: the
 // certified scalar single entry, the one lane the axis cannot be formed on.
 template <boys::EvalScheme kScheme>
 using PerOrderPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kCoarsest>;
 
 // The narrow partition on the axis: region-A pieces cut per order, so the
@@ -502,14 +512,14 @@ using PerOrderPolicy =
 // the only difference and the two are comparable cell for cell.
 template <boys::EvalScheme kScheme>
 using NarrowOrdersPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders, boys::FitGranularity::kNarrow>;
 
 // The same partition read one order at a time by the certified scalar single
 // entry: the reading the packed lane's gathered fetch has to reproduce.
 template <boys::EvalScheme kScheme>
 using NarrowPerOrderPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kNarrow>;
 
 // The uniform partition on the axis: one fixed grid over the whole fitted domain, not a cut of region
@@ -518,20 +528,20 @@ using NarrowPerOrderPolicy =
 // cell is served by the certified scalar orders lane (boys_orders_lanes.hpp).
 template <boys::EvalScheme kScheme>
 using UniformOrdersPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders, boys::FitGranularity::kUniform>;
 
 // The same partition read one order at a time by the certified scalar single
 // entry: the lane the entry reproduces in region A and falls back to past the grid.
 template <boys::EvalScheme kScheme>
 using UniformPerOrderPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, boys::FitGranularity::kUniform>;
 
 } // namespace
 
 // The default policy still names the shipped axis, so a call site naming none is unchanged.
-static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
+static_assert(boys::SeamPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved: a call site that names no axis must compile the "
               "shipped path");
 static_assert(OrdersPolicy<boys::EvalScheme::kSplitClenshaw>::kPack == boys::PackAxis::kOrders,
@@ -614,7 +624,7 @@ using RoutedClass = boys::DefaultPolicy<boys::Precision::kFp64, boys::Shape::kAl
 // axes a selector does not take are read off the class's own default"). Spelling the other axes as
 // the library's five instead would measure the seam rather than the route.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme>
-using RoutedAxisPolicy = boys::EvalPolicy<kRoute,
+using RoutedAxisPolicy = boys::SeamPolicy<kRoute,
                                           kScheme,
                                           RoutedClass::kBudget,
                                           RoutedClass::kPack,

@@ -69,7 +69,7 @@ ASK_FILES = [
 ROW = re.compile(r"X\(\s*k(?:Host|Device)\s*,\s*(k[A-Za-z0-9]+)\s*,\s*(k[A-Za-z0-9]+)\s*,")
 
 # An entry's default: the policy parameter spelled with a class key. The device's two extra axes
-# are not part of an EvalPolicy, so a device entry spells the same `DefaultPolicy<...>` name with
+# are not part of a SeamPolicy, so a device entry spells the same `DefaultPolicy<...>` name with
 # `Device::kDevice` as its third argument and is matched here as well. The axes may be spelled
 # with a namespace prefix - a unit outside the library's namespace writes `boys::Precision::kFp64`
 # - so a name is matched with whatever qualification it carries.

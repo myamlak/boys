@@ -10,6 +10,11 @@
 
 #include <iterator>
 
+// The header's constant is this library's top order, and this assertion keeps the
+// two one statement: a kernel that moved kMaxBoysOrder would fail here rather
+// than answer a C caller's in-range order with a refusal.
+static_assert(BOYS_MAX_ORDER == boys::kMaxBoysOrder);
+
 namespace {
 
 bool ValidOrder(int n) {
@@ -68,15 +73,21 @@ int RunBatchDouble(int nmax, int count, const double* x, double* out) {
         return BOYS_ERROR_INVALID_ARGUMENT;
     }
 
-    double row[boys::kMaxBoysOrder + 1];
-
+    // The whole batch is validated before any output is written, as the other
+    // batch entries on this surface do, so a rejected batch leaves the caller's
+    // buffer as it found it.
     for (int i = 0; i < count; ++i)
     {
         if (!ValidX(x[i]))
         {
             return BOYS_ERROR_INVALID_ARGUMENT;
         }
+    }
 
+    double row[boys::kMaxBoysOrder + 1];
+
+    for (int i = 0; i < count; ++i)
+    {
         boys::BoysAllOrders(nmax, x[i], row);
 
         for (int k = 0; k <= nmax; ++k)

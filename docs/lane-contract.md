@@ -30,9 +30,11 @@ the relative form. The per-region budgets and the bars a fit is cut against stay
 figures and are printed as the measurements they are.
 
 Every figure on this page is measured by a program in this tree, and the command below prints the
-comparison for the machine you run it on:
+comparison for the machine you run it on — in a `<build>` configured with `-DBOYS_BUILD_TESTS=ON`,
+because the gate is a target of the test suite and CMake caches what a directory was configured
+with:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake --build <build> --config Release --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
 It sweeps the documented entries over the committed reference grid and prints, lane by lane and
@@ -41,6 +43,14 @@ region by region, the worst error the lane delivered beside the bound claimed, e
 and a non-zero status. `--per-order` extends it to every order and `--probe n x` to a single cell.
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
+
+**The lines before the tables are a record and not a failure.** The run prints five
+`EXCEEDED (record, not judged)` lines first, at the smallest arguments. They are the slot of a
+withdrawn reading of the header's table — that table read as a three-region one, a single region-A
+cell of `1e-15` with no band row, so `1e-15` across the whole of x < x0 — kept and measured so the
+reason it was withdrawn stays visible. The lane does not meet that reading anywhere in the band,
+which is why the ratio on those lines is above one, and no verdict counts them: the marker says so
+on each line, and the run's summary line counts them in none of its verdicts.
 
 **A caller that has chosen a precision and does not want to choose an axis wants one name.** The
 section *The default policy, per precision and per device* states, for each precision and for the
@@ -99,7 +109,7 @@ verdict, and `boys-tests` takes the same reading of its far-representation bars.
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
 the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
-absolute figure the lane published before this release, and the figure its row still carries in
+absolute figure the lane published before 4.0.0, and the figure its row still carries in
 `BoysLaneContracts()` below. The route table below prints them beside what each route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
@@ -208,8 +218,9 @@ the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halvin
 `2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
 parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
 more degree is not.** The library offers three partitions and no spectrum between them. The narrow one
-is the default: a call site that names no partition reads the pieces cut to the proved bound, and
-`FitGranularity::kCoarsest` is how a caller asks for the committed table by name. Beside those two,
+is the seam's default: `SeamPolicy<>` names the pieces cut to the proved bound, while a call site that
+names no policy reads its class's row. `FitGranularity::kCoarsest` is how a caller asks for the
+committed table by name. Beside those two,
 `FitGranularity::kUniform` is a grid of one fixed width over the whole fitted domain, every order
 fitted independently at one degree and no order built from another, chosen so that a call locates its
 piece by a multiply rather than a search. All three cut one fit, so
@@ -379,7 +390,7 @@ at a target near 1e-10, not at 1e-14; the denominator there is 5.14888e-11 / 8.5
 measured truncation over the bound.**
 
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
-`FitGranularity::kNarrow` is a field of `EvalPolicy` and a name the report can print. Its tables are
+`FitGranularity::kNarrow` is a field of `SeamPolicy` and a name the report can print. Its tables are
 the generated header's, reachable through the same entries as the shipped partition. Its
 certification is the accuracy gate's own block: one row per partition, scheme and call shape, each
 judged against the bar the published table holds for the cell it ran in, with the worst cell named
@@ -421,7 +432,7 @@ row is judged at. The block reports its own carrying fraction, 4125493 of 571008
 the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
 itself, so no error can exceed them, and they are not counted in the rows above.
 
-**What is carried, and what is still refused.** The narrow partition is a field of `EvalPolicy` and
+**What is carried, and what is still refused.** The narrow partition is a field of `SeamPolicy` and
 a name the report prints, and every double-precision entry this library has reads it: the stored fits
 directly, the batch entry's seeding fallback, the single-order entry, the plane entry, and the
 across-orders packed lane. The rational route's own narrow pair tables, its across-orders packed
@@ -430,10 +441,9 @@ pieces the same way, so either route, under either scheme and on either packing 
 call this build compiles rather than a table still owed. Nothing of the axis cross is refused: the
 combinations book reads none refused, and the members it
 counts apart are the device lane's — the ones the gate target that produced that run was not linked
-against the device library for. That lane is
-where an earlier revision of this paragraph named a debt, and the lane's own tables answer for it
-now: its narrow partition is cut and uploaded beside the shipped one, its orders-axis entries are
-carried, and the routes and schemes of both families are served on its arguments axis.
+against the device library for. That lane is carried in full: its narrow partition is cut and
+uploaded beside the shipped one, its orders-axis entries are carried, and the routes and schemes of
+both families are served on its arguments axis.
 What no path here does is substitute: the two partitions are different fits of the same function over
 the same interval, so a call answered from one under the other's name would return the shipped
 numbers as narrow ones.
@@ -443,7 +453,7 @@ numbers as narrow ones.
 plain-reciprocal form.** The value-proportional figure is this lane's own bar — 2^-22, about
 2.38e-7 — and not the double lane's 1e-13 scaled down for the format. The lane's arithmetic is
 binary32 and has an absolute floor, so the figure the lane publishes is the larger of its relative
-arm and that floor: the 1.5e-7 it published as an absolute bound until this release stays as the
+arm and that floor: the 1.5e-7 it published as an absolute bound until 4.0.0 stays as the
 floor under the relative one. A call answered by the plain reciprocal rather than by an exact
 division adds 1e-7 to the error of the returned value, and the two forms are certified separately.
 
@@ -464,7 +474,7 @@ the committed reference, every order and every sample of the row's interval.
 
 **The same two routes are open on the policy, and there the scheme comes with them.** The lane's
 `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32` and
-`BoysAllNAtOrdersF32` take the `EvalPolicy` the double lane's entries take, so the route is a
+`BoysAllNAtOrdersF32` take the `SeamPolicy` the double lane's entries take, so the route is a
 template argument there as it is on `BoysSingleF32WithRoute`, and the scheme — the choice between the
 Chebyshev
 table and the monomial form of the same fits — is offered beside it. Every pair this lane stores is
@@ -773,8 +783,8 @@ a consumer can call evaluates through it: the single-precision batch entry packs
 across-orders lane), the half lane's own batch entry runs an f16-native ladder rather than this
 backend, and the packed half kernels that do use it are called by this tree's tests and benchmarks
 and by nothing else. So the route's float half is a report about an arithmetic the library compiles,
-not a choice a caller can reach — the third gap, and the one that is a work item rather than a
-property of the axis.
+not a choice a caller can reach: what is missing is an entry a consumer can call that evaluates
+through the float backend, which is a work item rather than a property of the axis.
 
 The across-orders lane (`include/boys/boys_orders_lanes.hpp`) is a packed lane the route reaches: its
 steps read the selection the build made, so its values move between the routes — **5,067 of 32,868**
@@ -931,7 +941,7 @@ accuracy gate carries one measured row per scheme and stored fit beside its own 
 
 **The scheme and the fit route compose.** A fit route names the fits that serve the regions and a
 scheme names the summation a fit's coefficients are read in; a call site selects the pair with one
-`EvalPolicy`, and every pair of the two enumerations is carried. The figures in this section are the
+`SeamPolicy`, and every pair of the two enumerations is carried. The figures in this section are the
 Chebyshev family's, at either scheme. A route whose own fit has one stored form — the rational
 minimax family's monomial numerator and denominator — evaluates that fit the same way under either
 scheme, and the scheme still reaches the parts of a call the route's own fits do not serve, which
@@ -1054,6 +1064,16 @@ under WSL2, `instructions:u` and `uops_retired.retire_slots:u`), 2,048,000 calls
 | orders axis, gathered fetch | **4,154,092,317** | 9,550,724,437 | 4,662.9 | 141.33 |
 | across-arguments lane forced onto this shape | 30,369,673,181 | 27,806,856,380 | 13,577.6 | 411.38 |
 
+**The composed row is one of two measurements of that variant, and the older one.** Re-measured over
+the same calls and the same shape, the composed variant retires **6,570,938,098** instructions and
+**6,845,085,236** slots, in three runs agreeing to within 232 instructions and 0.02% of slots, where
+the row above says 5,072,522,334 and 4,719,806,211; the row was taken against an earlier generation
+of the tables, and the **1.42** and **2.02** ratios this page draws from it are the ones that move
+with it. The gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and so does
+the shipped entry's (6,326,030,697 / 6,729,655,927, the instruction count to seven digits of the
+published figure). Both pairs are reported rather than one, because restating the row would hide the
+distance a reader measuring the same variant would find.
+
 Read the two columns against each other. **The gathered variant retires the fewest instructions of
 any lane here and the most slots of any lane here**: it is the fastest by instruction count and the
 slowest by retired slots, and the shipped route sits between it and the composed one on both. The
@@ -1103,18 +1123,6 @@ What the two lanes cannot be compared on is identity: the narrow axis reads its 
 shipped lane's `fma` mapping and the per-order narrow lane under `2 (x - a) / (b - a) - 1`, so the
 narrow axis is held to the reference above instead of to a bit-for-bit row, for the mapping reason
 given with it.
-
-**The composed row, measured again over the same calls.** The two figures disagree, and both are
-reported rather than one: over the same calls and the same shape, the composed variant retires
-**6,570,938,098** instructions and **6,845,085,236** slots, in three runs agreeing to within 232
-instructions and 0.02% of slots, where the table above says 5,072,522,334 and 4,719,806,211. The
-gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and the shipped entry's
-row reproduces (6,326,030,697 instructions, the published figure to seven digits, and 6,729,655,927
-slots, within a percent). A reader re-measuring the composed variant should expect the higher pair:
-the table's row was taken against an earlier generation of the tables,
-and the **1.42** and **2.02** ratios drawn from it are the ones that move with it. The table
-is left as measured rather than quietly restated, because restating it would hide the distance a
-reader measuring the same variant would find.
 
 **The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
 because every figure above is a property of one build's code and one machine's microarchitecture — a
@@ -1282,6 +1290,13 @@ the seed's own `erfc(sqrt(x))` error. The third is a stored scaled table, read r
 and its figure is the one the library publishes in its own row. A gate that measures the first
 through the default entry measures one of the three and speaks for all of them.
 
+**That third row's figure is a reading and not a bound.** The stored table's partition is a
+placeholder — equal width at one degree, over 22 intervals from `kX1` to the right edge at 117.0,
+marked a placeholder in `include/boys/boys_coefficients_d_far.hpp` — and its figure is a swept
+maximum over that placeholder, so the row says what the shipped placeholder delivers and not what
+the far region guarantees. The bound over the far region is the recurrence's own: 1e-13 of the
+ladder's first rung.
+
 **The across-arguments lane belongs to this region.** Above the fits the recurrence is a ladder, so
 the orders axis has no lane to trade away there, and the far region is where an argument-packing
 lane is free. The batch entries hold four arguments — the width of the tier's own double register —
@@ -1365,7 +1380,10 @@ report prints each under, are the rows of `BoysDivisionForms()`.
 
 For x at or above 28.98933773882074 the library uses a single closed-form asymptotic result.
 **Nothing relaxes it**: region C carries the lane's own figure, 1e-13 of the value, like every other
-region.
+region. The region is served by the three arithmetics *The far region's own lane* above describes,
+and one of them — the stored scaled table — reads a partition the header marks a placeholder, so the
+figure that table's own row states is a reading of that placeholder rather than a bound; the region's
+bound is the recurrence's.
 
 Its accuracy is set by where the asymptotic form starts being used. Moving that start point trades
 accuracy against nothing: the evaluation costs the same wherever the boundary sits, so moving it
@@ -1431,25 +1449,31 @@ the larger of `2^-22 · F_n(x)` and 1.5e-7, plus its fast member's 8e-8, for the
 ones, which is tighter than the host half lane's base plus ½ ULP because the device's half lane is
 not the host's, and it states its own measured base rather than borrowing the host's.
 
-A combination carries **`base + additive`**: the lane's figure and whatever term sits beside it, the
-same arithmetic the specification's contract table states lane by lane. The rows in the table above
-are the contract. `BoysLaneContracts()` is the library's own list of those rows, and it answers
-with the absolute figures the double and float lanes were published with — 5.5e-14 for the two double
-rows and 1.5e-7 for the two float ones. Those figures sit at or below this page's contract at every
-cell, so the two statements agree wherever the list answers yes, and a caller asking for a tolerance
-between the list's figure and this page's bound is answered by the list's tighter one. The half rows, on either side of the device seam, are
-the same figures in both places: their base is the fp32 engine's arithmetic stated absolutely beside
-a term of the returned value's own last digit, and neither moves.
+A combination carries **the lane's published form at the cell, plus the terms that sit beside it**,
+the same arithmetic the specification's contract table states lane by lane. The rows in the table
+above are the contract. `BoysLaneContracts()` is the library's own list of the figures those lanes
+were published with, and it states the absolute readings the double and float lanes' runs measured —
+5.5e-14 for the two double rows and 1.5e-7 for the two float ones. **Those readings are
+documentation and not the accessor's answer.** `BoysAccuracyGuaranteed` evaluates the contract at the
+`(n, x)` it is asked about: on the double lanes that is `1e-13 · F_0(x)`, which is `1e-13` at x = 0 —
+above the list's 5.5e-14 there — and below it wherever `F_0(x)` falls under 0.55, at x = 30 reading
+1.61802e-14 against the list's 5.5e-14. So the list is the stricter claim below that crossing and the
+looser one above it, and only the contract is a promise. The half rows, on either side of the device
+seam, are the same figures in both places: their base is the fp32 engine's arithmetic stated
+absolutely beside a term of the returned value's own last digit, and neither moves.
 
 **Two figures, two questions, and their names say which is which.**
-`BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form)` answers *is this
-combination at least this accurate*: its `value` is the bound above, at the form named.
-`BoysAccuracyDelivered(...)` answers *which of these two combinations has been measured to do
-better*: its `value` is the worst of the rows the combination names, each of which publishes what it
-was measured to deliver. Both return an `AccuracyFigure` whose `reading` field says which of the
-two figures it is, so neither can be read as the other; the delivered figure is a **measurement of
-the fits the combination names** and is never a bound, and the guaranteed figure is a **bound** and
-is never a measurement.
+`BoysAccuracyGuaranteed(precision, n, x, route, scheme, axis, granularity, form)` answers *is this
+combination at least this accurate at this cell*: its `value` is the contract above, evaluated at
+`(n, x)` and at the form named. `BoysAccuracyDelivered(...)` answers *which of these two
+combinations has been measured to do better*: its `value` is the worst of the rows the combination
+names, each of which publishes what it was measured to deliver. Both return an `AccuracyFigure`
+whose `reading` field says which of the two figures it is, so neither can be read as the other; the
+delivered figure is a **measurement of the fits the combination names** and is never a bound, and
+the guaranteed figure is a **bound** and is never a measurement. The half lanes' published form adds
+half of the last representable digit of the value the call returns; that term is a property of the
+returned value and stays in the row's sentence, so the figure the accessor answers is the base and
+the terms the lane documents beside it.
 
 **The delivered figure is a floor on a whole call's error and not the whole call's figure.** The
 rows it maximises over are the *fits'* own figures, and a call adds its recurrences over them, so
@@ -1462,9 +1486,10 @@ measurement, and the gate's combination table is where that figure lives for eve
 
 **A combination the library does not carry returns no number.** Both accessors return
 `available == false`, `value == 0.0` and a `reason` carrying the library's own sentence for the
-refusal — the same sentence the gate prints beside the row. A caller cannot mistake a refusal for an
-accuracy. The delivered accessor is absent as well for the half lane, whose error is dominated by
-the format's quantum at the returned value rather than by the call.
+refusal — the same sentence the gate prints beside the row. A cell outside the documented domain is
+refused the same way: the bound is a statement about `n` in `[0, 32]` and `x >= 0`. A caller cannot
+mistake a refusal for an accuracy. The delivered accessor is absent as well for the half lane, whose
+error is dominated by the format's quantum at the returned value rather than by the call.
 
 ### What the space carries, and what it refuses
 
@@ -1513,72 +1538,78 @@ in the run above.
 ### The bound the accessor guarantees beside the figure it was measured to deliver
 
 The gate reads both accessors for a combination in every lane and prints what each answers beside
-the figure the row itself is judged against and the figure the whole call was measured to deliver.
-The headings name the two numbers by what they are, because they are not interchangeable: **`bound`
-is what a caller may rely on, `delivered` is what the combination's fits were measured to deliver.**
-One combination per lane, and the grid's rational member beside them, from this run:
+the contract it composes for the same cell and the figure the whole call was measured to deliver.
+The headings name the numbers by what they are, because they are not interchangeable: **`bound` is
+what a caller may rely on at `n = 0, x = 0`, `delivered` is what the combination's fits were
+measured to deliver.** One combination per lane, from this run:
 
-| Combination | `bound` — `BoysAccuracyGuaranteed` | `delivered` — `BoysAccuracyDelivered` | The row's own bound | What the whole call measured | Where each figure came from |
+| Combination | `bound` — `BoysAccuracyGuaranteed` at n = 0, x = 0 | `delivered` — `BoysAccuracyDelivered` | The contract at the same cell | What the whole call measured | Where each figure came from |
 |---|---|---|---|---|---|
-| fp64, chebyshev, split-clenshaw, shipped, arguments | 5.5e-14 | 4.45751e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
-| fp32, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.23617e-07 | 1.5e-07 | 1.7514e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
-| fp16, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | no figure | 1.5e-07 | 1.7514e-07 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
-| fp32-device, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | 1.42109e-14 | 1.5e-07 | 1.48716e-07 | bound: the row's base figure; "plus 8e-8 under the fast region-B exponential" is the term its fast member adds, and this class's entry does not select that member. delivered: `BoysFitRoutes()` |
-| fp64, rational-minimax, split-clenshaw, narrow, arguments | 5.5e-14 | 2.21663e-14 | 5.5e-14 | 5e-14 | bound: throughout, every region. delivered: the narrow pieces' own row |
+| fp64, chebyshev, split-clenshaw, shipped, arguments | 1e-13 | 2.45899e-14 | 1e-13 | 5.59478e-15 | bound: throughout, every region. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
+| fp32, chebyshev, split-clenshaw, shipped, arguments | 2.38419e-07 | 1.23617e-07 | 2.38419e-07 | 1.7514e-07 | bound: every region, at exact division and the refined reciprocal. delivered: `BoysFitRoutesF32()` |
+| fp16, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | no figure | 1.5e-07 | 0.0002438 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| fp32-device, chebyshev, split-clenshaw, shipped, arguments | 2.38419e-07 | 4.44089e-16 | 2.38419e-07 | 1.48716e-07 | bound: plus 8e-8 under the fast region-B exponential, which is the corrected seed's own contribution — the term its fast member adds, and this class's entry does not select that member. delivered: `BoysFitRoutes()` |
+| fp64-device, chebyshev, split-clenshaw, shipped, arguments | 1e-13 | 2.45899e-14 | 1e-13 | 2.22045e-16 | bound: the CUDA fp64 row states the same contract as the CPU double lanes, the larger of 1e-13 × F_n(x) and 1e-13 × F_0(x), at the cell asked. delivered: `BoysFitRoutes()`, `BoysFitGranularities()` and `BoysEvalSchemes()` |
+| fp16-device, chebyshev, split-clenshaw, shipped, arguments | 1e-07 | no figure | 1e-07 | 0.0002438 | bound: plus half of the last representable digit of the returned value, claimed only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| bf16, chebyshev, split-clenshaw, shipped, arguments | 1.5e-07 | no figure | 1.5e-07 | 0.00195088 | bound: the lane's row states 1.5e-7 plus half of the last representable digit of the returned value; this format's digit is 2^-8 = 3.90625e-03, and the claim holds only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
+| bf16-device, chebyshev, split-clenshaw, shipped, arguments | 1e-07 | no figure | 1e-07 | 0.00195088 | bound: the row's base is 1e-7 plus half of the last representable digit of the returned value; this store's digit is 2^-8 = 3.90625e-03, and the claim holds only where the value exceeds the sum. delivered: no row of this library measured a half-typed return |
 
 **The delivered figure is a measurement of the fits and never a bound, and the bound is never a
 measurement.** A reader ranking two combinations compares `delivered`; a reader deciding whether a
-calculation is safe reads `bound`. The fp64 row above is where the difference bites: the same
-combination is guaranteed 5.5e-14 and was measured at 4.45751e-14, so a caller needing 5e-14 is
-inside the measurement and outside the guarantee. The gate fails the run if `bound` differs from the
-figure the row is judged against in any digit. It prints, but does not fail on, the rows where
-`delivered` sits above what the whole call measured: those two are measurements of the same quantity
-taken two ways — the fit's own sweep against the gate's reference grid — and the gate's own table
-records that its grid is the coarser of the two and reads under on a fit that equioscillates.
+calculation is safe reads `bound` at the cell it will evaluate. The fp64 row above is where the
+difference bites: at `n = 0, x = 0` the same combination is guaranteed 1e-13 and was measured to
+deliver 2.45899e-14, so a caller needing 5e-14 is inside the measurement and not inside the
+guarantee there — and at a larger `x` the contract's figure falls and the caller's question can
+answer differently at the same combination. The gate fails the run if `bound` differs from its own
+composition of the contract at the same cell in any digit. It prints, but does not fail on, the rows
+where `delivered` sits above what the whole call measured: those two are measurements of the same
+quantity taken two ways — the fit's own sweep against the gate's reference grid — and the gate's own
+table records that its grid is the coarser of the two and reads under on a fit that equioscillates.
 
-`bound` and the row's own bound are one number read two ways rather than two numbers that agree
-today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row; the
-gate computes the figure it judges the row against from that same row by its own arithmetic, and
-fails the run when the two differ in any digit. They are two paths over one source, so a change to a
-lane's figure moves both or the run goes red. The fp16 row is the ceiling's half-ULP term at work:
-the base figure is what the accessor returns, and the term of the format is added by the row's own
-criterion rather than measured — the fp16 lane runs the single-precision engine's own bodies, so the
-whole call there measures 1.7514e-07, the plain reciprocal's own figure on that lane rather than the
-format's. The gate counts the cells where the returned value falls at or below the floor rather than
-passing them as covered.
+`bound` and the gate's composition are one number read two ways rather than two numbers that agree
+today. The accessor computes its figure inside the library from a `BoysLaneContracts()` row and the
+contract's multipliers at the cell asked; the gate composes the same figure from that same row and
+the two function values at the same cell by its own arithmetic, and fails the run when the two
+differ in any digit. They are two paths over one statement, so a change to a lane's contract moves
+both or the run goes red. The fp16 row is the ceiling's half-ULP term at work: the base figure is
+what the accessor returns, and the term of the format is added by the row's own criterion rather
+than measured — the fp16 lane runs the single-precision engine's own bodies, so the whole call there
+measures 0.0002438, the half format's own digit at the returned value. The gate counts the cells
+where the returned value falls at or below the floor rather than passing them as covered.
 
-The device row's `delivered` figure comes from `BoysFitRoutes()` while its `bound` is the lane's own
-documented figure: the delivered accessor maximises over the fits the combination names, and the
+The device row's `delivered` figure comes from `BoysFitRoutes()` while its `bound` is the device
+lane's own contract: the delivered accessor maximises over the fits the combination names, and the
 rows it read are the ones its own `source` string names. It is not a measurement of that lane — the
 figure for a device lane is a card's, and a gate built with CUDA is where it is taken.
 
 ### Asking whether a combination meets a tolerance
 
-A caller that has a target rather than a comparison asks `QueryCombination(precision, route, scheme,
-axis, granularity, tolerance)`, where `tolerance` is the absolute error it needs. The answer is
-a `CombinationCoverage`: a `verdict`, the request, both figures, and — where the verdict was decided
-by the measured figure rather than the bound — that figure's own `source`.
+A caller that has a target rather than a comparison asks `QueryCombination(precision, n, x, route,
+scheme, axis, granularity, tolerance)`, where `tolerance` is the absolute error it needs. The answer
+is a `CombinationCoverage`: a `verdict`, the request, both figures, and — where the verdict was
+decided by the measured figure rather than the bound — that figure's own `source`.
 
 | `ToleranceVerdict` | What it means |
 |---|---|
-| `kGuaranteedInside` | the bound this combination carries is at or below the request: safe to rely on |
+| `kGuaranteedInside` | the bound this combination carries at the cell is at or below the request: safe to rely on |
 | `kDeliveredInside` | the bound is above the request and the figure the fits were measured to deliver is at or below it: at the target in what has been measured, and **not** covered by the guarantee |
 | `kOutside` | no figure this library holds for the combination is at or below the request |
-| `kNotCarried` | the combination is not carried: no verdict, no figures, and the library's own reason |
+| `kNotCarried` | the combination is not carried, or the cell is outside the documented domain: no verdict, no figures, and the library's own reason |
 
 The verdict is decided by the bound first, so `kGuaranteedInside` is the only state a calculation's
-safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped** — bound
-5.5e-14, measured at 4.45751e-14 — the four answers are:
+safety can rest on. Asked of **fp64, chebyshev, split-clenshaw, arguments, shipped** at
+`n = 0, x = 0` — bound 1e-13, measured at 2.45899e-14 — the four answers are:
 
 | The caller asks for | The bound | The measured figure | The answer |
 |---|---|---|---|
-| 1.1e-13 | 5.5e-14 | 4.45751e-14 | **yes** — the bound is at or below the request |
-| 5.5e-14 | 5.5e-14 | 4.45751e-14 | **yes** — at the bound itself |
-| 4.45751e-14 | 5.5e-14 | 4.45751e-14 | **at the target in what it delivers, not in its guarantee** — the bound is above the request and the measured figure is at it |
-| 2.22875e-14 | 5.5e-14 | 4.45751e-14 | **no** — neither figure is at or below the request |
+| 2e-13 | 1e-13 | 2.45899e-14 | **yes** — the bound is at or below the request |
+| 1e-13 | 1e-13 | 2.45899e-14 | **yes** — at the bound itself |
+| 2.45899e-14 | 1e-13 | 2.45899e-14 | **at the target in what it delivers, not in its guarantee** — the bound is above the request and the measured figure is at it |
+| 1.2295e-14 | 1e-13 | 2.45899e-14 | **no** — neither figure is at or below the request |
 
 Each answer carries the request and both figures, so the reader can check it against the numbers
-that decided it rather than take it.
+that decided it rather than take it. **Ask at the cell your calculation evaluates**: the bound is a
+figure at `(n, x)`, so the same combination can answer yes at one argument and no at another.
 
 A combination the library does not carry is `kNotCarried` with no figure and no verdict, and the
 sentence is the accessor's own, so the two kinds of refusal stay apart here as they do at the
@@ -1632,15 +1663,22 @@ offers has one, and an entry that names no policy at the call site is answered b
 class whose row is the five and not otherwise. This section states what each name
 selects and the bound it carries.
 
-**Two of these axes have been measured and two have not, and the table says which is which.** The
-scheme and the partition were set from the option probe's own runs. **The partition default was never
-chosen against its axis.** Every partition-bearing row of those runs is named `narrow`, and the
-comparison that named it had a three-member axis and measured one member of it: `narrow` is the
-default by that comparison and not by a ranking of the whole axis. On the scheme axis the runs compare
-both rows and do not separate them, so that default is one of two rows the instrument could not tell
-apart rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
-and its card, and the probe is what a consumer runs where they deploy. The route and the packing axis
-carry the settings the library has always shipped and have not been ranked against a timing. Setting
+**A class's default is its own row, and the seam's seven are stated choices.** A class's row carries
+the combination its entries compile when the call site names no policy; the marker above the row
+says how its winner was reached, and its last two cells say whether a run ranked the combination or
+the file chose a cell. On this host the measured cells are the 2026-10-12 run's winners, and the
+float lane's division form is the file's own stated choice (the row says so). **The seam's seven
+names (`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking of an
+axis**: their scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and a
+class's row may differ from them. The committed transcript of the full protocol is
+`tests/data/boys_option_probe_report.txt`, a later run of the same protocol on this host: it ranks
+the whole space, its tables carry every member of the scheme and partition axes, and on it the
+uniform partition leads the fp64 single class — 56.09 against 246.21 ns per argument for the fastest
+narrow row on the shipped Chebyshev route; the report's overall narrow minimum is 240.22 on the
+rational route (`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
+the settings the library has always shipped and have not been ranked against a timing. Which member
+is faster is a property of the host, its flags
+and its card, and the probe is what a consumer runs where they deploy. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
 build replaces that file with its own seven rather than editing the tree, which is what lets a
@@ -1778,7 +1816,7 @@ so a printed row shows which arithmetic the default selected.
 
 The second command prints the bound each name carries:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake --build <build> --config Release --target boys-accuracy-gate   # needs -DBOYS_BUILD_TESTS=ON
     <build>/Release/boys-accuracy-gate --strict
 
 which sweeps the documented entries and prints, lane by lane and region by region, the worst error

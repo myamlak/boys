@@ -31,7 +31,7 @@
 namespace {
 
 using boys::BoysBudget;
-using boys::EvalPolicy;
+using boys::SeamPolicy;
 using boys::EvalScheme;
 using boys::FitGranularity;
 using boys::FitRoute;
@@ -348,7 +348,7 @@ void EvalFp64(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, double x, double* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
                boys::BoysAllOrders<Policy>(nmax, x, out);
            });
 }
@@ -357,7 +357,7 @@ void EvalFp32(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, float x, float* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFloat, kPack, kPartition>;
                boys::BoysAllOrdersF32<Policy>(nmax, x, out);
            });
 }
@@ -367,7 +367,7 @@ void EvalFp16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, boys::F16 x, boys::F16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
                boys::BoysAllOrdersF16<Policy>(nmax, x, out);
            });
 }
@@ -376,7 +376,7 @@ void EvalBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
               int nmax, boys::Bf16 x, boys::Bf16* out) {
     AtAxes(route, scheme, pack, partition,
            [&]<FitRoute kRoute, EvalScheme kScheme, PackAxis kPack, FitGranularity kPartition>() {
-               using Policy = EvalPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
+               using Policy = SeamPolicy<kRoute, kScheme, BoysBudget::kFp16, kPack, kPartition>;
                boys::BoysAllOrdersBf16<Policy>(nmax, x, out);
            });
 }
@@ -391,6 +391,7 @@ void EvalBf16(FitRoute route, EvalScheme scheme, PackAxis pack, FitGranularity p
 void SweepCell(std::size_t classIndex,
                Census& census,
                Rule& bound,
+               double laneBar,
                FitRoute route,
                EvalScheme scheme,
                PackAxis pack,
@@ -404,9 +405,6 @@ void SweepCell(std::size_t classIndex,
 
     constexpr int kNmax = boys::kMaxBoysOrder;
     constexpr std::size_t kWidth = static_cast<std::size_t>(kNmax) + 1;
-
-    const boys::AccuracyFigure figure =
-        boys::BoysAccuracyGuaranteed(kClasses[classIndex].lane, route, scheme, pack, partition);
 
     std::vector<double> value(kWidth);
 
@@ -424,7 +422,7 @@ void SweepCell(std::size_t classIndex,
 
                 if (cell != nullptr)
                 {
-                    Judge(bound, value[static_cast<std::size_t>(n)], cell->value, figure.value, n,
+                    Judge(bound, value[static_cast<std::size_t>(n)], cell->value, laneBar, n,
                           x);
                     ++gJudged;
                 }
@@ -446,7 +444,7 @@ void SweepCell(std::size_t classIndex,
                 // composes the cell's figure with its own.
                 const double reference = boys::BoysSingle<>(n, static_cast<double>(x32));
 
-                Judge(bound, value[k], reference, figure.value + kOracleBound, n, x);
+                Judge(bound, value[k], reference, laneBar + kOracleBound, n, x);
                 ++gJudged;
             }
         } else
@@ -470,7 +468,7 @@ void SweepCell(std::size_t classIndex,
                     const double reference =
                         boys::BoysSingle<>(n, static_cast<double>(static_cast<float>(h)));
                     const double cellBound =
-                        figure.value + 0.5 * QuantumOf(value[k], 7) + kOracleBound;
+                        laneBar + 0.5 * QuantumOf(value[k], 7) + kOracleBound;
 
                     if (std::abs(reference) > cellBound)
                     {
@@ -496,7 +494,7 @@ void SweepCell(std::size_t classIndex,
                     const double reference =
                         boys::BoysSingle<>(n, static_cast<double>(static_cast<float>(h)));
                     const double cellBound =
-                        figure.value + 0.5 * QuantumOf(value[k], 10) + kOracleBound;
+                        laneBar + 0.5 * QuantumOf(value[k], 10) + kOracleBound;
 
                     if (std::abs(reference) > cellBound)
                     {
@@ -592,7 +590,7 @@ Census RunClass(std::size_t classIndex, const std::vector<Cell>& grid,
                     // figure for is one this file has no arm for, and it is counted nowhere rather
                     // than swept against a figure that is not its own.
                     const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-                        kClasses[classIndex].lane, route, scheme, pack, partition);
+                        kClasses[classIndex].lane, 0, 0.0, route, scheme, pack, partition);
 
                     if (!figure.available)
                     {
@@ -606,8 +604,19 @@ Census RunClass(std::size_t classIndex, const std::vector<Cell>& grid,
                     ++census.servedCombinations;
                     ++census.servedCells;
 
-                    SweepCell(
-                        classIndex, census, bound, route, scheme, pack, partition, grid, args);
+                    // The bar is the lane's published absolute figure and not the contract at a
+                    // cell: the sweep judges one absolute worst over the grid, and the row's
+                    // measured figure is the stricter bar of the two near x = 0.
+                    const boys::LaneContractInfo& laneRow =
+                        boys::BoysLaneContracts()[static_cast<std::size_t>(
+                            kClasses[classIndex].lane)];
+                    const double laneBar =
+                        laneRow.bound + (boys::kDefaultHostRegionBExp == laneRow.additiveMember
+                                             ? laneRow.additive
+                                             : 0.0);
+
+                    SweepCell(classIndex, census, bound, laneBar, route, scheme, pack, partition,
+                              grid, args);
                 }
             }
         }

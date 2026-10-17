@@ -18,7 +18,7 @@
 // Committed, and unmovable: the orders axis is not an axis on a shape producing one order, and the
 // library refuses it in its own words at include/boys/boys_impl.hpp (BoysSingleImpl) and again in the
 // batch entries. Naming kOrders here fails to compile in the library's own sources - src/boys.cpp
-// instantiates the single-order entry at EvalPolicy<> - which is the answer and not a default.
+// instantiates the single-order entry at SeamPolicy<> - which is the answer and not a default.
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 
 // Moved: a reciprocal per divisor and a product per step, in place of the refined form's quotient.

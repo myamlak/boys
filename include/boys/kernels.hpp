@@ -7,9 +7,8 @@
 ///
 /// A call that names no policy is not flattened into the library: the entry's body is inline
 /// here, so the caller's own translation unit instantiates it, at the same table row and from
-/// the same kernel a library build reads. Naming a policy is the other half - the spelling for
-/// a caller that wants a combination the build does not carry as a default, and the one a
-/// translation unit that links no library at all has to use.
+/// the same kernel a library build reads. Naming a policy is the other half: the spelling for
+/// a caller that wants a combination the build does not carry as a default.
 ///
 /// **Nothing here is declared in the front door.** Naming a policy without this header is a
 /// compile error at the call site rather than a promise the linker has to keep, which is the
@@ -25,7 +24,7 @@ namespace boys {
 
 /// The front door's \c BoysSingle at a policy the caller names.
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
+/// \tparam Policy the evaluation policy (\c SeamPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions, and a single-precision engine's budget, selected together.
 ///         The default is this call's own class row - \c DefaultPolicy at the
@@ -79,7 +78,7 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
-/// \param count  number of arguments
+/// \param count  how many arguments to read from \p x
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
@@ -308,7 +307,7 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 #if BoysFp16
 /// The front door's \c BoysSingleF16 at a policy the caller names.
 ///
-/// \tparam Policy the evaluation policy (\c EvalPolicy): the fit route, the
+/// \tparam Policy the evaluation policy (\c SeamPolicy): the fit route, the
 ///         scheme its coefficients are summed in, the partition of the fitted
 ///         regions and the packing axis, selected together;
 ///

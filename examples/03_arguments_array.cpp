@@ -15,8 +15,10 @@ int main()
     const std::array<double, 5> x{0.25, 1.0, 4.0, 12.5, 30.0};
 
     // stride 2: the values land in out[0], out[2], out[4] ... of a wider buffer.
+    // The container overload spells the stride through BoysStride{}; its count comes
+    // from the argument array's own extent.
     std::array<double, 10> column{};
-    boys::BoysFixedN(n, x, column, 2);
+    boys::BoysFixedN(n, x, column, boys::BoysStride{2});
 
     std::printf("n = %d, stride 2\n", n);
     for (std::size_t i = 0; i < 5; ++i)
@@ -24,14 +26,20 @@ int main()
         std::printf("x = %-7.4g out[%2zu] = %.17g\n", x[i], i * 2, column[i * 2]);
     }
 
-    // Every one of them must agree with the single-order entry.
+    // Every one of them must agree with the single-order entry, inside the bound the
+    // lane's contract carries at that argument. The contract is scaled by F_0(x), so the
+    // tightest figure over the array is the one at the largest argument; the worst gap is
+    // compared against that, which is the conservative reading.
     double worst = 0.0;
+    double bound = 0.0;
     for (std::size_t i = 0; i < 5; ++i)
     {
         worst = std::fmax(worst, std::fabs(column[i * 2] - boys::BoysSingle(n, x[i])));
+
+        const double atArgument =
+            boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kFixedN>(n, x[i]).value;
+        bound = i == 0 ? atArgument : std::fmin(bound, atArgument);
     }
-    const double bound =
-        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kFixedN>().value;
     std::printf("worst gap against BoysSingle: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;
 }

@@ -31,21 +31,21 @@ int main()
 {
     const std::array<double, 3> wanted{1e-12, 1e-10, 1e-8};
 
-    std::printf("the double entry, every order, as it stands:\n");
+    std::printf("the double entry at x = 0, where the contract is widest, every order:\n");
     std::printf("  requested    verdict                  guaranteed   measured\n");
     for (const double tolerance : wanted)
     {
         const boys::CombinationCoverage answer =
-            boys::QueryCombination(boys::Precision::kFp64, boys::FitRoute::kChebyshev,
+            boys::QueryCombination(boys::Precision::kFp64, 0, 0.0, boys::FitRoute::kChebyshev,
                                    boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
                                    boys::FitGranularity::kNarrow, tolerance);
-        std::printf("  %-12.2g %-22s %-12.2g %.2g  [%s]\n", tolerance,
-                    VerdictName(answer.verdict), answer.bound, answer.delivered, answer.source);
+        std::printf("  %-12.2g %-22s %-12.2g %.2g\n", tolerance, VerdictName(answer.verdict),
+                    answer.bound, answer.delivered);
     }
 
     // Asking for something impossible must not come back as a "yes".
     const boys::CombinationCoverage absurd =
-        boys::QueryCombination(boys::Precision::kFp64, boys::FitRoute::kChebyshev,
+        boys::QueryCombination(boys::Precision::kFp64, 0, 0.0, boys::FitRoute::kChebyshev,
                                boys::EvalScheme::kHorner, boys::PackAxis::kArguments,
                                boys::FitGranularity::kNarrow, 1e-20);
     std::printf("1e-20 is answered %s\n", VerdictName(absurd.verdict));

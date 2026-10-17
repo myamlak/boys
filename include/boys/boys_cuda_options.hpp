@@ -932,7 +932,7 @@ inline constexpr FitGranularity kUnstatedPartition = static_cast<FitGranularity>
 /// own.** The CPU lane names the same three cuts, and this axis is one axis on both
 /// sides of the device boundary: the axis's own entry states that the route the CPU
 /// lane names \c FitGranularity::kUniform is this member, and the coarsest cut and
-/// the narrow one are the same three tables the CPU's rungs read. Where the two
+/// the narrow one are the same three tables the CPU's entries read. Where the two
 /// sides name one thing, they name it once, with one type — a second enumeration
 /// would be a second statement that could come to disagree with the first.
 ///

@@ -3,6 +3,9 @@
 // to the bound the public header's table asserts for it, and reported beside that bound.
 
 #include "boys/kernels.hpp"
+// The transform lane's region-A fit is the shipped partition's Chebyshev form, which the default
+// set does not open.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_transform.hpp"
 
 #include <gtest/gtest.h>

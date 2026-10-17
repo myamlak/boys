@@ -1,5 +1,9 @@
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
+// The far representation's scaled table: this test names it and the default set does not open it.
+#include "boys/boys_coefficients_d_far.hpp"
+// The split Clenshaw fit at the coarsest granularity: the SIMD lane's scalar reading.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_impl.hpp"
 
 #include <algorithm>
@@ -1046,7 +1050,7 @@ TEST(BoysTest, SimdMatchesScalarWhenAvailable) {
     // The lane is the split Clenshaw recurrence over the shipped tables, so the
     // scalar reading it has to reproduce is that policy's - not the default
     // entry's, which is whatever the last measurement chose.
-    using LanePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using LanePolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                         boys::EvalScheme::kSplitClenshaw,
                                         boys::BoysBudget::kFloat,
                                         boys::PackAxis::kArguments,

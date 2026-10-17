@@ -3,8 +3,8 @@
 
 // Four calls cover what a program does with this function: one order at one argument, every order
 // at one, one order over an array of arguments, every order over an array. The entries take a
-// pointer and a count; boys/boys_span.hpp adds a cost-free container overload of each, printed at
-// %.17g because the documents quote them word for word.
+// pointer and a count; boys/boys_span.hpp adds a container overload of each that forwards to the
+// same entry and refuses a container too small, printed at %.17g because the documents quote it.
 #include <boys/boys_span.hpp>
 
 #include <array>

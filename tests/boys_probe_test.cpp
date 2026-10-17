@@ -125,7 +125,7 @@ std::string RowLine(const std::string& text, const std::string& name) {
 }
 
 // The members of the class the probe takes its default from: the certified double
-// lane's precision at the library's own full-accuracy multiplier, answering the
+// lane's precision at the one accuracy the library carries, answering the
 // all-orders question - the shape the workload is asked in. The key is that pair,
 // so a faster row of another precision or shape is a different class.
 std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeReport& report) {
@@ -142,8 +142,9 @@ std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeRep
 }
 
 // The fastest of that class: the option every ordering this probe makes for the
-// default is measured from, and what the run names when its class ordered
-// itself.
+// default is measured from. An exact tie returns the first row in measurement
+// order, and the class block may print another tied row first - the report's
+// "top entries cannot part" - so comparing names asserts more than it does.
 const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
     const OptionProbeMeasurement* leader = nullptr;
 
@@ -154,6 +155,18 @@ const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
     }
 
     return leader;
+}
+
+// Whether a row is one the class's printed figures put first: its cost is the
+// class's minimum. "The row a class names as its leader is the row the class's own
+// listing shows first"; where the top figures tie, every tied row is such a row,
+// and the others cannot be parted from the printed first.
+bool AtClassMinimum(const OptionProbeReport& report, const std::string& name) {
+    const OptionProbeMeasurement* row = Find(report, name);
+    const OptionProbeMeasurement* fastest = ReferenceLeader(report);
+
+    return row != nullptr && fastest != nullptr && row->measured &&
+           row->nsPerArgument == fastest->nsPerArgument;
 }
 
 // The class one precision was ranked in for one question shape, empty when the
@@ -484,9 +497,9 @@ TEST(ProbeTest, NothingTheLibraryOffersGoesUnreported) {
 }
 
 // The reference bound the report prints is the library's, not a number written
-// in the probe: it is what the library's own accessor answers for the anchor cell at
-// the anchor's own axes - the cell every ratio is in units of, and not another
-// combination's figure standing beside it.
+// in the probe: it is the double lane's published absolute figure, from its row of
+// BoysLaneContracts - the figure every ratio is in units of. The contract at a
+// cell is BoysAccuracyGuaranteed's answer, not this report's bar.
 TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
@@ -494,12 +507,10 @@ TEST(ProbeTest, TheReferenceBoundIsReadFromTheLibrary) {
 
     ASSERT_NE(anchor, nullptr) << "the report anchors on a row that is not one of its own";
 
-    const boys::AccuracyFigure figure =
-        boys::BoysAccuracyGuaranteed(boys::Precision::kFp64, anchor->route, anchor->scheme,
-                                     anchor->pack, anchor->granularity, anchor->division);
+    const boys::LaneContractInfo& lane =
+        boys::BoysLaneContracts()[static_cast<std::size_t>(boys::Precision::kFp64)];
 
-    ASSERT_TRUE(figure.available) << figure.reason;
-    EXPECT_DOUBLE_EQ(report.referenceBound, figure.value);
+    EXPECT_DOUBLE_EQ(report.referenceBound, lane.bound);
     EXPECT_DOUBLE_EQ(report.referenceBound, anchor->bound)
         << "the anchor's own bar is not the figure the report prints as the comparison's floor";
 }
@@ -572,46 +583,28 @@ TEST(ProbeTest, TheNarrowerLanesAreHeldToTheirOwnBound) {
     }
 }
 
-// A row is judged against the figure the policy it runs publishes, asserted against the library's own answer and
-// never a number written here: the class's own cell is what its call compiles when it names no policy, so bar
-// and figure come from one combination, while a bar composed from another names an arithmetic no entry under
-// that row runs - at a plain-reciprocal seam a bar at (shipped partition, refined reciprocal) is 1.5e-7 where 2.5e-7 is published.
+// A row is judged against the figure the lane published, asserted against the
+// library's own row and never a number written here: the plain reciprocal's term
+// sits beside the base where the row publishes one, the region-B member's where
+// it is named, and the half formats add their own half digit.
 TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
     const OptionProbeReport report = boys::RunOptionProbe(OneRound());
 
-    // The batch rows: the entry takes no policy, so the bar is the class's own guarantee,
-    // each format asking it of its own class. The two half formats add their own term
-    // beside the base their lane publishes.
-    const double fp32Own =
-        boys::DefaultGuarantee<boys::Precision::kFp32, boys::Shape::kAllOrders>().value;
+    const std::span<const boys::LaneContractInfo> lanes = boys::BoysLaneContracts();
+    const auto laneFigure = [&lanes](boys::Precision lane, boys::DivisionForm form) {
+        const boys::LaneContractInfo& row = lanes[static_cast<std::size_t>(lane)];
+        const double plain =
+            form == boys::DivisionForm::kPlainReciprocal ? row.plainAdditive : 0.0;
+        const double member =
+            boys::kDefaultHostRegionBExp == row.additiveMember ? row.additive : 0.0;
 
-    const std::pair<const char*, double> batchRows[] = {
-        {"batch-fp32", fp32Own},
-        {"f16-io",
-         boys::DefaultGuarantee<boys::Precision::kFp16, boys::Shape::kAllOrders>().value + 0x1p-11},
-        {"bf16-io",
-         boys::DefaultGuarantee<boys::Precision::kBf16, boys::Shape::kAllOrders>().value + 0x1p-8},
+        return row.bound + plain + member;
     };
 
-    for (const auto& [name, expected] : batchRows) {
-        const OptionProbeMeasurement* row = Find(report, name);
-
-        if (row == nullptr) {
-            continue;
-        }
-
-        EXPECT_DOUBLE_EQ(row->bound, expected)
-            << name << "'s bar is the figure of the policy its call resolves to";
-    }
-
-    // The cells: the form is a template argument of the engine's entries, so a cell's bar is
-    // the library's figure for the cell's own axes at the cell's own form. The half lanes add
-    // their format's term, and the double lane's figure carries no form dimension.
-    for (const OptionProbeMeasurement& row : report.measurements) {
-        if (row.name == "batch-fp32" || row.name == "f16-io" || row.name == "bf16-io") {
-            continue;
-        }
-
+    // The batch rows: the entry takes no policy, so the bar is the class's own row,
+    // each format asking it of its own class. The two half formats add their own term
+    // beside the base their lane publishes.
+    const auto expectedBar = [&laneFigure](const OptionProbeMeasurement& row) {
         boys::Precision lane = boys::Precision::kFp64;
         double formatTerm = 0.0;
 
@@ -623,17 +616,32 @@ TEST(ProbeTest, ARowsBarIsTheFigureItsOwnPolicyPublishes) {
         } else if (row.precision == boys::OptionPrecision::kBf16) {
             lane = boys::Precision::kFp16;
             formatTerm = 0x1p-8;
-        } else {
+        }
+
+        return laneFigure(lane, row.division) + formatTerm;
+    };
+
+    for (const char* name : {"batch-fp32", "f16-io", "bf16-io"}) {
+        const OptionProbeMeasurement* row = Find(report, name);
+
+        if (row == nullptr) {
             continue;
         }
 
-        const boys::AccuracyFigure figure = boys::BoysAccuracyGuaranteed(
-            lane, row.route, row.scheme, row.pack, row.granularity, row.division);
+        EXPECT_DOUBLE_EQ(row->bound, expectedBar(*row))
+            << name << "'s bar is the figure of the lane its call resolves to";
+    }
 
-        ASSERT_TRUE(figure.available) << row.name << " is measured at a combination the library "
-                                                  "answers no figure for";
+    // The cells: the form is a template argument of the engine's entries, so a cell's bar is
+    // the lane's figure at the cell's own form. The half lanes add their format's term, and
+    // the double lane's figure carries no form dimension.
+    for (const OptionProbeMeasurement& row : report.measurements) {
+        if (row.precision == boys::OptionPrecision::kFp32Device ||
+            row.precision == boys::OptionPrecision::kFp64) {
+            continue;
+        }
 
-        EXPECT_DOUBLE_EQ(row.bound, figure.value + formatTerm)
+        EXPECT_DOUBLE_EQ(row.bound, expectedBar(row))
             << row.name << " is judged at another form's figure";
     }
 }
@@ -771,7 +779,17 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
 
         ASSERT_NE(doubles, nullptr);
         ASSERT_NE(leader, nullptr);
-        EXPECT_EQ(doubles->leader, leader->name);
+
+        // The class block names the row its printed listing shows first, one at the
+        // class's fastest figure. Where the top figures tie, "those two rows cannot be
+        // separated by this run" and the sort decides which is printed first, so the
+        // figure is the invariant: the name is unique only where the figure is.
+        EXPECT_EQ(doubles->ranked.front(), doubles->leader)
+            << "the class's leader is not the first row of the listing it prints";
+        EXPECT_TRUE(AtClassMinimum(report, doubles->leader))
+            << "the class names '" << doubles->leader << "' as its leader at "
+            << doubles->leaderNsPerArgument << " ns/argument, and the class's fastest printed "
+            << "figure is '" << leader->name << "' at " << leader->nsPerArgument;
 
         // The invariant the whole report rests on: the default is a row of the class the rule names, and which
         // row is what the way-it-was-reached says. Where the class could not be ordered and the refinement ran,
@@ -787,12 +805,24 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         }
 
         const bool voted = vote != nullptr && vote->ran && !vote->winner.empty();
-        EXPECT_EQ(report.recommended, voted ? vote->winner : leader->name)
-            << "the default is not the row the report's own rule names for its class";
+
+        if (voted) {
+            EXPECT_EQ(report.recommended, vote->winner)
+                << "a refinement vote ran and the default is not the row it named";
+        } else {
+            // No vote: the name is the one the class's own printed figure puts first, and an
+            // exact tie of the top figures leaves more than one such row (see above).
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "with no vote the default is a row the class's printed figure puts first, and '"
+                << report.recommended << "' is not at the class's fastest figure";
+        }
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty()) << "an ordering left a rival unplaced";
-            EXPECT_EQ(report.recommended, leader->name);
+            EXPECT_EQ(report.recommended, doubles->leader)
+                << "an ordered class's default is not the row the class block names";
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "the ordered default is not at the class's fastest printed figure";
             EXPECT_TRUE(doubles->ordered);
 
             // No rival measured faster than the leader, not a strict margin: the figure is a
@@ -1521,7 +1551,10 @@ TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty());
-            EXPECT_EQ(named, ReferenceLeader(report));
+            // An ordered class hands over the row its listing shows first, which is one at the
+            // class's fastest printed figure; two top rows tying exactly are both that row.
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "an ordered class's default is not at the class's fastest printed figure";
         } else {
             EXPECT_FALSE(report.inseparable.empty())
                 << "the class was not ordered, and nothing is named as unplaced beside the default";
@@ -1675,10 +1708,10 @@ TEST(ProbeTest, EveryClassIsOnePrecisionOneShapeAndRanksOnlyItsOwn) {
     }
 }
 
-// The report says in its own words what a class is and what its key is - one precision and one question shape,
-// decided at the library's own full-accuracy multiplier and by what an option hands back, never by comparing
-// one lane's documented figure against another's - and it says what the winner of a class is a claim about.
-// Every class the run made carries its key in its name.
+// The report says in its own words what a class is and what its key is - one precision and one
+// question shape, decided by what an option hands back, never by comparing one lane's documented
+// figure against another's - and it says what the winner of a class is a claim about. Every class
+// the run made carries its key in its name.
 TEST(ProbeTest, TheReportSaysAClassIsOnePrecisionAndOneShape) {
     const OptionProbeReport report = boys::RunOptionProbe(Timed());
     const std::string text = boys::FormatOptionProbe(report);
@@ -1884,9 +1917,9 @@ TEST(ProbeTest, TheOptionSpaceIsTheLibrarysOwnProduct) {
     ASSERT_FALSE(report.cells.empty());
     EXPECT_FALSE(report.granularities.empty());
 
-    // The multiplier is the library's full-accuracy setting and not an axis of
-    // the space: a class is the product of the axes the library reports and no
-    // factor stands for a choice the library does not offer.
+    // The accuracy is the library's one setting and not an axis of the space: a
+    // class is the product of the axes the library reports and no factor stands
+    // for a choice the library does not offer.
 
     // The space this book accounts for, class by class. A class is a precision and a question shape and not a
     // lane: the shapes do not admit the same axes and the two half formats are two classes. Every class is held

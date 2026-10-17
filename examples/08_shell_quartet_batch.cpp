@@ -66,11 +66,21 @@ int main()
                 worst);
 
     // What the library promises for the per-argument call, asked rather than
-    // assumed: the bound its own default policy carries in this build.
-    const boys::AccuracyFigure guaranteed =
-        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>();
-    std::printf("guaranteed error per value:             %.3g  (%s)\n", guaranteed.value,
-                guaranteed.source);
+    // assumed: the bound its default policy carries at each cell of this batch.
+    // The contract is scaled by F_0(x), so the tightest figure over the batch is
+    // the one at the largest argument, which is what the line below states.
+    double guaranteed = 0.0;
+    const char* source = "";
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        const boys::AccuracyFigure atCell =
+            boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllNAtOrders>(
+                n[i], x[i]);
+        guaranteed = i == 0 ? atCell.value : std::fmin(guaranteed, atCell.value);
+        source = atCell.source;
+    }
+    std::printf("guaranteed error per value, tightest over this batch: %.3g  (%s)\n", guaranteed,
+                source);
 
     // F is positive and falls off with x, and an answer that is not is not an
     // answer. The check is on the value the caller asked for, not on the padding.

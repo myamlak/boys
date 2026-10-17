@@ -56,6 +56,7 @@ import importlib.util
 import math
 import multiprocessing
 import os
+import re
 import shutil
 import struct
 import subprocess
@@ -1649,15 +1650,17 @@ def narrow_a_block_lines(narrow_a):
     Same fields and the same meaning as the shipped kPieces table, so the lookup
     the kernel already runs serves either partition: a piece carries its own
     interval, degree and offset, and the piece a consumer's argument falls in is
-    the piece it is evaluated at.
+    the piece it is evaluated at. The piece and certification tables stay in the
+    master; the two coefficient tables are the group headers' data.
     """
+    s = Sections()
     per_order = narrow_a["orders"]
     total = sum(len(pieces) for pieces in per_order)
     shipped = narrow_a["shipped"]
     shipped_rows = sum(len(pieces) for pieces in shipped)
     shipped_stored = sum(len(p[3]) for pieces in shipped for p in pieces)
     deg = NARROW_DEG
-    lines = [
+    s.master(
         f"// The narrow partition of region A: every order's interval cut at degree {deg}, each",
         "// piece as wide as the tighter of its two readings lets it be",
         f"// (region_a_piece_budget). Same fields and lookup as kPieces, but {total} rows",
@@ -1665,48 +1668,47 @@ def narrow_a_block_lines(narrow_a):
         f"inline constexpr int kNarrowADeg = {deg};",
         deg_assert("kNarrowADeg"),
         "inline constexpr auto kNarrowAPieces = std::to_array<OrderPiece>({",
-    ]
+    )
     offset = 0
     for order, pieces in enumerate(per_order):
         for (a, b, _deg, _cs, _ms) in pieces:
-            lines.append(f"  {{{fmt(mpf(a))}, {fmt(mpf(b))}, {deg}, {offset}}},  // F{order}")
+            s.master(f"  {{{fmt(mpf(a))}, {fmt(mpf(b))}, {deg}, {offset}}},  // F{order}")
             offset += deg + 1
-    lines.append("});")
+    s.master("});")
     starts = []
     index = 0
     for pieces in per_order:
         starts.append(index)
         index += len(pieces)
     starts.append(index)
-    lines.append("inline constexpr auto kNarrowAPieceStart = std::to_array<int>({")
-    lines.append("  " + ", ".join(str(v) for v in starts) + ",")
-    lines.append("});")
-    lines.append("static_assert(std::size(kNarrowAPieceStart) == kMaxOrder + 2 &&\n"
-                 "                  std::size(kNarrowAPieces) ==\n"
-                 "                      static_cast<std::size_t>(kNarrowAPieceStart[kMaxOrder + 1]),\n"
-                 "              \"the narrow region-A piece table must cover kMaxOrder\");")
-    for name, column in (("kNarrowACoeffs", 3), ("kNarrowAMonoCoeffs", 4)):
+    s.master("inline constexpr auto kNarrowAPieceStart = std::to_array<int>({",
+             "  " + ", ".join(str(v) for v in starts) + ",",
+             "});")
+    s.master("static_assert(std::size(kNarrowAPieceStart) == kMaxOrder + 2 &&\n"
+             "                  std::size(kNarrowAPieces) ==\n"
+             "                      static_cast<std::size_t>(kNarrowAPieceStart[kMaxOrder + 1]),\n"
+             "              \"the narrow region-A piece table must cover kMaxOrder\");")
+    for name, column, artifact in (
+            ("kNarrowACoeffs", 3, "boys_coefficients_d_narrow_cheb.hpp"),
+            ("kNarrowAMonoCoeffs", 4, "boys_coefficients_d_narrow_mono.hpp")):
         values = [fmt(c) for pieces in per_order for p in pieces for c in p[column]]
-        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
-        for i in range(0, len(values), 6):
-            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-        lines.append("});")
-    lines.append("static_assert(std::size(kNarrowAMonoCoeffs) == std::size(kNarrowACoeffs),\n"
-                 "              \"the monomial table must parallel the Chebyshev table\");")
-    lines.append("")
-    lines.append("// The narrow region-A partition's certification rows: the bound each scheme")
-    lines.append("// delivers on it in each multiply-add route, worst over its pieces, rounded")
-    lines.append("// up to a power of two so it bounds a sweep and not only its own. The")
-    lines.append("// pieces are measured at their own size; the recursion gain is budget-bounded.")
-    lines.append("struct NarrowARow { int scheme, deg, pieces, stored;")
-    lines.append("                    double fused, separate; };")
-    lines.append("inline constexpr auto kNarrowARows = std::to_array<NarrowARow>({")
+        s.array(artifact, DETAIL, name, "double", values)
+    s.master("static_assert(std::size(kNarrowAMonoCoeffs) == std::size(kNarrowACoeffs),\n"
+             "              \"the monomial table must parallel the Chebyshev table\");")
+    s.master("")
+    s.master("// The narrow region-A partition's certification rows: the bound each scheme",
+             "// delivers on it in each multiply-add route, worst over its pieces, rounded",
+             "// up to a power of two so it bounds a sweep and not only its own. The",
+             "// pieces are measured at their own size; the recursion gain is budget-bounded.",
+             "struct NarrowARow { int scheme, deg, pieces, stored;",
+             "                    double fused, separate; };",
+             "inline constexpr auto kNarrowARows = std::to_array<NarrowARow>({")
     for scheme in range(NARROW_SCHEMES):
         bounds = narrow_a["bounds"][scheme]
-        lines.append(f"  {{{scheme}, {deg}, {total}, {total * (deg + 1)}, "
-                     f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
-    lines.append("});")
-    return lines
+        s.master(f"  {{{scheme}, {deg}, {total}, {total * (deg + 1)}, "
+                 f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
+    s.master("});")
+    return s
 
 
 def flat_order(job):
@@ -1880,6 +1882,7 @@ def flat_block_lines(flat):
     interval's degree is the smallest the proved truncation bound carries under
     the bound the region is held to.
     """
+    s = Sections()
     grid = flat["grid"]
     degs = grid["degs"]
     cap = max(degs)
@@ -1912,15 +1915,16 @@ def flat_block_lines(flat):
     for i in range(0, len(offsets), 12):
         lines.append("  " + ", ".join(str(o) for o in offsets[i:i + 12]) + ",")
     lines.append("});")
-    for name, column in (("kFlatCoeffs", 3), ("kFlatMonoCoeffs", 4)):
+    for name, column, artifact in (
+            ("kFlatCoeffs", 3, "boys_coefficients_d_uniform_cheb.hpp"),
+            ("kFlatMonoCoeffs", 4, "boys_coefficients_d_uniform_mono.hpp")):
         values = [fmt(c)
                   for iv in range(intervals)
                   for n in range(MAX_ORDER + 1)
                   for c in per_order[n][iv][column]]
-        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
-        for i in range(0, len(values), 6):
-            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-        lines.append("});")
+        s.master(*lines)
+        lines = []
+        s.array(artifact, DETAIL, name, "double", values)
     # The same coefficients with the order innermost, which is the order the
     # vector lane reads: one coefficient index across the four orders a group
     # carries is four consecutive doubles, where the form above steps between
@@ -1935,11 +1939,18 @@ def flat_block_lines(flat):
     twin_stored = intervals * twin_block
     lines.append(f"inline constexpr int kFlatTwinRow = {twin_row};")
     lines.append(f"inline constexpr int kFlatTwinBlock = {twin_block};")
-    lines.append("// The same coefficients transposed, one coefficient index at a time: the k-th\n"
-                 "// coefficient of order l is at kFlatTwinBlock * iv + kFlatTwinRow * k + l, and\n"
-                 "// the same for kFlatTransposedMonoCoeffs. A row and a block are padded to whole\n"
-                 "// four-double loads and whole 64-byte lines, at zeros no reader reaches.")
-    for name, column in (("kFlatTransposedCoeffs", 3), ("kFlatTransposedMonoCoeffs", 4)):
+    s.master(*lines)
+    lines = []
+    s.add("boys_coefficients_d_uniform_cheb_transposed.hpp",
+          "// The same coefficients transposed, one coefficient index at a time: the k-th",
+          "// coefficient of order l is at kFlatTwinBlock * iv + kFlatTwinRow * k + l, and",
+          "// the same for kFlatTransposedMonoCoeffs. A row and a block are padded to whole",
+          "// four-double loads and whole 64-byte lines, at zeros no reader reaches.")
+    for name, column, artifact in (
+            ("kFlatTransposedCoeffs", 3,
+             "boys_coefficients_d_uniform_cheb_transposed.hpp"),
+            ("kFlatTransposedMonoCoeffs", 4,
+             "boys_coefficients_d_uniform_mono_transposed.hpp")):
         values = []
         for iv in range(intervals):
             for k in range(degs[iv] + 1):
@@ -1949,10 +1960,7 @@ def flat_block_lines(flat):
         if len(values) != twin_stored:
             raise RuntimeError(f"the transposed twin's pads do not reach its block: "
                                f"{len(values)} against {twin_stored}")
-        lines.append(f"inline constexpr auto {name} = std::to_array<double>({{")
-        for i in range(0, len(values), 6):
-            lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-        lines.append("});")
+        s.array(artifact, DETAIL, name, "double", values)
     lines.append(f"static_assert(std::size(kFlatCoeffs) == {stored} &&\n"
                  f"                  std::size(kFlatMonoCoeffs) == {stored},\n"
                  "              \"the uniform table must hold every interval of every order, in\"\n"
@@ -1985,11 +1993,36 @@ def flat_block_lines(flat):
         lines.append(f"  {{{scheme}, {cap}, {intervals}, {stored}, "
                      f"{fmt(bounds[0])}, {fmt(bounds[1])}}},")
     lines.append("});")
-    return lines
+    s.master(*lines)
+    return s
+
+
+def artefact_text(paths):
+    """One artifact's text, or a set of them read as the one text they were.
+
+    The read-back rules address the emitted text rather than the writer's
+    memory, and a rule that crosses artifacts (the transposed twin, the far
+    table's stride) addresses the set: master first, then the group headers in
+    emission order.
+    """
+    if isinstance(paths, (str, os.PathLike)):
+        paths = (paths,)
+    parts = []
+    for path in paths:
+        with open(path, encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
+
+
+def artefact_label(paths):
+    """The name a finding about one artifact, or a set of them, carries."""
+    if isinstance(paths, (str, os.PathLike)):
+        return str(paths)
+    return ", ".join(paths)
 
 
 def header_array(text, name, ctype="double"):
-    """One emitted float array, read back out of the written header.
+    """One emitted float array, read back out of the written text.
 
     The reader's own rule addresses the emitted text, so a check of the writer's
     in-memory lists is a check of something the reader never sees. This reads what
@@ -1997,8 +2030,11 @@ def header_array(text, name, ctype="double"):
     whose literals carry the f suffix - the float block's do - is read through it:
     the suffix is the C++ type, and what is compared below is the value the
     literal spells, which is the same binary32 either way.
+
+    The marker stops short of the declared type so it reads both shapes: a group
+    header's explicit `std::array<T, N>` and the master's remaining `auto` tables.
     """
-    marker = f"auto {name} = std::to_array<{ctype}>"
+    marker = f"{name} = std::to_array<{ctype}>"
     start = text.index("({", text.index(marker)) + 2
     return [float(value.rstrip("f"))
             for value in text[start:text.index("});", start)].replace("\n", " ").split(",")
@@ -2043,8 +2079,7 @@ def flat_transposed_findings(path, grid):
     """
     degs = grid["degs"]
     offsets = flat_grid_offsets(grid)
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+    text = artefact_text(path)
 
     findings = []
 
@@ -2057,11 +2092,11 @@ def flat_transposed_findings(path, grid):
         have_row = int(header_scalar(text, "kFlatTwinRow", "int"))
         have_block = int(header_scalar(text, "kFlatTwinBlock", "int"))
     except RuntimeError:
-        findings.append(f"{path}: the transposed twin declares no padded row and block "
+        findings.append(f"{artefact_label(path)}: the transposed twin declares no padded row and block "
                         f"stride")
         return findings
     if (have_row, have_block) != (row, block):
-        findings.append(f"{path}: the transposed twin pads with row {have_row} and block "
+        findings.append(f"{artefact_label(path)}: the transposed twin pads with row {have_row} and block "
                         f"{have_block}; the group lane's shape is {row} and {block}")
         return findings
 
@@ -2071,7 +2106,7 @@ def flat_transposed_findings(path, grid):
         twin = header_array(text, twin_name)
 
         if len(plain) != offsets[-1] or len(twin) != len(degs) * block:
-            findings.append(f"{path}: {len(twin)} {twin_name} and {len(plain)} "
+            findings.append(f"{artefact_label(path)}: {len(twin)} {twin_name} and {len(plain)} "
                             f"{plain_name} against {len(degs)} padded blocks of {block}")
             continue
 
@@ -2086,7 +2121,7 @@ def flat_transposed_findings(path, grid):
 
         if mismatch is not None:
             iv, order, k = mismatch
-            findings.append(f"{path}: {twin_name} does not transpose {plain_name} at "
+            findings.append(f"{artefact_label(path)}: {twin_name} does not transpose {plain_name} at "
                             f"interval {iv}, order {order}, coefficient {k}")
             continue
 
@@ -2100,7 +2135,7 @@ def flat_transposed_findings(path, grid):
         dirty = next((at for at in pad_cells if twin[at] != 0.0), None)
 
         if dirty is not None:
-            findings.append(f"{path}: {twin_name} carries a non-zero pad cell at index "
+            findings.append(f"{artefact_label(path)}: {twin_name} carries a non-zero pad cell at index "
                             f"{dirty}")
 
     return findings
@@ -2160,8 +2195,7 @@ def flat_relative_findings(path, lane, npts=8):
     """
     spec = FLAT_READ[lane]
     bar = FLAT_REL_BAR[lane]
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+    text = artefact_text(path)
     degs = header_ints(text, spec["degs"])
     offsets = header_ints(text, spec["offsets"])
     width = header_scalar(text, spec["width"])
@@ -2170,10 +2204,10 @@ def flat_relative_findings(path, lane, npts=8):
     ms_all = header_array(text, spec["ms"], spec["ctype"])
 
     if len(degs) != intervals or len(offsets) != intervals + 1:
-        return [f"{path}: the {lane} block declares {intervals} intervals and writes "
+        return [f"{artefact_label(path)}: the {lane} block declares {intervals} intervals and writes "
                 f"{len(degs)} degrees and {len(offsets)} offsets"]
     if len(cs_all) != offsets[-1] or len(ms_all) != offsets[-1]:
-        return [f"{path}: the {lane} block's offsets reach {offsets[-1]} and it writes "
+        return [f"{artefact_label(path)}: the {lane} block's offsets reach {offsets[-1]} and it writes "
                 f"{len(cs_all)} Chebyshev and {len(ms_all)} monomial coefficients"]
 
     findings = []
@@ -2186,7 +2220,7 @@ def flat_relative_findings(path, lane, npts=8):
             cs = cs_all[k0:k0 + deg + 1]
             ms = ms_all[k0:k0 + deg + 1]
             if len(cs) != deg + 1 or len(ms) != deg + 1:
-                return findings + [f"{path}: the {lane} block's last interval, order {n} "
+                return findings + [f"{artefact_label(path)}: the {lane} block's last interval, order {n} "
                                    f"runs past the coefficients it stores"]
             worst, at = 0.0, None
             for i in range(npts + 1):
@@ -2218,7 +2252,7 @@ def flat_relative_findings(path, lane, npts=8):
                     worst, at = worst_here, x
             if worst > bar:
                 findings.append(
-                    f"{path}: interval {iv}, order {n} delivers {worst:.6e} relative at "
+                    f"{artefact_label(path)}: interval {iv}, order {n} delivers {worst:.6e} relative at "
                     f"x = {at!r}, above the {mp.nstr(bar, 3)} bar of the {lane} lane")
 
     return findings
@@ -2557,10 +2591,10 @@ def scaled_far_block_lines(far):
               for iv in range(intervals)
               for n in range(MAX_ORDER + 1)
               for c in per_order[n][iv][3]]
-    lines.append("inline constexpr auto kScaledFarCoeffs = std::to_array<double>({")
-    for i in range(0, len(values), 6):
-        lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-    lines.append("});")
+    s = Sections()
+    s.master(*lines)
+    lines = []
+    s.array("boys_coefficients_d_far.hpp", DETAIL, "kScaledFarCoeffs", "double", values)
     lines.append(f"static_assert(std::size(kScaledFarCoeffs) == {stored},\n"
                  "              \"the far table must hold every interval of every order, at\"\n"
                  "              \" the degrees kScaledFarDegs describes\");")
@@ -2596,7 +2630,8 @@ def scaled_far_block_lines(far):
     lines.append(f"   {fmt(far['bounds']['recovery'][0])}, {fmt(far['bounds']['recovery'][1])},")
     lines.append(f"   {fmt(far['bounds']['delivered'][0])}, {fmt(far['bounds']['delivered'][1])}}},")
     lines.append("});")
-    return lines
+    s.master(*lines)
+    return s
 
 
 def scaled_far_findings(path, partition=None):
@@ -2616,8 +2651,7 @@ def scaled_far_findings(path, partition=None):
     was measured) and only this comparison sees it. flat_transposed_findings
     takes the grid for the same reason.
     """
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+    text = artefact_text(path)
 
     findings = []
 
@@ -2628,13 +2662,13 @@ def scaled_far_findings(path, partition=None):
     if partition is not None:
         want_edges, want_degs = partition
         if len(want_edges) != len(edges) or len(want_degs) != len(degs):
-            findings.append(f"{path}: the far table carries {len(degs)} intervals and "
+            findings.append(f"{artefact_label(path)}: the far table carries {len(degs)} intervals and "
                             f"{len(edges)} edges, and its partition has {len(want_degs)} "
                             f"and {len(want_edges)}")
         else:
             if list(want_degs) != degs:
                 bad = next(iv for iv in range(len(degs)) if want_degs[iv] != degs[iv])
-                findings.append(f"{path}: the far table's interval {bad} is written at "
+                findings.append(f"{artefact_label(path)}: the far table's interval {bad} is written at "
                                 f"degree {degs[bad]}, and its partition fits it at "
                                 f"degree {want_degs[bad]}")
             # Against the double the writer emits, not against the partition's own
@@ -2644,7 +2678,7 @@ def scaled_far_findings(path, partition=None):
             if any(float(want_edges[iv]) != edges[iv] for iv in range(len(edges))):
                 bad = next(iv for iv in range(len(edges))
                            if float(want_edges[iv]) != edges[iv])
-                findings.append(f"{path}: the far table's edge {bad} is written as "
+                findings.append(f"{artefact_label(path)}: the far table's edge {bad} is written as "
                                 f"{edges[bad]}, and its partition cuts at "
                                 f"{float(want_edges[bad])}")
     # The stored form is summed by the scheme that reads it, which is the
@@ -2655,27 +2689,27 @@ def scaled_far_findings(path, partition=None):
         table = header_array(text, name)
 
         if len(degs) + 1 != len(edges):
-            findings.append(f"{path}: {len(edges)} edges against {len(degs)} intervals")
+            findings.append(f"{artefact_label(path)}: {len(edges)} edges against {len(degs)} intervals")
             continue
         if len(offsets) != len(degs) + 1:
-            findings.append(f"{path}: {len(offsets)} offsets against {len(degs)} intervals")
+            findings.append(f"{artefact_label(path)}: {len(offsets)} offsets against {len(degs)} intervals")
             continue
 
         expected = 0
         for iv, deg in enumerate(degs):
             if offsets[iv] != expected:
-                findings.append(f"{path}: {name} interval {iv} starts at {offsets[iv]}, and "
+                findings.append(f"{artefact_label(path)}: {name} interval {iv} starts at {offsets[iv]}, and "
                                 f"the degrees before it store {expected}")
                 break
             expected += (MAX_ORDER + 1) * (deg + 1)
         else:
             if offsets[-1] != expected or expected != len(table):
-                findings.append(f"{path}: {name} stores {len(table)} values, and its offsets "
+                findings.append(f"{artefact_label(path)}: {name} stores {len(table)} values, and its offsets "
                                 f"and degrees describe {expected}")
 
         for iv in range(1, len(edges)):
             if not edges[iv - 1] < edges[iv]:
-                findings.append(f"{path}: the far partition's edge {iv} is not above edge "
+                findings.append(f"{artefact_label(path)}: the far partition's edge {iv} is not above edge "
                                 f"{iv - 1}")
 
         mismatch = None
@@ -2701,7 +2735,7 @@ def scaled_far_findings(path, partition=None):
 
         if mismatch is not None:
             iv, order, x, got, want = mismatch
-            findings.append(f"{path}: {name} interval {iv} order {order} evaluates to {got:.17e} "
+            findings.append(f"{artefact_label(path)}: {name} interval {iv} order {order} evaluates to {got:.17e} "
                             f"at x = {float(x):.17e}, and the reference H is {want:.17e}")
 
     return findings
@@ -2829,8 +2863,7 @@ def seed_correction_findings(path):
     correction opens where region C does. And the polynomial, summed at the
     scheme the reader sums it with, must deliver H_0 over the span.
     """
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+    text = artefact_text(path)
 
     findings = []
     x0 = header_scalar(text, "kX1")
@@ -2842,26 +2875,26 @@ def seed_correction_findings(path):
     # correction opens where region C opens by construction; a literal there is
     # the drift this reads for.
     if "inline constexpr double kSeedCorrectionX0 = kX1;" not in text:
-        findings.append(f"{path}: the corrected seed's left edge is not written as kX1, so "
+        findings.append(f"{artefact_label(path)}: the corrected seed's left edge is not written as kX1, so "
                         f"it can drift from the region it corrects")
 
     if erfc(sqrt(mpf(x1))) > SEED_CORRECTION_FLOOR:
-        findings.append(f"{path}: erfc(sqrt(kSeedCorrectionX1)) = "
+        findings.append(f"{artefact_label(path)}: erfc(sqrt(kSeedCorrectionX1)) = "
                         f"{mp.nstr(erfc(sqrt(mpf(x1))), 6)} is above the unit roundoff "
                         f"{mp.nstr(SEED_CORRECTION_FLOOR, 6)}, so the correction stops "
                         f"before the closed form is exact")
     else:
         below = math.nextafter(x1, -math.inf)
         if erfc(sqrt(mpf(below))) <= SEED_CORRECTION_FLOOR:
-            findings.append(f"{path}: kSeedCorrectionX1 = {x1!r} is not the smallest double "
+            findings.append(f"{artefact_label(path)}: kSeedCorrectionX1 = {x1!r} is not the smallest double "
                             f"whose erfc has reached the unit roundoff: {below!r} has reached "
                             f"it too")
 
     if deg < 4:
-        findings.append(f"{path}: the corrected seed is fitted at degree {deg}, and the "
+        findings.append(f"{artefact_label(path)}: the corrected seed is fitted at degree {deg}, and the "
                         f"split Clenshaw summation reads degree 4 and up")
     elif len(cs) != deg + 1:
-        findings.append(f"{path}: the corrected seed is fitted at degree {deg} and stores "
+        findings.append(f"{artefact_label(path)}: the corrected seed is fitted at degree {deg} and stores "
                         f"{len(cs)} coefficients")
 
     if not findings:
@@ -2870,7 +2903,7 @@ def seed_correction_findings(path):
             got = 1.0 + clenshaw_route(cs, x, x0, x1, True)
             want = float(erf(sqrt(mpf(x))))
             if abs(got - want) > SEED_CORRECTION_PROBE_TOL:
-                findings.append(f"{path}: the corrected seed delivers {got:.17e} at x = "
+                findings.append(f"{artefact_label(path)}: the corrected seed delivers {got:.17e} at x = "
                                 f"{x:.17e}, and the reference H_0 is {want:.17e}")
                 break
 
@@ -3354,10 +3387,11 @@ def flat_rat_block_lines(frat):
         for (_n, p, q) in row["pairs"]:
             values.extend(fmt(float(c)) for c in p)
             values.extend(fmt(float(c)) for c in q)
-    lines.append("inline constexpr auto kFlatRatCoeffs = std::to_array<double>({")
-    for i in range(0, len(values), 6):
-        lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-    lines.append("});")
+    s = Sections()
+    s.master(*lines)
+    lines = []
+    s.array("boys_coefficients_d_uniform_rat.hpp", DETAIL, "kFlatRatCoeffs", "double",
+            values)
     lines.append(f"static_assert(std::size(kFlatRatCoeffs) == {stored},\n"
                  "              \"the rational member must hold every order of every "
                  "interval\");")
@@ -3385,7 +3419,8 @@ def flat_rat_block_lines(frat):
     lines.append("});")
     lines.append(f"inline constexpr double kFlatRatBar = "
                  f"{fmt(float(FLAT_CELL_BOUND['double']))};")
-    return lines
+    s.master(*lines)
+    return s
 
 
 def narrow_block_lines(narrow_a, narrow_b, narrow_rat_a, narrow_rat_b):
@@ -3395,10 +3430,13 @@ def narrow_block_lines(narrow_a, narrow_b, narrow_rat_a, narrow_rat_b):
     reproduced on its own - --narrow-only writes these lines and the block's
     byte-identity is checked without fitting the shipped table - and the order
     the two regions are written in has to be one fact rather than two.
-    write_header writes the same lines, so the two cannot drift.
+    build_sections writes the same lines, so the two cannot drift.
     """
-    return (narrow_a_block_lines(narrow_a) + [""] + narrow_b_block_lines(narrow_b)
-            + [""] + narrow_rational_block_lines(narrow_rat_a, narrow_rat_b))
+    s = narrow_a_block_lines(narrow_a)
+    s.master("")
+    s.master(*narrow_b_block_lines(narrow_b))
+    s.master("")
+    return s.combine(narrow_rational_block_lines(narrow_rat_a, narrow_rat_b))
 
 
 def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
@@ -3410,12 +3448,13 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
     arguments. Region A's pieces are one per `kNarrowAPieces` row, in that
     order; region B's are one per narrow region-B piece, in that order.
     """
-    lines = [
-        "// The rational minimax family over the narrow partition: one degree pair per",
-        "// narrow piece, read at kNarrowAPieces' intervals and mapped arguments (a",
-        "// partition is a cut of the region, not a family's). Row = p_0..p_m then",
-        "// q_1..q_k, q_0 = 1; accepted at the shipped 3e-14 bar, worse of both routes.",
-    ]
+    s = Sections()
+    s.add("boys_coefficients_d_narrow_rat.hpp",
+          "// The rational minimax family over the narrow partition: one degree pair per",
+          "// narrow piece, read at kNarrowAPieces' intervals and mapped arguments (a",
+          "// partition is a cut of the region, not a family's). Row = p_0..p_m then",
+          "// q_1..q_k, q_0 = 1; accepted at the shipped 3e-14 bar, worse of both routes.")
+    lines = []
     per_order = narrow_rat_a["orders"]
     a_coeffs = []
     a_offset = []
@@ -3428,10 +3467,10 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
             a_dendeg.append(fit["k"])
             a_coeffs.extend(fmt(float(c)) for c in fit["p"])
             a_coeffs.extend(fmt(float(c)) for c in fit["q"])
-    lines.append("inline constexpr auto kNarrowRatACoeffs = std::to_array<double>({")
-    for i in range(0, len(a_coeffs), 6):
-        lines.append("  " + ", ".join(a_coeffs[i:i + 6]) + ",")
-    lines.append("});")
+    s.master(*lines)
+    lines = []
+    s.array("boys_coefficients_d_narrow_rat.hpp", DETAIL, "kNarrowRatACoeffs", "double",
+            a_coeffs)
     for name, column in (("kNarrowRatAOffset", a_offset), ("kNarrowRatANumDeg", a_numdeg),
                          ("kNarrowRatADenDeg", a_dendeg)):
         lines.append(f"inline constexpr auto {name} = std::to_array<int>({{")
@@ -3453,15 +3492,16 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
         b_dendeg.append(fit["k"])
         b_coeffs.extend(fmt(float(c)) for c in fit["p"])
         b_coeffs.extend(fmt(float(c)) for c in fit["q"])
-    lines.append("")
-    lines.append("// The same family over the narrow partition of region B: one pair")
-    lines.append("// per narrow region-B piece, read at that piece's own interval and")
-    lines.append("// at the mapped argument the Chebyshev seed on that piece uses, so")
-    lines.append("// the two routes over the piece read one t.")
-    lines.append("inline constexpr auto kNarrowRatBCoeffs = std::to_array<double>({")
-    for i in range(0, len(b_coeffs), 6):
-        lines.append("  " + ", ".join(b_coeffs[i:i + 6]) + ",")
-    lines.append("});")
+    s.master(*lines)
+    lines = []
+    s.add("boys_coefficients_d_narrow_rat.hpp",
+          "",
+          "// The same family over the narrow partition of region B: one pair",
+          "// per narrow region-B piece, read at that piece's own interval and",
+          "// at the mapped argument the Chebyshev seed on that piece uses, so",
+          "// the two routes over the piece read one t.")
+    s.array("boys_coefficients_d_narrow_rat.hpp", DETAIL, "kNarrowRatBCoeffs", "double",
+            b_coeffs)
     for name, column in (("kNarrowRatBOffset", b_offset), ("kNarrowRatBNumDeg", b_numdeg),
                          ("kNarrowRatBDenDeg", b_dendeg)):
         lines.append(f"inline constexpr auto {name} = std::to_array<int>({{")
@@ -3489,7 +3529,8 @@ def narrow_rational_block_lines(narrow_rat_a, narrow_rat_b):
                  f"{fmt(float(narrow_rat_b['worst'][0][0]))};")
     lines.append("inline constexpr double kNarrowRatBDeliveredSeparate = "
                  f"{fmt(float(narrow_rat_b['worst'][0][1]))};")
-    return lines
+    s.master(*lines)
+    return s
 
 
 def narrow_b_block_lines(narrow):
@@ -3498,7 +3539,7 @@ def narrow_b_block_lines(narrow):
     A separate function because the block is reproduced on its own: the full
     generation is hours and this block is seconds, so --narrow-only writes
     these lines and the block's byte-identity is checked without the rest of
-    the table. write_header writes the same lines, so the two cannot drift.
+    the table. build_sections writes the same lines, so the two cannot drift.
     The interval is the band's own, [X0, region_b_top()): the far guard hands
     the band every argument below the placed top, and the fitted partition and
     the guard cannot stop at two different numbers.
@@ -6086,7 +6127,7 @@ def fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32):
             "bound": F32_RAT_BOUND, "accept": F32_RAT_NARROW_ACCEPT}
 
 
-def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
+def narrow_rat_f32_block_lines(narrow_rat_f32, narrow_b_f32):
     """The float lane's narrow partition under the rational route.
 
     The same shape `kRatAPieces`/`kRatACoeffs` and the region-B pair have, at
@@ -6101,7 +6142,8 @@ def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
     the exact reading its shipped pieces were accepted on. The figure the block
     carries is that worse reading, swept.
     """
-    f.write("\n// The float lane's rational route over its own narrow partition: one degree pair\n"
+    s = Sections()
+    s.write("\n// The float lane's rational route over its own narrow partition: one degree pair\n"
             "// per piece at each piece's own interval and mapped argument. The partitions\n"
             "// are the narrow Chebyshev ones; a piece it could not hold the target on is\n"
             "// bisected, and the piece table carries it. Accepted on the lane's own binary32.\n")
@@ -6112,27 +6154,25 @@ def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
         a_offsets.append(len(a_coeffs))
         a_coeffs.extend(piece["p"])
         a_coeffs.extend(piece["q"])
-    f.write("inline constexpr auto kNarrowRatACoeffsF32 = std::to_array<float>({\n")
-    for i in range(0, len(a_coeffs), 6):
-        f.write("  " + ", ".join(fmtf(v) for v in a_coeffs[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("inline constexpr auto kNarrowRatAPiecesF32 = std::to_array<RatPiece>({\n")
+    s.array("boys_coefficients_f32_narrow_rat.hpp", DETAIL_F32, "kNarrowRatACoeffsF32",
+            "float", [fmtf(v) for v in a_coeffs])
+    s.write("inline constexpr auto kNarrowRatAPiecesF32 = std::to_array<RatPiece>({\n")
     starts = []
     index = 0
     for n in range(MAX_ORDER + 1):
         starts.append(index)
         for piece in narrow_rat_f32["orders"][n]:
-            f.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, "
+            s.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, "
                     f"{piece['k']}, {a_offsets[index]}}},  // F{n}\n")
             index += 1
-    f.write("});\n")
+    s.write("});\n")
     starts.append(index)
-    f.write("inline constexpr auto kNarrowRatAPieceStartF32 = std::to_array<int>({"
+    s.write("inline constexpr auto kNarrowRatAPieceStartF32 = std::to_array<int>({"
             + ", ".join(map(str, starts)) + "});\n")
-    f.write(f"inline constexpr int kNarrowRatAStoredF32 = {narrow_rat_f32['stored']};\n")
-    f.write(f"inline constexpr double kNarrowRatADeliveredFusedF32 = "
+    s.write(f"inline constexpr int kNarrowRatAStoredF32 = {narrow_rat_f32['stored']};\n")
+    s.write(f"inline constexpr double kNarrowRatADeliveredFusedF32 = "
             f"{fmt(mpf(narrow_rat_f32['fused']))};\n")
-    f.write(f"inline constexpr double kNarrowRatADeliveredSeparateF32 = "
+    s.write(f"inline constexpr double kNarrowRatADeliveredSeparateF32 = "
             f"{fmt(mpf(narrow_rat_f32['separate']))};\n")
 
     b_pieces = narrow_rat_f32["b_pieces"]
@@ -6142,46 +6182,46 @@ def narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32):
         b_offsets.append(len(b_coeffs))
         b_coeffs.extend(piece["p"])
         b_coeffs.extend(piece["q"])
-    f.write("\n// The same family over the narrow partition of region B, one pair per\n"
+    s.write("\n// The same family over the narrow partition of region B, one pair per\n"
             "// piece, read at the piece's own interval and at the mapped argument the\n"
             "// narrow Chebyshev seed on that piece uses, so the two routes over a\n"
             "// piece read one t.\n")
-    f.write("inline constexpr auto kNarrowRatBCoeffsF32 = std::to_array<float>({\n")
-    for i in range(0, len(b_coeffs), 6):
-        f.write("  " + ", ".join(fmtf(v) for v in b_coeffs[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("inline constexpr auto kNarrowRatBPiecesF32 = std::to_array<RatPiece>({\n")
+    s.array("boys_coefficients_f32_narrow_rat.hpp", DETAIL_F32, "kNarrowRatBCoeffsF32",
+            "float", [fmtf(v) for v in b_coeffs])
+    s.write("inline constexpr auto kNarrowRatBPiecesF32 = std::to_array<RatPiece>({\n")
     for index, piece in enumerate(b_pieces):
-        f.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, {piece['k']}, "
+        s.write(f"  {{{fmtf(piece['a'])}, {fmtf(piece['b'])}, {piece['m']}, {piece['k']}, "
                 f"{b_offsets[index]}}},\n")
-    f.write("});\n")
-    f.write(f"inline constexpr int kNarrowRatBPiecesCountF32 = {len(b_pieces)};\n")
-    f.write(f"inline constexpr int kNarrowRatBStoredF32 = {narrow_rat_f32['b_stored']};\n")
-    f.write(f"inline constexpr double kNarrowRatBDeliveredFusedF32 = "
+    s.write("});\n")
+    s.write(f"inline constexpr int kNarrowRatBPiecesCountF32 = {len(b_pieces)};\n")
+    s.write(f"inline constexpr int kNarrowRatBStoredF32 = {narrow_rat_f32['b_stored']};\n")
+    s.write(f"inline constexpr double kNarrowRatBDeliveredFusedF32 = "
             f"{fmt(mpf(narrow_rat_f32['b_fused']))};\n")
-    f.write(f"inline constexpr double kNarrowRatBDeliveredSeparateF32 = "
+    s.write(f"inline constexpr double kNarrowRatBDeliveredSeparateF32 = "
             f"{fmt(mpf(narrow_rat_f32['b_separate']))};\n")
+    return s
 
 
-def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
+def narrow_f32_block_lines(narrow_a_f32, narrow_b_f32):
     """The float lane's own narrow partition, as the header writes it.
 
     A function of its own because the block is what --narrow-only
-    reproduces on its own: write_f32_namespace calls it and so does that
+    reproduces on its own: build_f32_sections calls it and so does that
     path, so the two cannot drift.
 
     The shipped pieces are untouched by these tables and are the same bytes
     whether or not the partitions are named.
     """
+    s = Sections()
     # The lane's own narrow partition: the same fitted regions at a narrower
     # degree, placed by the lane's own bisection law and measured in the lane's
     # own binary32 arithmetic at both multiply-add routes.
-    f.write("\n// The float lane's narrow partition of region A: the lane's own weighted 1e-7 law\n"
+    s.write("\n// The float lane's narrow partition of region A: the lane's own weighted 1e-7 law\n"
             "// and the same midpoint bisection the shipped pieces were placed by, at degree\n"
             f"// {F32_NARROW_DEG} instead of the lane's degree cap. A lower degree accepts a narrower\n"
             "// interval: more pieces of fewer coefficients each, the granularity axis's trade.\n")
-    f.write("inline constexpr int kNarrowADegF32 = " + str(F32_NARROW_DEG) + ";\n")
-    f.write(deg_assert("kNarrowADegF32"))
+    s.write("inline constexpr int kNarrowADegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    s.write(deg_assert("kNarrowADegF32"))
     narrow_a32 = []
     narrow_a32_mono = []
     narrow_a32_meta = []
@@ -6190,54 +6230,50 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             narrow_a32_meta.append((n, a, b, deg, len(narrow_a32)))
             narrow_a32.extend(fmtf(c) for c in cs)
             narrow_a32_mono.extend(fmtf(c) for c in ms)
-    f.write("inline constexpr auto kNarrowACoeffsF32 = std::to_array<float>({\n")
-    for i in range(0, len(narrow_a32), 6):
-        f.write("  " + ", ".join(narrow_a32[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("inline constexpr auto kNarrowAMonoCoeffsF32 = std::to_array<float>({\n")
-    for i in range(0, len(narrow_a32_mono), 6):
-        f.write("  " + ", ".join(narrow_a32_mono[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("static_assert(std::size(kNarrowAMonoCoeffsF32) == std::size(kNarrowACoeffsF32),\n"
+    s.array("boys_coefficients_f32_narrow_cheb.hpp", DETAIL_F32, "kNarrowACoeffsF32",
+            "float", narrow_a32)
+    s.array("boys_coefficients_f32_narrow_mono.hpp", DETAIL_F32, "kNarrowAMonoCoeffsF32",
+            "float", narrow_a32_mono)
+    s.write("static_assert(std::size(kNarrowAMonoCoeffsF32) == std::size(kNarrowACoeffsF32),\n"
             "              \"the monomial table must parallel the Chebyshev table\");\n")
-    f.write("inline constexpr auto kNarrowAPiecesF32 = std::to_array<OrderPiece>({\n")
+    s.write("inline constexpr auto kNarrowAPiecesF32 = std::to_array<OrderPiece>({\n")
     for (n, a, b, deg, off) in narrow_a32_meta:
-        f.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
-    f.write("});\n")
+        s.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
+    s.write("});\n")
     nstarts = []
     index = 0
     for n in range(MAX_ORDER + 1):
         nstarts.append(index)
         index += len(narrow_a_f32["orders"][n])
     nstarts.append(index)
-    f.write("inline constexpr auto kNarrowAPieceStartF32 = std::to_array<int>({"
+    s.write("inline constexpr auto kNarrowAPieceStartF32 = std::to_array<int>({"
             + ", ".join(map(str, nstarts)) + "});\n")
-    f.write("static_assert(std::size(kNarrowAPieceStartF32) == kMaxOrder + 2,\n"
+    s.write("static_assert(std::size(kNarrowAPieceStartF32) == kMaxOrder + 2,\n"
             "              \"narrow piece-start table must cover kMaxOrder\");\n")
 
-    f.write(f"\n// The float lane's narrow partition of region B: [kX0, {region_b_top_name('float')})"
+    s.write(f"\n// The float lane's narrow partition of region B: [kX0, {region_b_top_name('float')})"
             " cut until the figure\n"
             "// the lane's own recurrence carries is under half its budget. The seed's error\n"
             "// is amplified by the steps that follow it, so a piece is placed by the carried\n"
             "// figure and not its fit residual: the pieces nearest kX0 come out narrowest.\n")
-    f.write("inline constexpr int kNarrowBDegF32 = " + str(F32_NARROW_DEG) + ";\n")
-    f.write(deg_assert("kNarrowBDegF32"))
+    s.write("inline constexpr int kNarrowBDegF32 = " + str(F32_NARROW_DEG) + ";\n")
+    s.write(deg_assert("kNarrowBDegF32"))
     nbp = narrow_b_f32["pieces"]
-    f.write("inline constexpr int kNarrowBPiecesF32 = " + str(len(nbp)) + ";\n")
+    s.write("inline constexpr int kNarrowBPiecesF32 = " + str(len(nbp)) + ";\n")
     edges = [fmtf(mpf(nbp[0][0]))] + [fmtf(mpf(p[1])) for p in nbp]
-    f.write("inline constexpr auto kNarrowBEdgesF32 = std::to_array<float>({"
+    s.write("inline constexpr auto kNarrowBEdgesF32 = std::to_array<float>({"
             + ", ".join(edges) + "});\n")
     nb_c = [fmtf(c) for p in nbp for c in p[3]]
     nb_m = [fmtf(c) for p in nbp for c in p[4]]
-    f.write("inline constexpr auto kNarrowBcoeffsF32 = std::to_array<float>({\n")
+    s.write("inline constexpr auto kNarrowBcoeffsF32 = std::to_array<float>({\n")
     for i in range(0, len(nb_c), 6):
-        f.write("  " + ", ".join(nb_c[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("inline constexpr auto kNarrowBMonoCoeffsF32 = std::to_array<float>({\n")
+        s.write("  " + ", ".join(nb_c[i:i + 6]) + ",\n")
+    s.write("});\n")
+    s.write("inline constexpr auto kNarrowBMonoCoeffsF32 = std::to_array<float>({\n")
     for i in range(0, len(nb_m), 6):
-        f.write("  " + ", ".join(nb_m[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("static_assert(std::size(kNarrowBEdgesF32) == kNarrowBPiecesF32 + 1\n"
+        s.write("  " + ", ".join(nb_m[i:i + 6]) + ",\n")
+    s.write("});\n")
+    s.write("static_assert(std::size(kNarrowBEdgesF32) == kNarrowBPiecesF32 + 1\n"
             "                  && std::size(kNarrowBcoeffsF32) == kNarrowBPiecesF32 * (kNarrowBDegF32 + 1)\n"
             "                  && std::size(kNarrowBMonoCoeffsF32) == std::size(kNarrowBcoeffsF32),\n"
             f"              \"the narrow partition's pieces must tile "
@@ -6247,7 +6283,7 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
     # What the narrow partition stores and what it delivers, in the lane's own
     # arithmetic at each multiply-add route: the figure a row published for it
     # is the worse of the two.
-    f.write("\n// What the lane's narrow partition stores and what it delivers, per multiply-add\n"
+    s.write("\n// What the lane's narrow partition stores and what it delivers, per multiply-add\n"
             "// route, against the lane's reference: measured on each piece's own grid in\n"
             "// binary32 on the stored coefficients, under both schemes the entries sum by.\n"
             "// A swept maximum, not a bound: the bar is kRegionAFitBar, kRegionBFitBar for B.\n"
@@ -6255,22 +6291,23 @@ def narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32):
             "                      double fused, separate; };\n"
             "inline constexpr auto kNarrowARowsF32 = std::to_array<NarrowRowF32>({\n")
     for scheme in range(NARROW_SCHEMES):
-        f.write(f"  {{{scheme}, {F32_NARROW_DEG}, "
+        s.write(f"  {{{scheme}, {F32_NARROW_DEG}, "
                 f"{sum(len(p) for p in narrow_a_f32['orders'])}, "
                 f"{sum(len(p) for p in narrow_a_f32['orders']) * (F32_NARROW_DEG + 1)}, "
                 f"{fmt(narrow_a_f32['bounds'][scheme][0])}, "
                 f"{fmt(narrow_a_f32['bounds'][scheme][1])}}},\n")
-    f.write("});\n")
-    f.write("inline constexpr auto kNarrowBRowsF32 = std::to_array<NarrowRowF32>({\n")
+    s.write("});\n")
+    s.write("inline constexpr auto kNarrowBRowsF32 = std::to_array<NarrowRowF32>({\n")
     for scheme in range(NARROW_SCHEMES):
-        f.write(f"  {{{scheme}, {F32_NARROW_DEG}, {len(nbp)}, "
+        s.write(f"  {{{scheme}, {F32_NARROW_DEG}, {len(nbp)}, "
                 f"{len(nbp) * (F32_NARROW_DEG + 1)}, "
                 f"{fmt(narrow_b_f32['bounds'][scheme][0])}, "
                 f"{fmt(narrow_b_f32['bounds'][scheme][1])}}},\n")
-    f.write("});\n")
+    s.write("});\n")
+    return s
 
 
-def flat_f32_block_lines(f, flat_f32):
+def flat_f32_block_lines(flat_f32):
     """The float lane's uniform table as the header writes it.
 
     The double table's shape on the grid the lane derived for itself. Interval-
@@ -6285,6 +6322,7 @@ def flat_f32_block_lines(f, flat_f32):
     They are not a locator: the mapping an entry reads the table with is that
     entry's own decision and not something these lines settle.
     """
+    s = Sections()
     grid = flat_f32["grid"]
     degs = grid["degs"]
     cap = max(degs)
@@ -6295,47 +6333,46 @@ def flat_f32_block_lines(f, flat_f32):
     if [iv[2] for iv in per_order[0]] != list(degs):
         raise RuntimeError("the float uniform table's fits are not on the grid the "
                            "block writer is emitting: the degrees disagree")
-    f.write(f"\n// The float lane's uniform table: the lane's own derived grid over [0, kFlatHiF32),\n"
+    s.write(f"\n// The float lane's uniform table: the lane's own derived grid over [0, kFlatHiF32),\n"
             f"// width kFlatWidthF32 = {mp.nstr(grid['width'], 8)}, every order fitted at its interval's\n"
             f"// own degree (kFlatDegsF32), cap kFlatReadCapF32 = {cap}. Layout is the double table's,\n"
             "// interval-major: kFlatCoeffsF32[kFlatOffsetsF32[iv] + order * (kFlatDegsF32[iv] + 1)].\n")
-    f.write(f"inline constexpr int kFlatReadCapF32 = {cap};\n")
-    f.write(deg_assert("kFlatReadCapF32"))
-    f.write(f"inline constexpr int kFlatIntervalsF32 = {intervals};\n")
-    f.write(f"inline constexpr float kFlatWidthF32 = {fmtf(grid['width'])};\n")
-    f.write(f"inline constexpr float kFlatHiF32 = {fmtf(grid['hi'])};\n")
-    f.write("// One degree per interval: the smallest the cell law carries there, at\n"
+    s.write(f"inline constexpr int kFlatReadCapF32 = {cap};\n")
+    s.write(deg_assert("kFlatReadCapF32"))
+    s.write(f"inline constexpr int kFlatIntervalsF32 = {intervals};\n")
+    s.write(f"inline constexpr float kFlatWidthF32 = {fmtf(grid['width'])};\n")
+    s.write(f"inline constexpr float kFlatHiF32 = {fmtf(grid['hi'])};\n")
+    s.write("// One degree per interval: the smallest the cell law carries there, at\n"
             "// the read cap or below it.\n")
-    f.write("inline constexpr auto kFlatDegsF32 = std::to_array<int>({\n")
+    s.write("inline constexpr auto kFlatDegsF32 = std::to_array<int>({\n")
     for i in range(0, len(degs), 12):
-        f.write("  " + ", ".join(str(d) for d in degs[i:i + 12]) + ",\n")
-    f.write("});\n")
-    f.write("// Where each interval's block starts, and the end of the last one:\n")
-    f.write("inline constexpr auto kFlatOffsetsF32 = std::to_array<int>({\n")
+        s.write("  " + ", ".join(str(d) for d in degs[i:i + 12]) + ",\n")
+    s.write("});\n")
+    s.write("// Where each interval's block starts, and the end of the last one:\n")
+    s.write("inline constexpr auto kFlatOffsetsF32 = std::to_array<int>({\n")
     for i in range(0, len(offsets), 12):
-        f.write("  " + ", ".join(str(o) for o in offsets[i:i + 12]) + ",\n")
-    f.write("});\n")
-    for name, column in (("kFlatCoeffsF32", 3), ("kFlatMonoCoeffsF32", 4)):
+        s.write("  " + ", ".join(str(o) for o in offsets[i:i + 12]) + ",\n")
+    s.write("});\n")
+    for name, column, artifact in (
+            ("kFlatCoeffsF32", 3, "boys_coefficients_f32_uniform_cheb.hpp"),
+            ("kFlatMonoCoeffsF32", 4, "boys_coefficients_f32_uniform_mono.hpp")):
         values = [fmtf(c)
                   for iv in range(intervals)
                   for n in range(MAX_ORDER + 1)
                   for c in per_order[n][iv][column]]
-        f.write(f"inline constexpr auto {name} = std::to_array<float>({{\n")
-        for i in range(0, len(values), 6):
-            f.write("  " + ", ".join(values[i:i + 6]) + ",\n")
-        f.write("});\n")
-    f.write(f"static_assert(std::size(kFlatCoeffsF32) == {stored} &&\n"
+        s.array(artifact, DETAIL_F32, name, "float", values)
+    s.write(f"static_assert(std::size(kFlatCoeffsF32) == {stored} &&\n"
             f"                  std::size(kFlatMonoCoeffsF32) == {stored},\n"
             "              \"the float uniform table must hold every interval of every "
             "order\");\n")
-    f.write(f"static_assert(std::size(kFlatDegsF32) == kFlatIntervalsF32 &&\n"
+    s.write(f"static_assert(std::size(kFlatDegsF32) == kFlatIntervalsF32 &&\n"
             f"                  std::size(kFlatOffsetsF32) == kFlatIntervalsF32 + 1,\n"
             "              \"the float uniform table must carry one degree and one offset "
             "per interval\");\n")
-    f.write(f"static_assert(kFlatOffsetsF32[kFlatIntervalsF32] == {stored},\n"
+    s.write(f"static_assert(kFlatOffsetsF32[kFlatIntervalsF32] == {stored},\n"
             "              \"the offsets must reach the end of the float uniform "
             "table\");\n")
-    f.write("\n// The float uniform table's certification rows, in the double table's form: the\n"
+    s.write("\n// The float uniform table's certification rows, in the double table's form: the\n"
             "// bound each scheme delivers in each multiply-add route, worst over the whole\n"
             "// table, rounded up to a power of two so it bounds a sweep. Read in the lane's\n"
             "// own binary32 on the stored coefficients. deg is the cap; stored sums them.\n"
@@ -6344,9 +6381,10 @@ def flat_f32_block_lines(f, flat_f32):
             "inline constexpr auto kFlatRowsF32 = std::to_array<FlatRowF32>({\n")
     for scheme in range(NARROW_SCHEMES):
         bounds = flat_f32["bounds"][scheme]
-        f.write(f"  {{{scheme}, {cap}, {intervals}, {stored}, "
+        s.write(f"  {{{scheme}, {cap}, {intervals}, {stored}, "
                 f"{fmt(bounds[0])}, {fmt(bounds[1])}}},\n")
-    f.write("});\n")
+    s.write("});\n")
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -6700,6 +6738,7 @@ def flat_rat_f32_block_lines(frat):
     of their own rather than the table one stride, and the coefficients stored
     as binary32 literals beside the binary64 figures the row publishes.
     """
+    s = Sections()
     grid = frat["grid"]
     intervals = grid["intervals"]
     rows = sorted(frat["intervals"], key=lambda r: r["interval"])
@@ -6748,10 +6787,10 @@ def flat_rat_f32_block_lines(frat):
         for (_n, p, q) in row["pairs"]:
             values.extend(fmtf(float(c)) for c in p)
             values.extend(fmtf(float(c)) for c in q)
-    lines.append("inline constexpr auto kFlatRatCoeffsF32 = std::to_array<float>({")
-    for i in range(0, len(values), 6):
-        lines.append("  " + ", ".join(values[i:i + 6]) + ",")
-    lines.append("});")
+    s.master(*lines)
+    lines = []
+    s.array("boys_coefficients_f32_uniform_rat.hpp", DETAIL_F32, "kFlatRatCoeffsF32",
+            "float", values)
     lines.append(f"static_assert(std::size(kFlatRatCoeffsF32) == {stored},\n"
                  "              \"the float rational member must hold every order of "
                  "every interval\");")
@@ -6793,13 +6832,14 @@ def flat_rat_f32_block_lines(frat):
     # is accepted at, and that is what this line states.
     lines.append(f"inline constexpr double kFlatRatBarF32 = "
                  f"{fmt(float(FLAT_RAT_F32_ACCEPT))};")
+    s.master(*lines)
 
-    return lines
+    return s
 
 
-def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
-                        flat_rat_f32):
+def build_f32_sections(float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
+                       narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
+                       flat_rat_f32):
     """The float lane's tables: the shipped lane, the rational route, the narrow
     partition under both routes, the uniform table.
 
@@ -6813,7 +6853,9 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     not hold. The rational pieces were accepted below the bar rather than at
     it, so the bar survives a certifying sweep on a different grid.
     """
-    f.write("\nnamespace boys::detail::f32 {\n\n")
+    s = Sections()
+    s.write("\nnamespace boys::detail::f32 {\n\n")
+    s.master(EXTERN_PLACEHOLDER.format(DETAIL_F32))
     all_coeffs = []
     all_mono = []
     meta = []
@@ -6822,44 +6864,42 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             meta.append((n, a, b, deg, len(all_coeffs)))
             all_coeffs.extend(fmtf(c) for c in cs)
             all_mono.extend(fmtf(c) for c in ms)
-    f.write("inline constexpr auto kCoeffs = std::to_array<float>({\n")
-    for i in range(0, len(all_coeffs), 6):
-        f.write("  " + ", ".join(all_coeffs[i:i + 6]) + ",\n")
-    f.write("});\n\n")
+    s.array("boys_coefficients_f32_coarse_cheb.hpp", DETAIL_F32, "kCoeffs", "float",
+            all_coeffs)
+    s.master("")
     # The monomial form of the same fits, one stored coefficient per Chebyshev
     # coefficient: same pieces, same intervals, same degrees, same offsets, so
     # an evaluation scheme picks a table and not a shape. Converted from the
     # exact Chebyshev coefficients and rounded once, in the lane's own width.
-    f.write("// The same fits in monomial form, ascending, for the Horner\n"
-            "// evaluation scheme: same pieces, degrees and offsets as kCoeffs.\n")
-    f.write("inline constexpr auto kMonoCoeffs = std::to_array<float>({\n")
-    for i in range(0, len(all_mono), 6):
-        f.write("  " + ", ".join(all_mono[i:i + 6]) + ",\n")
-    f.write("});\n")
-    f.write("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),\n"
+    s.add("boys_coefficients_f32_coarse_mono.hpp",
+          "// The same fits in monomial form, ascending, for the Horner",
+          "// evaluation scheme: same pieces, degrees and offsets as kCoeffs.")
+    s.array("boys_coefficients_f32_coarse_mono.hpp", DETAIL_F32, "kMonoCoeffs", "float",
+            all_mono)
+    s.write("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),\n"
             "              \"the monomial table must parallel the Chebyshev table\");\n\n")
-    f.write("struct OrderPiece { float a, b; int deg; int offset; };\n")
-    f.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
+    s.write("struct OrderPiece { float a, b; int deg; int offset; };\n")
+    s.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
     for (n, a, b, deg, off) in meta:
-        f.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
-    f.write("});\n")
+        s.write(f"  {{{fmtf(mpf(a))}, {fmtf(mpf(b))}, {deg}, {off}}},  // F{n}\n")
+    s.write("});\n")
     starts = []
     index = 0
     for n in range(MAX_ORDER + 1):
         starts.append(index)
         index += len(float_orders[n])
     starts.append(index)
-    f.write("inline constexpr auto kPieceStart = std::to_array<int>({"
+    s.write("inline constexpr auto kPieceStart = std::to_array<int>({"
             + ", ".join(map(str, starts)) + "});\n")
-    f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
+    s.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
             "              \"piece-start table must cover kMaxOrder\");\n\n")
     deg, cs, ms = b_cheb_f32
-    f.write("inline constexpr auto kBcoeffs = std::to_array<float>({"
+    s.write("inline constexpr auto kBcoeffs = std::to_array<float>({"
             + ", ".join(fmtf(c) for c in cs) + "});\n")
-    f.write("inline constexpr auto kMonoBcoeffs = std::to_array<float>({"
+    s.write("inline constexpr auto kMonoBcoeffs = std::to_array<float>({"
             + ", ".join(fmtf(c) for c in ms) + "});\n")
-    f.write(f"inline constexpr int kBDeg = {deg};\n")
-    f.write(deg_assert("kBDeg"))
+    s.write(f"inline constexpr int kBDeg = {deg};\n")
+    s.write(deg_assert("kBDeg"))
 
     # The rational route. Its pieces are the family's own dyadic cover of each
     # order's interval rather than the Chebyshev table's breaks, because a
@@ -6872,45 +6912,46 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             pieces.append((n, pc))
             stored.extend(fmtf(v) for v in pc["p"])
             stored.extend(fmtf(v) for v in pc["q"])
-    f.write("\n// The float lane's rational route: a weighted minimax fit of each order's\n"
-            "// interval, evaluated as num / (1 + t*horner(q, t)) in the same mapped\n"
-            "// argument the Chebyshev piece uses, read in the lane's own precision. An\n"
-            "// offered alternative, not a replacement: the Chebyshev tables are the default.\n")
-    f.write("inline constexpr auto kRatACoeffs = std::to_array<float>({\n")
-    for i in range(0, len(stored), 6):
-        f.write("  " + ", ".join(stored[i:i + 6]) + ",\n")
-    f.write("});\n\n")
-    f.write("struct RatPiece { float a, b; int numdeg; int dendeg; int offset; };\n")
-    f.write("inline constexpr auto kRatAPieces = std::to_array<RatPiece>({\n")
+    s.add("boys_coefficients_f32_coarse_rat.hpp",
+          "",
+          "// The float lane's rational route: a weighted minimax fit of each order's",
+          "// interval, evaluated as num / (1 + t*horner(q, t)) in the same mapped",
+          "// argument the Chebyshev piece uses, read in the lane's own precision. An",
+          "// offered alternative, not a replacement: the Chebyshev tables are the default.")
+    s.array("boys_coefficients_f32_coarse_rat.hpp", DETAIL_F32, "kRatACoeffs", "float",
+            stored)
+    s.master("")
+    s.write("struct RatPiece { float a, b; int numdeg; int dendeg; int offset; };\n")
+    s.write("inline constexpr auto kRatAPieces = std::to_array<RatPiece>({\n")
     index = 0
     for (n, pc) in pieces:
-        f.write(f"  {{{fmtf(mpf(pc['a']))}, {fmtf(mpf(pc['b']))}, {pc['m']}, {pc['k']}, "
+        s.write(f"  {{{fmtf(mpf(pc['a']))}, {fmtf(mpf(pc['b']))}, {pc['m']}, {pc['k']}, "
                 f"{index}}},  // F{n}\n")
         index += pc["count"]
-    f.write("});\n")
+    s.write("});\n")
     rstart = []
     index = 0
     for n in range(MAX_ORDER + 1):
         rstart.append(index)
         index += len(rat_a_f32["orders"][n])
     rstart.append(index)
-    f.write("inline constexpr auto kRatAPieceStart = std::to_array<int>({"
+    s.write("inline constexpr auto kRatAPieceStart = std::to_array<int>({"
             + ", ".join(map(str, rstart)) + "});\n")
-    f.write("static_assert(std::size(kRatAPieceStart) == kMaxOrder + 2,\n"
+    s.write("static_assert(std::size(kRatAPieceStart) == kMaxOrder + 2,\n"
             "              \"rational piece-start table must cover kMaxOrder\");\n")
-    f.write("static_assert(std::size(kRatACoeffs) == "
+    s.write("static_assert(std::size(kRatACoeffs) == "
             + str(sum(pc["count"] for _, pc in pieces)) + ",\n"
             "              \"the rational tables must account for every stored coefficient\");\n")
 
-    f.write("\n// The rational region-B seed: p(t)/q(t) over the same interval and\n"
+    s.write("\n// The rational region-B seed: p(t)/q(t) over the same interval and\n"
             "// in the same mapped argument as kBcoeffs above. q is stored as\n"
             "// q_1..q_k with its constant term held at 1.\n")
-    f.write("inline constexpr auto kRatBnum = std::to_array<float>({"
+    s.write("inline constexpr auto kRatBnum = std::to_array<float>({"
             + ", ".join(fmtf(v) for v in rat_b_f32["p"]) + "});\n")
-    f.write(f"inline constexpr int kRatBnumDeg = {rat_b_f32['m']};\n")
-    f.write("inline constexpr auto kRatBden = std::to_array<float>({"
+    s.write(f"inline constexpr int kRatBnumDeg = {rat_b_f32['m']};\n")
+    s.write("inline constexpr auto kRatBden = std::to_array<float>({"
             + ", ".join(fmtf(v) for v in rat_b_f32["q"]) + "});\n")
-    f.write(f"inline constexpr int kRatBdenDeg = {rat_b_f32['k']};\n")
+    s.write(f"inline constexpr int kRatBdenDeg = {rat_b_f32['k']};\n")
 
     # The two routes as the generator measures them: the stored coefficients
     # each evaluates over region A, and the worst |F_n - fit| each reaches over
@@ -6923,7 +6964,7 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
     # kRegionAFitBar. Every figure here is the worse of the two multiply-add
     # routes, because a build runs one of them and a figure that covers one
     # understates the other.
-    f.write("\n// The two region-A routes as the generator measures them, over [0, kX0), in\n"
+    s.write("\n// The two region-A routes as the generator measures them, over [0, kX0), in\n"
             "// binary32 on the stored coefficients, the worse of both multiply-add routes:\n"
             "// the stored count each evaluates and the worst |F_n - fit| each reaches on each\n"
             "// order's intervals, at the acceptance grid and the gate's cells. Bar: kRegionAFitBar.\n"
@@ -6940,7 +6981,7 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             + fmt(rat_a_f32["delivered"]) + ";\n")
 
     # The region-B seeds, the two routes over one interval.
-    f.write(f"\n// The two region-B seeds as the generator measures them: the stored count each\n"
+    s.write(f"\n// The two region-B seeds as the generator measures them: the stored count each\n"
             f"// evaluates and the worst |F_0 - fit| each reaches over "
             f"[kX0, {region_b_top_name('float')}), on the\n"
             "// region-A points above, in the same arithmetic, the worse of both multiply-add\n"
@@ -6956,281 +6997,529 @@ def write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
             "inline constexpr double kRegionBFitRatDelivered = "
             + fmt(rat_b_f32["delivered"]) + ";\n")
 
-    narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32)
-    narrow_rat_f32_block_lines(f, narrow_rat_f32, narrow_b_f32)
+    s.combine(narrow_f32_block_lines(narrow_a_f32, narrow_b_f32))
+    s.combine(narrow_rat_f32_block_lines(narrow_rat_f32, narrow_b_f32))
 
     # The uniform table, beside every derived partition rather than in place of
     # any of them, as the double lane's is written beside its own.
-    flat_f32_block_lines(f, flat_f32)
+    s.combine(flat_f32_block_lines(flat_f32))
 
     # The rational member over that same grid, beside the Chebyshev member it
     # shares the grid with, as the double lane's is written beside its own.
-    for line in flat_rat_f32_block_lines(flat_rat_f32):
-        f.write(line + "\n")
+    s.combine(flat_rat_f32_block_lines(flat_rat_f32))
 
-    f.write("\n}  // namespace boys::detail::f32\n")
+    s.write("\n}  // namespace boys::detail::f32\n")
+    return s
 
 
-def write_header(path, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
-                 scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
-                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat, flat_rat_f32, scaled_far):
-    with open(path, "w", newline="\n") as f:
-        f.write("// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT. Not API: the tables the\n")
-        f.write("// entries are compiled from - split-Clenshaw Chebyshev fits of F_n(x): region A seeds\n")
-        f.write("// weighted against downward-recursion gain (definitive check tests/boys_test.cpp).\n")
-        f.write("/// \\cond\n")
-        f.write("#pragma once\n#include <array>\n#include <cstddef>\n\n")
-        f.write("namespace boys::detail {\n\n")
-        f.write(f"inline constexpr int kMaxOrder = {MAX_ORDER};\n")
-        f.write(f"inline constexpr double kX0 = {fmt(X0)};\n")
-        f.write(f"inline constexpr double kX1 = {fmt(X1)};\n\n")
+# ---------------------------------------------------------------------------
+# The split: one metadata master and one header per stored coefficient array
+# ---------------------------------------------------------------------------
+#
+# The master keeps every definition the fits and the static_asserts read that is
+# not a large coefficient array (scalars, layouts, piece and edge tables, the
+# small region-B seeds) and declares every stored array `extern` with its exact
+# extent, so a fit header parses against the master alone. Each group header
+# defines one stored array (the two narrow rational groups define their A and B
+# arrays, one fit's data) and specializes the marker the fit asserts. The
+# artifact list below is the order the record and --check use; it is the
+# mapping's G1-G21 order, master first.
 
-        all_coeffs = []
-        all_mono = []
-        meta = []
-        for n in range(MAX_ORDER + 1):
-            for (a, b, deg, cs, ms) in double_orders[n]:
-                meta.append((n, a, b, deg, len(all_coeffs)))
-                all_coeffs.extend(fmt(c) for c in cs)
-                all_mono.extend(fmt(c) for c in ms)
-        f.write("inline constexpr auto kCoeffs = std::to_array<double>({\n")
-        for i in range(0, len(all_coeffs), 6):
-            f.write("  " + ", ".join(all_coeffs[i:i + 6]) + ",\n")
-        f.write("});\n\n")
-        # The monomial form of the same fits, one stored coefficient per
-        # Chebyshev coefficient: same pieces, same intervals, same degrees,
-        # same offsets, so an evaluation scheme picks a table and not a shape.
-        # Converted from the exact Chebyshev coefficients and rounded once, so
-        # both tables are the correctly rounded doubles of one ideal
-        # polynomial; the Horner route adds no error of its own to the fit.
-        f.write("// The same fits in monomial form, ascending, for the Horner\n")
-        f.write("// evaluation scheme: same pieces, degrees and offsets as kCoeffs.\n")
-        f.write("inline constexpr auto kMonoCoeffs = std::to_array<double>({\n")
-        for i in range(0, len(all_mono), 6):
-            f.write("  " + ", ".join(all_mono[i:i + 6]) + ",\n")
-        f.write("});\n")
-        f.write("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),\n"
-                "              \"the monomial table must parallel the Chebyshev table\");\n\n")
-        f.write("struct OrderPiece { double a, b; int deg; int offset; };\n")
-        f.write("inline constexpr auto kPieces = std::to_array<OrderPiece>({\n")
-        for (n, a, b, deg, off) in meta:
-            f.write(f"  {{{fmt(mpf(a))}, {fmt(mpf(b))}, {deg}, {off}}},  // F{n}\n")
-        f.write("});\n")
-        starts = []
-        index = 0
-        for n in range(MAX_ORDER + 1):
-            starts.append(index)
-            index += len(double_orders[n])
+MASTER_ARTEFACT = "boys_coefficients.hpp"
+DETAIL = "boys::detail"
+DETAIL_F32 = "boys::detail::f32"
+
+# (file, marker tag, namespace, ((array, element type), ...)).
+DATA_GROUPS = (
+    ("boys_coefficients_d_uniform_mono.hpp", "UniformMonoGroup", DETAIL,
+     (("kFlatMonoCoeffs", "double"),)),
+    ("boys_coefficients_d_uniform_cheb.hpp", "UniformChebGroup", DETAIL,
+     (("kFlatCoeffs", "double"),)),
+    ("boys_coefficients_d_uniform_mono_transposed.hpp", "UniformMonoTransposedGroup", DETAIL,
+     (("kFlatTransposedMonoCoeffs", "double"),)),
+    ("boys_coefficients_d_uniform_cheb_transposed.hpp", "UniformChebTransposedGroup", DETAIL,
+     (("kFlatTransposedCoeffs", "double"),)),
+    ("boys_coefficients_d_uniform_rat.hpp", "UniformRatGroup", DETAIL,
+     (("kFlatRatCoeffs", "double"),)),
+    ("boys_coefficients_f32_uniform_mono.hpp", "F32UniformMonoGroup", DETAIL_F32,
+     (("kFlatMonoCoeffsF32", "float"),)),
+    ("boys_coefficients_f32_uniform_cheb.hpp", "F32UniformChebGroup", DETAIL_F32,
+     (("kFlatCoeffsF32", "float"),)),
+    ("boys_coefficients_f32_uniform_rat.hpp", "F32UniformRatGroup", DETAIL_F32,
+     (("kFlatRatCoeffsF32", "float"),)),
+    ("boys_coefficients_d_far.hpp", "ScaledFarGroup", DETAIL,
+     (("kScaledFarCoeffs", "double"),)),
+    ("boys_coefficients_d_narrow_cheb.hpp", "NarrowChebGroup", DETAIL,
+     (("kNarrowACoeffs", "double"),)),
+    ("boys_coefficients_d_narrow_mono.hpp", "NarrowMonoGroup", DETAIL,
+     (("kNarrowAMonoCoeffs", "double"),)),
+    ("boys_coefficients_d_narrow_rat.hpp", "NarrowRatGroup", DETAIL,
+     (("kNarrowRatACoeffs", "double"), ("kNarrowRatBCoeffs", "double"))),
+    ("boys_coefficients_f32_narrow_cheb.hpp", "F32NarrowChebGroup", DETAIL_F32,
+     (("kNarrowACoeffsF32", "float"),)),
+    ("boys_coefficients_f32_narrow_mono.hpp", "F32NarrowMonoGroup", DETAIL_F32,
+     (("kNarrowAMonoCoeffsF32", "float"),)),
+    ("boys_coefficients_f32_narrow_rat.hpp", "F32NarrowRatGroup", DETAIL_F32,
+     (("kNarrowRatACoeffsF32", "float"), ("kNarrowRatBCoeffsF32", "float"))),
+    ("boys_coefficients_d_coarse_cheb.hpp", "CoarseChebGroup", DETAIL,
+     (("kCoeffs", "double"),)),
+    ("boys_coefficients_d_coarse_mono.hpp", "CoarseMonoGroup", DETAIL,
+     (("kMonoCoeffs", "double"),)),
+    ("boys_coefficients_f32_coarse_cheb.hpp", "F32CoarseChebGroup", DETAIL_F32,
+     (("kCoeffs", "float"),)),
+    ("boys_coefficients_f32_coarse_mono.hpp", "F32CoarseMonoGroup", DETAIL_F32,
+     (("kMonoCoeffs", "float"),)),
+    ("boys_coefficients_f32_coarse_rat.hpp", "F32CoarseRatGroup", DETAIL_F32,
+     (("kRatACoeffs", "float"),)),
+    ("boys_coefficients_d_coarse_rat.hpp", "CoarseRatGroup", DETAIL,
+     (("kRatACoeffs", "double"),)),
+)
+
+ARTEFACT_FILENAMES = (MASTER_ARTEFACT,) + tuple(group[0] for group in DATA_GROUPS)
+
+BANNER = (
+    "// Generated by tools/gen_boys_coefficients.py - DO NOT EDIT. Not API: the tables the\n"
+    "// entries are compiled from - split-Clenshaw Chebyshev fits of F_n(x): region A seeds\n"
+    "// weighted against downward-recursion gain (definitive check tests/boys_test.cpp).\n"
+    "/// \\cond\n"
+)
+
+# Extents and group tags are only known once the lines are built, so the master
+# carries these placeholders where the declarations belong and the renderer
+# expands them. A placeholder is a line of its own and never reaches a file.
+EXTERN_PLACEHOLDER = "@@externs:{}@@"
+GROUPS_PLACEHOLDER = "@@groups@@"
+
+
+class Sections:
+    """Emitted lines routed by artifact, in the order the generator writes them.
+
+    One builder returns one Sections; `combine` concatenates in write order, and
+    `lines` reproduces the flat block a scoped run (`--narrow-only`, ...) writes.
+    The extents a group header declares are recorded when its array is routed,
+    so the master's extern declarations carry the length the array was emitted
+    with rather than a second copy of it.
+    """
+
+    def __init__(self):
+        self.entries = []      # (artifact, line), in emission order
+        self.extents = {}      # (namespace, array) -> (ctype, length)
+
+    def add(self, artifact, *lines):
+        for line in lines:
+            self.entries.append((artifact, line))
+
+    def master(self, *lines):
+        self.add(MASTER_ARTEFACT, *lines)
+
+    def write(self, *lines):
+        """A block builder's metadata, written as the builder spelled it.
+
+        The block builders emit text in chunks, so each chunk is split into the
+        lines the renderer joins: a chunk's own newlines survive and the join
+        supplies the one after it. The stored coefficient arrays never come
+        through here; each is routed with `array` to the group header that
+        defines it.
+        """
+        for chunk in lines:
+            self.add(MASTER_ARTEFACT, *(chunk.split("\n")[:-1]
+                                        if chunk.endswith("\n") else chunk.split("\n")))
+
+    def array(self, artifact, namespace, name, ctype, values):
+        """One stored coefficient array, with its explicit type and extent.
+
+        An `auto` definition cannot follow the master's `extern` declaration
+        (the placeholder type must be on the first declaration), so the extent
+        the emitted values give is written into the type.
+        """
+        key = (namespace, name)
+        extent = (ctype, len(values))
+        if key in self.extents and self.extents[key] != extent:
+            raise RuntimeError(f"{namespace}::{name} is emitted twice with different "
+                              f"extents: {self.extents[key]} against {extent}")
+        self.extents[key] = extent
+        self.add(artifact,
+                 f"inline constexpr std::array<{ctype}, {len(values)}> {name} = "
+                 f"std::to_array<{ctype}>({{")
+        for i in range(0, len(values), 6):
+            self.add(artifact, "  " + ", ".join(values[i:i + 6]) + ",")
+        self.add(artifact, "});")
+
+    def combine(self, other):
+        self.entries.extend(other.entries)
+        for key, extent in other.extents.items():
+            if key in self.extents and self.extents[key] != extent:
+                raise RuntimeError(f"{key[0]}::{key[1]} is emitted twice with different "
+                                   f"extents: {self.extents[key]} against {extent}")
+            self.extents[key] = extent
+        return self
+
+    def lines(self):
+        return [line for _artifact, line in self.entries]
+
+
+def artefact_paths(header):
+    """The master's path and its siblings, in DATA_GROUPS order."""
+    directory = os.path.dirname(header)
+    return tuple([header] + [os.path.join(directory, name) for name in ARTEFACT_FILENAMES[1:]])
+
+
+def extern_block(sections, namespace):
+    """The master's `extern` declarations for one namespace's stored arrays."""
+    lines = ["// The stored coefficient arrays, declared with the extent each is defined",
+             "// at: a fit body parses against this master alone, and the header that",
+             "// defines an array is named beside its declaration."]
+    for filename, _tag, group_namespace, arrays in DATA_GROUPS:
+        if group_namespace != namespace:
+            continue
+        for name, ctype in arrays:
+            try:
+                declared_ctype, length = sections.extents[(namespace, name)]
+            except KeyError:
+                raise RuntimeError(f"no definition was emitted for {namespace}::{name}")
+            if declared_ctype != ctype:
+                raise RuntimeError(f"{namespace}::{name} was emitted as {declared_ctype}, "
+                                   f"not {ctype}")
+            lines.append(f"extern const std::array<{ctype}, {length}> {name};"
+                         f"  // defined in {filename}")
+    lines.append("")
+    return lines
+
+
+def group_marker_block():
+    """The marker primary template and the group tag types, in the master."""
+    lines = ["// The group marker: false here, specialized true by the group header that",
+             "// defines the array, so a fit's static_assert can name the header to include.",
+             "template <class Group> inline constexpr bool kCoefficientGroupPresent = false;"]
+    lines += [f"struct {tag} {{}};" for _file, tag, _ns, _arrays in DATA_GROUPS]
+    lines.append("")
+    return lines
+
+
+def render_master(sections):
+    """The metadata master: prologue, externs, markers, metadata, asserts."""
+    body = []
+    for artifact, line in sections.entries:
+        if artifact != MASTER_ARTEFACT:
+            continue
+        if line.startswith("@@externs:") and line.endswith("@@"):
+            body.extend(extern_block(sections, line[len("@@externs:"):-2]))
+        elif line == GROUPS_PLACEHOLDER:
+            body.extend(group_marker_block())
+        else:
+            body.append(line)
+    return (BANNER
+            + "#pragma once\n#include <array>\n#include <cstddef>\n\n"
+            + "namespace boys::detail {\n\n"
+            + "\n".join(body) + "\n"
+            + "/// \\endcond\n")
+
+
+def render_group(sections, filename, tag, namespace, arrays):
+    """One group header: its arrays, then the marker specialization."""
+    body = [line for artifact, line in sections.entries if artifact == filename]
+    if not body:
+        raise RuntimeError(f"no lines were emitted for {filename}")
+    for name, _ctype in arrays:
+        if not any(line.startswith(f"inline constexpr std::array<") and
+                   f" {name} = " in line for line in body):
+            raise RuntimeError(f"{filename} does not define {name}")
+    text = (BANNER
+            + "#pragma once\n#include <array>\n#include <cstddef>\n"
+            + '#include "boys/boys_coefficients.hpp"\n\n'
+            + f"namespace {namespace} {{\n\n"
+            + "\n".join(body) + "\n"
+            + f"\n}}  // namespace {namespace}\n\n"
+            + "namespace boys::detail {\n\n"
+            + f"template <>\ninline constexpr bool kCoefficientGroupPresent<{tag}> = true;\n"
+            + "\n}  // namespace boys::detail\n"
+            + "/// \\endcond\n")
+    return text
+
+
+def render_artefacts(sections):
+    """Every artifact's text, by path suffix, in ARTEFACT_FILENAMES order."""
+    text = {MASTER_ARTEFACT: render_master(sections)}
+    for filename, tag, namespace, arrays in DATA_GROUPS:
+        text[filename] = render_group(sections, filename, tag, namespace, arrays)
+    return text
+
+
+def write_artefacts(header, sections):
+    """Write, format and return every artifact the sections routed."""
+    os.makedirs(os.path.dirname(header) or ".", exist_ok=True)
+    rendered = render_artefacts(sections)
+    paths = artefact_paths(header)
+    for filename, path in zip(ARTEFACT_FILENAMES, paths):
+        with open(path, "w", newline="\n") as f:
+            f.write(rendered[filename])
+        format_header(path)
+    return paths
+
+
+def build_sections(double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
+                   scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
+                   narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
+                   flat_f32, flat_rat, flat_rat_f32, scaled_far):
+    """Every emitted line, routed to the artifact that owns it."""
+    s = Sections()
+    s.master(f"inline constexpr int kMaxOrder = {MAX_ORDER};")
+    s.master(f"inline constexpr double kX0 = {fmt(X0)};")
+    s.master(f"inline constexpr double kX1 = {fmt(X1)};")
+    s.master("")
+    s.master(EXTERN_PLACEHOLDER.format(DETAIL))
+    s.master(GROUPS_PLACEHOLDER)
+    return _build_sections_body(s, double_orders, float_orders, b_cheb, b_cheb_f32,
+                                ext_cheb, scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32,
+                                narrow, narrow_a, narrow_rat_a, narrow_rat_b, narrow_a_f32,
+                                narrow_b_f32, flat, flat_f32, flat_rat, flat_rat_f32, scaled_far)
+
+
+def _build_sections_body(s, double_orders, float_orders, b_cheb, b_cheb_f32, ext_cheb,
+                         scheme_rows, rat_b, rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
+                         narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
+                         flat_f32, flat_rat, flat_rat_f32, scaled_far):
+    all_coeffs = []
+    all_mono = []
+    meta = []
+    for n in range(MAX_ORDER + 1):
+        for (a, b, deg, cs, ms) in double_orders[n]:
+            meta.append((n, a, b, deg, len(all_coeffs)))
+            all_coeffs.extend(fmt(c) for c in cs)
+            all_mono.extend(fmt(c) for c in ms)
+    s.array("boys_coefficients_d_coarse_cheb.hpp", DETAIL, "kCoeffs", "double", all_coeffs)
+    s.master("")
+    # The monomial form of the same fits, one stored coefficient per
+    # Chebyshev coefficient: same pieces, same intervals, same degrees,
+    # same offsets, so an evaluation scheme picks a table and not a shape.
+    # Converted from the exact Chebyshev coefficients and rounded once, so
+    # both tables are the correctly rounded doubles of one ideal
+    # polynomial; the Horner route adds no error of its own to the fit.
+    s.add("boys_coefficients_d_coarse_mono.hpp",
+          "// The same fits in monomial form, ascending, for the Horner",
+          "// evaluation scheme: same pieces, degrees and offsets as kCoeffs.")
+    s.array("boys_coefficients_d_coarse_mono.hpp", DETAIL, "kMonoCoeffs", "double", all_mono)
+    s.master("static_assert(std::size(kMonoCoeffs) == std::size(kCoeffs),",
+             "              \"the monomial table must parallel the Chebyshev table\");")
+    s.master("")
+    s.master("struct OrderPiece { double a, b; int deg; int offset; };")
+    s.master("inline constexpr auto kPieces = std::to_array<OrderPiece>({")
+    for (n, a, b, deg, off) in meta:
+        s.master(f"  {{{fmt(mpf(a))}, {fmt(mpf(b))}, {deg}, {off}}},  // F{n}")
+    s.master("});")
+    starts = []
+    index = 0
+    for n in range(MAX_ORDER + 1):
         starts.append(index)
-        f.write("inline constexpr auto kPieceStart = std::to_array<int>({"
-                + ", ".join(map(str, starts)) + "});\n")
-        f.write("static_assert(std::size(kPieceStart) == kMaxOrder + 2,\n"
-                "              \"piece-start table must cover kMaxOrder\");\n\n")
+        index += len(double_orders[n])
+    starts.append(index)
+    s.master("inline constexpr auto kPieceStart = std::to_array<int>({"
+             + ", ".join(map(str, starts)) + "});")
+    s.master("static_assert(std::size(kPieceStart) == kMaxOrder + 2,",
+             "              \"piece-start table must cover kMaxOrder\");")
+    s.master("")
 
-        # The region-A rational route: one weighted minimax fit per shipped
-        # piece, over the piece's own interval and in the piece's own mapped
-        # argument, so the two routes are the same partition of the same region
-        # fitted two ways. Each piece stores its numerator's coefficients and
-        # then its denominator's q_1..q_k with q_0 held at 1, at
-        # kRatAOffset[piece]; the degree columns say how many of each.
-        rat_pieces = rat_a["pieces"]
-        assert len(rat_pieces) == len(meta), "rational region-A piece count"
-        a_coeffs = []
-        a_offset = []
-        a_numdeg = []
-        a_dendeg = []
-        for fit in rat_pieces:
-            a_offset.append(len(a_coeffs))
-            a_numdeg.append(fit["m"])
-            a_dendeg.append(fit["k"])
-            a_coeffs.extend(fmt(float(c)) for c in fit["p"])
-            a_coeffs.extend(fmt(float(c)) for c in fit["q"])
-        f.write("// The region-A rational route: a weighted minimax fit of each shipped piece,\n"
-                "// evaluated as num / (1 + t*horner(q, t)) in the same mapped argument the\n"
-                "// Chebyshev piece uses. An offered alternative, not a replacement: the\n"
-                "// Chebyshev tables above are the default route and are unchanged.\n")
-        f.write("inline constexpr auto kRatACoeffs = std::to_array<double>({\n")
-        for i in range(0, len(a_coeffs), 6):
-            f.write("  " + ", ".join(a_coeffs[i:i + 6]) + ",\n")
-        f.write("});\n")
-        f.write("inline constexpr auto kRatAOffset = std::to_array<int>({\n")
-        for i in range(0, len(a_offset), 12):
-            f.write("  " + ", ".join(str(v) for v in a_offset[i:i + 12]) + ",\n")
-        f.write("});\n")
-        f.write("inline constexpr auto kRatANumDeg = std::to_array<int>({\n")
-        for i in range(0, len(a_numdeg), 12):
-            f.write("  " + ", ".join(str(v) for v in a_numdeg[i:i + 12]) + ",\n")
-        f.write("});\n")
-        f.write("inline constexpr auto kRatADenDeg = std::to_array<int>({\n")
-        for i in range(0, len(a_dendeg), 12):
-            f.write("  " + ", ".join(str(v) for v in a_dendeg[i:i + 12]) + ",\n")
-        f.write("});\n")
-        f.write("static_assert(std::size(kRatAOffset) == std::size(kPieces)\n"
-                "                  && std::size(kRatANumDeg) == std::size(kPieces)\n"
-                "                  && std::size(kRatADenDeg) == std::size(kPieces),\n"
-                "              \"the rational region-A route must cover every piece\");\n\n")
-        f.write("// Where the route's selector takes over in region A: the lowest of the per-order\n"
-                "// ends, the boundary the order is read from the band seed above and from its own\n"
-                "// fit below. The tables still cover every piece from zero; naming the route\n"
-                "// changes a value only from here, the domain the report claims.\n")
-        f.write(f"inline constexpr double kRatARouteLo = {fmt(rat_a['lo'])};\n")
-        f.write(f"inline constexpr double kRatARouteHi = {fmt(rat_a['hi'])};\n\n")
-        deg, cs, mono = b_cheb
-        f.write("inline constexpr auto kBcoeffs = std::to_array<double>({"
-                + ", ".join(fmt(c) for c in cs) + "});\n")
-        f.write("inline constexpr auto kMonoBcoeffs = std::to_array<double>({"
-                + ", ".join(fmt(c) for c in mono) + "});\n")
-        f.write(f"inline constexpr int kBDeg = {deg};\n")
-        f.write(deg_assert("kBDeg"))
-        f.write("\n")
-        # The narrow partitions of the same regions, beside the shipped fits
-        # rather than in place of them. See narrow_block_lines.
-        for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b):
-            f.write(line + "\n")
-        f.write("\n")
-        # The uniform table, beside every derived partition rather than in
-        # place of any of them. See flat_block_lines.
-        for line in flat_block_lines(flat):
-            f.write(line + "\n")
-        f.write("\n")
-        # The rational family over that same grid, beside the Chebyshev member
-        # rather than in place of it. See flat_rat_block_lines.
-        for line in flat_rat_block_lines(flat_rat):
-            f.write(line + "\n")
-        f.write("\n")
-        # The scaled far table, beside the recurrence that serves the region
-        # rather than in place of it. See scaled_far_block_lines.
-        for line in scaled_far_block_lines(scaled_far):
-            f.write(line + "\n")
-        f.write("\n")
-        # The corrected seed, the third representation of the same region: wholly
-        # derived here, so nothing is passed in for it. See seed_correction_coeffs.
-        for line in seed_correction_block_lines(seed_correction_join(), SEED_CORRECTION_DEG,
-                                                seed_correction_coeffs()):
-            f.write(line + "\n")
-        f.write("\n")
-        ext_deg, ext_cs, ext_mono = ext_cheb
-        f.write("// The extended band: an F0 fit on [kExtendedBX0, kX0) evaluated by the same\n")
-        f.write("// split Clenshaw; the upward recursion from it is certified per kmax tier, so\n")
-        f.write("// an order n takes the extended seed exactly when x >= kTierThresholds[n] (the\n")
-        f.write("// values the generator certifies, rounded up to the next double).\n")
-        f.write(f"inline constexpr double kExtendedBX0 = {fmt(XNEW0)};\n")
-        f.write("inline constexpr auto kExtendedBcoeffs = std::to_array<double>({\n")
-        for i in range(0, len(ext_cs), 6):
-            f.write("  " + ", ".join(fmt(c) for c in ext_cs[i:i + 6]) + ",\n")
-        f.write("});\n")
-        f.write("inline constexpr auto kMonoExtendedBcoeffs = std::to_array<double>({\n")
-        for i in range(0, len(ext_mono), 6):
-            f.write("  " + ", ".join(fmt(c) for c in ext_mono[i:i + 6]) + ",\n")
-        f.write("});\n")
-        f.write(f"inline constexpr int kExtendedBDeg = {ext_deg};\n")
-        f.write(deg_assert("kExtendedBDeg"))
-        # The per-order dispatch threshold table: threshold[n] is the
-        # certified boundary (rounded up to the next double) of the smallest
-        # kmax row that covers the order n (the rows 4/8/16/32), so the
-        # dispatch is a pure function of (n, x): order n takes the extended
-        # seed exactly when x >= kTierThresholds[n].
-        f.write("inline constexpr auto kTierThresholds = std::to_array<double>({\n")
-        thresholds = []
-        for n in range(MAX_ORDER + 1):
-            tier = 0 if n <= 4 else (1 if n <= 8 else (2 if n <= 16 else 3))
-            thresholds.append(fmt(float(TIER_BOUNDARIES_CERTIFIED[tier])))
-        for i in range(0, len(thresholds), 6):
-            f.write("  " + ", ".join(thresholds[i:i + 6]) + ",\n")
-        f.write("});\n")
-        f.write("static_assert(kRatARouteLo == kTierThresholds[0],\n"
-                "              \"the rational region-A route takes over at the lowest \"\n"
-                "              \"per-order end of region A\");\n")
-        f.write("\n")
+    # The region-A rational route: one weighted minimax fit per shipped
+    # piece, over the piece's own interval and in the piece's own mapped
+    # argument, so the two routes are the same partition of the same region
+    # fitted two ways. Each piece stores its numerator's coefficients and
+    # then its denominator's q_1..q_k with q_0 held at 1, at
+    # kRatAOffset[piece]; the degree columns say how many of each.
+    rat_pieces = rat_a["pieces"]
+    assert len(rat_pieces) == len(meta), "rational region-A piece count"
+    a_coeffs = []
+    a_offset = []
+    a_numdeg = []
+    a_dendeg = []
+    for fit in rat_pieces:
+        a_offset.append(len(a_coeffs))
+        a_numdeg.append(fit["m"])
+        a_dendeg.append(fit["k"])
+        a_coeffs.extend(fmt(float(c)) for c in fit["p"])
+        a_coeffs.extend(fmt(float(c)) for c in fit["q"])
+    s.add("boys_coefficients_d_coarse_rat.hpp",
+          "// The region-A rational route: a weighted minimax fit of each shipped piece,",
+          "// evaluated as num / (1 + t*horner(q, t)) in the same mapped argument the",
+          "// Chebyshev piece uses. An offered alternative, not a replacement: the",
+          "// Chebyshev tables above are the default route and are unchanged.")
+    s.array("boys_coefficients_d_coarse_rat.hpp", DETAIL, "kRatACoeffs", "double", a_coeffs)
+    s.master("inline constexpr auto kRatAOffset = std::to_array<int>({")
+    for i in range(0, len(a_offset), 12):
+        s.master("  " + ", ".join(str(v) for v in a_offset[i:i + 12]) + ",")
+    s.master("});")
+    s.master("inline constexpr auto kRatANumDeg = std::to_array<int>({")
+    for i in range(0, len(a_numdeg), 12):
+        s.master("  " + ", ".join(str(v) for v in a_numdeg[i:i + 12]) + ",")
+    s.master("});")
+    s.master("inline constexpr auto kRatADenDeg = std::to_array<int>({")
+    for i in range(0, len(a_dendeg), 12):
+        s.master("  " + ", ".join(str(v) for v in a_dendeg[i:i + 12]) + ",")
+    s.master("});")
+    s.master("static_assert(std::size(kRatAOffset) == std::size(kPieces)",
+             "                  && std::size(kRatANumDeg) == std::size(kPieces)",
+             "                  && std::size(kRatADenDeg) == std::size(kPieces),",
+             "              \"the rational region-A route must cover every piece\");")
+    s.master("")
+    s.master("// Where the route's selector takes over in region A: the lowest of the per-order",
+             "// ends, the boundary the order is read from the band seed above and from its own",
+             "// fit below. The tables still cover every piece from zero; naming the route",
+             "// changes a value only from here, the domain the report claims.")
+    s.master(f"inline constexpr double kRatARouteLo = {fmt(rat_a['lo'])};")
+    s.master(f"inline constexpr double kRatARouteHi = {fmt(rat_a['hi'])};")
+    s.master("")
+    deg, cs, mono = b_cheb
+    s.master("inline constexpr auto kBcoeffs = std::to_array<double>({"
+             + ", ".join(fmt(c) for c in cs) + "});")
+    s.master("inline constexpr auto kMonoBcoeffs = std::to_array<double>({"
+             + ", ".join(fmt(c) for c in mono) + "});")
+    s.master(f"inline constexpr int kBDeg = {deg};")
+    s.master(deg_assert("kBDeg"))
+    s.master("")
+    # The narrow partitions of the same regions, beside the shipped fits
+    # rather than in place of them. See narrow_block_lines.
+    s.combine(narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b))
+    s.master("")
+    # The uniform table, beside every derived partition rather than in
+    # place of any of them. See flat_block_lines.
+    s.combine(flat_block_lines(flat))
+    s.master("")
+    # The rational family over that same grid, beside the Chebyshev member
+    # rather than in place of it. See flat_rat_block_lines.
+    s.combine(flat_rat_block_lines(flat_rat))
+    s.master("")
+    # The scaled far table, beside the recurrence that serves the region
+    # rather than in place of it. See scaled_far_block_lines.
+    s.combine(scaled_far_block_lines(scaled_far))
+    s.master("")
+    # The corrected seed, the third representation of the same region: wholly
+    # derived here, so nothing is passed in for it. See seed_correction_coeffs.
+    for line in seed_correction_block_lines(seed_correction_join(), SEED_CORRECTION_DEG,
+                                            seed_correction_coeffs()):
+        s.master(line)
+    s.master("")
+    ext_deg, ext_cs, ext_mono = ext_cheb
+    s.master("// The extended band: an F0 fit on [kExtendedBX0, kX0) evaluated by the same",
+             "// split Clenshaw; the upward recursion from it is certified per kmax tier, so",
+             "// an order n takes the extended seed exactly when x >= kTierThresholds[n] (the",
+             "// values the generator certifies, rounded up to the next double).")
+    s.master(f"inline constexpr double kExtendedBX0 = {fmt(XNEW0)};")
+    s.master("inline constexpr auto kExtendedBcoeffs = std::to_array<double>({")
+    for i in range(0, len(ext_cs), 6):
+        s.master("  " + ", ".join(fmt(c) for c in ext_cs[i:i + 6]) + ",")
+    s.master("});")
+    s.master("inline constexpr auto kMonoExtendedBcoeffs = std::to_array<double>({")
+    for i in range(0, len(ext_mono), 6):
+        s.master("  " + ", ".join(fmt(c) for c in ext_mono[i:i + 6]) + ",")
+    s.master("});")
+    s.master(f"inline constexpr int kExtendedBDeg = {ext_deg};")
+    s.master(deg_assert("kExtendedBDeg"))
+    # The per-order dispatch threshold table: threshold[n] is the
+    # certified boundary (rounded up to the next double) of the smallest
+    # kmax row that covers the order n (the rows 4/8/16/32), so the
+    # dispatch is a pure function of (n, x): order n takes the extended
+    # seed exactly when x >= kTierThresholds[n].
+    s.master("inline constexpr auto kTierThresholds = std::to_array<double>({")
+    thresholds = []
+    for n in range(MAX_ORDER + 1):
+        tier = 0 if n <= 4 else (1 if n <= 8 else (2 if n <= 16 else 3))
+        thresholds.append(fmt(float(TIER_BOUNDARIES_CERTIFIED[tier])))
+    for i in range(0, len(thresholds), 6):
+        s.master("  " + ", ".join(thresholds[i:i + 6]) + ",")
+    s.master("});")
+    s.master("static_assert(kRatARouteLo == kTierThresholds[0],",
+             "              \"the rational region-A route takes over at the lowest \"",
+             "              \"per-order end of region A\");")
+    s.master("")
 
-        # The rational region-B route, beside the Chebyshev one it is an
-        # alternative to rather than a replacement for: same interval, same
-        # mapped argument, both held to the same bar.
-        p, q = rat_b["p"], rat_b["q"]
-        f.write("// The rational minimax region-B seed: p(t)/q(t) over the same\n")
-        f.write("// interval and in the same mapped argument t as kBcoeffs above.\n")
-        f.write("// q is stored as q_1..q_k with its constant term held at 1.\n")
-        f.write("inline constexpr auto kRatBnum = std::to_array<double>({\n")
-        for i in range(0, len(p), 3):
-            f.write("  " + ", ".join(fmt(c) for c in p[i:i + 3]) + ",\n")
-        f.write("});\n")
-        f.write(f"inline constexpr int kRatBnumDeg = {rat_b['m']};\n")
-        f.write("inline constexpr auto kRatBden = std::to_array<double>({\n")
-        for i in range(0, len(q), 3):
-            f.write("  " + ", ".join(fmt(c) for c in q[i:i + 3]) + ",\n")
-        f.write("});\n")
-        f.write(f"inline constexpr int kRatBdenDeg = {rat_b['k']};\n")
-        f.write("\n")
-        # The two routes as the generator measures them: the stored count each
-        # evaluates and the worst |F0 - fit| each reaches over the band's own
-        # top, in the double arithmetic the kernel evaluates them in, against the same
-        # high-precision reference the fits themselves are validated against.
-        # A swept maximum on a finite grid, not a bound: the bar both are
-        # certified against is kRegionBFitBar, and both sit under it.
-        f.write("// The two region-B routes as the generator measures them: the stored count\n")
-        f.write(f"// each evaluates and the worst |F0 - fit| each reaches over "
-                f"[kX0, {region_b_top_name()}], in the\n")
-        f.write("// kernel's double arithmetic against the reference. A swept maximum, not a bound:\n")
-        f.write("// the bar is the promise 1e-13 F_0(x), whose band maximum is the value below.\n")
-        f.write(f"inline constexpr double kRegionBFitBar = {fmt(float(rat_b['bar']))};\n")
-        f.write(f"inline constexpr int kRegionBFitChebStored = {rat_b['cheb_stored']};\n")
-        f.write("inline constexpr double kRegionBFitChebDelivered = "
-                f"{fmt(float(rat_b['cheb_delivered']))};\n")
-        f.write(f"inline constexpr int kRegionBFitRatStored = {rat_b['stored']};\n")
-        f.write("inline constexpr double kRegionBFitRatDelivered = "
-                f"{fmt(float(rat_b['delivered']))};\n")
-        f.write("\n")
-        # The region-A route's two columns, measured the same way over the same
-        # domain: every shipped piece for the Chebyshev route, every route piece
-        # for the rational, against the same reference and in the same
-        # arithmetic, so the counts and the errors are one comparison. The
-        # rational route's selector takes over at kRatARouteLo - the lowest of
-        # region A's per-order ends - and per order from that order's own end,
-        # which is where the lane stops reading the order from its own fit and
-        # documents the band's 3e-14 rather than the per-order 1e-15. Below such
-        # an end the lane is documented at 1e-15, which these pieces do not
-        # hold. The rational pieces were accepted below the bar rather than at
-        # it, so the bar survives a certifying sweep on a different grid.
-        f.write("// The two region-A routes as the generator measures them, over the domain the\n"
-                "// two tables cover - every order's pieces, from zero to kX0 - swept on a\n"
-                "// stride-1 grid of each piece's interval, in the kernel's double arithmetic\n"
-                "// against the reference. A swept maximum, not a bound: the bar is kRegionAFitBar.\n")
-        f.write(f"inline constexpr double kRegionAFitBar = {fmt(float(rat_a['bound']))};\n")
-        f.write(f"inline constexpr int kRegionAFitChebStored = {rat_a['cheb_stored']};\n")
-        f.write("inline constexpr double kRegionAFitChebDelivered = "
-                f"{fmt(float(rat_a['cheb_delivered']))};\n")
-        f.write(f"inline constexpr int kRegionAFitRatStored = {rat_a['stored']};\n")
-        f.write("inline constexpr double kRegionAFitRatDelivered = "
-                f"{fmt(float(rat_a['delivered']))};\n")
-        # The scheme report: one row per (evaluation scheme, stored fit), the
-        # degree and stored count that fit uses, and the bound each scheme was
-        # MEASURED to deliver on it in each multiply-add route. The rows are
-        # data: a scheme, a fit, a route or an end-to-end sweep added later is
-        # another row here and nothing else.
-        #
-        # The domain is the fit's own interval (region A: every piece of every
-        # order; region B: [kX0, the band's top); the extended band: [kExtendedBX0, kX0)).
-        # Region C has no stored fit and no row.
-        f.write("// The evaluation schemes, one row per (scheme, stored fit): the degree and stored\n")
-        f.write("// count the fit uses, and each scheme's bound against the 60-digit reference, per\n")
-        f.write("// multiply-add route. scheme 0 = split Clenshaw, 1 = Horner; lane 0 = kCoeffs,\n")
-        f.write("// 1 = kBcoeffs, 2 = kExtendedBcoeffs: the worst sweep, rounded up to a power of two.\n")
-        f.write("struct SchemeRow { int scheme, lane, region, deg, stored;\n")
-        f.write("                   double fused, separate; };\n")
-        f.write("inline constexpr auto kSchemeRows = std::to_array<SchemeRow>({\n")
-        for (scheme, lane, region, deg, stored, _fm, _sm, fb, sb) in scheme_rows:
-            f.write(f"  {{{scheme}, {lane}, {region}, {deg}, {stored}, {fmt(fb)}, "
-                    f"{fmt(sb)}}},\n")
-        f.write("});\n")
-        f.write("\n}  // namespace boys::detail\n")
+    # The rational region-B route, beside the Chebyshev one it is an
+    # alternative to rather than a replacement for: same interval, same
+    # mapped argument, both held to the same bar.
+    p, q = rat_b["p"], rat_b["q"]
+    s.master("// The rational minimax region-B seed: p(t)/q(t) over the same",
+             "// interval and in the same mapped argument t as kBcoeffs above.",
+             "// q is stored as q_1..q_k with its constant term held at 1.")
+    s.master("inline constexpr auto kRatBnum = std::to_array<double>({")
+    for i in range(0, len(p), 3):
+        s.master("  " + ", ".join(fmt(c) for c in p[i:i + 3]) + ",")
+    s.master("});")
+    s.master(f"inline constexpr int kRatBnumDeg = {rat_b['m']};")
+    s.master("inline constexpr auto kRatBden = std::to_array<double>({")
+    for i in range(0, len(q), 3):
+        s.master("  " + ", ".join(fmt(c) for c in q[i:i + 3]) + ",")
+    s.master("});")
+    s.master(f"inline constexpr int kRatBdenDeg = {rat_b['k']};")
+    s.master("")
+    # The two routes as the generator measures them: the stored count each
+    # evaluates and the worst |F0 - fit| each reaches over the band's own
+    # top, in the double arithmetic the kernel evaluates them in, against the same
+    # high-precision reference the fits themselves are validated against.
+    # A swept maximum on a finite grid, not a bound: the bar both are
+    # certified against is kRegionBFitBar, and both sit under it.
+    s.master("// The two region-B routes as the generator measures them: the stored count",
+             f"// each evaluates and the worst |F0 - fit| each reaches over "
+             f"[kX0, {region_b_top_name()}], in the",
+             "// kernel's double arithmetic against the reference. A swept maximum, not a bound:",
+             "// the bar is the promise 1e-13 F_0(x), whose band maximum is the value below.")
+    s.master(f"inline constexpr double kRegionBFitBar = {fmt(float(rat_b['bar']))};")
+    s.master(f"inline constexpr int kRegionBFitChebStored = {rat_b['cheb_stored']};")
+    s.master("inline constexpr double kRegionBFitChebDelivered = "
+             f"{fmt(float(rat_b['cheb_delivered']))};")
+    s.master(f"inline constexpr int kRegionBFitRatStored = {rat_b['stored']};")
+    s.master("inline constexpr double kRegionBFitRatDelivered = "
+             f"{fmt(float(rat_b['delivered']))};")
+    s.master("")
+    # The region-A route's two columns, measured the same way over the same
+    # domain: every shipped piece for the Chebyshev route, every route piece
+    # for the rational, against the same reference and in the same
+    # arithmetic, so the counts and the errors are one comparison. The
+    # rational route's selector takes over at kRatARouteLo - the lowest of
+    # region A's per-order ends - and per order from that order's own end,
+    # which is where the lane stops reading the order from its own fit and
+    # documents the band's 3e-14 rather than the per-order 1e-15. Below such
+    # an end the lane is documented at 1e-15, which these pieces do not
+    # hold. The rational pieces were accepted below the bar rather than at
+    # it, so the bar survives a certifying sweep on a different grid.
+    s.master("// The two region-A routes as the generator measures them, over the domain the",
+             "// two tables cover - every order's pieces, from zero to kX0 - swept on a",
+             "// stride-1 grid of each piece's interval, in the kernel's double arithmetic",
+             "// against the reference. A swept maximum, not a bound: the bar is kRegionAFitBar.")
+    s.master(f"inline constexpr double kRegionAFitBar = {fmt(float(rat_a['bound']))};")
+    s.master(f"inline constexpr int kRegionAFitChebStored = {rat_a['cheb_stored']};")
+    s.master("inline constexpr double kRegionAFitChebDelivered = "
+             f"{fmt(float(rat_a['cheb_delivered']))};")
+    s.master(f"inline constexpr int kRegionAFitRatStored = {rat_a['stored']};")
+    s.master("inline constexpr double kRegionAFitRatDelivered = "
+             f"{fmt(float(rat_a['delivered']))};")
+    # The scheme report: one row per (evaluation scheme, stored fit), the
+    # degree and stored count that fit uses, and the bound each scheme was
+    # MEASURED to deliver on it in each multiply-add route. The rows are
+    # data: a scheme, a fit, a route or an end-to-end sweep added later is
+    # another row here and nothing else.
+    #
+    # The domain is the fit's own interval (region A: every piece of every
+    # order; region B: [kX0, the band's top); the extended band: [kExtendedBX0, kX0)).
+    # Region C has no stored fit and no row.
+    s.master("// The evaluation schemes, one row per (scheme, stored fit): the degree and stored",
+             "// count the fit uses, and each scheme's bound against the 60-digit reference, per",
+             "// multiply-add route. scheme 0 = split Clenshaw, 1 = Horner; lane 0 = kCoeffs,",
+             "// 1 = kBcoeffs, 2 = kExtendedBcoeffs: the worst sweep, rounded up to a power of two.")
+    s.master("struct SchemeRow { int scheme, lane, region, deg, stored;")
+    s.master("                   double fused, separate; };")
+    s.master("inline constexpr auto kSchemeRows = std::to_array<SchemeRow>({")
+    for (scheme, lane, region, deg, stored, _fm, _sm, fb, sb) in scheme_rows:
+        s.master(f"  {{{scheme}, {lane}, {region}, {deg}, {stored}, {fmt(fb)}, "
+                 f"{fmt(sb)}}},")
+    s.master("});")
+    s.master("")
+    s.master("}  // namespace boys::detail")
 
-        # Float lane.
-        narrow_rat_f32 = fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32)
-        write_f32_namespace(f, float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
-                        narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
-                        flat_rat_f32)
-        f.write("\n/// \\endcond\n")
+    # Float lane.
+    narrow_rat_f32 = fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32)
+    s.combine(build_f32_sections(float_orders, b_cheb_f32, rat_a_f32, rat_b_f32,
+                                 narrow_a_f32, narrow_b_f32, narrow_rat_f32, flat_f32,
+                                 flat_rat_f32))
+    return s
+
 
 
 def write_reference(path):
@@ -7475,12 +7764,15 @@ def repository_relative(path):
     return relative.replace(os.sep, "/")
 
 
+@lru_cache(maxsize=1)
 def stamp_module():
-    """tools/record_stamp.py, loaded from its path.
+    """tools/record_stamp.py, loaded from its path, once per run.
 
     One digest convention in the tree rather than two: the accuracy gate's
     record and the option probe's report carry cells in the same convention, and
-    a second implementation here would be a second thing to keep in step.
+    a second implementation here would be a second thing to keep in step. The
+    module is cached so there is one `StampError` class as well: a fresh load
+    per call raises an exception its caller's `except` cannot name.
     """
     path = os.path.join(repository_root(), "tools", "record_stamp.py")
     spec = importlib.util.spec_from_file_location("_record_stamp", path)
@@ -7513,20 +7805,26 @@ def environment_cell():
 def provenance_text(header, reference):
     """The record, rendered. The same bytes every time for the same tree.
 
-    None when either artefact sits outside the repository: a record is a set of
-    tree-relative digests and there is nothing honest to write for a file no
-    reader of the record can reach.
+    One `artifact:` cell per emitted header and the manifest root over the
+    sorted artifact paths: a missing, extra or edited header is a digest this
+    record does not name, and the root is the one cell over the set. None when
+    an artifact or the reference sits outside the repository: a record is a
+    set of tree-relative digests and there is nothing honest to write for a
+    file no reader of the record can reach.
     """
     stamp = stamp_module()
     root = stamp.pathlib.Path(repository_root())
-    artefacts = []
-    for name, path in (("header", header), ("reference", reference)):
+    relatives = []
+    for path in artefact_paths(header):
         relative = repository_relative(path)
         if relative is None:
             return None
-        artefacts.append(f"{name} {stamp.digest(root, (relative,))}")
+        relatives.append(relative)
+    reference_relative = repository_relative(reference)
+    if reference_relative is None:
+        return None
     lines = [
-        "# The record of the derivation whose two output files this names:",
+        "# The record of the derivation whose artifacts this names:",
         "# tools/gen_boys_coefficients.py rendered them under the pins in",
         "# requirements-boys.txt and the environment below. Every digest here is",
         "# relative to the repository root. `--check` recomputes them; it re-derives",
@@ -7536,7 +7834,10 @@ def provenance_text(header, reference):
     ]
     lines += [f"{name} {stamp.digest(root, group)}" for name, group in PROVENANCE_GROUPS]
     lines.append(f"env {environment_cell()}")
-    lines += artefacts
+    lines += [f"artifact:{relative} {stamp.digest(root, (relative,))}"
+              for relative in relatives]
+    lines.append(f"reference {stamp.digest(root, (reference_relative,))}")
+    lines.append(f"manifest {stamp.digest(root, tuple(sorted(relatives)))}")
     return "\n".join(lines) + "\n"
 
 
@@ -7553,25 +7854,102 @@ def read_record(path=PROVENANCE):
 
 
 def artefact_findings(header, reference, cells):
-    """The two artefacts against the digests the record names for them."""
+    """The artifacts and the reference against the digests the record names.
+
+    One digest per artifact, its cell keyed `artifact:<path>`, plus the
+    manifest root over the sorted artifact paths: the cells catch one edited
+    file without a re-derivation, and the root is the set's own number. A
+    missing artifact is a finding here rather than an exception, because the
+    record is what says which files the derivation wrote.
+    """
     stamp = stamp_module()
     root = stamp.pathlib.Path(repository_root())
     findings = []
-    for name, path in (("header", header), ("reference", reference)):
+    relatives = []
+    for path in artefact_paths(header):
         relative = repository_relative(path)
         if relative is None:
             findings.append(f"{path} sits outside the repository, and the record's "
                             f"digests are relative to it")
             continue
+        if not os.path.isfile(path):
+            findings.append(f"{relative} is missing: the generator emits "
+                            f"{len(ARTEFACT_FILENAMES)} headers and the record names "
+                            f"this one")
+            continue
+        relatives.append(relative)
         want = stamp.digest(root, (relative,))
-        have = cells.get(name)
+        have = cells.get(f"artifact:{relative}")
         if have is None:
             findings.append(f"{PROVENANCE} records no digest for {relative}")
         elif have != want:
             findings.append(
                 f"{relative} is not the file the recorded derivation wrote (the record "
                 f"names {have}, this file hashes to {want}): the tables and the record "
-                f"are committed together, so run the generator and commit both")
+                f"are committed together, so run the generator and commit all of them")
+    if len(relatives) == len(ARTEFACT_FILENAMES):
+        want = stamp.digest(root, tuple(sorted(relatives)))
+        have = cells.get("manifest")
+        if have is None:
+            findings.append(f"{PROVENANCE} records no manifest digest")
+        elif have != want:
+            findings.append(
+                f"the artifact manifest does not match this tree (the record names "
+                f"{have}, the committed artifacts hash to {want}): the headers are not "
+                f"the set the recorded derivation wrote")
+    relative = repository_relative(reference)
+    if relative is None:
+        findings.append(f"{reference} sits outside the repository, and the record's "
+                        f"digests are relative to it")
+    elif not os.path.isfile(reference):
+        findings.append(f"{relative} is missing")
+    else:
+        want = stamp.digest(root, (relative,))
+        have = cells.get("reference")
+        if have is None:
+            findings.append(f"{PROVENANCE} records no digest for {relative}")
+        elif have != want:
+            findings.append(
+                f"{relative} is not the file the recorded derivation wrote (the record "
+                f"names {have}, this file hashes to {want}): the tables and the record "
+                f"are committed together, so run the generator and commit all of them")
+    return findings
+
+
+def artefact_set_findings(header, cells):
+    """The artifact set itself: every expected header present, nothing extra.
+
+    --check runs this before it compares bytes so a missing or stray header is
+    one sentence naming it rather than a digest finding about a path the caller
+    cannot place, and so a header neither the generator nor the record knows is
+    refused rather than silently ignored.
+    """
+    directory = os.path.dirname(header)
+    findings = []
+    for name in ARTEFACT_FILENAMES:
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path):
+            findings.append(f"{path} is missing: the generator emits "
+                            f"{len(ARTEFACT_FILENAMES)} headers and this is one of them")
+    try:
+        present = sorted(os.listdir(directory))
+    except OSError:
+        present = []
+    expected = set(ARTEFACT_FILENAMES)
+    # The set's own naming, so a scoped run's scratch file beside the master
+    # (`--narrow-only` writes ...hpp.narrow-tmp.hpp) is not mistaken for one.
+    shipped = re.compile(r"^boys_coefficients(_[A-Za-z0-9_]+)?\.hpp$")
+    for name in present:
+        if shipped.match(name) and name not in expected:
+            findings.append(f"{os.path.join(directory, name)} is not an artifact this "
+                            f"generator emits: the set is the master and "
+                            f"{len(ARTEFACT_FILENAMES) - 1} group headers")
+    recorded = {name[len("artifact:"):] for name in cells if name.startswith("artifact:")}
+    emitted = {repository_relative(os.path.join(directory, name))
+               for name in ARTEFACT_FILENAMES}
+    for relative in sorted(recorded - emitted):
+        findings.append(f"{PROVENANCE} records an artifact the generator does not "
+                        f"emit: {relative}")
     return findings
 
 
@@ -7617,7 +7995,11 @@ def derivation_trigger(header, reference, record=PROVENANCE):
 
 def committed_record_findings(header, reference, record=PROVENANCE):
     """The record's own bytes against what this tree and environment write now."""
-    text = provenance_text(header, reference)
+    stamp = stamp_module()
+    try:
+        text = provenance_text(header, reference)
+    except stamp.StampError as error:
+        return [f"{record} cannot be rendered from this tree: {error}"]
     if text is None:
         return []
     try:
@@ -7631,42 +8013,45 @@ def committed_record_findings(header, reference, record=PROVENANCE):
     return []
 
 
-def readback_findings(path):
-    """The four read-back rules, on a header the caller has not derived.
+def readback_findings(paths):
+    """The four read-back rules, on a set of artifacts the caller has not derived.
 
-    None of them needs a fit: each reads the grid, the arrays and the published
-    bars back out of the written text and walks the reader's own index rule over
-    them, which is what makes them available when the derivation is not.
+    The rules address the artifact set as one text: master first, then the
+    group headers. None of them needs a fit: each reads the grid, the arrays
+    and the published bars back out of the written text and walks the reader's
+    own index rule over them, which is what makes them available when the
+    derivation is not.
     """
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
     findings = flat_transposed_findings(
-        path, {"degs": [int(v) for v in header_int_array(text, "kFlatDegs")]})
+        paths, {"degs": [int(v) for v in header_int_array(artefact_text(paths),
+                                                          "kFlatDegs")]})
     for lane in ("double", "float"):
-        findings += flat_relative_findings(path, lane)
-    findings += scaled_far_findings(path, far_placeholder_partition())
-    findings += seed_correction_findings(path)
+        findings += flat_relative_findings(paths, lane)
+    findings += scaled_far_findings(paths, far_placeholder_partition())
+    findings += seed_correction_findings(paths)
     return findings
 
 
 def record_check(args):
     """--check against the record: the cheap verdict, and what it is a verdict on.
 
-    It is two statements and neither is a re-derivation. The committed artefacts
-    are the ones the recorded derivation wrote - a coefficient edited by hand,
-    a record left behind by a regeneration, both leave a digest unmatched - and
-    the committed header holds its own published bars under the reader's own
-    index rule. What it cannot decide is whether this generator still produces
-    these bytes; that is what re-deriving answers, and this says so rather than
-    implying it.
+    It is two statements and neither is a re-derivation. The committed
+    artifacts are the ones the recorded derivation wrote - a coefficient
+    edited by hand, a header added or dropped, a record left behind by a
+    regeneration, all leave a digest unmatched - and the committed set holds
+    its own published bars under the reader's own index rule. What it cannot
+    decide is whether this generator still produces these bytes; that is what
+    re-deriving answers, and this says so rather than implying it.
     """
     started = time.time()
     print(f"the record's generator, pins and env cells match this tree, so the "
           f"committed tables cannot have moved since the derivation: checking "
-          f"{args.provenance} and the read-back rules of {args.header} ...")
-    findings = artefact_findings(args.header, args.reference,
-                                 read_record(args.provenance))
-    findings += readback_findings(args.header)
+          f"{args.provenance} and the read-back rules of the "
+          f"{len(ARTEFACT_FILENAMES)} artifacts ...")
+    cells = read_record(args.provenance)
+    findings = artefact_set_findings(args.header, cells)
+    findings += artefact_findings(args.header, args.reference, cells)
+    findings += readback_findings(artefact_paths(args.header))
     for finding in findings:
         print(f"DRIFT: {finding}")
     if findings:
@@ -7780,7 +8165,7 @@ def main():
         # The scaled far table's block alone, for the reason --narrow-only
         # exists: the full generation takes hours and this table is a partition
         # of degree-16 fits, so the block is reproduced and compared on its own.
-        # scaled_far_block_lines is shared with write_header, which is what
+        # scaled_far_block_lines is shared with build_sections, which is what
         # keeps the two from drifting.
         far = scaled_far_table(far_placeholder_partition())
         far_out = args.far_out or (args.header + ".far-tmp.hpp")
@@ -7788,7 +8173,7 @@ def main():
         with open(far_out, "w", newline="\n") as f:
             f.write("#include <array>\n#include <cstddef>\n\n"
                     "namespace boys::detail {\n\n")
-            for line in scaled_far_block_lines(far):
+            for line in scaled_far_block_lines(far).lines():
                 f.write(line + "\n")
             f.write("\n}  // namespace boys::detail\n")
         for finding in scaled_far_findings(far_out, (far["edges"], far["degs"])):
@@ -7810,7 +8195,7 @@ def main():
         # block is a handful of degree-10 fits plus a parallel walk per order,
         # so the block is reproduced on its own and compared against the
         # committed header's own lines without waiting for the rest of the
-        # table. narrow_block_lines is shared with write_header, which is what
+        # table. narrow_block_lines is shared with build_sections, which is what
         # keeps the two from drifting. Region A's walk needs each order's own
         # end, which is where that order's last shipped piece ends, so the double
         # lane's region-A fits are taken here as well - they are the cheap part
@@ -7827,13 +8212,16 @@ def main():
         with open(narrow_out, "w", newline="\n") as f:
             f.write("#include <array>\n#include <cstddef>\n\n"
                     "namespace boys::detail {\n\n")
-            for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a, narrow_rat_b):
+            for line in narrow_block_lines(narrow_a, narrow, narrow_rat_a,
+                                           narrow_rat_b).lines():
                 f.write(line + "\n")
             f.write("\n}  // namespace boys::detail\n\n")
             f.write("namespace boys::detail::f32 {\n\n")
-            narrow_f32_block_lines(f, narrow_a_f32, narrow_b_f32)
-            narrow_rat_f32_block_lines(f, fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32),
-                                       narrow_b_f32)
+            s32 = narrow_f32_block_lines(narrow_a_f32, narrow_b_f32)
+            s32.combine(narrow_rat_f32_block_lines(
+                fit_narrow_rational_f32(narrow_a_f32, narrow_b_f32), narrow_b_f32))
+            for line in s32.lines():
+                f.write(line + "\n")
             f.write("\n}  // namespace boys::detail::f32\n")
         print(f"wrote {narrow_out}")
         print(f"the narrow partition of region A: {sum(len(p) for p in narrow_a['orders'])} "
@@ -7878,7 +8266,7 @@ def main():
             with open(args.flat_out, "w", newline="\n") as f:
                 f.write("#include <array>\n#include <cstddef>\n\n"
                         "namespace boys::detail {\n\n")
-                for line in flat_block_lines(flat):
+                for line in flat_block_lines(flat).lines():
                     f.write(line + "\n")
                 f.write("\n}  // namespace boys::detail\n")
             print(f"wrote {args.flat_out}")
@@ -7890,7 +8278,7 @@ def main():
         # no other rational route is read - so the member and its figure are
         # taken here without the hours the rest of the generation spends, and the
         # block's byte-identity is checked without it. flat_rat_block_lines is
-        # shared with write_header, which is what keeps the two from drifting.
+        # shared with build_sections, which is what keeps the two from drifting.
         # The interval table is printed rather than only the maximum, because a
         # maximum hides which interval set it and the pairs are per interval.
         grid = uniform_grid("double")
@@ -7921,7 +8309,7 @@ def main():
             with open(args.flat_rat_out, "w", newline="\n") as f:
                 f.write("#include <array>\n#include <cstddef>\n\n"
                         "namespace boys::detail {\n\n")
-                for line in flat_rat_block_lines(flat_rat):
+                for line in flat_rat_block_lines(flat_rat).lines():
                     f.write(line + "\n")
                 f.write("\n}  // namespace boys::detail\n")
             print(f"wrote {args.flat_rat_out}")
@@ -7948,7 +8336,8 @@ def main():
             with open(args.f32_flat_out, "w", newline="\n") as f:
                 f.write("#include <array>\n#include <cstddef>\n\n"
                         "namespace boys::detail::f32 {\n\n")
-                flat_f32_block_lines(f, flat_f32)
+                for line in flat_f32_block_lines(flat_f32).lines():
+                    f.write(line + "\n")
                 f.write("\n}  // namespace boys::detail::f32\n")
             print(f"wrote {args.f32_flat_out}")
         return 0
@@ -7962,7 +8351,7 @@ def main():
         # byte-identity is checked without it. The grid is the one the float
         # uniform table settles on and not the placement law's answer, so the
         # table is walked here too: flat_rat_f32_block_lines is shared with
-        # write_header, which is what keeps the two from drifting.
+        # build_sections, which is what keeps the two from drifting.
         g32i = uniform_grid("float")
         print(f"walking the float lane's uniform grid (widest row: read cap "
               f"{g32i['cap']}, width {mp.nstr(g32i['width'], 6)} over "
@@ -7999,7 +8388,7 @@ def main():
             with open(args.f32_flat_rat_out, "w", newline="\n") as f:
                 f.write("#include <array>\n#include <cstddef>\n\n"
                         "namespace boys::detail::f32 {\n\n")
-                for line in flat_rat_f32_block_lines(flat_rat_f32):
+                for line in flat_rat_f32_block_lines(flat_rat_f32).lines():
                     f.write(line + "\n")
                 f.write("\n}  // namespace boys::detail::f32\n")
             print(f"wrote {args.f32_flat_rat_out}")
@@ -8203,27 +8592,36 @@ def main():
               f"  published fused {fb:.3e} separate {sb:.3e}")
 
     if args.check:
-        # Both scratch copies live beside the file they are compared against.
-        # The header must: clang-format discovers the repo .clang-format
-        # relative to the file's directory, and a foreign temp dir would
-        # silently format the scratch copy with the LLVM default style, so
-        # every check would false-positive on wrapping. The reference must for
-        # a different reason: one fixed path in the system temp directory is
-        # shared by every checkout on the machine, so two runs at once
-        # overwrite each other's grid and report drift in one of the two files
-        # they were pointed at.
-        tmp_header = args.header + ".check-tmp.hpp"
+        # Both scratch copies live inside the repo tree. The artifact set
+        # must: clang-format discovers the repo .clang-format relative to the
+        # file's directory, and a foreign temp dir would silently format the
+        # scratch copies with the LLVM default style, so every check would
+        # false-positive on wrapping. The reference must for a different
+        # reason: one fixed path in the system temp directory is shared by
+        # every checkout on the machine, so two runs at once overwrite each
+        # other's grid and report drift in one of the two files they were
+        # pointed at.
+        tmp_dir = args.header + ".check-tmp"
+        tmp_header = os.path.join(tmp_dir, os.path.basename(args.header))
         tmp_reference = args.reference + ".check-tmp.csv"
         try:
-            write_header(tmp_header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                         (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
-                         rat_a_f32, rat_b_f32, narrow, narrow_a,
-                         narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                         flat_f32, flat_rat, flat_rat_f32, scaled_far)
-            format_header(tmp_header)
+            sections = build_sections(double_orders, float_orders, b_cheb, b_cheb_f32,
+                                      (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b,
+                                      rat_a, rat_a_f32, rat_b_f32, narrow, narrow_a,
+                                      narrow_rat_a, narrow_rat_b, narrow_a_f32,
+                                      narrow_b_f32, flat, flat_f32, flat_rat,
+                                      flat_rat_f32, scaled_far)
+            fresh = write_artefacts(tmp_header, sections)
             write_reference(tmp_reference)
             ok = True
-            for finding in flat_transposed_findings(tmp_header, flat["grid"]):
+            try:
+                cells = read_record(args.provenance)
+            except OSError:
+                cells = {}
+            for finding in artefact_set_findings(args.header, cells):
+                ok = False
+                print(f"DRIFT: {finding}")
+            for finding in flat_transposed_findings(fresh, flat["grid"]):
                 ok = False
                 print(f"DRIFT: {finding}")
             # The near region's bar, read back off the emitted grid and the
@@ -8231,55 +8629,60 @@ def main():
             # at the wrong stride or the wrong width is a finding here and a
             # wrong value at a caller otherwise.
             for lane in ("double", "float"):
-                for finding in flat_relative_findings(tmp_header, lane):
+                for finding in flat_relative_findings(fresh, lane):
                     ok = False
                     print(f"DRIFT: {finding}")
             for finding in scaled_far_findings(
-                    tmp_header, (scaled_far["edges"], scaled_far["degs"])):
+                    fresh, (scaled_far["edges"], scaled_far["degs"])):
                 ok = False
                 print(f"DRIFT: {finding}")
-            for finding in seed_correction_findings(tmp_header):
+            for finding in seed_correction_findings(fresh):
                 ok = False
                 print(f"DRIFT: {finding}")
             for finding in committed_record_findings(args.header, args.reference,
                                                      args.provenance):
                 ok = False
                 print(f"DRIFT: {finding}")
-            for generated, committed in ((tmp_header, args.header),
-                                         (tmp_reference, args.reference)):
+            for generated, committed in zip(fresh, artefact_paths(args.header)):
+                if not os.path.exists(committed):
+                    continue
                 with open(generated, "rb") as fg, open(committed, "rb") as fc:
                     if fg.read() != fc.read():
                         ok = False
                         print(f"DRIFT: {committed} differs from a fresh generation")
+            with open(tmp_reference, "rb") as fg, open(args.reference, "rb") as fc:
+                if fg.read() != fc.read():
+                    ok = False
+                    print(f"DRIFT: {args.reference} differs from a fresh generation")
             return 0 if ok else 1
         finally:
-            for scratch in (tmp_header, tmp_reference):
-                if os.path.exists(scratch):
-                    os.remove(scratch)
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if os.path.exists(tmp_reference):
+                os.remove(tmp_reference)
 
     os.makedirs(os.path.dirname(args.header) or ".", exist_ok=True)
-    write_header(args.header, double_orders, float_orders, b_cheb, b_cheb_f32,
-                 (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
-                 rat_a_f32, rat_b_f32, narrow, narrow_a,
-                 narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32, flat,
-                 flat_f32, flat_rat, flat_rat_f32, scaled_far)
-    format_header(args.header)
-    # The file just written is what a reader compiles against, so its transposed
+    sections = build_sections(double_orders, float_orders, b_cheb, b_cheb_f32,
+                              (ext_deg, ext_cs, ext_mono), scheme_rows, rat_b, rat_a,
+                              rat_a_f32, rat_b_f32, narrow, narrow_a,
+                              narrow_rat_a, narrow_rat_b, narrow_a_f32, narrow_b_f32,
+                              flat, flat_f32, flat_rat, flat_rat_f32, scaled_far)
+    paths = write_artefacts(args.header, sections)
+    # The set just written is what a reader compiles against, so its transposed
     # twin is held to the read rule here as well as in --check: a table emitted
     # in the wrong shape is a wrong value at a caller and never a build error.
-    for finding in flat_transposed_findings(args.header, flat["grid"]):
+    for finding in flat_transposed_findings(paths, flat["grid"]):
         raise RuntimeError(finding)
     # The same for the far table: its read rule is a stride the coefficients do
-    # not carry, so the written file is walked here as well.
-    for finding in scaled_far_findings(args.header,
-                                      (scaled_far["edges"], scaled_far["degs"])):
+    # not carry, so the written set is walked here as well.
+    for finding in scaled_far_findings(paths,
+                                       (scaled_far["edges"], scaled_far["degs"])):
         raise RuntimeError(finding)
     # And the corrected seed, whose join is derived: the written constant is what
     # a reader gets, so its property is re-tested on the text and not on the
     # derivation's own value.
-    for finding in seed_correction_findings(args.header):
+    for finding in seed_correction_findings(paths):
         raise RuntimeError(finding)
-    print(f"wrote {args.header}")
+    print(f"wrote {args.header} and {len(paths) - 1} group headers")
 
     os.makedirs(os.path.dirname(args.reference) or ".", exist_ok=True)
     write_reference(args.reference)

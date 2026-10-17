@@ -3,6 +3,10 @@
 // A policy is named in the template argument list, never constructed; a call site that names none
 // gets the build's own defaults, which is the call this program compares the named one against.
 #include <boys/boys_span.hpp>
+// The named policy's granularity is one the front door leaves closed, so the translation unit
+// that names it includes that group's table header - the header the library names when it is
+// missing.
+#include <boys/boys_coefficients_d_coarse_cheb.hpp>
 
 #include <array>
 #include <cmath>
@@ -13,7 +17,7 @@ int main()
     const int nmax = 4;
     const double x = 2.5;
 
-    using Named = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
+    using Named = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
                                    boys::BoysBudget::kFloat, boys::PackAxis::kArguments,
                                    boys::FitGranularity::kCoarsest,
                                    boys::DivisionForm::kExactDivision>;
@@ -31,12 +35,14 @@ int main()
         worst = std::fmax(worst, std::fabs(named_ladder[k] - default_ladder[k]));
     }
 
-    // The two are different sums of the same approximation of F, so they agree
-    // to well inside the error the library guarantees for either. The ask reads
-    // the named policy's own axes, its division form included.
+    // The two are different sums of the same approximation of F, so they agree to
+    // well inside the error the library guarantees for either. The ask reads the
+    // named policy's own axes at the top order; the double lane's contract is
+    // scaled by F_0(x), so it is one figure for every order at this argument.
     const double bound = boys::BoysAccuracyGuaranteed(
-                             boys::Precision::kFp64, Named::kRoute, Named::kScheme, Named::kPack,
-                             Named::kGranularity, Named::kDivision, Named::kRegionBExp)
+                             boys::Precision::kFp64, nmax, x, Named::kRoute, Named::kScheme,
+                             Named::kPack, Named::kGranularity, Named::kDivision,
+                             Named::kRegionBExp)
                              .value;
     std::printf("worst disagreement: %.2g (guaranteed error <= %.2g)\n", worst, bound);
     return (worst <= bound) ? 0 : 1;

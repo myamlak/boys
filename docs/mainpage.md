@@ -38,12 +38,12 @@ Nine words carry the design. Each means something narrower here than it means el
   Chebyshev fits and a rational minimax alternative. Naming one with
   \ref boys::BoysAllOrdersWithRoute changes only the fits that serve the intervals its rows report.
 - **scheme** — the summation a stored Chebyshev fit is read in: split Clenshaw or Horner. It is the
-  second field of \ref boys::EvalPolicy, and changes values only where the default fit answers.
+  second field of \ref boys::SeamPolicy, and changes values only where the default fit answers.
 - **axis** (the packing axis) — which of a call's values share a vector register: four arguments at
   one order, the committed axis, or four orders at one argument (\ref boys::PackAxis).
 - **partition** — how the fitted intervals are cut into pieces, and one of the axes a call site
   names. Three are carried: the committed cut (`FitGranularity::kCoarsest`), the narrower cut the
-  proved truncation bound places, which is the default (`FitGranularity::kNarrow`), and a fixed grid
+  proved truncation bound places, which is the seam's default (`FitGranularity::kNarrow`), and a fixed grid
   of one uniform width over the whole fitted domain, every order fitted independently at one degree
   and no order built from another (`FitGranularity::kUniform`). All three cut one fit, so naming one
   changes the work and the storage, not the accuracy (\ref boys::FitGranularity).
@@ -61,8 +61,8 @@ and on a NaN in a batch, and answers a wrong value for n > 32. The CUDA lane rep
 \ref boys::BoysStatus instead.
 
 Every CPU entry is templated on one policy, the five structural axes a call site names once and the
-compiler resolves where it is written (\ref boys::EvalPolicy). The CUDA lane's entries carry no
-`EvalPolicy`: `BoysCuda::SingleF32` takes the region-B exponential as a run-time argument, and the
+compiler resolves where it is written (\ref boys::SeamPolicy). The CUDA lane's entries carry no
+`SeamPolicy`: `BoysCuda::SingleF32` takes the region-B exponential as a run-time argument, and the
 device-callable entries of `boys/boys_cuda_device.hpp` take the division form their recurrence
 divides in and the exponential their tables read as template parameters, each defaulting to the
 lane's own member (\ref boys::kDefaultDeviceDivisionForm, \ref boys::kDefaultDeviceRegionBExp).
@@ -81,7 +81,7 @@ that shape, what it adds.
 | \ref boys::BoysAllOrdersWithRoute, \ref boys::BoysFitRoutes | the double batch at a named fit route (\ref boys::FitRoute), and the report of which routes exist, what each promises and over what interval. The route is the entry's template argument named where the call is compiled, and its second overload takes the scheme as a value instead of naming it in the entry's policy |
 | \ref boys::BoysFixedN | fp64, one order over an array of arguments, strided. Takes a fit route through its policy |
 | \ref boys::BoysAllN, \ref boys::BoysAllNAtOrders | fp64, all orders over an array of arguments, order-major planes. `BoysAllN` takes one top order for the batch and classifies, groups and dispatches internally (\ref boys::BoysSortedArgs skips the sort for a non-decreasing array). `BoysAllNAtOrders` takes each argument's own top order, with no padding of the arguments to a common order, and evaluates the per-argument body at each of them; that is the shape a shell-quartet batch has. Both take a fit route through their policy, and `BoysAllN` also takes a packing axis |
-| \ref boys::BoysSingleF32, \ref boys::BoysSingleF32WithRoute, \ref boys::BoysFitRoutesF32, \ref boys::BoysAllOrdersF32, \ref boys::BoysFixedNF32, \ref boys::BoysAllNF32, \ref boys::BoysAllNAtOrdersF32 | scalar fp32; the batch forms seed in double. \ref boys::BoysSingleF32WithRoute is \ref boys::BoysSingleF32 with one thing changed: which fit supplies the lane's region-A and region-B seeds. It carries the lane's own two fit routes (\ref boys::FitRoute), and \ref boys::BoysFitRoutesF32 reports each one's interval, its stored count and the error it delivers. The entries also take the \ref boys::EvalPolicy the double lane's take, so both routes and both schemes are reachable as template arguments. `BoysAllNF32` is the float lane's \ref boys::BoysAllN — one top order for the batch, order-major planes — and `BoysFixedNF32` and `BoysAllNAtOrdersF32` are its \ref boys::BoysFixedN and \ref boys::BoysAllNAtOrders, which write one order over an array of arguments, strided, and each argument's own top order into those same planes |
+| \ref boys::BoysSingleF32, \ref boys::BoysSingleF32WithRoute, \ref boys::BoysFitRoutesF32, \ref boys::BoysAllOrdersF32, \ref boys::BoysFixedNF32, \ref boys::BoysAllNF32, \ref boys::BoysAllNAtOrdersF32 | scalar fp32; the batch forms seed in double. \ref boys::BoysSingleF32WithRoute is \ref boys::BoysSingleF32 with one thing changed: which fit supplies the lane's region-A and region-B seeds. It carries the lane's own two fit routes (\ref boys::FitRoute), and \ref boys::BoysFitRoutesF32 reports each one's interval, its stored count and the error it delivers. The entries also take the \ref boys::SeamPolicy the double lane's take, so both routes and both schemes are reachable as template arguments. `BoysAllNF32` is the float lane's \ref boys::BoysAllN — one top order for the batch, order-major planes — and `BoysFixedNF32` and `BoysAllNAtOrdersF32` are its \ref boys::BoysFixedN and \ref boys::BoysAllNAtOrders, which write one order over an array of arguments, strided, and each argument's own top order into those same planes |
 | \ref boys::BoysSingleF16, \ref boys::BoysAllOrdersF16, \ref boys::BoysFixedNF16, \ref boys::BoysAllNF16, \ref boys::BoysAllNAtOrdersF16, \ref boys::BoysSingleBf16, \ref boys::BoysAllOrdersBf16 | fp16/bf16 scalar I/O around the fp32 engine. The fp16 entries are the float lane's shapes at the half budget: `BoysFixedNF16`, `BoysAllNF16` and `BoysAllNAtOrdersF16` are its fixed-N, all-N and all-N-at-orders shapes, each value computed by the fp32 engine and stored to half once |
 | \ref boys::BoysAllOrdersHalf2, \ref boys::BoysAllNF16Native | native half: region C's ladder in packed binary16 (\ref boys::Half2), one correctly rounded half operation per step, two arguments to a register, results scaled by 2^15 (\ref boys::kHalfNativeScaleExponent) |
 | \ref boys::BoysCuda::InitializeTables, \ref boys::BoysCuda::SingleF32, \ref boys::BoysCuda::AllOrdersF32, \ref boys::BoysCuda::AllNF32, \ref boys::BoysCuda::SingleF64, \ref boys::BoysCuda::AllOrdersF64, \ref boys::BoysCuda::AllNF64, \ref boys::BoysCuda::SingleF16, \ref boys::BoysCuda::AllOrdersF16, \ref boys::BoysCuda::AllNF16 | CUDA lane (optional build); device arrays with an opaque stream handle. The tables upload on first use, and `InitializeTables` is an optional warm-up. `AllOrders*` is the all-orders batch at a per-element order. `AllN*` is the device \ref boys::BoysAllN (one top order for the batch, order-major planes), and takes non-decreasing arguments, since it never sorts |
@@ -181,16 +181,21 @@ above are the surface.
 
 ## Accuracy contract
 
-The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
-n, x and lane.
+The bound at a cell on the double lanes is **`1e-13 · F_0(x)`**, for every supported n and x: the
+ladder's first rung scaled by `1e-13`. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the pair is
+never the wider one.
 
-**Both arms are a fraction of the value, so a small value is held to a small error.** Since F is
-decreasing in the order, the wider arm at a cell is the one scaled by the ladder's first rung,
-`F_0(x)`, and the bound binds by that arm wherever the order's own value is tiny. Until this release
-it instead carried a constant floor, `5.5e-14`, which the second arm replaces. The bound holds above
-the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the float ones — below
-which the return is subnormal or zero, the format's own floor is what answers there, and no accuracy
-is claimed. Every figure below holds for **all** x ≥ 0:
+**The figure is a fraction of the ladder's first rung, so read against the value it is not uniform.**
+The bound binds by that arm wherever the order's own value is tiny, and the returned `F_n` is held to
+`1e-13` of its own value only below the region-C boundary, `x = 28.98933773882074`, and again above
+`x ≈ 93` at `n = 32`; in between the bound `1e-13 · F_0(x)` permits 4.85 times the value at the
+worst cell, `n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the
+value 3.2822575294956117e-15, and the delivered error there measured 1.40 times the value,
+4.582e-15, 0.288 of the bound. Until 4.0.0 it instead carried a constant floor, `5.5e-14`, which the
+ladder-scaled figure replaces. The bound holds above the lane format's smallest normal — 2^-1022 for
+the double lanes, 2^-126 for the float ones — below which the return is subnormal or zero, the
+format's own floor is what answers there, and no accuracy is claimed. Every figure below holds for
+**all** x ≥ 0:
 
 *Single* is the entry that answers for one order at one argument; *batch* is the entries that answer
 a whole call at once, and the two rows carrying those labels are both the double lane. The rows
@@ -263,9 +268,14 @@ report prints how many of its comparisons were bit-for-bit equal.
 
 ### Checking these figures
 
-The measurement is in this tree. Build it and run it:
+The measurement is in this tree. Build it and run it — the gate is a target of the test suite, so
+the configure that produces it wants `-DBOYS_BUILD_TESTS=ON` and the vendored googletest beside the
+tree. CMake caches what a directory was configured with, so a `build` made with the tests off has no
+gate target however a later `cmake -S . -B <build>` is written, and adding the target means naming
+the option again:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake -S . -B <build> -DBOYS_BUILD_TESTS=ON
+    cmake --build <build> --config Release --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
 It sweeps the documented entries over the committed reference grid (33 orders × 1797 arguments,

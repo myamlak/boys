@@ -8,11 +8,23 @@
 /// The library's accuracy accessors are the archive's - `BoysLaneContracts`,
 /// `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered` and `QueryCombination` are
 /// declared in boys/boys_decl.hpp and defined in src/boys.cpp - and a consumer
-/// that links no archive cannot call them. What this header answers is the same
-/// two numbers those entries do, the bound the contract carries and the figure
-/// the arithmetic was measured to deliver, read from a table that lives in the
-/// headers and from the preprocessor state this translation unit was compiled
-/// at. Nothing here evaluates the function, and nothing here needs a binary.
+/// that links no archive cannot call them. What this header answers is the two
+/// measured figures those entries carry, the absolute figure each lane was
+/// published with and the figure the arithmetic was measured to deliver, read
+/// from a table that lives in the headers and from the preprocessor state this
+/// translation unit was compiled at. Nothing here evaluates the function, and
+/// nothing here needs a binary.
+///
+/// **The bound here is the lane's measured absolute figure, not the contract at
+/// a cell.** `BoysAccuracyGuaranteed` evaluates the lane's published form at the
+/// `(n, x)` it is asked about - on the double lane `1e-13 * F_0(x)`, which is
+/// `1e-13` at x = 0 - so the two differ, and neither is wrong: the archive's is
+/// the promise a calculation rests on at the cell it evaluates, and this
+/// header's is the reading the lane's runs produced over its whole domain. A
+/// caller who needs the contract at a cell has the function value in hand and
+/// takes the archive's entry; a caller asking what his build measured reads this
+/// one. The `reading` field says which it is: this header's bound is
+/// `AccuracyReading::kMeasured`, and the archive's is `kGuaranteed`.
 ///
 /// **This header is not in boys/boys.hpp's chain.** A unit that includes the
 /// front door pulls boys_decl.hpp, and through it accuracy.hpp, but never this
@@ -234,9 +246,15 @@ inline const char* ArithmeticInForceName(const ArithmeticInForce& arithmetic) no
 
     if (arithmetic.selectedRoute == backend::MulAddRoute::kSeparate)
     {
-        return "the fused route by contraction: the separate route is selected and a bare "
-               "product-plus-add is one rounding here (measured), so the selection compiles onto "
-               "the fused step";
+        if (arithmetic.contracts)
+        {
+            return "the fused route by contraction: the separate route is selected and a bare "
+                   "product-plus-add is one rounding here (measured), so the selection compiles "
+                   "onto the fused step";
+        }
+
+        return "the separate route: the separate route is selected and a bare product-plus-add "
+               "is two roundings here (measured), so every step is the separate step";
     }
 
     if (!arithmetic.contractionMeasured)
@@ -285,20 +303,23 @@ namespace detail {
 /// enumeration's order - the same eight rows and the same order
 /// `BoysLaneContracts()` answers with, so the two are read index for index.
 ///
-/// The figures are the absolute ones that list carries, and they are at or
-/// below the relative contract the docs state (`docs/specification.md`) at
-/// every cell: a query this list answers yes to is one the contract covers,
-/// and the tighter of the two statements is the one a caller is handed.
+/// The figures are the absolute ones that list carries: they sit at or below
+/// the contract the docs state (`docs/specification.md`) near x = 0, and
+/// above it wherever the lane's relative arm falls under the constant. The
+/// list's figure is therefore the stricter claim below that crossing and the
+/// looser one above it, where the contract is the statement a caller is held
+/// to; a query this list answers yes to is one the contract covers only
+/// below that crossing.
 inline constexpr std::array<LaneFigureHere, 8> kLaneFiguresHere = {{
     {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: the double lane's bound is the larger of "
-     "1e-13 * F_n(x) and 1e-13 * F_0(x), and 5.5e-14 is the absolute figure the lane measured; "
-     "the lane list is re-made with the option probe's report (docs/lane-contract.md)",
+     "1e-13 * F_n(x) and 1e-13 * F_0(x), and 5.5e-14 is the absolute figure the lane measured "
+     "(docs/lane-contract.md), which also states where that figure crosses the contract",
      ""},
     {Precision::kFp32, "fp32", 1.5e-7, 0.0, 1e-7, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: the float lane's bound is the larger of "
-     "2^-22 * F_n(x) and 1.5e-7, plus 1e-7 in the plain-reciprocal form; the lane list is re-made "
-     "with the option probe's report (docs/lane-contract.md)",
+     "2^-22 * F_n(x) and 1.5e-7, plus 1e-7 in the plain-reciprocal form (docs/lane-contract.md), "
+     "which also states where that figure crosses the contract",
      "docs/specification.md, the accuracy contract: the plain reciprocal's own 1e-7 term beside "
      "the base, whose measured worst is 1.7514e-07 absolute at n = 0, x = 9.74055, where the two "
      "forms that divide exactly deliver 1.08354e-07 at worst"},
@@ -313,8 +334,8 @@ inline constexpr std::array<LaneFigureHere, 8> kLaneFiguresHere = {{
      ""},
     {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract (CUDA fp64): the same contract as the CPU "
-     "double lanes, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), at this lane's own entries; "
-     "the lane list is re-made with the option probe's report (docs/lane-contract.md)",
+     "double lanes, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x), at this lane's own entries "
+     "(docs/lane-contract.md)",
      ""},
     {Precision::kFp16Device, "fp16-device", 1e-7, 0.0, 1e-7, RegionBExp::kFast,
      "docs/specification.md, the accuracy contract: 1e-7 plus one half of the returned value's "
@@ -578,10 +599,12 @@ constexpr std::span<const LaneFigureHere> BoysLaneFiguresHere() noexcept {
 ///
 /// \ingroup boys
 struct ClassAccuracyHere {
-    /// The figure the class's policy is guaranteed: the lane's row with the terms
+    /// The figure this build states for the class: the lane's row with the terms
     /// the division form and region-B exponential this call names add - the
-    /// class's own by default. It is a bound and not a measurement, and it is the
-    /// same figure `BoysAccuracyGuaranteed` answers with at the same seven axes.
+    /// class's own by default. It is the lane's measured absolute figure and not
+    /// `BoysAccuracyGuaranteed`'s answer, which is the contract evaluated at the
+    /// cell it is asked about; its `reading` is `AccuracyReading::kMeasured`,
+    /// because a measurement is not a promise at a cell.
     AccuracyFigure bound;
 
     /// The figure this build's arithmetic was measured to deliver for the class:
@@ -612,8 +635,10 @@ struct ClassAccuracyHere {
 /// The class is a (precision, shape, device) triple, the same key the
 /// default-policy table is read by, and the figures are the class's own: the
 /// eight lanes this library carries have eight rows, and the class's row of
-/// `DefaultPolicyFor` supplies the terms the bound is read at. This is what
-/// `DefaultGuarantee` answers with, at the same seven axes, without the archive.
+/// `DefaultPolicyFor` supplies the terms the figure is read at. The bound is the
+/// measured absolute figure this build states for the class, and not the
+/// archive's `DefaultGuarantee(n, x)`, which evaluates the contract at a cell:
+/// this header's table has no function value to scale by.
 ///
 /// Two of the seven policy axes move the bound, and both are parameters here:
 /// the division form, because the plain reciprocal rounds once more per step and
@@ -667,7 +692,7 @@ constexpr ClassAccuracyHere BoysAccuracyHere() noexcept {
                                   kExp == DefaultPolicy<kPrecision, kShape, kDevice>::kRegionBExp;
 
     ClassAccuracyHere answer;
-    answer.bound.reading = AccuracyReading::kGuaranteed;
+    answer.bound.reading = AccuracyReading::kMeasured;
 
     // The plain reciprocal rounds once more per step than the other two forms, so on a lane
     // where that costs accuracy the row publishes a term beside its base and this form's

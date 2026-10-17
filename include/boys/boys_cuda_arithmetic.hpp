@@ -34,7 +34,7 @@
 /// the whole of region B's seed, taken at the argument rather than as one polynomial
 /// over the region: the shipped partition's seed is one fit over the lane's own band -
 /// [kX0, kFlatHi) on the double lane, [kX0, kX1) on the float - and another
-/// partition's is piecewise. It takes the order because the relaxed batches
+/// partition's is piecewise. It takes the order because the batch lanes
 /// read their region-B degree from the order-0 entry — the F_0 seed's error reaches
 /// every output with gain at most 1 + 1.846e-17 — while the single lanes read it per
 /// order; the lane object decides which, and the arithmetic is the same either way.

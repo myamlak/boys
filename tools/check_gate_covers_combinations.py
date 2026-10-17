@@ -9,7 +9,7 @@ has never looked at it. This check is that statement.
 WHAT IS COMPARED, AND WHERE EACH SIDE COMES FROM
 
   * the combinations that exist are the axes of the library's own guarantee,
-    ``BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity, form, exp)``
+    ``BoysAccuracyGuaranteed(precision, n, x, route, scheme, axis, granularity, form, exp)``
     (include/boys/boys.hpp). Every axis member is read from the table the library
     publishes for it - ``BoysFitRoutes``/``BoysFitRoutesF32``, ``BoysEvalSchemes``,
     ``BoysPackAxes``, ``BoysFitGranularities``, ``BoysDivisionForms``, ``BoysRegionBExps``
@@ -101,7 +101,7 @@ WHAT "THE LIBRARY CARRIES" MEANS, AND WHY IT IS READ RATHER THAN TAKEN
 
 The universe this check measures against is not the cross of the tables on trust. A tuple
 of the accessor's seven axes is carried when ``BoysAccuracyGuaranteed`` answers
-``available = true`` for it, and the accessor's answer is read from the revision's own
+``available = true`` for it, and the accessor's answer is read from the library's own
 source (src/boys.cpp):
 
   * the accessor asks a ``Carries*`` rule, and the rules' parameters are the axes they can
@@ -119,17 +119,18 @@ misunderstood is visible in its own output rather than absorbed into a total.
 
 WHAT IT READS AND WHAT IT DOES NOT
 
-The library's facts are read at the revision the recorded run names, through
-``git show <revision>:<path>`` - never out of the working tree, which other work may hold
-open - so the constants this check compares against are the ones the recorded run was
-produced from. One case reads the working tree instead and says so in its output: a run
-whose revision this clone cannot resolve, which happens when the recording branch was
-squash-merged and its commits left the default branch's history. That is a fact about the
-merge and not about the tree, and the record's content digests
-(``tools/check_recorded_run.py``, its own required check) are what bind the record to the
-tree in that case. The gate's own source is read from the working tree, which is where the
-gate this run records lives; a gate edited since the run is a finding the run's own
-revision line carries and ``tools/check_recorded_run.py`` is the check for it.
+The library's facts are read from the working tree, and the working tree is held to the
+content the recorded run's own stamp names before anything is read from it. A run's identity
+is its version and its content digests (``tools/record_stamp.py``), not a commit id: a commit
+stamped into a tracked artifact is in no clone's history after this repository's squash merge,
+while the same bytes carry the same digest. So this check loads ``tools/record_stamp.py``,
+recomputes the gate record's digests from this tree, and refuses - with the finding
+``tools/check_recorded_run.py`` prints for the same defect - when a gated group differs or the
+stamp names no digest. A run whose stamp names no content cannot be verified against the tree,
+and a tree the record cannot be held to is not read: that state is refused here as well, with the
+remedy ``check_recorded_run.py`` prints. The gate's own
+source is read from the working tree too; a gate edited since the run moves the ``gate`` group
+and is refused by that same digest gate.
 
 The one-order shapes' exclusion of the orders packing axis is not assumed. ``Shape::kSingle``
 and ``Shape::kFixedN`` have one order to put in a lane, so the axis that fills a lane with a
@@ -143,9 +144,10 @@ was written on, which is a price the default path of a table read should not pay
 runs on the same host. The default path says in its own output which of the two it did, so a run
 that asserted the exclusion never reads as one that proved it.
 
-The control compiles against the revision's own headers, materialised into a scratch directory
-from the revision's tree, and not against the working tree: a header in the working tree may have
-a writer in it, and a compile against that tree is a claim about whatever the writer had reached.
+The control copies the working tree's ``include/`` into a scratch directory and compiles against
+that copy. The copy is the tree's own bytes - the same bytes the digest gate above has just held
+to the record - and copying them keeps a compile control from writing into the tree a second
+reader is using.
 
 Usage:
     python tools/check_gate_covers_combinations.py
@@ -156,15 +158,15 @@ Usage:
 tool has no other one, so a gap exits non-zero with or without it.
 
 Exit status is 0 only when every combination the library carries is measured by the recorded
-run, and 1 otherwise - when one is unmeasured, when the run names no revision, when a
-revision cannot be resolved, when this check's own read came back empty, or when a read the
+run, and 1 otherwise - when one is unmeasured, when the run's stamp names content this tree
+does not carry, when this check's own read came back empty, or when a read the
 counts rest on did not hold: a carriage rule that can refuse a tuple inside the enumerations,
 a partition row that leaves a route or an axis clear, an accessor whose answers could come
 from a guard this check has not read, a form or member statement the run does not carry or
 carries at another count than the library's, that member statement scoped to cells this check
 cannot tie to the host lanes, a device arm naming an entry the device option table does not
 carry, a machine whose classes the class list names and the block arms with no entry, or an
-include tree that could not be rebuilt for the compile control. A run that finds nothing
+include tree that could not be copied for the compile control. A run that finds nothing
 exits 1: three tools in this tree reported success over a broken read in one night, so a
 silent zero must never read as a pass.
 """
@@ -172,8 +174,10 @@ silent zero must never read as a pass.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import pathlib
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -204,14 +208,29 @@ LIBRARY = (
     "src/boys_cuda.cpp",
 )
 
-# A revision read by a recorded run predates whatever the tree has grown since, so a path it
-# does not carry is read as empty rather than refused. Two headers are optional, and they are
-# the two the declarations have moved between: a revision that predates the kernel header
-# declares the policy-taking entries in the front door, and one that predates the declaration
-# header declares the whole surface there - which is on the list anyway.
-OPTIONAL = ("include/boys/boys_decl.hpp", "include/boys/kernels.hpp")
+# The stamp the recorded run carries: `accuracy gate, inputs <group>=<digest>,...`. The
+# working tree is read only once these digests have been recomputed and agree, so the facts
+# this check compares against are the ones the recorded run was produced from.
+INPUTS = re.compile(r"^accuracy gate, inputs[ \t]+(?P<inputs>\S+)[ \t]*$", re.M)
 
-REVISION = re.compile(r"^accuracy gate, revision[ \t]+(?P<rev>\S+)[ \t]*$", re.M)
+
+def stamp_module():
+    """`tools/record_stamp.py`, loaded from its path rather than copied.
+
+    The digests a run is held to are the ones the tool that wrote its stamp computes, so the two
+    readings are one implementation and not two that have to agree.
+    """
+    path = pathlib.Path(__file__).resolve().parent / "record_stamp.py"
+    spec = importlib.util.spec_from_file_location("record_stamp", path)
+    module = importlib.util.module_from_spec(spec)
+    # Registered before it is executed: a class the module decorates looks itself up in
+    # `sys.modules` while the module is being built, and a module that is not there fails.
+    sys.modules["record_stamp"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+record_stamp = stamp_module()
 
 # What the run's build reached: `device lanes : 4 of 4 measured on a card`. A run
 # whose first number is short of its second measured part of the device surface,
@@ -449,52 +468,24 @@ VCVARS = ("C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Auxili
           "vcvars64.bat")
 
 
-def git(*args: str) -> tuple[int, str, str]:
-    """git in this repository, as (exit status, stdout, stderr)."""
-    try:
-        proc = subprocess.run(["git", "-C", str(REPO), *args], capture_output=True,
-                              encoding="utf-8", errors="replace")
-    except OSError as error:
-        return 127, "", f"git could not be run: {error}"
-
-    if proc.stdout is None or proc.stderr is None:
-        return 127, proc.stdout or "", (proc.stderr or "").strip() or "git produced no stream"
-
-    return proc.returncode, proc.stdout, proc.stderr.strip()
-
-
 class Library:
-    """The library's facts, read from one revision's files and never from the working tree.
+    """The library's facts, read from the working tree.
 
-    The one exception is a revision this clone cannot resolve - a run recorded on a branch
-    that was squash-merged names a commit no clone of the default branch carries - where the
-    working tree is read instead and the caller says so. That is safe because the record's
-    content digests are what bind it to the tree (`check_recorded_run.py` gates them
-    separately): a working tree whose digests disagree with the run is already red there, so
-    this read only ever sees the tree the record's own digests describe.
+    The tree is read only behind the digest gate in ``main``: the recorded run's own stamp
+    states the content it was produced from, and a tree whose gated groups disagree with that
+    stamp is refused before this class is built. So every fact below describes the tree the
+    record's own digests name, and the two cannot silently be different trees.
     """
 
-    def __init__(self, revision: str | None) -> None:
-        self.revision = revision
+    def __init__(self) -> None:
         self.text: dict[str, str] = {}
 
         for path in LIBRARY:
-            if revision is None:
-                try:
-                    out = (REPO / path).read_text(encoding="utf-8", errors="replace")
-                    status, error = 0, ""
-                except OSError as problem:
-                    out, status, error = "", 1, str(problem)
-            else:
-                status, out, error = git("show", f"{revision}:{path}")
-
-            if status != 0:
-                if path in OPTIONAL:
-                    self.text[path] = ""
-                    continue
-                raise LookupError(f"{revision or 'the working tree'}:{path} could not be read: "
-                                  f"{error or 'no reason given'}")
-
+            try:
+                out = (REPO / path).read_text(encoding="utf-8", errors="replace")
+            except OSError as problem:
+                raise LookupError(f"{path} could not be read from the working tree: "
+                                  f"{problem}") from problem
             self.text[path] = out
 
         self.header = (self.text["include/boys/boys.hpp"]
@@ -599,9 +590,9 @@ class Library:
         self.devices = list(self.enum_members("Device", self.header))
         self.routes = list(self.enum_members("FitRoute", self.accuracy))
         self.schemes = list(self.enum_members("EvalScheme", self.accuracy))
-        # The packing axis has stood in one header and then the other, and this reads a
-        # revision rather than the working tree: a run recorded before the move carries it in
-        # backend.hpp. Both are read, and neither being read is the loud case below.
+        # The packing axis has stood in one header and then the other, and both are read: a
+        # record taken before the move carries it in backend.hpp. Neither being read is the
+        # loud case below.
         self.axes = list(self.enum_members("PackAxis", self.accuracy)) or \
             list(self.enum_members("PackAxis", self.backend))
         self.partitions = list(self.enum_members("FitGranularity", self.accuracy))
@@ -882,7 +873,7 @@ def enum_guard(condition: str, tables: dict[str, str]) -> tuple[list[str], int]:
     the table is what says which axis is being tested. The name is not always in the condition:
     the accessor binds the partition table to a local and tests the local's size, so a read that
     only matched names would report that guard as testing three axes of four and call the
-    revision's own source broken. The count of size tests is therefore read as well, and a guard
+    library's own source broken. The count of size tests is therefore read as well, and a guard
     is judged on the count - a guard that lost an axis has one size test fewer.
     """
     named = []
@@ -895,7 +886,7 @@ def enum_guard(condition: str, tables: dict[str, str]) -> tuple[list[str], int]:
 
 
 def carried_universe(library: "Library") -> tuple[dict[str, str], list[str]]:
-    """What `BoysAccuracyGuaranteed` answers `available = true` for, read at the revision.
+    """What `BoysAccuracyGuaranteed` answers `available = true` for, read from the working tree.
 
     The universe this check compares the run against is the set of tuples the library says it
     carries, not the cross of its tables: those are the same set only while no carriage rule
@@ -959,7 +950,7 @@ def carried_universe(library: "Library") -> tuple[dict[str, str], list[str]]:
             if sizes != whole:
                 findings.append(
                     f"{where} makes {sizes} size test(s) over the enumerations where this "
-                    f"revision's axes number {whole}, so a tuple naming an axis it does not test "
+                    f"this tree's axes number {whole}, so a tuple naming an axis it does not test "
                     f"is a value outside the enumeration that reads as carried")
 
         return found
@@ -1025,7 +1016,7 @@ def carried_universe(library: "Library") -> tuple[dict[str, str], list[str]]:
     accessor_at = code.find("AccuracyFigure BoysAccuracyGuaranteed(")
 
     if accessor_at < 0:
-        findings.append("the accessor's own definition could not be found in the revision's "
+        findings.append("the accessor's own definition could not be found in the library's "
                         "source, so what it refuses for the double lane was not read")
     else:
         end = block_end(code, accessor_at)
@@ -1063,18 +1054,22 @@ def carried_universe(library: "Library") -> tuple[dict[str, str], list[str]]:
 
             lane_guarded = [g for g in guards if "lanes.size()" in g]
             carriage_guarded = [g for g in guards if "carriage.carried" in g]
+            cell_guarded = [g for g in guards if "kMaxBoysOrder" in g]
 
             read["the accessor: answers"] = (
                 f"{len(early)} return(s) before it answers, "
-                f"{len(lane_guarded)} guarded on the lane enumeration and "
-                f"{len(carriage_guarded)} on the carriage")
+                f"{len(lane_guarded)} guarded on the lane enumeration, "
+                f"{len(carriage_guarded)} on the carriage and "
+                f"{len(cell_guarded)} on the cell domain")
 
-            if len(lane_guarded) != 1 or len(carriage_guarded) != 1 or len(early) != 2:
+            if (len(lane_guarded) != 1 or len(carriage_guarded) != 1 or len(cell_guarded) != 1
+                    or len(early) != 3):
                 findings.append(
                     f"the accessor refuses at {len(early)} point(s) before it answers, "
-                    f"{len(lane_guarded)} of them guarded on the lane enumeration and "
-                    f"{len(carriage_guarded)} on the carriage, so a tuple built out of the "
-                    f"tables can be refused by a guard this check has not read")
+                    f"{len(lane_guarded)} of them guarded on the lane enumeration, "
+                    f"{len(carriage_guarded)} on the carriage and {len(cell_guarded)} on the "
+                    f"cell domain, so a tuple built out of the tables can be refused by a guard "
+                    f"this check has not read")
 
             # The double lane has no carriage rule of its own: its enumeration guard is written
             # out in the accessor's own body, so the axes that guard tests are read here rather
@@ -1174,7 +1169,7 @@ class RecordedRun:
         self.rows: list[dict] = []
         self.entry_rows: list[dict] = []
         self.entry_rows_note: str | None = None
-        self.revision: str | None = None
+        self.inputs: str | None = None
         self.arithmetic: dict | None = None
         self.forms_per_row: int | None = None
         self.members_per_row: int | None = None
@@ -1189,10 +1184,10 @@ class RecordedRun:
             self.device_measured = int(device.group("measured"))
             self.device_carried = int(device.group("carried"))
 
-        match = REVISION.search(self.text)
+        match = INPUTS.search(self.text)
 
         if match is not None:
-            self.revision = match.group("rev")
+            self.inputs = match.group("inputs")
 
         forms = FORM_COVERAGE.search(self.text)
 
@@ -1391,38 +1386,21 @@ def entry_book_declared(gate_text: str, labels: set[str],
     return found
 
 
-def materialize(revision: str, scratch: pathlib.Path) -> pathlib.Path | None:
-    """The revision's include tree, written into a scratch directory.
+def materialize(scratch: pathlib.Path) -> pathlib.Path | None:
+    """The working tree's include directory, copied into a scratch directory.
 
-    The control compiles a translation unit that includes the library's headers, and a header in
-    the working tree may have a writer in it. A compile against that tree is a claim about
-    whatever the writer had reached, so the tree is rebuilt from the revision the run names and
-    the compile reads that - the same rule the library facts are read under.
+    The control compiles a translation unit that includes the library's headers. The bytes it
+    reads are the working tree's own - the same bytes the digest gate has just held to the
+    record - copied so that the compile writes into a scratch directory and not into the tree.
     """
-    status, listing, _ = git("ls-tree", "-r", "--name-only", revision, "include")
+    source = REPO / "include"
 
-    if status != 0:
+    if not source.is_dir():
         return None
 
-    root = scratch / "revision"
-
-    for path in listing.splitlines():
-        path = path.strip()
-
-        if not path:
-            continue
-
-        status, text, _ = git("show", f"{revision}:{path}")
-
-        if status != 0:
-            return None
-
-        target = root / path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text, encoding="utf-8", errors="replace")
-
-    include = root / "include"
-    return include if include.is_dir() else None
+    root = scratch / "tree"
+    shutil.copytree(source, root / "include")
+    return root / "include"
 
 
 def compiles(source: str, scratch: pathlib.Path, include: pathlib.Path) -> bool:
@@ -1447,7 +1425,7 @@ def compiles(source: str, scratch: pathlib.Path, include: pathlib.Path) -> bool:
 
 
 def policy(precision: str, pack: str) -> str:
-    return (f"boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
+    return (f"boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
             f"boys::BoysBudget::{BUDGET[precision]}, boys::PackAxis::{pack}, "
             f"boys::FitGranularity::kNarrow, boys::DivisionForm::kRefinedReciprocal, "
             f"boys::RegionBExp::kFast>")
@@ -1467,8 +1445,8 @@ def unit_for(precision: str, shape: str, pack: str, entries: dict[str, str]) -> 
     }[shape]
 
     return ("#include <boys/boys.hpp>\n"
-            "// The policy-taking entries, where this revision declares them beside the front door:\n"
-            "// a revision that predates that header declares them in boys/boys.hpp itself.\n"
+            "// The policy-taking entries, where this tree declares them beside the front door:\n"
+            "// a tree that predates that header declares them in boys/boys.hpp itself.\n"
             "#if __has_include(<boys/kernels.hpp>)\n"
             "#include <boys/kernels.hpp>\n"
             "#endif\n"
@@ -1485,8 +1463,6 @@ def main() -> int:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run", default=str(RUN), help="the gate's recorded run")
     parser.add_argument("--gate", default=str(GATE), help="the gate itself")
-    parser.add_argument("--revision", default=None,
-                        help="the revision to read the library at (default: the one the run names)")
     parser.add_argument("--full", action="store_true",
                         help="print every class-and-combination line rather than the grouped gaps")
     parser.add_argument("--compile", action="store_true",
@@ -1510,37 +1486,64 @@ def main() -> int:
               "whole subject is what that file records, so an empty read is not a pass")
         return 1
 
-    revision = args.revision or run.revision
+    # The working tree is read only behind the record's own content digests. A run's identity
+    # is its version and the digest of every group it read; recomputing those digests is what
+    # licenses reading this tree's facts as the run's. A stamp that states no content cannot be
+    # checked and is said so loudly; a stamp that names content this tree does not carry is
+    # refused, because the run is then a record of another tree.
+    stamp_findings: list[str] = []
 
-    if revision is None:
-        print(f"\nSTALE: {args.run} names no revision: no line of it reads `accuracy gate, "
-              "revision <rev>`, which is what dates the run and what says which library's tables "
-              "its rows were produced from")
+    if run.inputs is None or run.inputs == record_stamp.UNKNOWN:
+        print(f"\nSTALE: {args.run} names no content: no line of it reads `accuracy gate, inputs "
+              f"<group>=<digest>`, so this check cannot verify that the working tree it reads is "
+              f"the tree the run was produced from. A run whose stamp names no content cannot be "
+              f"verified against the tree, and an unverified tree is not read")
+        return 1
+    else:
+        recorded = record_stamp.parse_cell(run.inputs)
+        try:
+            computed = record_stamp.digests(REPO, "gate")
+        except record_stamp.StampError as error:
+            print(f"\nSTALE: the gate record's digests could not be recomputed from this tree: "
+                  f"{error}. The tree cannot be held to the run's content, so its rows are not "
+                  f"read")
+            return 1
+        print("\nthe working tree, held to the content the run's own stamp names")
+
+        for name in record_stamp.gated("gate"):
+            if name not in recorded:
+                print(f"  {name}: named by no group of the run's inputs")
+                stamp_findings.append(
+                    f"the run's inputs line holds no {name} group, so the content the gate read "
+                    f"there is held to nothing: the line is written by the build and a group it "
+                    f"leaves out is one this check cannot compare. Re-make the run from a build "
+                    f"of this tree")
+            elif recorded[name] != computed[name]:
+                print(f"  {name}: recorded {recorded[name]}, this tree {computed[name]}")
+                stamp_findings.append(
+                    f"the content the run was taken from differs in {name}: its stamp states "
+                    f"{recorded[name]} and this tree reads {computed[name]}. The run is a record "
+                    f"of files this tree does not carry: the rows in it are what the gate printed "
+                    f"before the change, so this check would be answering about another tree. "
+                    f"Re-make the run - build boys-accuracy-gate in this tree, run it, and write "
+                    f"its output to {args.run} - and commit the new record with the change that "
+                    f"moved the content")
+            else:
+                print(f"  {name}: {computed[name]}")
+
+    if stamp_findings:
+        print(f"\nSTALE: the working tree is not the tree the recorded run names")
+        for finding in stamp_findings:
+            print(f"  FINDING: {finding}")
         return 1
 
-    status, resolved, error = git("rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}")
-
-    if status != 0 or not resolved.strip():
-        # A run recorded on a branch that was squash-merged names a commit no clone of the
-        # default branch carries. That is a fact about the merge and not about the tree, so it
-        # is not a finding: the library is read from the working tree instead, and the record's
-        # content digests - gated by check_recorded_run.py - are what hold the two together.
-        print(f"\nNOTE: the run names revision {revision}, which this clone cannot resolve"
-              + (f" ({error})" if error else "")
-              + " - a branch commit a squash merge left out of the default branch's history."
-              + "\n      The library is read from the working tree; the run's content digests"
-              + " (check_recorded_run.py) are what bind the record to it.")
-        print("  library read at: the working tree (the run's revision is not in this clone)")
-        library_revision = None
-    else:
-        print(f"  library read at: {revision} (the revision the run names)")
-        library_revision = revision
-
     try:
-        library = Library(library_revision)
+        library = Library()
     except LookupError as problem:
         print(f"\nSTALE: {problem}")
         return 1
+
+    print("  library read at: the working tree, whose gated groups the run's stamp names")
 
     if not run.rows:
         print(f"\nSTALE: {args.run} carries no combination rows: no table under a header reading "
@@ -1565,7 +1568,8 @@ def main() -> int:
 
     print("\nthe universe the gap is measured against: what the library says it carries")
     print(f"  a tuple is carried when BoysAccuracyGuaranteed answers `available = true` for it,")
-    print(f"  and the accessor answers from a carriage rule. Read at {revision} (src/boys.cpp):")
+    print(f"  and the accessor answers from a carriage rule. Read in the working tree "
+          f"(src/boys.cpp):")
 
     for field, value in carriage_read.items():
         print(f"    {field:<44} {value}")
@@ -1606,7 +1610,7 @@ def main() -> int:
     if unclassified:
         findings.append("the combination block instantiates "
                         + ", ".join(sorted(unclassified))
-                        + ", and no declared entry of this revision is a prefix of "
+                        + ", and no declared entry of this tree is a prefix of "
                           + ("that name" if len(unclassified) == 1 else "those names")
                         + ": the class those entries answer for cannot be read from the library, so "
                           "the classes this run measures cannot be stated")
@@ -1672,9 +1676,9 @@ def main() -> int:
         findings.append(
             "the gate's combination block arms the device lanes with "
             + ", ".join(sorted(unplaced_devices))
-            + ", and this revision's device option table carries no row for "
+            + ", and this tree's device option table carries no row for "
             + ("that name" if len(unplaced_devices) == 1 else "those names")
-            + " under a precision this revision documents as a device lane: the member those "
+            + " under a precision this tree documents as a device lane: the member those "
               "arms read is not stated by the library, so a lane with no placed arm of its own "
               "is counted at the member its contract row publishes its term under, which is "
               "where that term belongs and not where an entry is")
@@ -1703,7 +1707,7 @@ def main() -> int:
             device_members.setdefault(lane["member"], [lane["additiveMember"]])
 
     print(f"\nthe region-B member each device lane's cells are read at, read from the entries the")
-    print(f"  block arms that lane with and from the device option table at {revision} "
+    print(f"  block arms that lane with and from the device option table in the working tree "
           f"(src/boys_cuda.cpp):")
 
     for lane in library.lanes:
@@ -1746,7 +1750,7 @@ def main() -> int:
         "exp": len(library.exps),
     }
 
-    print(f"\nthe axes, read from the library's own tables at {revision}"
+    print(f"\nthe axes, read from the library's own tables in the working tree"
           f" (the name a run prints is in brackets)")
     print(f"  lanes       {axis_sizes['lane']}  "
           + " ".join(f"{row['member']} [{row['name']}]" for row in library.lanes))
@@ -1873,7 +1877,7 @@ def main() -> int:
 
     if unknown:
         findings.append(f"{len(unknown)} row(s) of the recorded run name an axis member no table of "
-                        f"revision {revision} carries (first: {unknown[0]}). A row this check cannot "
+                        f"this tree carries (first: {unknown[0]}). A row this check cannot "
                         "place is a row whose combination it cannot count as measured")
 
     if unrunnable:
@@ -2264,7 +2268,7 @@ def main() -> int:
         print(f"    there the unmeasured member is a bound and not a spelling: two figures are two")
         print(f"    claims, and the run carries one of them.")
     else:
-        print(f"    on this revision's rows the two members answer one figure on every lane, so the")
+        print(f"    on this tree's rows the two members answer one figure on every lane, so the")
         print(f"    bound leg is the same number at both; the arithmetic the other member selects is not.")
 
     # ---------------------------------------------------------------- compile control
@@ -2298,18 +2302,17 @@ def main() -> int:
         else:
             with tempfile.TemporaryDirectory() as scratch:
                 directory = pathlib.Path(scratch)
-                include = materialize(revision, directory)
+                include = materialize(directory)
 
                 if include is None:
-                    print(f"  the include tree of {revision} could not be written to a scratch "
-                          f"directory, so the exclusion was not put to the compiler: the working "
-                          f"tree is what the other lanes hold and is not what this check reads")
+                    print(f"  the working tree's include directory could not be copied to a "
+                          f"scratch directory, so the exclusion was not put to the compiler")
                     findings.append(
-                        f"the include tree of {revision} could not be materialised, so the "
-                        f"one-order exclusion was neither proved nor refuted at this revision")
+                        f"the working tree's include tree could not be copied, so the "
+                        f"one-order exclusion was neither proved nor refuted here")
                 else:
-                    print(f"  compiled against the include tree of {revision}, written to a "
-                          f"scratch directory; the working tree is not read")
+                    print(f"  compiled against a copy of the working tree's include directory, "
+                          f"written to a scratch directory")
 
                     for shape, entry in sorted(entries_by_shape.items()):
                         at_orders = compiles(unit_for("kFp64", shape, ORDERS_MEMBER,
@@ -2349,7 +2352,7 @@ def main() -> int:
                   f"the library: re-make the run from a build with BUILD_CUDA=ON on a host with a "
                   f"usable card, and commit the new record")
         else:
-            print(f"\nFAIL: the recorded run does not cover the combinations this revision carries")
+            print(f"\nFAIL: the recorded run does not cover the combinations this tree carries")
         return 1
 
     print("  PASS: every combination the library carries is measured by the recorded run")

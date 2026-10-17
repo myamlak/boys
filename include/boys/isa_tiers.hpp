@@ -58,8 +58,7 @@
 
 /// This translation unit's AVX2 + FMA tier: \c 1 on the vector tier, \c 0 on the scalar one.
 #if !defined(BOYS_ISA_AVX2_FMA)
-#if (defined(__AVX2__) && defined(__FMA__)) || (defined(_MSC_VER) && defined(__AVX2__)) || \
-    defined(_M_AVX2)
+#if (defined(__AVX2__) && defined(__FMA__)) || (defined(_MSC_VER) && defined(__AVX2__))
 #define BOYS_ISA_AVX2_FMA 1
 #else
 #define BOYS_ISA_AVX2_FMA 0

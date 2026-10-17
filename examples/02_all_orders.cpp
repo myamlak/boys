@@ -22,9 +22,11 @@ int main()
         std::printf("%-3d %.17g\n", k, ladder[k]);
     }
 
-    // Each order must agree with the single-order entry, inside the bound.
+    // Each order must agree with the single-order entry, inside the bound. The double
+    // lane's contract is scaled by F_0(x), so at one argument it is one figure for every
+    // order the ladder carries.
     const boys::AccuracyFigure bound =
-        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllOrders>();
+        boys::DefaultGuarantee<boys::Precision::kFp64, boys::Shape::kAllOrders>(nmax, x);
 
     double worst = 0.0;
     for (int k = 0; k <= nmax; ++k)

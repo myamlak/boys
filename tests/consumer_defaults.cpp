@@ -87,12 +87,12 @@ using Fp16AllOrders = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::k
 using Bf16Single = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kSingle>;
 using Bf16AllOrders = boys::DefaultPolicy<boys::Precision::kBf16, boys::Shape::kAllOrders>;
 
-// Each shortcut name denotes the type it is defined as: `EvalPolicy<>` for the double and float
+// Each shortcut name denotes the type it is defined as: `SeamPolicy<>` for the double and float
 // lanes; for the half lanes the same axes under the fp16 engine budget. That is a statement about
 // the four names and not about any entry's parameter - the entries' parameters default to the
 // class-keyed names above, and the two coincide only on a class whose row is the five.
-static_assert(std::is_same_v<Fp64Default, boys::EvalPolicy<>>);
-static_assert(std::is_same_v<Fp32Default, boys::EvalPolicy<>>);
+static_assert(std::is_same_v<Fp64Default, boys::SeamPolicy<>>);
+static_assert(std::is_same_v<Fp32Default, boys::SeamPolicy<>>);
 static_assert(Fp64Default::kBudget == boys::BoysBudget::kFloat);
 static_assert(Fp32Default::kBudget == boys::BoysBudget::kFloat);
 static_assert(Fp16Default::kBudget == boys::BoysBudget::kFp16);

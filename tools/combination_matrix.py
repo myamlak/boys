@@ -917,7 +917,7 @@ def enum_of(axis: str, member: str) -> str:
 def instantiation(precision: str, shape: str, combination: dict[str, str]) -> str:
     """One line instantiating a class's entry at one combination."""
     policy = (
-        "boys::EvalPolicy<"
+        "boys::SeamPolicy<"
         f"boys::FitRoute::{enum_of('route', combination['route'])}, "
         f"boys::EvalScheme::{enum_of('scheme', combination['scheme'])}, "
         f"boys::BoysBudget::{BUDGET[precision]}, "
