@@ -1055,6 +1055,16 @@ under WSL2, `instructions:u` and `uops_retired.retire_slots:u`), 2,048,000 calls
 | orders axis, gathered fetch | **4,154,092,317** | 9,550,724,437 | 4,662.9 | 141.33 |
 | across-arguments lane forced onto this shape | 30,369,673,181 | 27,806,856,380 | 13,577.6 | 411.38 |
 
+**The composed row is one of two measurements of that variant, and the older one.** Re-measured over
+the same calls and the same shape, the composed variant retires **6,570,938,098** instructions and
+**6,845,085,236** slots, in three runs agreeing to within 232 instructions and 0.02% of slots, where
+the row above says 5,072,522,334 and 4,719,806,211; the row was taken against an earlier generation
+of the tables, and the **1.42** and **2.02** ratios this page draws from it are the ones that move
+with it. The gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and so does
+the shipped entry's (6,326,030,697 / 6,729,655,927, the instruction count to seven digits of the
+published figure). Both pairs are reported rather than one, because restating the row would hide the
+distance a reader measuring the same variant would find.
+
 Read the two columns against each other. **The gathered variant retires the fewest instructions of
 any lane here and the most slots of any lane here**: it is the fastest by instruction count and the
 slowest by retired slots, and the shipped route sits between it and the composed one on both. The
@@ -1104,18 +1114,6 @@ What the two lanes cannot be compared on is identity: the narrow axis reads its 
 shipped lane's `fma` mapping and the per-order narrow lane under `2 (x - a) / (b - a) - 1`, so the
 narrow axis is held to the reference above instead of to a bit-for-bit row, for the mapping reason
 given with it.
-
-**The composed row, measured again over the same calls.** The two figures disagree, and both are
-reported rather than one: over the same calls and the same shape, the composed variant retires
-**6,570,938,098** instructions and **6,845,085,236** slots, in three runs agreeing to within 232
-instructions and 0.02% of slots, where the table above says 5,072,522,334 and 4,719,806,211. The
-gathered row reproduces to within a percent (4,115,182,612 / 9,510,675,358) and the shipped entry's
-row reproduces (6,326,030,697 instructions, the published figure to seven digits, and 6,729,655,927
-slots, within a percent). A reader re-measuring the composed variant should expect the higher pair:
-the table's row was taken against an earlier generation of the tables,
-and the **1.42** and **2.02** ratios drawn from it are the ones that move with it. The table
-is left as measured rather than quietly restated, because restating it would hide the distance a
-reader measuring the same variant would find.
 
 **The re-measurement obligation.** A second packed path is re-measured whenever another axis moves,
 because every figure above is a property of one build's code and one machine's microarchitecture — a
