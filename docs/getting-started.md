@@ -244,6 +244,48 @@ which the call above leaves at its default. Each is documented beside its type i
 [the API reference](mainpage.md), and all seven are listed under [What you can and cannot choose at
 run time](#what-you-can-and-cannot-choose-at-run-time).
 
+**Next:** the settings you did not name. The next section is what each of them changes, and where the
+figures for it are.
+
+---
+
+## What does each setting change? {#what-does-each-setting-change}
+
+Five of the seven settings the policy above writes are the library's own option axes — the fit route,
+the evaluation scheme, the packing axis, the interval granularity and the division form, which
+`docs/architecture.md` under "The option axes" names as the five a host policy holds. The policy's
+other two — the engine budget and the region-B exponential — are named at the end of this section.
+
+**A call's bound is its lane's; what these axes move is what a call delivers and what it costs.** One
+member of one axis states a term beside a lane's base rather than a figure of its own, and the table
+says where. **Which member is fastest is a property of your machine, its flags and its card**, so the
+library's rule is that the option probe ranks the combinations where they will run: the program is
+`examples/07_option_probe.cpp`, whose transcript is in the section above, and the recorded run of its
+full protocol is `tests/data/boys_option_probe_report.txt`. Every row of that report names the member
+of each axis it measured. The table says what each axis decides, what the tree has measured about it,
+and where the figures are. **It does not rank the members** — the section above says why no page can.
+
+| the axis | what it selects, and its members | what naming another member changes | where the figures are |
+|---|---|---|---|
+| **fit route** — `FitRoute` | which stored fits serve a region: the Chebyshev fits the certified lanes are defined by (`kChebyshev`, the default), or a rational minimax alternative holding the same bar by storing different things (`kRationalMinimax`) | **Accuracy, storage and work.** Measured against the committed reference, region A reads 1.74e-16 through the Chebyshev table, which stores 1320 coefficients, against 2.46e-14 through the rational one, which stores 891; the two region-B seeds read 9.92e-15 and 4.46e-14, over 19 and 12 stored. The rational route takes over per order from 1.0855252345349333 rather than from the region's left end, and it is not a seed for the batch entry's recursion. A rational fit costs one division per order, where the split-Clenshaw Chebyshev form is division-free. | `docs/lane-contract.md`, "The two fit routes" — the route table itself and the paragraphs on the two tables' reach. `BoysFitRoutes()` reports the rows at run time. The route has **not** been ranked against a timing, and lane-contract's default-policy section says which axes have been and which have not. |
+| **evaluation scheme** — `EvalScheme` | the summation a stored fit is read in: the even/odd split Clenshaw recurrence on its Chebyshev form (`kSplitClenshaw`), or Horner's rule on the monomial form of the same fit (`kHorner`, the default) | **Arithmetic and work, not the fit.** Both sum one fit, at one degree, to one bound: region A's per-order fits read 2.220e-16 under Horner and 4.441e-16 under split Clenshaw at the fused multiply-add route, with Horner's own figure at 4.441e-16 on the separate route, and the two region-B seeds read the same figure either way. Region C is a closed form with no fit to sum; the half lanes, the packed region-A lane and the CUDA device lane are split Clenshaw's and are not offered the other member. | `docs/lane-contract.md`, "The evaluation scheme: split Clenshaw or Horner" — one measured row per scheme and stored fit, which the accuracy gate carries beside its own rows. `BoysEvalSchemes()` and `BoysEvalSchemeFits()` answer the rows at run time. Cost: the probe's. The runs behind the default compare both members and do not separate them. |
+| **interval granularity** — `FitGranularity` | how narrowly the fitted domain is cut into pieces: the committed cut (`kCoarsest`), the narrower cut the proved truncation bound places (`kNarrow`, the seam's default), or one fixed grid over the whole fitted domain with every order fitted independently (`kUniform`) | **Work per call against storage, not accuracy** — all three cut one fit. The specification's table reads 19 to 21 coefficients per evaluation over 1339 stored coefficients for `kCoarsest`, and 11 over 3476 for `kNarrow`; `kNarrow`'s own measured region-A figure is 2.22e-16 at that region's 1e-15 bar. The grid buys a locate of one multiply and drops the per-order recursion, and pays in stored coefficients: on the double lane 496 intervals of width 1/16 under a read cap of 5, with the float lane carrying its own 77 of width 1/4 under a cap of 4. **The default was never chosen against its axis** — the runs behind it measured one member of the three. | `docs/specification.md`, "Interval granularity", and `docs/lane-contract.md`, "Interval granularity". The gate carries one row per partition, scheme and call shape; `BoysFitGranularities()` answers the rows at run time. Cost: the probe's. |
+| **packing axis** — `PackAxis` | which of a call's values share a vector register: four arguments at one order (`kArguments`, the default), or four orders at one argument (`kOrders`) | **Which call shapes can carry it, and which path a call takes.** The two evaluate the same stored fits by the same arithmetic, so this is neither a choice of accuracy nor one of two designs. `BoysFixedN` produces one order and refuses `kOrders` where it is named; the single-precision entries have no packed body and refuse it too. A plane call naming the orders axis takes the all-orders entry's body and returns its values bit for bit, giving up the region grouping that exists to feed an arguments lane. | `docs/lane-contract.md`, "The packing axis: which of a call's values share a vector"; `BoysPackAxes()` reports the members and the interval each one's packed lane evaluates. **Not ranked against a timing**, with the route. |
+| **division form** — `DivisionForm` | how each step of a recurrence divides: one division per step (`kExactDivision`), a reciprocal formed once and multiplied through the ladder (`kPlainReciprocal`), or that form with the correctly rounded quotient recovered by one fused multiply-add per step (`kRefinedReciprocal`, the default) | **The last bits and the work, and on two lanes the published figure.** `kRefinedReciprocal` is bit-identical to exact division; the float and half lanes state a term beside their base where `kPlainReciprocal` is named, because that form's extra rounding takes the all-orders entry's region-A downward ladder past it. The axis governs only the divisions inside a recursion, so an order answered by reading its own fit is the same value under all three forms. | `docs/lane-contract.md`, "The division form: how each recursive step divides" — the lanes' figures, the cost the tree recorded on the host it measured, and the command that reproduces it. `BoysDivisionForms()` reports the members at run time, and the probe names the form in every row it prints. |
+
+**The policy's other two settings.** The **engine budget** (`BoysBudget`) is read by the
+single-precision and half engines and by no other lane, so on a double policy it is inert: `kFloat` is
+the float lane's 1.5e-7 budget and `kFp16` the half lanes' 1e-7 region target. The **region-B
+exponential** (`RegionBExp`) names the arithmetic that seeds a region-B ladder: `kAccurate` is the
+library routine, and `kFast` is the library's own reduced-argument polynomial, read above the argument
+that polynomial's own requirement admits and the library routine below it. Each target has its own
+default — the host's is `RegionBExp::kFast` — and the device lane's fast member carries a term of its
+own beside its base. Both are listed with the other five settings, and where each may be named, in
+[What you can and cannot choose at run time](#what-you-can-and-cannot-choose-at-run-time).
+
+**If you have not measured a preference, name no policy at all**, which is what the section above
+advises: a call naming nothing reads its class's own row.
+
 **Next:** you have named a specific evaluation. Before you rely on it, ask what it guarantees.
 
 ---
