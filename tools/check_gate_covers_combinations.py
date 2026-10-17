@@ -126,9 +126,9 @@ stamped into a tracked artifact is in no clone's history after this repository's
 while the same bytes carry the same digest. So this check loads ``tools/record_stamp.py``,
 recomputes the gate record's digests from this tree, and refuses - with the finding
 ``tools/check_recorded_run.py`` prints for the same defect - when a gated group differs or the
-stamp names no digest. A run whose stamp names no content cannot be verified against the tree;
-that is printed as a loud NOTE rather than passed over, and the check continues, because the
-question it answers is coverage and the stamp is the other check's subject. The gate's own
+stamp names no digest. A run whose stamp names no content cannot be verified against the tree,
+and a tree the record cannot be held to is not read: that state is refused here as well, with the
+remedy ``check_recorded_run.py`` prints. The gate's own
 source is read from the working tree too; a gate edited since the run moves the ``gate`` group
 and is refused by that same digest gate.
 
@@ -1494,14 +1494,20 @@ def main() -> int:
     stamp_findings: list[str] = []
 
     if run.inputs is None or run.inputs == record_stamp.UNKNOWN:
-        print(f"\nNOTE: {args.run} names no content: no line of it reads `accuracy gate, inputs "
+        print(f"\nSTALE: {args.run} names no content: no line of it reads `accuracy gate, inputs "
               f"<group>=<digest>`, so this check cannot verify that the working tree it reads is "
-              f"the tree the run was produced from.\n"
-              f"      The library is read from the working tree anyway: the stamp is "
-              f"`tools/check_recorded_run.py`'s subject, and coverage is this check's.")
+              f"the tree the run was produced from. A run whose stamp names no content cannot be "
+              f"verified against the tree, and an unverified tree is not read")
+        return 1
     else:
         recorded = record_stamp.parse_cell(run.inputs)
-        computed = record_stamp.digests(REPO, "gate")
+        try:
+            computed = record_stamp.digests(REPO, "gate")
+        except record_stamp.StampError as error:
+            print(f"\nSTALE: the gate record's digests could not be recomputed from this tree: "
+                  f"{error}. The tree cannot be held to the run's content, so its rows are not "
+                  f"read")
+            return 1
         print("\nthe working tree, held to the content the run's own stamp names")
 
         for name in record_stamp.gated("gate"):
