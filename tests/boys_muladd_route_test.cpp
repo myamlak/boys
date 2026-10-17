@@ -5,10 +5,12 @@
 
 #include <gtest/gtest.h>
 
+// The sweep crosses every route, scheme and partition, so it names every coefficient group: the
+// umbrella opens them, and a group header precedes the front door below.
+#include "boys/boys_all.hpp"
+
 #include "boys/backend.hpp"
 #include "boys/kernels.hpp"
-// The sweep crosses every route, scheme and partition, so it names every coefficient group.
-#include "boys/boys_all.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"

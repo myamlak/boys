@@ -193,7 +193,7 @@ inline double RationalUniformOrderAt(const FlatPoint& at, int l) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, UniformRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_d_uniform_rat.hpp: include that "
-                  "header in the translation unit that names the uniform rational route");
+                  "header before boys/boys.hpp in the translation unit that names the uniform rational route");
     const std::size_t stored = static_cast<std::size_t>(detail::kFlatRatStored[at.iv]);
     const double* c = detail::kFlatRatCoeffs.data() +
                       static_cast<std::size_t>(detail::kFlatRatOffsets[at.iv]) +
@@ -238,7 +238,7 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, UniformMonoGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_d_uniform_mono.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FitSumMono<backend::ScalarFp64>(detail::kFlatMonoCoeffs.data() + base,
                                                    kFlatDeg,
                                                    at.t);
@@ -248,7 +248,7 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, UniformChebGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_d_uniform_cheb.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FitSumCheb<backend::ScalarFp64>(detail::kFlatCoeffs.data() + base,
                                                    kFlatDeg,
                                                    at.t);
@@ -319,7 +319,7 @@ double FlatSingleOrder(int n, double x) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, UniformMonoGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_d_uniform_mono.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FlatFitSum<Policy::kScheme>(detail::kFlatMonoCoeffs.data() + base, kFlatDeg,
                                                at.t);
         }
@@ -328,7 +328,7 @@ double FlatSingleOrder(int n, double x) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, UniformChebGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_d_uniform_cheb.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base, kFlatDeg, at.t);
         }
     }

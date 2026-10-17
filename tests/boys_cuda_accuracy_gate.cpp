@@ -3,6 +3,10 @@
 // tools/gen_boys_accuracy_gate_reference.py, in the CPU gate's row shape; the fp64 entries also against
 // tests/data/boys_reference.csv. Exit: 0 all met, 1 over bound or unclaimed, 2 launch failed, 3 unarmed.
 
+// This gate judges a cell at every route, scheme and partition, so it names policies outside the
+// front door's default set: the umbrella opens every group, before the front door below reads them.
+#include "boys/boys_all.hpp"
+
 #include "boys/kernels.hpp"
 #include "boys/boys_cuda.hpp"
 #include "boys/boys_impl.hpp" // the region boundaries

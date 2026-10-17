@@ -75,20 +75,22 @@ TEST(DefaultTables, EveryHostEntryRunsOnTheDefaultSet) {
 #if BoysFp16
     std::array<boys::F16, boys::kMaxBoysOrder + 1> out16{};
     std::array<boys::Bf16, boys::kMaxBoysOrder + 1> outbf{};
+    std::array<boys::F16, kCount * (boys::kMaxBoysOrder + 1)> batch16{};
+    std::array<boys::Bf16, kCount * (boys::kMaxBoysOrder + 1)> batchbf{};
     std::array<boys::F16, kCount> x16{boys::F16(0.25f), boys::F16(3.5f), boys::F16(40.0f)};
     std::array<boys::Bf16, kCount> xbf{boys::Bf16(0.25f), boys::Bf16(3.5f), boys::Bf16(40.0f)};
 
     EXPECT_GT(static_cast<float>(boys::BoysSingleF16(3, boys::F16(0.5f))), 0.0f);
     boys::BoysAllOrdersF16(kNmax, boys::F16(0.5f), out16.data());
-    boys::BoysFixedNF16(3, x16.data(), out16.data(), kCount);
-    boys::BoysAllNF16(kNmax, x16.data(), out16.data(), kCount);
-    boys::BoysAllNAtOrdersF16(orders, x16.data(), out16.data(), kCount);
+    boys::BoysFixedNF16(3, x16.data(), batch16.data(), kCount);
+    boys::BoysAllNF16(kNmax, x16.data(), batch16.data(), kCount);
+    boys::BoysAllNAtOrdersF16(orders, x16.data(), batch16.data(), kCount);
 
     EXPECT_GT(static_cast<float>(boys::BoysSingleBf16(3, boys::Bf16(0.5f))), 0.0f);
     boys::BoysAllOrdersBf16(kNmax, boys::Bf16(0.5f), outbf.data());
-    boys::BoysFixedNBf16(3, xbf.data(), outbf.data(), kCount);
-    boys::BoysAllNBf16(kNmax, xbf.data(), outbf.data(), kCount);
-    boys::BoysAllNAtOrdersBf16(orders, xbf.data(), outbf.data(), kCount);
+    boys::BoysFixedNBf16(3, xbf.data(), batchbf.data(), kCount);
+    boys::BoysAllNBf16(kNmax, xbf.data(), batchbf.data(), kCount);
+    boys::BoysAllNAtOrdersBf16(orders, xbf.data(), batchbf.data(), kCount);
 #endif
 }
 

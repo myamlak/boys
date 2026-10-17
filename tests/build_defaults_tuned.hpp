@@ -7,8 +7,10 @@
 // translation unit carrying this seam includes the partition's own tables.
 #include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
 #include "boys/boys_coefficients_f32_coarse_cheb.hpp"
 #include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
 
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 

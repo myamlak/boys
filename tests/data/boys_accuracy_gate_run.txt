@@ -8,7 +8,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
+verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
@@ -111,7 +111,7 @@ the certified fit routes, measured:
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
 accuracy gate, version 5.0.0
-accuracy gate, inputs src=fc1a3663b24d2990,include=89d907df8d48c16c,gate=8ebcc5295a49c6e3,grid=970db44ddb6a7da5,cmake=bcb93d5c1923a0e3
+accuracy gate, inputs src=65ee17e0c7005d9a,include=bfcfb4346ce0702d,gate=bad36ee600b24a33,grid=970db44ddb6a7da5,cmake=bcb93d5c1923a0e3
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value

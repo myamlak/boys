@@ -8,9 +8,11 @@
 // rational lane reads 1.7277e-07 against the double lane - over the 1.5e-07 the route is certified against - and
 // the packed lane reads 1.3093e-07, inside it. The bound is the float lane's documented one, from the header.
 
-#include "boys/kernels.hpp"
-// The float sweep crosses every route, scheme and partition, so it names every coefficient group.
+// The float sweep crosses every route, scheme and partition, so it names every coefficient group:
+// the umbrella opens them, and a group header precedes the front door below.
 #include "boys/boys_all.hpp"
+
+#include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"

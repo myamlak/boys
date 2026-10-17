@@ -3,6 +3,10 @@
 // verified at this revision exits non-zero. The far-representation book at the end reads a second
 // grid of its own, because the far arms dispatch on boundaries the first cannot resolve.
 
+// The gate sweeps every combination, so it names every group: the umbrella opens them, and a
+// group header precedes the front door below.
+#include "boys/boys_all.hpp"
+
 #include <boys/kernels.hpp>
 #include <boys/f16.hpp>
 #include <boys/version.hpp>
@@ -58,7 +62,6 @@ constexpr const char* kNativeHalfAbsent =
 #include <boys/boys_cuda.hpp>
 #endif
 
-#include "boys/boys_all.hpp" // the gate sweeps every combination, so it names every group
 #include "boys/boys_impl.hpp" // the region kernels
 #include "boys_gate_reference.hpp" // the committed reference, the row shape
 

@@ -5,6 +5,15 @@
 // measures against the entries a consumer compiles. Private to the library, declared here and
 // defined in boys_orders_simd.cpp, over the closure and OrdersScheme that path declares.
 
+// The groups these entries read sit outside the default set, and a group header is included before
+// the front door: its marker specialization must precede the fit headers that read it.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_far.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
+
 #include "boys/backend.hpp"
 #include "boys/boys.hpp"
 #include "boys/boys_orders_lanes.hpp"

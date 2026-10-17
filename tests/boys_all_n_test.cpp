@@ -3,12 +3,12 @@
 // shell-quartet consumer needs. Its published bound, the larger of 1e-13 * F_n(x) and
 // 1e-13 * F_0(x), is pinned over the committed reference grid and against BoysAllOrders, as maxima.
 
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_narrow_cheb.hpp"
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 // The orders axis's split-Clenshaw form and the far lane's shipped partition: neither is in the
 // set `<boys/boys.hpp>` opens.
-#include "boys/boys_coefficients_d_coarse_mono.hpp"
-#include "boys/boys_coefficients_d_narrow_cheb.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys/boys_span.hpp"

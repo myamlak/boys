@@ -45,16 +45,18 @@ that defines it, and the tag of every group. A group header,
 marks its group present. The fit that reads a family asserts that marker, so a translation unit
 that names a policy whose fit needs a group it did not include fails to compile, with the header's
 name in the message; it never reaches a link error. The marker's read is carried on a parameter of
-the reading template (`include/boys/dependent_false.hpp`, `DependentGroup`), so a group header may
-be included after the fit definition that reads it.
+the reading template (`include/boys/dependent_false.hpp`, `DependentGroup`), so the read resolves
+where the reading template is instantiated; **the group header is included before the front door**,
+because the front door's own chain instantiates the reading templates and a specialization seen
+after that instantiation is ill-formed on clang.
 
 `include/boys/boys_default_tables.hpp`, reached by `<boys/boys.hpp>`, opens the nine groups the
 committed class rows read: `d_uniform_mono`, `d_uniform_mono_transposed`, `d_narrow_mono`,
 `d_narrow_rat`, `d_narrow_cheb` (the half-format rows' batch seeds read it before they round to
 single), `f32_uniform_mono`, `f32_narrow_cheb`, `f32_narrow_mono` and `f32_narrow_rat`.
 `include/boys/boys_all.hpp` opens every group. A caller whose policy names another combination
-includes the group header the fit's assertion names; the table below reads the axes to the
-headers. "Double" and "float" name the lane a policy's budget selects.
+includes the group header the fit's assertion names, before the front door; the table below reads
+the axes to the headers. "Double" and "float" name the lane a policy's budget selects.
 
 | Policy axes | Lane | Group header |
 |---|---|---|

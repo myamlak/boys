@@ -25,18 +25,24 @@
 //     so the axis fetches each packed order its own piece, and its values are measured as a difference
 //     from the per-order narrow lane.
 
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
+// The scaled far table and the float lane's coarse groups: boys_orders_simd.hpp opens them, and a
+// group header precedes the front door, so they are opened here beside the test's own seven.
+#include "boys/boys_coefficients_d_far.hpp"
+#include "boys/boys_coefficients_d_narrow_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb_transposed.hpp"
+#include "boys/boys_coefficients_d_uniform_rat.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 // The partitions this test compares against the shipped axis: the uniform grid's Chebyshev forms
 // (both stored forms), the narrow Chebyshev form, and the shipped partition's three routes. None
 // is in the set `<boys/boys.hpp>` opens.
-#include "boys/boys_coefficients_d_coarse_cheb.hpp"
-#include "boys/boys_coefficients_d_coarse_mono.hpp"
-#include "boys/boys_coefficients_d_coarse_rat.hpp"
-#include "boys/boys_coefficients_d_narrow_cheb.hpp"
-#include "boys/boys_coefficients_d_uniform_cheb.hpp"
-#include "boys/boys_coefficients_d_uniform_cheb_transposed.hpp"
-#include "boys/boys_coefficients_d_uniform_rat.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"
 

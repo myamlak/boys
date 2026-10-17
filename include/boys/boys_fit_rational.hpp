@@ -42,7 +42,7 @@ struct RationalFit {
         static_assert(kCoefficientGroupPresent<DependentGroup<Tag, CoarseRatGroup>> ||
                           kAlwaysFalse<Tag>,
                       "this read needs boys/boys_coefficients_d_coarse_rat.hpp: include that "
-                      "header in the translation unit that names the shipped rational route");
+                      "header before boys/boys.hpp in the translation unit that names the shipped rational route");
         const double* c = detail::kRatACoeffs.data() + detail::kRatAOffset[index];
         const int m = detail::kRatANumDeg[index];
         const int k = detail::kRatADenDeg[index];
@@ -135,7 +135,7 @@ struct RationalFitNarrow {
         static_assert(kCoefficientGroupPresent<DependentGroup<Tag, NarrowRatGroup>> ||
                           kAlwaysFalse<Tag>,
                       "this read needs boys/boys_coefficients_d_narrow_rat.hpp: include that "
-                      "header in the translation unit that names the narrow rational route");
+                      "header before boys/boys.hpp in the translation unit that names the narrow rational route");
         const double* c = detail::kNarrowRatACoeffs.data() + detail::kNarrowRatAOffset[index];
         const int m = detail::kNarrowRatANumDeg[index];
         const int k = detail::kNarrowRatADenDeg[index];
@@ -168,7 +168,7 @@ struct RationalFitNarrow {
         static_assert(kCoefficientGroupPresent<DependentGroup<Tag, NarrowRatGroup>> ||
                           kAlwaysFalse<Tag>,
                       "this read needs boys/boys_coefficients_d_narrow_rat.hpp: include that "
-                      "header in the translation unit that names the narrow rational route");
+                      "header before boys/boys.hpp in the translation unit that names the narrow rational route");
         const std::size_t index = static_cast<std::size_t>(NarrowBPieceOf(x));
         const double a = detail::kNarrowBEdges[index];
         const double b = detail::kNarrowBEdges[index + 1];
@@ -215,7 +215,7 @@ template <class Tag = void>
 inline double RationalPieceAtCut(std::size_t index, int numDeg, int denDeg, double t) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, CoarseRatGroup>> ||
                       kAlwaysFalse<Tag>,
-                  "this read needs boys/boys_coefficients_d_coarse_rat.hpp: include that header "
+                  "this read needs boys/boys_coefficients_d_coarse_rat.hpp: include that header before boys/boys.hpp "
                   "in the translation unit that names the shipped rational route");
     const double* c = detail::kRatACoeffs.data() + detail::kRatAOffset[index];
     const int storedNumDeg = detail::kRatANumDeg[index];
@@ -251,7 +251,7 @@ inline double RationalPieceNarrowAtCut(std::size_t index,
                                        double t) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
-                  "this read needs boys/boys_coefficients_d_narrow_rat.hpp: include that header "
+                  "this read needs boys/boys_coefficients_d_narrow_rat.hpp: include that header before boys/boys.hpp "
                   "in the translation unit that names the narrow rational route");
     const double* c = detail::kNarrowRatACoeffs.data() + detail::kNarrowRatAOffset[index];
     const int storedNumDeg = detail::kNarrowRatANumDeg[index];

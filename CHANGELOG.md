@@ -54,8 +54,9 @@ declarations and the seam the group headers share — and twenty-one group heade
 one group per stored table. A call that names no policy parses the groups its class rows and the
 seam select — nine groups, about 6.3 MB of tables, 6.5 MB with the master — in the scalar default;
 a consumer that names another route, scheme,
-partition or packing axis includes that group's header because it uses it, and a named policy
-without its header is a compile-time diagnostic naming the header. `include/boys/boys_all.hpp`
+partition or packing axis includes that group's header, before the front door, because it uses it;
+a named policy without its header is a compile-time diagnostic naming the header.
+`include/boys/boys_all.hpp`
 opens every group. The values are bit-for-bit the
 ones the monolith carried, and the entries run the same code. The generator and its manifest
 (`tests/data/boys_coefficients_provenance.txt`) are committed beside them; `--check` verifies every

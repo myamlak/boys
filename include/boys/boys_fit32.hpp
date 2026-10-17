@@ -133,7 +133,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
                               DependentGroup<GranularityTag<kGranularity>, F32CoarseMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_coarse_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp32>(detail::f32::kMonoCoeffs.data() + piece.offset,
                                                    piece.deg,
@@ -145,7 +145,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
                               DependentGroup<GranularityTag<kGranularity>, F32CoarseChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_coarse_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp32>(detail::f32::kCoeffs.data() + piece.offset,
                                                    piece.deg,
@@ -163,7 +163,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
                               DependentGroup<GranularityTag<kGranularity>, F32NarrowMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_narrow_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp32>(
                 detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset, piece.deg, t);
@@ -174,7 +174,7 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
                               DependentGroup<GranularityTag<kGranularity>, F32NarrowChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_narrow_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp32>(
                 detail::f32::kNarrowACoeffsF32.data() + piece.offset, piece.deg, t);
@@ -330,7 +330,7 @@ inline float RationalUniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32UniformRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_uniform_rat.hpp: include that "
-                  "header in the translation unit that names the float uniform rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float uniform rational route");
     const std::size_t stored =
         static_cast<std::size_t>(detail::f32::kFlatRatStoredF32[at.iv]);
     const float* c = detail::f32::kFlatRatCoeffsF32.data() +
@@ -377,7 +377,7 @@ float UniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, F32UniformMonoGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_f32_uniform_mono.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FitSumMono<backend::ScalarFp32>(detail::f32::kFlatMonoCoeffsF32.data() + base,
                                                    deg,
                                                    at.t);
@@ -387,7 +387,7 @@ float UniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
             static_assert(kCoefficientGroupPresent<DependentGroup<Policy, F32UniformChebGroup>> ||
                               kAlwaysFalse<Policy>,
                           "this read needs boys/boys_coefficients_f32_uniform_cheb.hpp: include "
-                          "that header in the translation unit that names this policy");
+                          "that header before boys/boys.hpp in the translation unit that names this policy");
             return FitSumCheb<backend::ScalarFp32>(detail::f32::kFlatCoeffsF32.data() + base,
                                                    deg,
                                                    at.t);
@@ -506,7 +506,7 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
                               DependentGroup<GranularityTag<kGranularity>, F32CoarseMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_coarse_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp32>(
                 detail::f32::kMonoCoeffs.data() + piece.offset,
@@ -519,7 +519,7 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
                               DependentGroup<GranularityTag<kGranularity>, F32CoarseChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_coarse_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp32>(
                 detail::f32::kCoeffs.data() + piece.offset,
@@ -539,7 +539,7 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
                               DependentGroup<GranularityTag<kGranularity>, F32NarrowMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_narrow_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp32>(
                 detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset,
@@ -552,7 +552,7 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
                               DependentGroup<GranularityTag<kGranularity>, F32NarrowChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_f32_narrow_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp32>(
                 detail::f32::kNarrowACoeffsF32.data() + piece.offset,
@@ -684,7 +684,7 @@ inline float RationalValueF32(int order, float x) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32CoarseRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_coarse_rat.hpp: include that "
-                  "header in the translation unit that names the float shipped rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float shipped rational route");
     const detail::f32::RatPiece& piece = FindRatPieceF32(order, x);
     const float* c = detail::f32::kRatACoeffs.data() + piece.offset;
     const int m = piece.numdeg;
@@ -777,7 +777,7 @@ inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, fl
                           DependentGroup<GranularityTag<kGranularity>, F32CoarseRatGroup>> ||
                           kAlwaysFalse<GranularityTag<kGranularity>>,
                       "this branch reads boys/boys_coefficients_f32_coarse_rat.hpp: include "
-                      "that header in the translation unit that names this scheme and "
+                      "that header before boys/boys.hpp in the translation unit that names this scheme and "
                       "granularity");
         const detail::f32::RatPiece& piece = detail::f32::kRatAPieces[index];
         return RationalPieceF32AtCutBody(detail::f32::kRatACoeffs.data() + piece.offset,
@@ -792,7 +792,7 @@ inline float RationalPieceF32AtCut(std::size_t index, int numDeg, int denDeg, fl
                           DependentGroup<GranularityTag<kGranularity>, F32NarrowRatGroup>> ||
                           kAlwaysFalse<GranularityTag<kGranularity>>,
                       "this branch reads boys/boys_coefficients_f32_narrow_rat.hpp: include "
-                      "that header in the translation unit that names this scheme and "
+                      "that header before boys/boys.hpp in the translation unit that names this scheme and "
                       "granularity");
         const detail::f32::RatPiece& piece = detail::f32::kNarrowRatAPiecesF32[index];
         return RationalPieceF32AtCutBody(detail::f32::kNarrowRatACoeffsF32.data() + piece.offset,
@@ -861,7 +861,7 @@ inline float RationalSeedF32AtCut(std::size_t index, int numDeg, int denDeg, flo
                           DependentGroup<GranularityTag<kGranularity>, F32NarrowRatGroup>> ||
                           kAlwaysFalse<GranularityTag<kGranularity>>,
                       "this branch reads boys/boys_coefficients_f32_narrow_rat.hpp: include "
-                      "that header in the translation unit that names this scheme and "
+                      "that header before boys/boys.hpp in the translation unit that names this scheme and "
                       "granularity");
         const detail::f32::RatPiece& piece = detail::f32::kNarrowRatBPiecesF32[index];
         const float* c = detail::f32::kNarrowRatBCoeffsF32.data() + piece.offset;
@@ -913,7 +913,7 @@ inline float RationalPieceNarrowF32AtCut(std::size_t index,
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     const detail::f32::RatPiece& piece = detail::f32::kNarrowRatAPiecesF32[index];
     const float* c = detail::f32::kNarrowRatACoeffsF32.data() + piece.offset;
     float num = c[numDeg];
@@ -948,7 +948,7 @@ inline float RationalSeedNarrowF32AtCut(std::size_t index,
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     const detail::f32::RatPiece& piece = detail::f32::kNarrowRatBPiecesF32[index];
     const float* c = detail::f32::kNarrowRatBCoeffsF32.data() + piece.offset;
     float num = c[numDeg];
@@ -982,7 +982,7 @@ inline float RationalValueNarrowF32(int order, float x) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     const detail::f32::RatPiece& piece = FindNarrowRatPieceF32(order, x);
     const float* c = detail::f32::kNarrowRatACoeffsF32.data() + piece.offset;
     const int m = piece.numdeg;
@@ -1017,7 +1017,7 @@ inline float RegionBSeedRationalNarrowF32(float x) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, F32NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this read needs boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     const detail::f32::RatPiece& piece = FindNarrowRatBPieceF32(x);
     const float* c = detail::f32::kNarrowRatBCoeffsF32.data() + piece.offset;
     const int m = piece.numdeg;

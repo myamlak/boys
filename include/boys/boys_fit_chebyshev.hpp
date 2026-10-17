@@ -62,7 +62,7 @@ struct ChebyshevFit {
                                   DependentGroup<GranularityTag<kGranularity>, CoarseMonoGroup>> ||
                                   kAlwaysFalse<GranularityTag<kGranularity>>,
                               "this branch reads boys/boys_coefficients_d_coarse_mono.hpp: "
-                              "include that header in the translation unit that names this "
+                              "include that header before boys/boys.hpp in the translation unit that names this "
                               "scheme and granularity");
                 return FitSumMono<backend::ScalarFp64>(detail::kMonoCoeffs.data() + piece.offset,
                                                        piece.deg,
@@ -74,7 +74,7 @@ struct ChebyshevFit {
                                   DependentGroup<GranularityTag<kGranularity>, CoarseChebGroup>> ||
                                   kAlwaysFalse<GranularityTag<kGranularity>>,
                               "this branch reads boys/boys_coefficients_d_coarse_cheb.hpp: "
-                              "include that header in the translation unit that names this "
+                              "include that header before boys/boys.hpp in the translation unit that names this "
                               "scheme and granularity");
                 return FitSumCheb<backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
                                                        piece.deg,
@@ -91,7 +91,7 @@ struct ChebyshevFit {
                                   DependentGroup<GranularityTag<kGranularity>, NarrowMonoGroup>> ||
                                   kAlwaysFalse<GranularityTag<kGranularity>>,
                               "this branch reads boys/boys_coefficients_d_narrow_mono.hpp: "
-                              "include that header in the translation unit that names this "
+                              "include that header before boys/boys.hpp in the translation unit that names this "
                               "scheme and granularity");
                 return FitSumMono<backend::ScalarFp64>(
                     detail::kNarrowAMonoCoeffs.data() + piece.offset, piece.deg, t);
@@ -102,7 +102,7 @@ struct ChebyshevFit {
                                   DependentGroup<GranularityTag<kGranularity>, NarrowChebGroup>> ||
                                   kAlwaysFalse<GranularityTag<kGranularity>>,
                               "this branch reads boys/boys_coefficients_d_narrow_cheb.hpp: "
-                              "include that header in the translation unit that names this "
+                              "include that header before boys/boys.hpp in the translation unit that names this "
                               "scheme and granularity");
                 return FitSumCheb<backend::ScalarFp64>(
                     detail::kNarrowACoeffs.data() + piece.offset, piece.deg, t);
@@ -252,7 +252,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                               DependentGroup<GranularityTag<kGranularity>, CoarseMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_d_coarse_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp64>(detail::kMonoCoeffs.data() + piece.offset,
                                                    deg,
@@ -264,7 +264,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                               DependentGroup<GranularityTag<kGranularity>, CoarseChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_d_coarse_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
                                                    deg,
@@ -284,7 +284,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                               DependentGroup<GranularityTag<kGranularity>, NarrowMonoGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_d_narrow_mono.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumMono<backend::ScalarFp64>(
                 detail::kNarrowAMonoCoeffs.data() + piece.offset, deg, t);
@@ -295,7 +295,7 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
                               DependentGroup<GranularityTag<kGranularity>, NarrowChebGroup>> ||
                               kAlwaysFalse<GranularityTag<kGranularity>>,
                           "this branch reads boys/boys_coefficients_d_narrow_cheb.hpp: include "
-                          "that header in the translation unit that names this scheme and "
+                          "that header before boys/boys.hpp in the translation unit that names this scheme and "
                           "granularity");
             return FitSumCheb<backend::ScalarFp64>(
                 detail::kNarrowACoeffs.data() + piece.offset, deg, t);
@@ -432,7 +432,7 @@ double NarrowRegionAValueWithDegrees(int order, double x, const DegreesArray& de
                 DependentGroup<std::integral_constant<EvalScheme, kScheme>, NarrowMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
             "this read needs boys/boys_coefficients_d_narrow_mono.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return FitSumMono<backend::ScalarFp64>(detail::kNarrowAMonoCoeffs.data() + piece.offset,
                                                deg,
                                                t);
@@ -444,7 +444,7 @@ double NarrowRegionAValueWithDegrees(int order, double x, const DegreesArray& de
                 DependentGroup<std::integral_constant<EvalScheme, kScheme>, NarrowChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
             "this read needs boys/boys_coefficients_d_narrow_cheb.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return FitSumCheb<backend::ScalarFp64>(detail::kNarrowACoeffs.data() + piece.offset,
                                                deg,
                                                t);

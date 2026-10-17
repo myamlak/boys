@@ -288,7 +288,7 @@ void ScaledFarLadder(int nmax, double x, double* out) noexcept {
             DependentGroup<std::integral_constant<DivisionForm, kForm>, ScaledFarGroup>> ||
             kAlwaysFalse<std::integral_constant<DivisionForm, kForm>>,
         "the scaled far table reads boys/boys_coefficients_d_far.hpp: include that "
-        "header in the translation unit that names the kScaledTable far "
+        "header before boys/boys.hpp in the translation unit that names the kScaledTable far "
         "representation");
     const FarPoint at = FarLocate(x);
     double m = kBoysHalfSqrtPi / std::sqrt(x);
@@ -2131,7 +2131,7 @@ void BoysAllNRun(int nmax,
         static_assert(kCoefficientGroupPresent<DependentGroup<Policy, CoarseChebGroup>> ||
                           kAlwaysFalse<Policy>,
                       "this policy's packed region-A lane reads "
-                      "boys/boys_coefficients_d_coarse_cheb.hpp: include that header in the "
+                      "boys/boys_coefficients_d_coarse_cheb.hpp: include that header before boys/boys.hpp in the "
                       "translation unit that names this policy");
 #endif
         // The lane serves region A below the crossover order; at and above it

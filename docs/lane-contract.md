@@ -1673,8 +1673,8 @@ axis**: their scheme and partition members are fixed in the header (`kHorner`, `
 class's row may differ from them. The committed transcript of the full protocol is
 `tests/data/boys_option_probe_report.txt`, a later run of the same protocol on this host: it ranks
 the whole space, its tables carry every member of the scheme and partition axes, and on it the
-uniform partition leads the fp64 single class — 105.39 against 267.65 ns per argument for the fastest
-narrow row, which is on the shipped Chebyshev route; the fastest rational-route narrow row is 395.65
+uniform partition leads the fp64 single class — 111.30 against 279.01 ns per argument for the fastest
+narrow row, which is on the shipped Chebyshev route; the fastest rational-route narrow row is 404.52
 (`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
 the settings the library has always shipped and have not been ranked against a timing. Which member
 is faster is a property of the host, its flags

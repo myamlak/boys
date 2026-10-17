@@ -5,9 +5,9 @@
 
 #include "boys/backend.hpp"
 
+#include "boys/boys_coefficients_d_uniform_rat.hpp"
 #include "boys/kernels.hpp"
 // The grid's rational member reads its own table, which the default set does not open.
-#include "boys/boys_coefficients_d_uniform_rat.hpp"
 
 #include <algorithm>
 #include <array>

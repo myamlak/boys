@@ -574,7 +574,7 @@ const double* ShippedCoeffTable() noexcept {
                           DependentGroup<std::integral_constant<bool, kHorner>, CoarseMonoGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_coarse_mono.hpp: include that "
-                      "header in the translation unit that names this scheme");
+                      "header before boys/boys.hpp in the translation unit that names this scheme");
         return kMonoCoeffs.data();
     }
     else
@@ -583,7 +583,7 @@ const double* ShippedCoeffTable() noexcept {
                           DependentGroup<std::integral_constant<bool, kHorner>, CoarseChebGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_coarse_cheb.hpp: include that "
-                      "header in the translation unit that names this scheme");
+                      "header before boys/boys.hpp in the translation unit that names this scheme");
         return kCoeffs.data();
     }
 }
@@ -686,7 +686,7 @@ const double* FlatCoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, UniformMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_d_uniform_mono.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return kFlatMonoCoeffs.data();
     }
     if constexpr (!kHorner)
@@ -696,7 +696,7 @@ const double* FlatCoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, UniformChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_d_uniform_cheb.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return kFlatCoeffs.data();
     }
 }
@@ -709,7 +709,7 @@ const double* FlatTransposedCoeffTable() noexcept {
                                                               UniformMonoTransposedGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_uniform_mono_transposed.hpp: "
-                      "include that header in the translation unit that names this scheme");
+                      "include that header before boys/boys.hpp in the translation unit that names this scheme");
         return kFlatTransposedMonoCoeffs.data();
     }
     if constexpr (!kHorner)
@@ -718,7 +718,7 @@ const double* FlatTransposedCoeffTable() noexcept {
                                                               UniformChebTransposedGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_uniform_cheb_transposed.hpp: "
-                      "include that header in the translation unit that names this scheme");
+                      "include that header before boys/boys.hpp in the translation unit that names this scheme");
         return kFlatTransposedCoeffs.data();
     }
 }
@@ -864,7 +864,7 @@ const double* NarrowACoeffTable() noexcept {
                           DependentGroup<std::integral_constant<bool, kHorner>, NarrowMonoGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_narrow_mono.hpp: include that "
-                      "header in the translation unit that names this scheme");
+                      "header before boys/boys.hpp in the translation unit that names this scheme");
         return kNarrowAMonoCoeffs.data();
     }
     if constexpr (!kHorner)
@@ -873,7 +873,7 @@ const double* NarrowACoeffTable() noexcept {
                           DependentGroup<std::integral_constant<bool, kHorner>, NarrowChebGroup>> ||
                           kAlwaysFalse<std::integral_constant<bool, kHorner>>,
                       "this scheme reads boys/boys_coefficients_d_narrow_cheb.hpp: include that "
-                      "header in the translation unit that names this scheme");
+                      "header before boys/boys.hpp in the translation unit that names this scheme");
         return kNarrowACoeffs.data();
     }
 }
@@ -1688,7 +1688,7 @@ const float* F32ShippedCoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_f32_coarse_mono.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return f32::kMonoCoeffs.data();
     }
     if constexpr (!kHorner)
@@ -1698,7 +1698,7 @@ const float* F32ShippedCoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_f32_coarse_cheb.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return f32::kCoeffs.data();
     }
 }
@@ -1712,7 +1712,7 @@ const float* F32NarrowACoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_f32_narrow_mono.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return f32::kNarrowAMonoCoeffsF32.data();
     }
     if constexpr (!kHorner)
@@ -1722,7 +1722,7 @@ const float* F32NarrowACoeffTable() noexcept {
                 DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<bool, kHorner>>,
             "this scheme reads boys/boys_coefficients_f32_narrow_cheb.hpp: include that "
-            "header in the translation unit that names this scheme");
+            "header before boys/boys.hpp in the translation unit that names this scheme");
         return f32::kNarrowACoeffsF32.data();
     }
 }
@@ -1942,7 +1942,7 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32CoarseRatGroup>> ||
                       kAlwaysFalse<CutPairs>,
                   "this route reads boys/boys_coefficients_f32_coarse_rat.hpp: include that "
-                  "header in the translation unit that names this route");
+                  "header before boys/boys.hpp in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
@@ -1975,7 +1975,7 @@ void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcep
     static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32NarrowRatGroup>> ||
                       kAlwaysFalse<CutPairs>,
                   "this route reads boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names this route");
+                  "header before boys/boys.hpp in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)

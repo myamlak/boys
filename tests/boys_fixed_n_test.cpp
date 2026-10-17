@@ -3,10 +3,10 @@
 // verbatim, so per-region budgets 1e-15 / 3e-14 / 5.5e-14 hold over the committed grid; identity
 // matches BoysSingle bitwise; layout pins out[i * stride] = F_n(x[i]) at stride >= 1 (default 1).
 
+#include "boys/boys_coefficients_d_far.hpp"
 #include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
 // The scaled far table: the sweep reaches past the grid's top, where the entry runs the ladder.
-#include "boys/boys_coefficients_d_far.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys/boys_span.hpp"
 

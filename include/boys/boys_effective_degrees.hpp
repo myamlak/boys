@@ -226,7 +226,7 @@ constexpr const auto& TailNarrowATable() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, NarrowChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_d_narrow_cheb.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return kNarrowACoeffs;
     }
     else
@@ -236,7 +236,7 @@ constexpr const auto& TailNarrowATable() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, NarrowMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_d_narrow_mono.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return kNarrowAMonoCoeffs;
     }
 }
@@ -250,7 +250,7 @@ constexpr const auto& TailNarrowAF32Table() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, F32NarrowChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_f32_narrow_cheb.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return f32::kNarrowACoeffsF32;
     }
     else
@@ -260,7 +260,7 @@ constexpr const auto& TailNarrowAF32Table() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, F32NarrowMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_f32_narrow_mono.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return f32::kNarrowAMonoCoeffsF32;
     }
 }
@@ -298,7 +298,7 @@ constexpr const auto& TailShippedTable() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, CoarseChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_d_coarse_cheb.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return kCoeffs;
     }
     else
@@ -308,7 +308,7 @@ constexpr const auto& TailShippedTable() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, CoarseMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_d_coarse_mono.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return kMonoCoeffs;
     }
 }
@@ -322,7 +322,7 @@ constexpr const auto& TailShippedF32Table() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, F32CoarseChebGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_f32_coarse_cheb.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return f32::kCoeffs;
     }
     else
@@ -332,7 +332,7 @@ constexpr const auto& TailShippedF32Table() noexcept {
                 DependentGroup<std::integral_constant<TailBasis, kBasis>, F32CoarseMonoGroup>> ||
                 kAlwaysFalse<std::integral_constant<TailBasis, kBasis>>,
             "this basis reads boys/boys_coefficients_f32_coarse_mono.hpp: include that "
-            "header in the translation unit that names this basis");
+            "header before boys/boys.hpp in the translation unit that names this basis");
         return f32::kMonoCoeffs;
     }
 }
@@ -796,7 +796,7 @@ constexpr RationalARow<kOrder, kSeedReading> CutRationalARow() noexcept {
                       DependentGroup<std::integral_constant<BoysRole, kRole>, CoarseRatGroup>> ||
                       kAlwaysFalse<std::integral_constant<BoysRole, kRole>>,
                   "this table is cut from boys/boys_coefficients_d_coarse_rat.hpp: include that "
-                  "header in the translation unit that names the rational route");
+                  "header before boys/boys.hpp in the translation unit that names the rational route");
     RationalARow<kOrder, kSeedReading> row{};
 
     for (int i = 0; i < RationalARow<kOrder, kSeedReading>::kCount; ++i)
@@ -903,7 +903,7 @@ constexpr NarrowRationalRegionAPairs RationalRegionANarrowDegrees() noexcept {
     static_assert(kCoefficientGroupPresent<DependentGroup<Tag, NarrowRatGroup>> ||
                       kAlwaysFalse<Tag>,
                   "this table is cut from boys/boys_coefficients_d_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the narrow rational route");
     NarrowRationalRegionAPairs pairs{};
 
     for (int p = 0; p < static_cast<int>(std::size(kNarrowAPieces)); ++p)
@@ -947,7 +947,7 @@ constexpr RationalRegionAF32Pairs RationalRegionAF32Degrees() noexcept {
                       DependentGroup<std::integral_constant<BoysRole, kRole>, F32CoarseRatGroup>> ||
                       kAlwaysFalse<std::integral_constant<BoysRole, kRole>>,
                   "this table is cut from boys/boys_coefficients_f32_coarse_rat.hpp: include that "
-                  "header in the translation unit that names the float rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float rational route");
     RationalRegionAF32Pairs pairs{};
 
     for (int order = 0; order <= kMaxOrder; ++order)
@@ -1028,7 +1028,7 @@ constexpr NarrowRationalF32Row<kOrder> CutNarrowRationalF32Row() noexcept {
                       DependentGroup<std::integral_constant<BoysRole, kRole>, F32NarrowRatGroup>> ||
                       kAlwaysFalse<std::integral_constant<BoysRole, kRole>>,
                   "this table is cut from boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     NarrowRationalF32Row<kOrder> row{};
 
     for (int i = 0; i < NarrowRationalF32Row<kOrder>::kCount; ++i)
@@ -1087,7 +1087,7 @@ constexpr NarrowRationalRegionAF32Pairs NarrowRationalRegionAF32Degrees() noexce
                       DependentGroup<std::integral_constant<BoysRole, kRole>, F32NarrowRatGroup>> ||
                       kAlwaysFalse<std::integral_constant<BoysRole, kRole>>,
                   "this table is cut from boys/boys_coefficients_f32_narrow_rat.hpp: include that "
-                  "header in the translation unit that names the float narrow rational route");
+                  "header before boys/boys.hpp in the translation unit that names the float narrow rational route");
     return AssembleNarrowRationalF32< kRole>(
         std::make_index_sequence<kMaxOrder + 1>{});
 }

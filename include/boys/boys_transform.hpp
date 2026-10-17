@@ -383,7 +383,7 @@ template <int kIndex> constexpr int BandDegree() noexcept {
                       DependentGroup<std::integral_constant<int, kIndex>, CoarseChebGroup>> ||
                       kAlwaysFalse<std::integral_constant<int, kIndex>>,
                   "the transform's bands read the shipped Chebyshev table "
-                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header in the "
+                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header before boys/boys.hpp in the "
                   "translation unit that names this route");
     constexpr BandSpec spec = BandOf<kIndex>();
 
@@ -428,7 +428,7 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
     static_assert(kCoefficientGroupPresent<DependentGroup<Policy, CoarseChebGroup>> ||
                       kAlwaysFalse<Policy>,
                   "the transform's bands read the shipped Chebyshev table "
-                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header in the "
+                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header before boys/boys.hpp in the "
                   "translation unit that names this route");
 
     // The kept products: every part pairing whose part indices sum below the

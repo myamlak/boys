@@ -2,11 +2,12 @@
 //   c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off -I include examples/05_policy.cpp -L build -lboys -o policy && ./policy
 // A policy is named in the template argument list, never constructed; a call site that names none
 // gets the build's own defaults, which is the call this program compares the named one against.
-#include <boys/boys_span.hpp>
+
 // The named policy's granularity is one the front door leaves closed, so the translation unit
 // that names it includes that group's table header - the header the library names when it is
-// missing.
+// missing, and it comes before every header that reaches the front door.
 #include <boys/boys_coefficients_d_coarse_cheb.hpp>
+#include <boys/boys_span.hpp>
 
 #include <array>
 #include <cmath>

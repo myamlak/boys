@@ -16,7 +16,6 @@
 ///
 /// \ingroup boys
 
-#include "boys/boys.hpp"
 #include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_coefficients_d_coarse_mono.hpp"
 #include "boys/boys_coefficients_d_coarse_rat.hpp"
@@ -38,6 +37,7 @@
 #include "boys/boys_coefficients_f32_uniform_cheb.hpp"
 #include "boys/boys_coefficients_f32_uniform_mono.hpp"
 #include "boys/boys_coefficients_f32_uniform_rat.hpp"
+#include "boys/boys.hpp"
 #include "boys/boys_probe.hpp"
 #include "boys/boys_span.hpp"
 #include "boys/boys_transform.hpp"

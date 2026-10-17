@@ -1,9 +1,9 @@
+#include "boys/boys_coefficients_d_far.hpp"
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 // The far representation's scaled table: this test names it and the default set does not open it.
-#include "boys/boys_coefficients_d_far.hpp"
 // The split Clenshaw fit at the coarsest granularity: the SIMD lane's scalar reading.
-#include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_impl.hpp"
 
 #include <algorithm>

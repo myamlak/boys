@@ -1,8 +1,9 @@
-#include "boys/boys_probe.hpp"
-
 // The probe measures the whole option space, so it names every coefficient group the tables
-// offer: the umbrella is this unit's own include, exactly as it is a consumer's.
+// offer: the umbrella is this unit's own include, exactly as it is a consumer's, and it comes
+// first because its group headers must precede the probe header's policy instantiations.
 #include "boys/boys_all.hpp"
+
+#include "boys/boys_probe.hpp"
 
 #include "boys/kernels.hpp"
 
