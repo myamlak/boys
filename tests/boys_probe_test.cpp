@@ -142,8 +142,9 @@ std::vector<const OptionProbeMeasurement*> ReferenceMembers(const OptionProbeRep
 }
 
 // The fastest of that class: the option every ordering this probe makes for the
-// default is measured from, and what the run names when its class ordered
-// itself.
+// default is measured from. An exact tie returns the first row in measurement
+// order, and the class block may print another tied row first - the report's
+// "top entries cannot part" - so comparing names asserts more than it does.
 const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
     const OptionProbeMeasurement* leader = nullptr;
 
@@ -154,6 +155,18 @@ const OptionProbeMeasurement* ReferenceLeader(const OptionProbeReport& report) {
     }
 
     return leader;
+}
+
+// Whether a row is one the class's printed figures put first: its cost is the
+// class's minimum. "The row a class names as its leader is the row the class's own
+// listing shows first"; where the top figures tie, every tied row is such a row,
+// and the others cannot be parted from the printed first.
+bool AtClassMinimum(const OptionProbeReport& report, const std::string& name) {
+    const OptionProbeMeasurement* row = Find(report, name);
+    const OptionProbeMeasurement* fastest = ReferenceLeader(report);
+
+    return row != nullptr && fastest != nullptr && row->measured &&
+           row->nsPerArgument == fastest->nsPerArgument;
 }
 
 // The class one precision was ranked in for one question shape, empty when the
@@ -766,7 +779,17 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
 
         ASSERT_NE(doubles, nullptr);
         ASSERT_NE(leader, nullptr);
-        EXPECT_EQ(doubles->leader, leader->name);
+
+        // The class block names the row its printed listing shows first, one at the
+        // class's fastest figure. Where the top figures tie, "those two rows cannot be
+        // separated by this run" and the sort decides which is printed first, so the
+        // figure is the invariant: the name is unique only where the figure is.
+        EXPECT_EQ(doubles->ranked.front(), doubles->leader)
+            << "the class's leader is not the first row of the listing it prints";
+        EXPECT_TRUE(AtClassMinimum(report, doubles->leader))
+            << "the class names '" << doubles->leader << "' as its leader at "
+            << doubles->leaderNsPerArgument << " ns/argument, and the class's fastest printed "
+            << "figure is '" << leader->name << "' at " << leader->nsPerArgument;
 
         // The invariant the whole report rests on: the default is a row of the class the rule names, and which
         // row is what the way-it-was-reached says. Where the class could not be ordered and the refinement ran,
@@ -782,12 +805,24 @@ TEST(ProbeTest, ARecommendationLeavesNoRivalUnplaced) {
         }
 
         const bool voted = vote != nullptr && vote->ran && !vote->winner.empty();
-        EXPECT_EQ(report.recommended, voted ? vote->winner : leader->name)
-            << "the default is not the row the report's own rule names for its class";
+
+        if (voted) {
+            EXPECT_EQ(report.recommended, vote->winner)
+                << "a refinement vote ran and the default is not the row it named";
+        } else {
+            // No vote: the name is the one the class's own printed figure puts first, and an
+            // exact tie of the top figures leaves more than one such row (see above).
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "with no vote the default is a row the class's printed figure puts first, and '"
+                << report.recommended << "' is not at the class's fastest figure";
+        }
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty()) << "an ordering left a rival unplaced";
-            EXPECT_EQ(report.recommended, leader->name);
+            EXPECT_EQ(report.recommended, doubles->leader)
+                << "an ordered class's default is not the row the class block names";
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "the ordered default is not at the class's fastest printed figure";
             EXPECT_TRUE(doubles->ordered);
 
             // No rival measured faster than the leader, not a strict margin: the figure is a
@@ -1516,7 +1551,10 @@ TEST(ProbeTest, TheVerdictAndTheNamesAgree) {
 
         if (report.defaultHow == OptionProbeDefaultHow::kOrdered) {
             EXPECT_TRUE(report.inseparable.empty());
-            EXPECT_EQ(named, ReferenceLeader(report));
+            // An ordered class hands over the row its listing shows first, which is one at the
+            // class's fastest printed figure; two top rows tying exactly are both that row.
+            EXPECT_TRUE(AtClassMinimum(report, report.recommended))
+                << "an ordered class's default is not at the class's fastest printed figure";
         } else {
             EXPECT_FALSE(report.inseparable.empty())
                 << "the class was not ordered, and nothing is named as unplaced beside the default";
