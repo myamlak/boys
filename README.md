@@ -268,8 +268,9 @@ above `x ≈ 93`; in between, the bound costs the value accuracy, and at the wor
 format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is subnormal
 or zero and no accuracy is claimed. Until 4.0.0 the guarantee instead carried a constant
 floor, `5.5e-14`, and where F is small the two figures disagree: at
-`n = 32, x = 29`, F is 1.93e-14 and the lane of the day returned 6.87e-14 — an error of 4.94e-14,
-inside the floor of the day, and **2.55 times the true value** read relative to F. That argument is
+`n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
+5.5e-14 floor those releases carried, and **2.55 times the true value** read relative to F. That
+argument is
 served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is `kFlatHi`, 31.0
 in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of the bound at
 worst.

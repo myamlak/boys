@@ -17,14 +17,14 @@ number.
 
 **B is a fraction of the ladder's first rung, so read against the value it is not uniform.** The form
 this contract had before was absolute — one figure for the whole range, whatever the value — and it
-judged every cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane of that
-revision returned 6.87e-14 — an error of 4.94e-14, inside the absolute figure of the day, 5.5e-14,
-and 0.897 of it, so that form passed the cell. Read relative to F, the same cell is **2.55 times the
-true value**. The ladder-scaled bound holds there (the uniform grid, `FitGranularity::kUniform`,
-serves that argument: its hi-bound is `kFlatHi`, 31.0). That is what the ladder-scaled form binds and the absolute form did not: a budget spent
-where the value is tiny is spent where nothing needs it. What the same form does not give is a figure
-the returned value holds to in its own right: on the committed grid the double entries' delivered
-error is 3.496e-14 of `F_n(x)` at the worst cell below the region-C boundary,
+judged every cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned
+6.87e-14 under that form — an error of 4.94e-14, inside the 5.5e-14 it carried, and 0.897 of it, so
+that form passed the cell. Read relative to F, the same cell is **2.55 times the true value**. The
+ladder-scaled bound holds there (the uniform grid, `FitGranularity::kUniform`, serves that argument:
+its hi-bound is `kFlatHi`, 31.0). That is what the ladder-scaled form binds and the absolute form did
+not: a budget spent where the value is tiny is spent where nothing needs it. What the same form does
+not give is a figure the returned value holds to in its own right: on the committed grid the double
+entries' delivered error is 3.496e-14 of `F_n(x)` at the worst cell below the region-C boundary,
 `x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again above `x ≈ 93`;
 between those, the bound is a larger fraction of the value, up to 140 % of it at the worst cell,
 `n = 32, x = 31`.
