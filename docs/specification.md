@@ -366,8 +366,8 @@ your arithmetic, and the rows are compared cell by cell rather than as one numbe
 
 Run on the tree the run's file names, it printed this (an excerpt; the full run carries one row per
 lane and region). **Both columns are that run's own output, the `Bound claimed` one included**: the
-figures in it are the bounds the gate was judged against at the revision the run names, which is
-older than the contract above — read the column as that run's record and not as this page's
+figures in it are the bounds the gate was judged against at the version and content the run names,
+which is older than the contract above — read the column as that run's record and not as this page's
 contract, and read the delivered column beside it the same way. **The `C` row's two figures are in
 units of the cell's own `F_n(x)`**: that row's worst cell is `n = 32, x = 31`, so it reads delivered
 `1.4 × F_32(31)` against a claimed `4.85 × F_32(31)` — the 140 % error above, beside the bound that

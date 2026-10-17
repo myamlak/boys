@@ -633,51 +633,6 @@ else()
         "BoysAvx2Available() reports false.")
 endif()
 
-# The revision this tree is at, read at configure time, for the two programs here that write one
-# into a record: the host accuracy gate and the device one. A record naming no revision is
-# attributable to nothing and can be held to nothing - a renamed option cell once left the
-# committed probe report describing a probe that no longer existed, and no instrument could say
-# so because the report named no revision for a check to disagree with. Computed here and not
-# inside a block, because the host gate is built under the tests option and the device gate
-# under BUILD_CUDA.
-find_package(Git QUIET)
-if(GIT_FOUND)
-    execute_process(
-        COMMAND "${GIT_EXECUTABLE}" rev-parse --short HEAD
-        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-        OUTPUT_VARIABLE BOYS_GATE_REVISION
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE _boys_git_status
-        ERROR_VARIABLE _boys_git_output)
-    # git being installed is not this directory being a work tree, and the two cases it
-    # leaves have opposite answers. A source tarball has no `.git` entry, the read failing
-    # there is what is expected, and the fallback below is the whole answer. A `.git` entry
-    # git could not read is a tree that has a revision and cannot name it: "unknown" is then
-    # false rather than a fallback, and the record the gate and the two probes write is
-    # refused by the checker after the run, when the run is spent. Every git query fails
-    # alike when the gitdir cannot be resolved, so the entry on disk separates the two, not
-    # another command.
-    if(NOT _boys_git_status STREQUAL "0" AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-        string(STRIP "${_boys_git_output}" _boys_git_output)
-        message(FATAL_ERROR
-            "boys: this source tree is a git work tree (\"${CMAKE_CURRENT_SOURCE_DIR}/.git\" "
-            "is present) but its revision could not be read. The accuracy gates stamp that "
-            "revision into the record they write, and \"unknown\" would leave the record "
-            "attributable to no tree, so the configure stops here rather than after a gate "
-            "run.\n"
-            "  command: \"${GIT_EXECUTABLE}\" rev-parse --short HEAD\n"
-            "  exit:    ${_boys_git_status}\n"
-            "  output:  ${_boys_git_output}\n"
-            "A source tree with no git, or with no .git entry - a tarball - is not this case, "
-            "and configures as it did before.")
-    endif()
-    unset(_boys_git_status)
-    unset(_boys_git_output)
-endif()
-if(NOT BOYS_GATE_REVISION)
-    set(BOYS_GATE_REVISION "unknown")
-endif()
-
 # The content a record's stamp carries: every file the program reads from, hashed at configure
 # time by the tool that recomputes those digests at check time. One implementation is what makes
 # the two comparable - a second hashing written here would have to agree with the first over
@@ -690,8 +645,8 @@ endif()
 # The interpreter is asked for and not required, and its absence is the fallback below: a tree
 # configured without one carries the version and no digest, and the stamp says so visibly rather
 # than naming content it did not read. An interpreter that is here and a read that fails is the
-# opposite case and stops the configure, for the reason the revision read above does: a record
-# that cannot date itself is refused by the checker after the run, when the run is spent.
+# opposite case and stops the configure: a record that cannot date itself by its content is
+# refused by the checker after the run, when the run is spent.
 #
 # The read is this tree's own: the two cells land in the stamp of the accuracy gate's record and
 # the option probe's report, and both programs are registered under BOYS_BUILD_TESTS. So the
@@ -850,9 +805,8 @@ if (BOYS_BUILD_TESTS)
         # through: the reference line the gate prints is kept in the recorded run, and a record
         # is read by people who do not have the machine it was made on.
         BoysDataDirRelative="tests/data"
-        BoysGateRevision="${BOYS_GATE_REVISION}"
-        # The content the run was taken from, beside the revision it names: the stamp carries
-        # both, and the checker holds the record to the digests.
+        # The content the run was taken from: the stamp's identity is the version the gate
+        # prints and this cell, and the checker holds the record to the digests.
         BoysGateInputs="${BOYS_GATE_INPUTS}")
     boys_strict_warnings(boys-accuracy-gate)
 
@@ -1792,8 +1746,7 @@ if (BUILD_CUDA)
         target_include_directories(boys-cuda-accuracy-gate PRIVATE src)
         target_compile_features(boys-cuda-accuracy-gate PRIVATE cxx_std_23)
         target_compile_definitions(boys-cuda-accuracy-gate PRIVATE
-            BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
-            BoysGateRevision="${BOYS_GATE_REVISION}")
+            BoysDataDir="${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
         boys_strict_warnings(boys-cuda-accuracy-gate)
         add_test(NAME boys-cuda-accuracy-gate COMMAND boys-cuda-accuracy-gate)
 

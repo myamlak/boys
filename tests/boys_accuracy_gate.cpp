@@ -83,13 +83,10 @@ constexpr const char* kNativeHalfAbsent =
 #include <type_traits>
 #include <vector>
 
-// CMake passes the measured revision and the content the run was taken from; a build
-// that bypasses either still says so rather than naming a revision or a content it
-// did not read. The version is not passed: the gate prints the library's own, from
-// the header it compiles against.
-#ifndef BoysGateRevision
-#define BoysGateRevision "unknown"
-#endif
+// CMake passes the content the run was taken from; a build that bypasses it still
+// says so rather than naming a content it did not read. The version is not passed:
+// the gate prints the library's own, from the header it compiles against. The run
+// names no revision: its identity is that version and this content (tools/record_stamp.py).
 #ifndef BoysGateInputs
 #define BoysGateInputs "unknown"
 #endif
@@ -6613,8 +6610,7 @@ int main(int argc, char** argv) {
     sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
     sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
 
-    std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
-    std::printf("accuracy gate, version %s\n", boys::kVersionString);
+    std::printf("\naccuracy gate, version %s\n", boys::kVersionString);
     std::printf("accuracy gate, inputs %s\n", BoysGateInputs);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
                 referenceShown.c_str(),

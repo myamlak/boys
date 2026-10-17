@@ -449,16 +449,9 @@ jobs:
       CC: ${{ matrix.cc }}
       CXX: ${{ matrix.cxx }}
     steps:
-      # Full history, unlike every other job here: one step below holds the
-      # gate's recorded run to the revision the run names, which is an ancestor
-      # of the commit being checked out. A depth-1 checkout carries neither that
-      # commit nor its files, so the step could only report that it cannot tell
-      # - and a check that cannot tell is not one that may pass. The repository
-      # is small enough that this costs seconds.
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
-          fetch-depth: 0
       # The source-integrity gates below answer questions about the SOURCES:
       # whether the committed coefficient tables are what the generator
       # produces, whether the generated pages are what their generators render,
@@ -817,9 +810,8 @@ jobs:
       # run's own stamp and recomputes the digests of the files the gate prints
       # from, comparing them group by group. It cannot see a difference only a
       # build would show, and it says so; what it can see is a record of a tree
-      # whose content has moved. This leg is red on the committed run, which is
-      # stamped with a revision and no content, until the run is re-made from a
-      # build that stamps both.
+      # whose content has moved. The stamp names no revision: its identity is the
+      # version and the content, which is what survives the squash merge.
       - name: Docs (the gate's recorded run, against this tree)
         if: ${{ always() && matrix.compiler == 'gcc' && matrix.build_type == 'Release' }}
         run: |
@@ -839,8 +831,9 @@ jobs:
       # state the record was in until the device half of the run was made, and the
       # reason the space is now measured rather than merely counted.
       #
-      # It reads the record, the gate and `git show` of the revision the record
-      # names, and nothing else - no build, no compiler, no CUDA, no network - so
+      # It reads the record, the gate and the library's own files in the working
+      # tree, whose gated groups the record's stamp names, and nothing else - no
+      # build, no compiler, no CUDA, no network - so
       # it is scoped to one combination like the gates above it, and it is as fast
       # as reading five files. It is NOT re-made here: the record is one build's
       # output on one host, and a leg that made its own would be comparing this

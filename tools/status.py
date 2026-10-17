@@ -14,8 +14,8 @@ THE CONTRACT, per space:
   * a space whose parts do not sum to its total is printed NOT CLOSED and exits nonzero;
   * a space with no arithmetic at all is printed ABSENT - never omitted, because a space missing
     from a status is indistinguishable from a space that is complete;
-  * the revision each figure was taken at is printed beside it, so a stale figure is visible as
-    one rather than inherited as current.
+  * the identity each figure was taken from is printed beside it, so a stale figure is
+    visible as one rather than inherited as current.
 
 Failures print and exit nonzero; the tool never reports success it did not read.
 """
@@ -49,7 +49,6 @@ NOT_RUNNABLE = re.compile(
     r"^\s*(\d+)\s+not runnable on this host, counted apart and not against the library", re.M)
 UNCOVERED = re.compile(r"^\s*(\d+)\s+offered and covered by no cell of this block", re.M)
 ARITHMETIC = re.compile(r"the arithmetic:\s*([\d\s+]+)=\s*(\d+)")
-REVISION = re.compile(r"accuracy gate,\s*revision\s+([0-9a-f]{7,40})")
 LANES = re.compile(r"over\s+(\d+)\s+lane\(s\)")
 
 # An arithmetic with NUMBERS in it. The words alone are not evidence: `src/boys_probe.cpp` contains
@@ -113,22 +112,27 @@ def host_space() -> tuple[str, list[str], bool]:
     not_runnable = int((NOT_RUNNABLE.search(text) or [0, 0])[1])
     unaccounted = int((UNCOVERED.search(text) or [0, 0])[1])
 
-    revision = (REVISION.search(text) or [None, "unknown"])[1]
-    # IS IT CURRENT: asked of the checker that owns the question, not decided here. This used to
-    # compare the run's revision stamp with HEAD and call any mismatch STALE, which is a cruder
-    # question than the one that matters - whether a file the gate PRINTS FROM has changed - and it
-    # reported a false NOT CLOSED on a record that tools/check_recorded_run.py calls clean, because
-    # two ordinary commits had landed since. A wrong NOT CLOSED is as bad as a wrong CLOSED.
+    # IS IT CURRENT: asked of the checker that owns the question, not decided here. The run's
+    # identity is its version and its content digests, so a stale one is reported with the
+    # checker's own finding rather than with a commit id this tool would have to compare itself.
+    # This used to compare a revision stamp with HEAD, a cruder question than whether a file the
+    # gate PRINTS FROM has changed, and it printed a false NOT CLOSED on a record
+    # tools/check_recorded_run.py called clean. A wrong NOT CLOSED is as bad as a wrong CLOSED.
     stale = ""
     try:
         checked = subprocess.run([sys.executable,
                                   os.path.join(REPO, "tools", "check_recorded_run.py")],
                                  capture_output=True, text=True, timeout=180, cwd=REPO)
         if checked.returncode != 0:
-            stale = (f"   NOT CURRENT: tools/check_recorded_run.py exits {checked.returncode} - "
-                     f"the run is {revision[:9]}")
+            finding = next((line[len("STALE: "):] for line in (checked.stdout or "").splitlines()
+                            if line.startswith("STALE: ")), "")
+            if len(finding) > 160:
+                finding = finding[:157] + "..."
+            stale = (f"   NOT CURRENT: tools/check_recorded_run.py exits {checked.returncode}"
+                     + (f" - {finding}" if finding else ""))
     except Exception:
-        stale = f"   UNCHECKED: the recorded run is {revision[:9]} and the checker could not be run"
+        stale = ("   UNCHECKED: the recorded run could not be checked against this tree: "
+                 "tools/check_recorded_run.py did not run")
 
     lines = [
         f"  served                 {served:>6}",

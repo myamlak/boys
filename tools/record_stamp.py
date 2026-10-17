@@ -21,6 +21,8 @@ Content is also the identity that survives this repository's merge. A pull reque
 merged, so a commit id stamped into a tracked artifact is in no clone's history afterwards, and
 a checker resolving one refuses a record for a reason about the merge rather than about the
 tree. A squash carries the same bytes, so a digest survives the merge that a commit id does not.
+The accuracy gate's record was the last carrier of a commit id beside its content; that line
+was retired in 2026-10, and the record's identity is now its version and these digests.
 
 **The bytes are read with CRLF folded to LF, and the reason is a false finding.** The
 repository is LF and `.gitattributes` says so, while an editor on one host can write CRLF into

@@ -80,7 +80,7 @@ INPUTS = re.compile(r"^accuracy gate, inputs[ \t]+(?P<inputs>\S+)[ \t]*$", re.M)
 
 # Any line that states the run's own content, whatever cell it names: what a fixture's stamp is
 # built over, so a run stamped one way is read whichever way it was stamped.
-STAMP_LINE = re.compile(r"^accuracy gate, (revision|version|inputs)\b")
+STAMP_LINE = re.compile(r"^accuracy gate, (version|inputs)\b")
 
 # What the gate prints when it was built where no content digest was passed to it. It names no
 # tree, and a run that carries it is one this check cannot hold to anything.

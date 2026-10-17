@@ -27,13 +27,9 @@
 #include <cuda_runtime.h>
 
 // The grid is located as the CPU gate locates it, so a build that bypasses CMake
-// still says which revision it measured rather than naming one it did not read.
+// still reads the tree's data rather than a path it names for itself.
 #ifndef BoysDataDir
 #define BoysDataDir "tests/data"
-#endif
-
-#ifndef BoysGateRevision
-#define BoysGateRevision "unknown"
 #endif
 
 // The fp16 device entries and the host launchers that reach them sit behind the BoysFp16 seam
@@ -6304,7 +6300,6 @@ int main(int argc, char** argv) {
 
     Check(cudaDeviceSynchronize(), "cudaDeviceSynchronize");
 
-    std::printf("revision     : %s\n", BoysGateRevision);
     std::printf("device       : %s (compute capability %d.%d, %zu MiB)\n",
                 prop.name,
                 prop.major,
