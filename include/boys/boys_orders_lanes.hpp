@@ -560,6 +560,22 @@ inline void BoysFarLadderOrdersLane(int nmax, double x, std::size_t stride, doub
     }
 }
 
+// The shipped partition's two stored forms. A scheme reads one of them, and the
+// selector names only that one: an argument is evaluated whatever the callee does
+// with it, and a translation unit that instantiates one scheme must not odr-use
+// the other form's array.
+template <bool kHorner>
+const double* ShippedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return kMonoCoeffs.data();
+    }
+    else
+    {
+        return kCoeffs.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute,
           OrdersScheme kScheme,
           bool kComposed,
@@ -567,8 +583,7 @@ template <backend::MulAddRoute kMulAddRoute,
 void OrdersBody(int nmax, double x, double* out, std::size_t stride, Degrees degrees) noexcept {
     // Both tables are cut identically, so the geometry is the same whichever
     // one the scheme reads: a scheme picks a table and a summation.
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kMonoCoeffs.data() : kCoeffs.data();
+    const double* const table = ShippedCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     const OrderPiece& piece = FindPiece(0, x);
     const int index = static_cast<int>(&piece - kPieces.data()) - kPieceStart[0];
@@ -631,25 +646,48 @@ static_assert(std::size(kFlatMonoCoeffs) == std::size(kFlatCoeffs),
               "degrees - so a scheme picks a table and a summation and changes no geometry");
 
 // The transposed twin is a permutation of those blocks and its read rule is a stride, so a
-// twin emitted with the wrong one is a compile error here rather than a wrong value at a
-// caller: the first interval's order 0 and order 1 are read out of both shapes.
+// twin emitted with the wrong one is a compile error rather than a wrong value at a caller.
+// Its extents are checked here; the permutation itself is checked in
+// tests/boys_coefficients_pair_check.cpp, the one translation unit that includes both tables.
 static_assert(std::size(kFlatTransposedCoeffs) ==
                       static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock &&
                   std::size(kFlatTransposedMonoCoeffs) ==
                       static_cast<std::size_t>(kFlatIntervals) * kFlatTwinBlock,
               "the transposed twin holds one padded block per interval, addressed by its own "
               "row and block strides, so the interval-major form's offsets do not reach it");
-static_assert(kFlatTransposedCoeffs[0] == kFlatCoeffs[0] &&
-                  kFlatTransposedCoeffs[kFlatTwinRow] == kFlatCoeffs[1] &&
-                  kFlatTransposedCoeffs[1] == kFlatCoeffs[kFlatDegs[0] + 1],
-              "the twin's k-th coefficient of order l is the interval-major table's k-th "
-              "coefficient of that order: the coefficient index steps by kFlatTwinRow and the "
-              "order by one");
 static_assert(FlatDegreesCarried(),
               "every interval of the uniform grid must be fitted at a degree between 4 and the "
               "read cap: below 4 the split Clenshaw recurrence this lane sums the far orders "
               "with is not written, and a degree above the cap is beyond the coefficients the "
               "interval stores");
+
+// The uniform grid's two stored forms, each with its own selector: the interval-major
+// table for the scalar tail and the transposed twin for the group walk. One scheme reads
+// one form of each, and the selector keeps the other form's array out of the
+// instantiation.
+template <bool kHorner>
+const double* FlatCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return kFlatMonoCoeffs.data();
+    }
+    else
+    {
+        return kFlatCoeffs.data();
+    }
+}
+
+template <bool kHorner>
+const double* FlatTransposedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return kFlatTransposedMonoCoeffs.data();
+    }
+    else
+    {
+        return kFlatTransposedCoeffs.data();
+    }
+}
 
 // One group of four orders out of the transposed twin: the four orders' k-th coefficients
 // are four consecutive doubles at a stride of one order count, so the fetch is a load where
@@ -707,10 +745,8 @@ void UniformOrdersBody(int nmax, double x, double* out, std::size_t stride) noex
     // The groups read the transposed twin and the tail the interval-major form: four orders'
     // coefficients are consecutive in one and one order's own are consecutive in the other.
     const double* const transposed =
-        (kScheme == OrdersScheme::kHorner) ? kFlatTransposedMonoCoeffs.data()
-                                           : kFlatTransposedCoeffs.data();
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kFlatMonoCoeffs.data() : kFlatCoeffs.data();
+        FlatTransposedCoeffTable<kScheme == OrdersScheme::kHorner>();
+    const double* const table = FlatCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     const FlatPoint at = FlatLocate(x);
     const int orderStride = kFlatDeg + 1;
@@ -785,14 +821,26 @@ __m256d NarrowGroup(const double* table, __m128i offsets, int deg, __m256d tv) n
     }
 }
 
+// The narrow partition's two stored forms; see ShippedCoeffTable.
+template <bool kHorner>
+const double* NarrowACoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return kNarrowAMonoCoeffs.data();
+    }
+    else
+    {
+        return kNarrowACoeffs.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, class Degrees>
 void NarrowOrdersBody(int nmax,
                       double x,
                       double* out,
                       std::size_t stride,
                       Degrees degrees) noexcept {
-    const double* const table =
-        (kScheme == OrdersScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+    const double* const table = NarrowACoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -1009,8 +1057,7 @@ void RationalOrdersBody(int nmax,
                         Degrees degrees) noexcept {
     constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
 
-    const double* const shippedTable =
-        (kScheme == EvalScheme::kHorner) ? kMonoCoeffs.data() : kCoeffs.data();
+    const double* const shippedTable = ShippedCoeffTable<kScheme == EvalScheme::kHorner>();
     const OrderPiece& piece = FindPiece(0, x);
     const int index = static_cast<int>(&piece - kPieces.data()) - kPieceStart[0];
     const int orderStride = kPieces[kPieceStart[1] + index].offset - piece.offset;
@@ -1107,8 +1154,7 @@ void NarrowRationalOrdersBody(int nmax,
                               Degrees degrees) noexcept {
     constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
 
-    const double* const table =
-        (kScheme == EvalScheme::kHorner) ? kNarrowAMonoCoeffs.data() : kNarrowACoeffs.data();
+    const double* const table = NarrowACoeffTable<kScheme == EvalScheme::kHorner>();
     const double* const ratCoeffs = kNarrowRatACoeffs.data();
 
     int served = 0;
@@ -1576,10 +1622,34 @@ struct F32RungDegree {
     }
 };
 
+// The float partition's two stored forms; see ShippedCoeffTable.
+template <bool kHorner>
+const float* F32ShippedCoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return f32::kMonoCoeffs.data();
+    }
+    else
+    {
+        return f32::kCoeffs.data();
+    }
+}
+
+template <bool kHorner>
+const float* F32NarrowACoeffTable() noexcept {
+    if constexpr (kHorner)
+    {
+        return f32::kNarrowAMonoCoeffsF32.data();
+    }
+    else
+    {
+        return f32::kNarrowACoeffsF32.data();
+    }
+}
+
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
-    const float* const table =
-        (kScheme == OrdersScheme::kHorner) ? f32::kMonoCoeffs.data() : f32::kCoeffs.data();
+    const float* const table = F32ShippedCoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -1606,9 +1676,8 @@ void F32OrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
 // same reason: a cut degree is certified against the coefficients it is cut from.
 template <backend::MulAddRoute kMulAddRoute, OrdersScheme kScheme, bool kComposed, class Degrees>
 void F32NarrowOrdersBody(int nmax, float x, float* out, Degrees degrees) noexcept {
-    const float* const table = (kScheme == OrdersScheme::kHorner)
-                                   ? f32::kNarrowAMonoCoeffsF32.data()
-                                   : f32::kNarrowACoeffsF32.data();
+    const float* const table =
+        F32NarrowACoeffTable<kScheme == OrdersScheme::kHorner>();
 
     int l = 0;
 
@@ -2236,10 +2305,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             {
                 const FlatPoint at = FlatLocate(x);
                 const double* const rows =
-                    ((OrdersSchemeOf(kScheme) == OrdersScheme::kHorner) ? kFlatMonoCoeffs
-                                                                        : kFlatCoeffs)
-                        .data() +
-                    at.block;
+                    FlatCoeffTable<OrdersSchemeOf(kScheme) == OrdersScheme::kHorner>() + at.block;
 
                 out[0] = ScalarFit<backend::detail::kSelectedRoute, OrdersSchemeOf(kScheme),
                                    kFlatDeg>(rows, kFlatDeg, at.t);

@@ -741,6 +741,9 @@ if (BOYS_BUILD_TESTS)
         tests/boys_fixture_pins_test.cpp
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
+        # The uniform grid's transposed twin, held to the interval-major table by the
+        # one translation unit that indexes both: the lane header no longer can.
+        tests/boys_coefficients_pair_check.cpp
         tests/boys_transform_test.cpp
         # The refusal's reason: every combination QueryCombination can be asked
         # about, and every member of the device option space, held to the reason
