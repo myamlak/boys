@@ -43,7 +43,7 @@ extern "C" {
 /** Device error. No entry in this header returns it: it is stated so that the three codes are the
  * three members of the enum, and a caller switching on the status has a name for every case. */
 #define BOYS_ERROR_DEVICE 2
-/** Highest Boys order supported by the kernel (F_0..F_BOYS_MAX_ORDER). */
+/** Highest Boys order supported by the kernel: orders 0..BOYS_MAX_ORDER, i.e. F_0..F_32. */
 #define BOYS_MAX_ORDER 32
 
 /** F_n(x) in double precision; writes *out = F_n(x).
