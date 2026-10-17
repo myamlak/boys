@@ -64,10 +64,12 @@ boys::BoysSingle(3, 1.25);                    // F_3(1.25)
 
 All four are `noexcept`. The requirements on the values are `n` in `[0, 32]` and `x >= 0`, and both
 hold for anything a basis set produces. **Outside them the behaviour is undefined, and it is not
-benign**: a release build does not refuse the arguments, it answers them — `BoysSingle(3, -1.0)`
-returns 3.26e-17, `BoysSingle(33, 1.0)` returns 0.735, and a `NaN` argument comes back `NaN` — and a
-`NaN` anywhere in a batch is a segmentation fault, which is how `BoysAllN` dies on the batch
-`{1.0, NaN, 2.0}`. A build with assertions live aborts on the argument instead. The three calls that
+benign**: a release build does not refuse the arguments, it answers them — a negative argument or an
+out-of-range order comes back as some value with no meaning, and a `NaN` argument comes back `NaN`.
+The exact values are the build's own and move with the compiler and the flags; on this project's
+MSVC x64 Release build, `BoysSingle(3, -1.0)` returns a tiny positive number, `BoysSingle(33, 1.0)`
+a plausible-looking one, and `BoysAllN` over `{1.0, NaN, 2.0}` is a segmentation fault. A build with
+assertions live aborts on the argument instead. The three calls that
 write into an array ask one thing more: the buffer has to hold the values the call writes. The
 `std::span` overloads of these entries (`boys/boys_span.hpp`) compare that extent and refuse a span
 that is short, with a line naming the call and both sizes; a `double*` carries no size, so the
@@ -90,14 +92,16 @@ const double f = boys::BoysSingle(n, x);
     guaranteed error <= 7e-14  (from throughout, every region)
     BoysAllOrders agrees to 0
 
-The second line is the lane's own figure, read out of the library at run time rather than typed into a
-document: the lane's runs measured at most that error, and the phrase in parentheses says how far the
-figure reaches — the row is the lane's, over every region. **The guarantee is the larger of
+The second line is the contract evaluated at the `(n, x)` the program asked about, read out of the
+library at run time rather than typed into a document: **the guarantee is the larger of
 `1e-13 · F_n(x)` and `1e-13 · F_0(x)`** — a fraction of the value rather than one figure
 for the whole range ([the specification](specification.md), "Accuracy contract") — and since F falls
 with the order, the arm scaled by the ladder's first rung is the wider one wherever the order's own
-value is tiny. If your calculation needs an error below the figure it prints, see [what the library
-guarantees](#what-the-library-guarantees).
+value is tiny. At `F_3(1.25)` the bound is `1e-13 · F_0(1.25)` ≈ 7e-14; the phrase in parentheses,
+"throughout, every region", is the reach the guarantee is stated with. The lane's runs measured a
+worst case of 5.5e-14, which is the reading [what the library
+guarantees](#what-the-library-guarantees) keeps as documentation — the number above is the promise
+at the cell, and it is the one to judge a calculation by.
 
 **Next:** `BoysSingle` computes each order on its own, so reach for the ladder below if you need more
 than one. It is the same call an integral code makes.
@@ -206,8 +210,8 @@ interval into pieces of different widths and carry a different number of pieces;
 published error bound.** Choosing the wrong one changes the work, not the accuracy. It costs you
 nothing visible: both compile, both run, both are correct, so you would never find out you had picked
 backwards. `kNarrow` is the seam's own name — what the policy `SeamPolicy<>` resolves to — and not
-the partition a call site that names no policy reads: that one is its class's row, and every double
-row in this build carries `kUniform`. `kCoarsest` is what the program below names. If you have not
+the partition a call site that names no policy reads: that one is its class's row, and every host
+double row in this build carries `kUniform`. `kCoarsest` is what the program below names. If you have not
 measured a preference, name no policy at all and take the default. The bound the library publishes
 is the lane's, and no partition moves it.
 
@@ -232,7 +236,7 @@ boys::BoysAllOrders<Named>(nmax, x, named_ladder);
     4   0.015602172536926584     0.015602172536926787
     worst disagreement: 3.3e-16 (guaranteed error <= 5.5e-14)
 
-The two agree here to within 3.3e-16, far inside the 5.5e-14 the lane prints, and that is expected
+The two agree here to within 3.3e-16, far inside the 5.5e-14 the contract prints at this argument, and that is expected
 rather
 than a coincidence: the settings select how the same approximation is summed, not what is
 approximated, so they part company only in the last bits — three of the five lines above differ
@@ -272,7 +276,7 @@ and where the figures are. **It does not rank the members** — the section abov
 |---|---|---|---|
 | **fit route** — `FitRoute` | which stored fits serve a region: the Chebyshev fits the certified lanes are defined by (`kChebyshev`, the default), or a rational minimax alternative holding the same bar by storing different things (`kRationalMinimax`) | **Accuracy, storage and work.** Measured against the committed reference, region A reads 1.74e-16 through the Chebyshev table, which stores 1320 coefficients, against 2.46e-14 through the rational one, which stores 891; the two region-B seeds read 9.92e-15 and 4.46e-14, over 19 and 12 stored. The rational route takes over per order from 1.0855252345349333 rather than from the region's left end, and it is not a seed for the batch entry's recursion. A rational fit costs one division per order, where the split-Clenshaw Chebyshev form is division-free. | `docs/lane-contract.md`, "The two fit routes" — the route table itself and the paragraphs on the two tables' reach. `BoysFitRoutes()` reports the rows at run time. The route has **not** been ranked against a timing, and lane-contract's default-policy section says which axes have been and which have not. |
 | **evaluation scheme** — `EvalScheme` | the summation a stored fit is read in: the even/odd split Clenshaw recurrence on its Chebyshev form (`kSplitClenshaw`), or Horner's rule on the monomial form of the same fit (`kHorner`, the default) | **Arithmetic and work, not the fit.** Both sum one fit, at one degree, to one bound: region A's per-order fits read 2.220e-16 under Horner and 4.441e-16 under split Clenshaw at the fused multiply-add route, with Horner's own figure at 4.441e-16 on the separate route, and the two region-B seeds read the same figure either way. Region C is a closed form with no fit to sum; the half lanes, the packed region-A lane and the CUDA device lane are split Clenshaw's and are not offered the other member. | `docs/lane-contract.md`, "The evaluation scheme: split Clenshaw or Horner" — one measured row per scheme and stored fit, which the accuracy gate carries beside its own rows. `BoysEvalSchemes()` and `BoysEvalSchemeFits()` answer the rows at run time. Cost: the probe's. The runs behind the default compare both members and do not separate them. |
-| **interval granularity** — `FitGranularity` | how narrowly the fitted domain is cut into pieces: the committed cut (`kCoarsest`), the narrower cut the proved truncation bound places (`kNarrow`, the seam's default), or one fixed grid over the whole fitted domain with every order fitted independently (`kUniform`) | **Work per call against storage, not accuracy** — all three cut one fit. The specification's table reads 19 to 21 coefficients per evaluation over 1339 stored coefficients for `kCoarsest`, and 11 over 3476 for `kNarrow`; `kNarrow`'s own measured region-A figure is 2.22e-16 at that region's 1e-15 bar. The grid buys a locate of one multiply and drops the per-order recursion, and pays in stored coefficients: on the double lane 496 intervals of width 1/16 under a read cap of 5, with the float lane carrying its own 77 of width 1/4 under a cap of 4. **The default was never chosen against its axis** — the runs behind it measured one member of the three. | `docs/specification.md`, "Interval granularity", and `docs/lane-contract.md`, "Interval granularity". The gate carries one row per partition, scheme and call shape; `BoysFitGranularities()` answers the rows at run time. Cost: the probe's. |
+| **interval granularity** — `FitGranularity` | how narrowly the fitted domain is cut into pieces: the committed cut (`kCoarsest`), the narrower cut the proved truncation bound places (`kNarrow`, the seam's default), or one fixed grid over the whole fitted domain with every order fitted independently (`kUniform`) | **Work per call against storage, not accuracy** — all three cut one fit. The specification's table reads 19 to 21 coefficients per evaluation over 1339 stored coefficients for `kCoarsest`, and 11 over 3476 for `kNarrow`; `kNarrow`'s own measured region-A figure is 2.22e-16 at that region's 1e-15 bar. The grid buys a locate of one multiply and drops the per-order recursion, and pays in stored coefficients: on the double lane 496 intervals of width 1/16 under a read cap of 5, with the float lane carrying its own 77 of width 1/4 under a cap of 4. **The committed run ranks all three**, and on it the uniform grid leads the fp64 single class — 56.09 against 246.21 ns per argument for the fastest narrow row — which is the partition every host double row names. | `docs/specification.md`, "Interval granularity", and `docs/lane-contract.md`, "Interval granularity". The gate carries one row per partition, scheme and call shape; `BoysFitGranularities()` answers the rows at run time. Cost: the probe's. |
 | **packing axis** — `PackAxis` | which of a call's values share a vector register: four arguments at one order (`kArguments`, the default), or four orders at one argument (`kOrders`) | **Which call shapes can carry it, and which path a call takes.** The two evaluate the same stored fits by the same arithmetic, so this is neither a choice of accuracy nor one of two designs. `BoysFixedN` produces one order and refuses `kOrders` where it is named; the single-precision entries have no packed body and refuse it too. A plane call naming the orders axis takes the all-orders entry's body and returns its values bit for bit, giving up the region grouping that exists to feed an arguments lane. | `docs/lane-contract.md`, "The packing axis: which of a call's values share a vector"; `BoysPackAxes()` reports the members and the interval each one's packed lane evaluates. **Not ranked against a timing**, with the route. |
 | **division form** — `DivisionForm` | how each step of a recurrence divides: one division per step (`kExactDivision`), a reciprocal formed once and multiplied through the ladder (`kPlainReciprocal`), or that form with the correctly rounded quotient recovered by one fused multiply-add per step (`kRefinedReciprocal`, the default) | **The last bits and the work, and on two lanes the published figure.** `kRefinedReciprocal` is bit-identical to exact division; the float and half lanes state a term beside their base where `kPlainReciprocal` is named, because that form's extra rounding takes the all-orders entry's region-A downward ladder past it. The axis governs only the divisions inside a recursion, so an order answered by reading its own fit is the same value under all three forms. | `docs/lane-contract.md`, "The division form: how each recursive step divides" — the lanes' figures, the cost the tree recorded on the host it measured, and the command that reproduces it. `BoysDivisionForms()` reports the members at run time, and the probe names the form in every row it prints. |
 
