@@ -543,11 +543,10 @@ TEST(BoysFixedNTest, TheDefaultRouteIsUnchangedByTheRouteAxis) {
     EXPECT_EQ(differing, 0u) << "naming the default route moved a value";
 }
 
-// The span overload's extent guard. A short span with a huge stride asks for a
-// buffer past the end of the size type; the product that asks the question must
-// not wrap, so the guard is the division check and the call is refused rather
-// than admitted. The guard is exercised directly: the refusal path ends in an
-// abort, and this suite runs no child-process test.
+// The span overload's extent guard. A short span with a huge stride asks for a buffer past the
+// end of the size type; the product that asks the question must not wrap, so the guard is the
+// division check and the call is refused rather than admitted. It is exercised directly: the
+// refusal path aborts, and this suite runs no child-process test.
 TEST(BoysFixedNTest, TheSpanOverloadRefusesAStrideThatWouldOverflow) {
     using boys::detail::StridedSpanAdmits;
     using boys::detail::StridedSpanNeeded;

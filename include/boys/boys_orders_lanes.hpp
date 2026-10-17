@@ -1761,7 +1761,7 @@ F32RatGroup BuildF32RatGroup(int l, float x, CutPairs cuts) noexcept {
 }
 
 // The same group over the narrow cover: the lookup and offsets are the narrow table's, the
-// degrees, cuts and mapped arguments the shipped group's. The cut is this partition's own, read
+// degrees and mapped arguments the shipped group's. The cut is this partition's own, read
 // from the pair table the per-order lane reads for it, so both lanes answer a piece at the same
 // pair.
 template <class CutPairs>
@@ -2242,10 +2242,9 @@ void BoysAllOrdersSimdAtForm(
 }
 
 // The entry the public surface's orders axis dispatches to (boys_impl.hpp). The partition picks
-// the table a fit is read from, and every stored fit is read at the degree that table holds; the
-// division form selects nothing here. The stored fit is summed from the transposed twin where
-// the partition carries one, one coefficient index at a time, both fetches being one lane value
-// for value.
+// the table a fit is read from, and every stored fit is read at the degree that table holds;
+// the division form selects nothing here. The stored fit is summed from the transposed twin
+// where the partition carries one, one coefficient index at a time, lane value for value.
 template <EvalScheme kScheme,
           FitRoute kRoute,
           FitGranularity kGranularity,

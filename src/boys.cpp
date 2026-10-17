@@ -788,11 +788,10 @@ Carriage CarriesSingle(FitRoute route,
     return {true, ""};
 }
 
-// The device lane's rule, reading that lane's own entries rather than the double lane's beside
-// it: Precision::kFp32Device is the device lane's single-precision one. What it carries is read
-// off the fp32 rows of the option table (src/boys_cuda.cpp): both routes over all three
-// partitions, both packing axes, and every combination served - the lane carries one accuracy
-// and derives each partition's table.
+// The device lane's rule, reading its own rows rather than the double lane's beside it:
+// Precision::kFp32Device is the device lane's single-precision one, and what it carries is read
+// off the fp32 rows of the option table (src/boys_cuda.cpp): both routes, all three partitions,
+// both packing axes, every combination served - one accuracy, each partition's table derived.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,

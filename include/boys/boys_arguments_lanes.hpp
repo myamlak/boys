@@ -29,11 +29,9 @@
 
 namespace boys::detail {
 
-// The lanes below pack four arguments of one order. The vector body and the arguments it does
-// not cover run different arithmetic: the body is split Clenshaw over four lanes, the tail calls
-// the scalar body's Horner chain, so the accuracy gate books count = 1 and count = 4 as separate
-// rows and the two bodies' figures are their own rows'. Their values are not bit-identical to
-// one another.
+// The lanes below pack four arguments of one order. The vector body is split Clenshaw; the tail
+// calls the scalar body's Horner chain. The accuracy gate books count = 1 and count = 4 as
+// separate rows, and their values are not bit-identical.
 
 using detail::kX0;
 using detail::kX1;

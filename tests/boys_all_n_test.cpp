@@ -1011,11 +1011,10 @@ TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
            "combination: the entry is not resolving through the row its class carries";
 }
 
-// The span overload's plane-count guard. A forged argument span with a huge
-// extent asks for a buffer past the end of the size type; the product that asks
-// the question must not wrap, so the guard is the division check and the call is
-// refused rather than admitted. The guard is exercised directly: the refusal
-// path ends in an abort, and this suite runs no child-process test.
+// The span overload's plane-count guard. A forged argument span with a huge extent asks for a
+// buffer past the end of the size type; the product that asks the question must not wrap, so
+// the guard is the division check and the call is refused rather than admitted. It is
+// exercised directly: the refusal path aborts, and this suite runs no child-process test.
 TEST(BoysAllNTest, ThePlaneSpanGuardRefusesAProductThatWouldOverflow) {
     using boys::detail::PlanesAdmit;
     using boys::detail::PlanesNeeded;

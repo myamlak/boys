@@ -153,10 +153,9 @@ int main() {
           !BoysAccuracyHere<Precision::kFp64, Shape::kFixedN>().delivered.available);
 
     // ArithmeticInForceName on the four measured states a build can report. Each is
-    // constructed rather than read, so the name is held to the state it is given and
-    // not to this translation unit's own profile. The states are the two selections
-    // times the two contraction measurements; on the separate selection the route in
-    // force is the fused route only where contraction is measured.
+    // constructed rather than read, so the name is held to the state it is given, not to this
+    // translation unit's own profile. The states are two selections times two contraction
+    // measurements: on the separate selection the route in force is fused only where measured.
     {
         using boys::backend::MulAddRoute;
 

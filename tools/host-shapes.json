@@ -336,6 +336,10 @@
   "BoysPackedLaneServes": "whether the packed region-A lane serves a scheme",
   "BoysAvx2Available": "whether the processor carries AVX2 with FMA",
   "LaneFallbackBudget": "the budget a class of a lane falls back to; it evaluates no F_n",
-  "DefaultGuarantee": "the bound a class default carries, read from the library rows; it evaluates no F_n"
+  "DefaultGuarantee": "the bound a class default carries, read from the library rows; it evaluates no F_n",
+  "StridedSpanAdmits": "a span guard: whether an out span admits a strided write; it evaluates no F_n",
+  "StridedSpanNeeded": "a span guard: the out-span extent a strided write asks, saturating; it evaluates no F_n",
+  "PlanesAdmit": "a span guard: whether an out span admits the values a plane-shaped call writes; it evaluates no F_n",
+  "PlanesNeeded": "a span guard: the out-span extent a plane-shaped call asks, saturating; it evaluates no F_n"
  }
 }

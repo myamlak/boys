@@ -257,11 +257,10 @@ typename B::Packed FitSum(const typename B::Value* cheb,
     }
 }
 
-// The two summations FitSum names, each taking only the table it reads. A call
-// site that knows its scheme chooses one under `if constexpr`, so the other
-// scheme's `.data()` is never formed: an argument is evaluated whatever the
-// callee does with it, and a Horner-only translation unit must not name the
-// Chebyshev array. FitSum itself stays for the callers that hold both tables.
+// The two summations FitSum names, each taking only the table it reads. A call site that knows
+// its scheme chooses one under `if constexpr`, so the other scheme's `.data()` is never formed:
+// an argument is evaluated whatever the callee does with it. FitSum itself stays for the callers
+// that hold both tables.
 template <backend::ArithmeticBackend B>
 typename B::Packed FitSumMono(const typename B::Value* mono,
                               int deg,
@@ -1066,12 +1065,10 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
     }
 }
 
-// The flat grid's one-order fit as the vector tier reads it: the selected scheme's
-// own summation and walk over the one table handed in, so the value is the portable
-// body's at every bit - what the flags of the compiling unit change is where the
-// fused step comes from, not the arithmetic. The caller picks the table, so no
-// instantiation names the other form's array. The scalar tier calls it nowhere, so
-// where the tier is absent the name stays a declaration and no body is parsed.
+// The flat grid's one-order fit as the vector tier reads it: the selected scheme's summation
+// over the table handed in, so the value is the portable body's at every bit. The caller picks
+// the table, so no instantiation names the other form's array; the scalar tier calls it
+// nowhere, so where the tier is absent the name stays a declaration.
 #if BOYS_ISA_AVX2_FMA
 template <EvalScheme kScheme>
 double FlatFitSum(const double* c, int deg, double t) noexcept {
@@ -2868,11 +2865,10 @@ inline float RegionBSeedF32WithDegrees(float x,
 
 
 
-// A float-lane single-order call reads a coefficient in exactly two places: the region-A seed and
-// the region-B seed. This names which pair of fits those two are. The routes are alternatives,
-// not accuracy levels: the rational one changes the coefficients those two intervals are
-// evaluated from and nothing else, its pieces being the family's own cover of each order's
-// interval.
+// A float-lane single-order call reads a coefficient in exactly two places: the region-A seed
+// and the region-B seed, and this names which pair of fits those two are. The routes are
+// alternatives, not accuracy levels: the rational one changes the coefficients those two
+// intervals are evaluated from and nothing else.
 
 // Rational-route piece lookup; see FindPieceF32.
 inline const detail::f32::RatPiece& FindRatPieceF32(int order, float x) noexcept {
@@ -3731,10 +3727,9 @@ void BoysAllOrdersImpl(int nmax, double x, double* out) noexcept {
                       "a policy naming a route outside the FitRoute enumeration is not one this "
                       "library serves: name FitRoute::kChebyshev or FitRoute::kRationalMinimax");
         // The across-orders packed lane carries every combination the axis offers: either route's
-        // region-A fits, either partition of the shipped route's, any granularity, any of the three
-        // division forms, the four choices reaching the lane as its template arguments. The form
-        // is one of them because the lane hands the orders it does not pack to the scalar single
-        // lane, whose recurrence steps divide.
+        // region-A fits, either partition of the shipped route's, any granularity, any division
+        // form, the four choices reaching the lane as template arguments. The form is one of them
+        // because the orders it does not pack go to the scalar single lane, whose steps divide.
         if constexpr (Policy::kGranularity == FitGranularity::kUniform)
         {
             // Above kFlatHi the uniform partition has one answer whatever the scheme, route and

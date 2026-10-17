@@ -6,10 +6,9 @@
 //   Delta(d') = sum_{k=d'+1}^{d} |c_k|   (the dropped-coefficient tail),
 
 // with A the path's seed-error amplification: 1 for the single-style lanes, w(b) = max(1,
-// b^n / prod(j+1/2)) at the piece's right end for the region-A batch downward recursion, and
-// prod(j+1/2)/x0^n for the region-B upward recursion (worst at x = x0). This library carries one
-// accuracy and its budget is zero, so a table holds each fit's stored degree. The (order, piece)
-// tables are compile-time constants per (lane role, basis), a-priori, never tuned.
+// b^n / prod(j+1/2)) at the piece's right end for the region-A batch recursion, and
+// prod(j+1/2)/x0^n for the region-B upward recursion. The budget is zero, so a table holds each
+// fit's stored degree: the (order, piece) constants per (lane role, basis), never tuned.
 
 // The tail must come from the table the scheme sums: the monomial coefficients of a Chebyshev
 // fit are Taylor coefficients on the piece, larger by about 2^k at the high-order end.
@@ -20,9 +19,8 @@
 
 // The fp16/bf16 lanes are I/O around the fp32 engine: their 1e-7 region budgets are stricter
 // than the 1.5e-7 the float lane's fits are cut against, and their half-ULP term does not
-// depend on the accuracy scale.
-// The 1.5e-7 is that lane's budget and not its figure: the figure it publishes is a fraction of
-// the value (BoysBudget, accuracy.hpp).
+// depend on the accuracy scale. That 1.5e-7 is the lane's budget, not its figure: the figure
+// it publishes is a fraction of the value (BoysBudget, accuracy.hpp).
 
 /// \cond
 // Not API: the degree arithmetic the entries are compiled from.

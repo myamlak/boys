@@ -71,11 +71,12 @@ def main() -> int:
     root = pathlib.Path(args.root)
     findings: list[str] = []
 
+    stamp = record_stamp_module(root)
     try:
-        version = record_stamp_module(root).version(root)
+        version = stamp.version(root)
     except Exception as error:  # noqa: BLE001 - the message is the finding
-        print(f"STALE: the project's version could not be read from {root / 'CMakeLists.txt'}: "
-              f"{error}")
+        print(f"STALE: the project's version could not be read from "
+              f"{root / stamp.VERSION_HEADER}: {error}")
         return 1
 
     print("the prose sites that state the library's version, held to version.hpp")
