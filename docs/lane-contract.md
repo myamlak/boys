@@ -44,6 +44,14 @@ and a non-zero status. `--per-order` extends it to every order and `--probe n x`
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
 
+**The lines before the tables are a record and not a failure.** The run prints five
+`EXCEEDED (record, not judged)` lines first, at the smallest arguments. They are the slot of a
+withdrawn reading of the header's table — that table read as a three-region one, a single region-A
+cell of `1e-15` with no band row, so `1e-15` across the whole of x < x0 — kept and measured so the
+reason it was withdrawn stays visible. The lane does not meet that reading anywhere in the band,
+which is why the ratio on those lines is above one, and no verdict counts them: the marker says so
+on each line, and the run's summary line counts them in none of its verdicts.
+
 **A caller that has chosen a precision and does not want to choose an axis wants one name.** The
 section *The default policy, per precision and per device* states, for each precision and for the
 device lane, what its default selects, the bound it carries, and where those settings come from.

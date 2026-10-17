@@ -325,6 +325,12 @@ It sweeps the documented entries over the committed reference grid — 33 orders
 beside the bound it claims. `--per-order` adds the same comparison order by order, naming the cells
 the bound actually binds on; `--probe n x` prints one cell from every lane for one argument.
 
+**The first five lines it prints are a record and not a failure.** They begin `EXCEEDED (record, not
+judged)`, at the smallest arguments, and they are a slot the gate keeps from a withdrawn reading of
+the header's table so the reason it was withdrawn stays visible: the lane does not meet that reading
+in the band, and no verdict counts the lines. [lane-contract.md](lane-contract.md) says what the
+reading was.
+
 The run ends with a verdict line and an exit status: `PASS: every documented claim met at this
 revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
 binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
