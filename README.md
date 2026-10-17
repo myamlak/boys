@@ -16,11 +16,12 @@ CMake: `boys::VersionString()` answers it.
 
 ## Your first call
 
-Copy this into `try.cpp`, build it, run it. It prints the numbers below. They come from a build that
-does not contract the multiply-add: a product and a sum stay two roundings rather than becoming one.
-A compiler that does answers with values that differ inside this lane's bound. `docs/build-facts.md`
-records per CI leg what each leg does, and `docs/specification.md` says which calls a consumer's own
-flags reach.
+Copy this into `try.cpp`, build it, run it. It prints the nine numbers below. Those numbers were
+produced by a build that does not contract the multiply-add: a product and a sum stay two roundings,
+not one. A build that does contract it evaluates different arithmetic and returns different bits;
+`docs/lane-contract.md` prints the measured figure for each route. `docs/build-facts.md` records, per
+CI leg, which arithmetic that leg compiles, and `docs/specification.md` says which calls a consumer's
+own flags reach.
 
 ```cpp
 #include <boys/boys_span.hpp>
