@@ -75,8 +75,12 @@ int main()
 
 `boys/boys_span.hpp` is the one header a C++ caller needs beyond `boys/boys.hpp`: it adds an
 overload taking a `std::span` of each of the double lane's four array entries, so a container goes
-straight in. It costs nothing - the overload forwards to the entry and both spellings compile to
-the same call - and a call passing a pointer and a count still reaches the pointer entry exactly.
+straight in. Each overload compares the extents it was handed against what the call writes and
+refuses a span that is short — a line naming the call and both extents, then an abort — and
+`BoysAllNAtOrders` refuses a top-order span that does not run with the arguments the same way. What
+the span spelling costs is that comparison, and what it buys is that a buffer too small is refused
+rather than written past; a bare pointer carries no size, so the pointer entries cannot check, and a
+call passing a pointer and a count still reaches the pointer entry exactly.
 
 What a translation unit needs, by what it is for:
 

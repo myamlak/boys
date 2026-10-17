@@ -386,7 +386,7 @@ for stepping outside that is not the same on every surface:
 | C (`boys_c.h`) | Every entry validates and returns a status instead: `BOYS_ERROR_INVALID_ARGUMENT` (1) for an order outside [0, 32], a negative or NaN x, or a null pointer. No abort and no undefined behaviour. |
 | CUDA | The single, batch and all-N entries return `boys::BoysStatus`, whose `kInvalidArgument` is the same validation as the C surface's; the device-callable entries take their orders as template arguments, so an order outside the range does not compile. |
 | Native half (`BoysAllOrdersHalf2`, `BoysAllNF16Native`) | Same `assert`, and one precondition of its own: the entry covers region C only, so an x below the region-C boundary is a violation rather than a fallback to the table regions. |
-| Output spans | The caller sizes them. A span shorter than the call writes is an out-of-bounds write with no check on any surface, and no entry reallocates or truncates. |
+| Output spans | The caller sizes them, and no entry reallocates or truncates. The four `std::span` overloads in `boys/boys_span.hpp` compare the extent they were handed against what the call writes and refuse a short one - a line naming the call and both extents, then an abort - and `BoysAllNAtOrders` refuses a top-order span that does not run with the arguments the same way. The pointer surfaces cannot make either check: a `double*` carries no size, so a span shorter than the call writes is an out-of-bounds write there. |
 
 ### Fit routes
 
