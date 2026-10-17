@@ -270,8 +270,9 @@ or zero and no accuracy is claimed. Until 4.0.0 the guarantee instead carried a 
 floor, `5.5e-14`, and where F is small the two figures disagree: at
 `n = 32, x = 29`, F is 1.93e-14 and the lane of the day returned 6.87e-14 — an error of 4.94e-14,
 inside the floor of the day, and **2.55 times the true value** read relative to F. That argument is
-served by the fitted grid — whose hi-bound is 31.0 in this build — and the ladder-scaled figure
-holds at every cell of it, at `0.288` of the bound at worst.
+served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is `kFlatHi`, 31.0
+in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of the bound at
+worst.
 
 **Two combinations hold the wider figure rather than the one read against `F_n(x)`.** The double
 entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of
