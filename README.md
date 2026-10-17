@@ -270,26 +270,22 @@ or zero and no accuracy is claimed. Until 4.0.0 the guarantee instead carried a 
 floor, `5.5e-14`, and where F is small the two figures disagree: at
 `n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
 5.5e-14 floor those releases carried, and **2.55 times the true value** read relative to F. That
-argument is
-served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is `kFlatHi`, 31.0
-in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of the bound at
-worst.
+argument is served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is
+`kFlatHi`, 31.0 in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of
+the bound at worst.
 
-**Two combinations hold the wider figure rather than the one read against `F_n(x)`.** The double
-entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of
-the span it serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations
-the option
-space offers do not hold the bound read against `F_n(x)` alone: a lean partition's extended-band
-ladder
-(`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax
-route's high-order intervals. Each holds the ladder-scaled bound, at a worst measured `0.12` and
-`0.48` of it.
+**Two combinations the option space offers do not hold the bound read against `F_n(x)` alone.** The
+double entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low
+end of the span it serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. The two are
+a lean partition's extended-band ladder (`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>`
+as it resolves) and the rational-minimax route's high-order intervals; each holds the ladder-scaled
+bound, at a worst measured `0.12` and `0.48` of it.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
 values of order one leaves about `1e-7` behind whatever the value is, so that lane states the
 larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the
-plain-reciprocal form. The
-[accuracy contract](docs/specification.md#accuracy-contract) names the two combinations, the figure
-each holds at its worst cell, and the command that measures the bound on your machine.
+plain-reciprocal form. The [accuracy
+contract](docs/specification.md#accuracy-contract) names the two combinations, the figure each holds
+at its worst cell, and the command that measures the bound on your machine.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
 undefined, and a release build does not refuse the arguments — the scalar entries answer them.
 `BoysSingle(3, -1.0)` returns 3.26e-17, `BoysSingle(33, 1.0)` returns 0.735, and a `NaN` argument
