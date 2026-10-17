@@ -23,7 +23,8 @@
 /// header's is the reading the lane's runs produced over its whole domain. A
 /// caller who needs the contract at a cell has the function value in hand and
 /// takes the archive's entry; a caller asking what his build measured reads this
-/// one.
+/// one. The `reading` field says which it is: this header's bound is
+/// `AccuracyReading::kMeasured`, and the archive's is `kGuaranteed`.
 ///
 /// **This header is not in boys/boys.hpp's chain.** A unit that includes the
 /// front door pulls boys_decl.hpp, and through it accuracy.hpp, but never this
@@ -596,7 +597,8 @@ struct ClassAccuracyHere {
     /// the division form and region-B exponential this call names add - the
     /// class's own by default. It is the lane's measured absolute figure and not
     /// `BoysAccuracyGuaranteed`'s answer, which is the contract evaluated at the
-    /// cell it is asked about.
+    /// cell it is asked about; its `reading` is `AccuracyReading::kMeasured`,
+    /// because a measurement is not a promise at a cell.
     AccuracyFigure bound;
 
     /// The figure this build's arithmetic was measured to deliver for the class:
@@ -684,7 +686,7 @@ constexpr ClassAccuracyHere BoysAccuracyHere() noexcept {
                                   kExp == DefaultPolicy<kPrecision, kShape, kDevice>::kRegionBExp;
 
     ClassAccuracyHere answer;
-    answer.bound.reading = AccuracyReading::kGuaranteed;
+    answer.bound.reading = AccuracyReading::kMeasured;
 
     // The plain reciprocal rounds once more per step than the other two forms, so on a lane
     // where that costs accuracy the row publishes a term beside its base and this form's

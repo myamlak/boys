@@ -797,16 +797,19 @@ struct LaneContractInfo {
 /// \ingroup boys
 std::span<const LaneContractInfo> BoysLaneContracts() noexcept;
 
-/// Which of a combination's two accuracy figures a reading is.
+/// Which of a library accuracy figure a reading is.
 ///
-/// The two are different numbers and neither substitutes for the other: a
+/// The three are different numbers and none substitutes for another: a
 /// caller deciding whether a calculation is safe needs the guarantee, a caller
-/// ranking two combinations needs what each was measured to deliver.
+/// ranking two combinations needs what each was measured to deliver, and a
+/// caller reading a build's published absolute figure is holding a measurement
+/// that is not a promise at a cell.
 ///
 /// \ingroup boys
 enum class AccuracyReading : std::uint8_t {
     kGuaranteed = 0, ///< an upper bound the lane documents: what a caller may rely on
     kDelivered, ///< the figure the combination was measured to deliver: what ranks options
+    kMeasured, ///< the lane's published absolute reading: a measurement, not a bound at a cell
 };
 
 /// The accuracy one combination of this library's option space provides.
@@ -822,7 +825,7 @@ enum class AccuracyReading : std::uint8_t {
 struct AccuracyFigure {
     double value = 0.0; ///< the figure at the cell asked about, or 0.0 where none is available
     bool available = false; ///< whether the library carries the combination
-    AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which of the two figures this is
+    AccuracyReading reading = AccuracyReading::kGuaranteed; ///< which figure this is
     const char* source = ""; ///< the table the figure was read from
     const char* reason = ""; ///< why no figure is available, empty where one is
 };

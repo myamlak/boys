@@ -78,8 +78,8 @@ int main() {
     // `bound`: the lane's published absolute figure, at the class's own policy.
     const ClassAccuracyHere fp64Single = BoysAccuracyHere<Precision::kFp64, Shape::kSingle>();
     Check("fp64 single bound", fp64Single.bound.value, 5.5e-14);
-    Check("fp64 single bound is kGuaranteed",
-          fp64Single.bound.reading == AccuracyReading::kGuaranteed);
+    Check("fp64 single bound is kMeasured",
+          fp64Single.bound.reading == AccuracyReading::kMeasured);
 
     const ClassAccuracyHere fp32Single = BoysAccuracyHere<Precision::kFp32, Shape::kSingle>();
     // The class's own default form is the build's and not a literal: the committed
