@@ -102,6 +102,20 @@ or, against a tree you have already built:
         -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
     ./try
 
+On Windows with MSVC, from a Developer Command Prompt or a shell that has run `vcvars64.bat`, the
+same line is spelled with its own switches. `/arch:AVX2` is the whole tier there — MSVC takes F16C
+with it — and no contraction pin rides beside it, because MSVC fuses only under `/fp:fast`, which
+this build does not use:
+
+    cl /nologo /std:c++20 /EHsc /MD /DBoysFp16=1 /arch:AVX2 /I include try.cpp
+    try.exe                                            # run it from the directory it landed in
+
+`/MD` is the runtime the CMake build uses, and `cl`'s own default is `/MT`: a program that links
+the archive — `build\Release\boys.lib` on the command line — and pulls an object out of it without
+`/MD` stops at `LNK2038: mismatch detected for 'RuntimeLibrary'`. This first program references
+nothing in the archive and does not need it on the link line at all, so it builds and runs either
+way.
+
 `-DBoysFp16=1` and the tier flags are the ones the recipe above put on the library, and
 `docs/build-facts.md` states the profile they spell. Every entry is compiled where it is called,
 so a unit that leaves either out builds a program the headers refuse at start-up in a program that
