@@ -1032,7 +1032,8 @@ mistyped name cannot block every pull request.
 
 ## Citation
 
-The published works the numerical claims rest on are listed in [CITATION.bib](../CITATION.bib).
+The library itself, and the published works its numerical claims rest on, are listed in
+[CITATION.bib](../CITATION.bib).
 
 ## License
 
