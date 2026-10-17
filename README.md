@@ -302,9 +302,11 @@ contract](docs/specification.md#accuracy-contract) names the two combinations, t
 at its worst cell, and the command that measures the bound on your machine.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
 undefined, and a release build does not refuse the arguments — the scalar entries answer them.
-`BoysSingle(3, -1.0)` returns 3.26e-17, `BoysSingle(33, 1.0)` returns 0.735, and a `NaN` argument
-comes back `NaN`; a `NaN` anywhere in a batch is worse, and `BoysAllN` on `{1.0, NaN, 2.0}` is a
-segmentation fault. A build with assertions live aborts on the argument instead. The five double
+A negative argument or an out-of-range order comes back as some value with no meaning; the exact
+value is the build's own and moves with the compiler and the flags. A `NaN` argument comes back
+`NaN`, and a `NaN` anywhere in a batch is worse: on this project's MSVC x64 Release build,
+`BoysAllN` over `{1.0, NaN, 2.0}` is a segmentation fault. A build with assertions live aborts on
+the argument instead. The five double
 entries each have a `*Checked` twin — `BoysAllOrdersChecked` and its four siblings — that refuses
 with a status rather than answering, and it is the call to make wherever the arguments are not known
 to be in domain. The
