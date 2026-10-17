@@ -137,22 +137,15 @@ typename B::Packed RegionBClenshaw(const typename B::Value* c,
     return ClenshawSplit<B>(c, d, t);
 }
 
-// The m = 1 entry: the fit's full degree, known at compile time.
+// The fit's full degree, known at compile time.
 inline __m256d ClenshawB4(__m256d xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp64<>, detail::kBDeg>(detail::kBcoeffs.data(), 0, xv);
-}
-
-// 4-wide region-B F0 seed at a runtime degree, for the relaxed RegionB loop only. The library
-// instantiates the SIMD region entries at m = 1 only, so here that caller sits in the discarded
-// arm of an `if constexpr` and GCC/Clang see a defined-but-unused internal function.
-[[maybe_unused]] inline __m256d ClenshawB4Deg(int deg, __m256d xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp64<>, -1>(detail::kBcoeffs.data(), deg, xv);
 }
 
 } // namespace
 
 // No entry point calls this lane; its callers are the tests and the benchmark. It takes no
-// policy, only the multiplier, so a caller cannot name it with a division form, and its vector
+// policy, so a caller cannot name it with a division form, and its vector
 // body forms 1/x once - the plain reciprocal, not the kRefinedReciprocal the entries default to.
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
@@ -255,7 +248,7 @@ void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noe
 #if BoysFp16
 // fp16 / bf16 lanes, AVX2 scope (8 lanes; the fp32 engine, F16C/bit-trick I/O): the same
 // region-partitioned engine pattern as the F64 lanes, around the certified fp32 fits of
-// detail::f32. The relaxed branches use the fp16 budget (1e-7) with the F32 piece tables.
+// detail::f32. The half lanes' branches use the fp16 budget (1e-7) with the F32 piece tables.
 bool DetectF16c() noexcept {
 #ifdef _MSC_VER
     int cpuInfo[4] = {};
@@ -282,21 +275,15 @@ inline __m256 Clenshaw8SplitF32Deg(const detail::f32::OrderPiece& piece,
     return RegionAClenshaw<backend::Avx2Fp32<>>(detail::f32::kCoeffs.data(), piece, deg, xv);
 }
 
-// The m = 1 entry: the piece's full degree.
+// The piece's full degree.
 inline __m256 Clenshaw8SplitF32(const detail::f32::OrderPiece& piece, __m256 xv) noexcept {
     return Clenshaw8SplitF32Deg(piece, piece.deg, xv);
 }
 
-// The m = 1 entry: the fit's full degree, known at compile time.
+// The fit's full degree, known at compile time.
 inline __m256 ClenshawB8F32(__m256 xv) noexcept {
     return RegionBClenshaw<backend::Avx2Fp32<>, detail::f32::kBDeg>(
         detail::f32::kBcoeffs.data(), 0, xv);
-}
-
-// The relaxed entry: the caller's degree; see ClenshawB4Deg.
-[[maybe_unused]] inline __m256 ClenshawB8F32Deg(int deg, __m256 xv) noexcept {
-    return RegionBClenshaw<backend::Avx2Fp32<>, -1>(
-        detail::f32::kBcoeffs.data(), deg, xv);
 }
 
 // e^{-x} for 8 floats from the double Taylor table (two 4-wide evaluations).
@@ -350,14 +337,21 @@ struct Bf16Lane {
     static void Store(HalfT* p, __m256 v) noexcept {
         // fp32 -> bf16 with round-to-nearest-even:
         //   bits += 0x7FFF + ((bits >> 16) & 1);  bits >>= 16
+        // A NaN is written as the scalar wrapper writes it - sign and top payload
+        // bits kept, quiet bit set - so the two conversions agree bit for bit.
         std::uint16_t raw[8];
-        __m256i bits = _mm256_castps_si256(v);
+        const __m256i original = _mm256_castps_si256(v);
+        __m256i bits = original;
+        const __m256i magnitude = _mm256_and_si256(original, _mm256_set1_epi32(0x7fffffff));
+        const __m256i nan = _mm256_cmpgt_epi32(magnitude, _mm256_set1_epi32(0x7f800000));
         const __m256i lsb = _mm256_and_si256(_mm256_srli_epi32(bits, 16), _mm256_set1_epi32(1));
         bits = _mm256_add_epi32(_mm256_add_epi32(bits, _mm256_set1_epi32(0x7fff)), lsb);
         // The 256-bit packus takes the low 128 of each operand, so an 8-wide
         // operand would duplicate elements 0-3 and drop 4-7; the 128-bit pack
         // of the two halves assembles {lo0-3, hi4-7}.
-        const __m256i hi = _mm256_srli_epi32(bits, 16);
+        const __m256i quiet = _mm256_or_si256(_mm256_srli_epi32(original, 16),
+                                              _mm256_set1_epi32(0x40));
+        const __m256i hi = _mm256_blendv_epi8(_mm256_srli_epi32(bits, 16), quiet, nan);
         const __m128i packed =
             _mm_packus_epi32(_mm256_castsi256_si128(hi), _mm256_extracti128_si256(hi, 1));
         _mm_storeu_si128(reinterpret_cast<__m128i*>(raw), packed);
@@ -628,8 +622,8 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // count % 4 elements.
 namespace boys::detail {
 
-// No entry point calls this lane here either, and it takes no policy, only the
-// multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
+// No entry point calls this lane here either, and it takes no policy, so wiring it is a
+// signature change. It forms no reciprocal of its own:
 // the run goes to the scalar lane at that lane's unnamed division form, the build
 // default rather than a caller's choice.
 void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noexcept {
@@ -648,8 +642,8 @@ void BoysRegionBSimd(int n, const double* x, double* out, std::size_t count) noe
     }
 }
 
-// No entry point calls this lane here either, and it takes no policy, only the
-// multiplier, so wiring it is a signature change. It forms no reciprocal of its own:
+// No entry point calls this lane here either, and it takes no policy, so wiring it is a
+// signature change. It forms no reciprocal of its own:
 // the run goes to the scalar lane at that lane's unnamed division form, the build
 // default rather than a caller's choice.
 void BoysRegionCSimd(int n, const double* x, double* out, std::size_t count) noexcept {

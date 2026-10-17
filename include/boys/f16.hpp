@@ -329,11 +329,20 @@ private:
     constexpr Bf16(std::uint16_t bits, FromBitsTag) noexcept : _mBits(bits) {}
 
     // float -> bf16, round-to-nearest-even (the AVX2 bit trick the SIMD
-    // lane uses; Inf/NaN and the subnormal range fall out of the same
-    // rounding). Verified: 1.0 -> 0x3F80, -1.0 -> 0xBF80, 0x7F7FFFFF ->
-    // 0x7F80 (RNE rounds up to Inf), 0x7F800000 -> 0x7F80.
+    // lane uses; the subnormal range falls out of the same rounding).
+    // A NaN keeps its sign and top payload bits and has the quiet bit set,
+    // as the fp16 conversion writes it; Inf keeps its zero mantissa.
+    // Verified: 1.0 -> 0x3F80, -1.0 -> 0xBF80, 0x7F7FFFFF ->
+    // 0x7F80 (RNE rounds up to Inf), 0x7F800000 -> 0x7F80,
+    // 0x7F800001 -> 0x7FC0.
     static constexpr std::uint16_t FloatToBf16(float f) noexcept {
         const std::uint32_t b = std::bit_cast<std::uint32_t>(f);
+
+        if ((b & 0x7FFFFFFFu) > 0x7F800000u)
+        {
+            return static_cast<std::uint16_t>((b >> 16) | 0x0040u);
+        }
+
         return static_cast<std::uint16_t>((b + 0x7FFFu + ((b >> 16) & 1u)) >> 16);
     }
 
