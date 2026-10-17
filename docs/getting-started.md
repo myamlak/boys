@@ -152,7 +152,10 @@ boys::BoysFixedN(n, x, column, count, stride);   // column[i * stride] = F_n(x[i
     worst gap against BoysSingle: 0 (guaranteed error <= 1.6e-14)
 
 The stride is why the entry exists: the answer can go straight into a column of a larger structure,
-with no intermediate copy. Leave it out and it defaults to 1.
+with no intermediate copy. Leave it out and it defaults to 1. A container passed in place of the
+pointer and count takes its count from the container's own extent and spells the stride
+`BoysStride{...}` — a bare number in that position would be a count under the pointer entry's
+meaning, so the container overload names it and refuses to compile the ambiguous spelling.
 
 **Next:** every order over many arguments at once — the batch shape — which is the next section.
 

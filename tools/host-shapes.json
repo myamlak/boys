@@ -253,7 +253,7 @@
   },
   "BoysFixedN": {
    "shape": "one-array-out",
-   "spelling": "template policy, the span overload, a strided output"
+   "spelling": "template policy, the span overload with its stride spelled BoysStride{}"
   },
   "BoysAllN": {
    "shape": "ladder-array-planes",

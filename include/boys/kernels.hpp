@@ -78,7 +78,7 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
-/// \param count  number of arguments
+/// \param count  how many arguments to read from \p x
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys

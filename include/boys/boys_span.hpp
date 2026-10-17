@@ -29,6 +29,11 @@
 /// shapes at another type - write the same forwarder if you need one, or pass
 /// `.data()` and `.size()` to the entry.
 ///
+/// **`BoysFixedN`'s stride is spelled `BoysStride{}` here.** The pointer entry's
+/// fourth argument is the count and this overload's count comes from the argument
+/// span, so the stride is a tag rather than a bare number: a count written in that
+/// position is a compile error instead of a stride no size-check can see.
+///
 /// \ingroup boys
 
 #include "boys/boys.hpp"
@@ -117,19 +122,21 @@ inline void BoysAllOrders(int nmax, double x, std::span<double> out) noexcept {
 ///
 /// \param n      the order
 /// \param x      the arguments
-/// \param out    receives the values, `(x.size() - 1) * stride + 1` of them; a
+/// \param out    receives the values, `(x.size() - 1) * stride.value + 1` of them; a
 ///               shorter span is refused with a line naming both extents
-/// \param stride the distance between the elements the values are written to
+/// \param stride the distance between the elements the values are written to,
+///               spelled through \c BoysStride{} because the count comes from
+///               \p x here; a bare number in this position is a compile error
 ///
 /// \ingroup boys
 template <EvalPolicyLike Policy = DefaultPolicy<Precision::kFp64, Shape::kFixedN>>
 inline void BoysFixedN(int n,
                        std::span<const double> x,
                        std::span<double> out,
-                       std::size_t stride = 1) noexcept {
+                       BoysStride stride = {}) noexcept {
     if (x.size() >= 1)
     {
-        const std::size_t needed = (x.size() - 1) * stride + 1;
+        const std::size_t needed = (x.size() - 1) * stride.value + 1;
 
         if (out.size() < needed)
         {
@@ -137,7 +144,7 @@ inline void BoysFixedN(int n,
         }
     }
 
-    BoysFixedN<Policy>(n, x.data(), out.data(), x.size(), stride);
+    BoysFixedN<Policy>(n, x.data(), out.data(), x.size(), stride.value);
 }
 
 /// F_0(x_i) through F_nmax(x_i) for every argument; see \c BoysAllN.

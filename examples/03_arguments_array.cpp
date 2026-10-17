@@ -15,8 +15,10 @@ int main()
     const std::array<double, 5> x{0.25, 1.0, 4.0, 12.5, 30.0};
 
     // stride 2: the values land in out[0], out[2], out[4] ... of a wider buffer.
+    // The container overload spells the stride through BoysStride{}; its count comes
+    // from the argument array's own extent.
     std::array<double, 10> column{};
-    boys::BoysFixedN(n, x, column, 2);
+    boys::BoysFixedN(n, x, column, boys::BoysStride{2});
 
     std::printf("n = %d, stride 2\n", n);
     for (std::size_t i = 0; i < 5; ++i)

@@ -1374,10 +1374,16 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// arguments once for the whole call.
 ///
 /// Layout: out[i * stride] = F_n(x[i]), i = 0..count-1; stride is measured in
-/// doubles and defaults to 1 (contiguous). The output span must hold
+/// doubles and defaults to 1 (contiguous). The output buffer must hold
 /// (count - 1) * stride + 1 doubles; count may be 0 (no writes). The entry is
 /// scalar and portable: x and out need no alignment beyond alignof(double), and
 /// the two arrays must not overlap.
+///
+/// **The fourth argument is the count.** It is how many arguments the call reads
+/// from \p x, and it is the pointer entry's own; the `std::span` overload in
+/// `boys/boys_span.hpp` takes the count from the argument span's extent and spells
+/// its stride through the `BoysStride{}` tag, so a count written there is a
+/// compile error rather than a stride no size-check can see.
 ///
 ///
 ///         The packing axis is not an axis of this shape: a packed lane keeps
@@ -1390,7 +1396,9 @@ void BoysAllOrders(int nmax, double x, double* out) noexcept;
 /// \param n      order, 0..kMaxBoysOrder - the batch's single fixed order
 /// \param x      array of count arguments, each >= 0
 /// \param out    receives F_n(x[i]) at out[i * stride]
-/// \param count  number of arguments
+/// \param count  how many arguments to read from \p x; the container overload
+///               takes its count from the span and spells its stride through
+///               \c BoysStride{}
 /// \param stride output stride in doubles, >= 1 (default 1 = contiguous)
 ///
 /// \ingroup boys
@@ -1409,6 +1417,20 @@ void BoysFixedN(
 ///
 /// \ingroup boys
 struct BoysSortedArgs {};
+
+/// Tag for the container overload of \c BoysFixedN: the distance between the
+/// elements the values are written to.
+///
+/// The pointer entry's fourth argument is the **count** - how many arguments to
+/// read - and the container overload takes its count from the argument span, so
+/// the same position would otherwise mean two different things under one name.
+/// This tag is that overload's own spelling, and a `std::size_t` there is a
+/// compile error rather than a stride nothing checks.
+///
+/// \ingroup boys
+struct BoysStride {
+    std::size_t value = 1; ///< the distance between output elements, >= 1
+};
 
 /// Workspace size, in std::size_t words, that BoysAllN uses when the caller
 /// supplies one.
