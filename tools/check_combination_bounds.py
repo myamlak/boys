@@ -1194,7 +1194,13 @@ def main() -> int:
                     if figure is not None and figure["available"]:
                         stated.add(f"{figure['value']:.3g}")
 
-            if stated and row["bound"] not in stated:
+            # The run prints its figure at six significant digits and the accessor is read
+            # here at three: both sides are rounded to the same precision before they are
+            # compared, because a figure is one number and not a spelling. The rounding is
+            # what lets 2.38419e-07 (the run's) meet 2.38e-07 (the accessor's).
+            recorded = number(row["bound"])
+
+            if stated and (recorded is None or f"{recorded:.3g}" not in stated):
                 disagreed.append((row, sorted(stated)))
 
         print(f"    the run's accessor table: {len(accessor_rows)} lane(s) with a recorded figure, "
