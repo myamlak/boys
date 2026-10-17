@@ -25,6 +25,30 @@ and links the lane and **runs no kernel**, so every device figure is a figure so
 machine with a card in it. That is a statement about where the numbers come from, and it is taken up
 again under *What you got: the bound*, below.
 
+## Linking it into your application
+
+The device lane is one target on the install and export surface, and its link line names it instead
+of the host library. Installed:
+
+```cmake
+find_package(boys COMPONENTS cuda REQUIRED)     # fails at configure when the package has no lane
+target_link_libraries(app PRIVATE boys::boys-cuda)
+```
+
+A plain `find_package(boys)` is answered without CUDA: the component is what says the device lane is
+wanted, and the package then finds the toolkit it was built with. As a submodule the target is
+already there and no package is needed - the same line beside the host library's one:
+
+```cmake
+add_subdirectory(external/boys boys)
+target_link_libraries(app PRIVATE boys::boys-cuda)
+```
+
+`boys::boys-cuda` hands your translation units what `boys::boys` does - the include directory, the
+tier flags, the contraction answer, the fp16 seam - plus the toolkit's CUDA runtime through the
+exported package. The host-side header `boys/boys_cuda.hpp` is a plain C++ header; a translation
+unit that includes the device-callable `boys/boys_cuda_device.hpp` is a `.cu` and compiles with nvcc.
+
 ## The two routes, and which one is yours
 
 The library offers the same arithmetic two ways, and they are different questions rather than two
@@ -454,13 +478,28 @@ per-lane bound tables, the four device rows among them, and
 [the API reference's contract table](mainpage.md) states the CUDA rows. Both are documents. The
 authority behind them is a program, and this is the part to take away:
 
-**The device half carries no certified per-class accuracy figure of its own.** There is no valid
-device run standing behind one, and the header states the lane's coverage plainly: an entry documents
-the bound its tables deliver, and the device accuracy gate is the program that certifies it against
-the committed reference grid. So this page quotes you no device
-accuracy number: it would be a number no program printed, which is exactly the defect this library's
-documentation exists to avoid. What it tells you instead is where the number lives, and how to get
-the one that is true for your card.
+**The device lane publishes the same accuracy contract as the CPU lanes, precision by precision.**
+[The specification's contract table](specification.md#accuracy-contract) is the statement:
+**CUDA fp64** carries the double lane's `max(1e-13 · F_n(x), 1e-13 · F_0(x))`; **CUDA fp32 at
+`RegionBExp::kAccurate`** the float lane's `max(2^-22 · F_n(x), 1.5e-7)`, and at
+`RegionBExp::kFast` that figure plus the corrected seed's own `8e-8`; **CUDA fp16** `1e-7` plus half
+of the last representable digit of the returned value, or `2e-7` plus that digit under the plain
+reciprocal. Those are the figures the lane's entries publish in `boys/boys_cuda.hpp`, the figures
+its rows of `BoysLaneContracts()` state, and what `BoysAccuracyGuaranteed` answers at the cell you
+ask about. The half digit is a term of the value you receive and not of the call, so it is claimed
+only where the value exceeds the sum, exactly as on the host half lanes.
+
+**The recorded run behind them is one card's.** The accuracy gate this repository ships runs the
+device rows on the machine it is built on, and the committed run
+(`tests/data/boys_accuracy_gate_run.txt`) carries them: the **fp64** lane's worst cell is
+`2.22045e-16` at `n = 0, x = 0.17485`, judged at the row's `5.5e-14` bar; the **fp32** lane's
+accurate member delivers `1.28793e-07` at worst at `n = 32, x = 11.9447` against `1.5e-7`, and its
+fast member `1.44436e-07` against `2.3e-07`; the **fp16** and **bf16** lanes deliver `0.0002438` and
+`0.00195088` at worst, inside their half-ULP bars. Every device row in that run records **0 cells
+outside the figure it was judged at**. (The bars the gate audits are the absolute figures each
+lane's fits were cut against; the value-scaled contract above is the published statement, and the
+device gate's own run on your card is where the per-cell judgement is taken.) Read the recorded
+figures as that card's, on that build — the command below prints yours.
 
 ### Getting a figure that is true for your card
 
@@ -558,9 +597,10 @@ your build carries is `BoysDeviceOptions()` at run time — a document cannot be
 document goes stale the moment an entry is added. This page names only the entries it has read out of
 the headers.
 
-**It quotes no device accuracy figure.** See *What you got: the bound* above: no valid device run
-stands behind one, so a figure printed here would be one no program printed. Where the figures live is
-stated, and the commands that produce them on your card are given.
+**It quotes one card's device figures, and says whose they are.** See *What you got: the bound*
+above: the figures it prints are the ones the committed gate run recorded on the card it names, and
+your card's are the ones `boys-cuda-accuracy-gate` prints when you run it. What the page does not do
+is turn one card's reading into a claim about yours.
 
 ## Where to go next
 
