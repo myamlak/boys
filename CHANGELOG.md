@@ -18,10 +18,13 @@ the half lanes keep their own figures. `docs/specification.md#accuracy-contract`
 lane by lane, and it names the two combinations that hold the wider arm rather than the figure read
 against `F_n(x)`.
 
-**The coefficient tables are regenerated** (`include/boys/boys_coefficients.hpp`), on one derived
-grid over `[0, 31.0)` of width `1/16` — 496 intervals — each order fitted at its interval's own
-degree, cap 5. The generator and its provenance record
-(`tests/data/boys_coefficients_provenance.txt`) are committed beside them.
+**The coefficient file gains the uniform-grid tables** (`include/boys/boys_coefficients.hpp`): one
+derived grid over `[0, 31.0)` of width `1/16` — 496 intervals — each order fitted at its interval's
+own degree, cap 5, serving `FitGranularity::kUniform`. **The shipped partition's own tables are
+byte-identical between v2.0.0 and v4.0.0**: the file grew by the uniform grid's rows, and the
+coefficients the shipped partition is read from did not move. What moved is the unnamed call's
+default — it now reaches the narrow partition, read by Horner on the monomial form. The generator
+and its provenance record (`tests/data/boys_coefficients_provenance.txt`) are committed beside them.
 
 **The accuracy rung is not offered.** The axis permitted 4096 times the error for a few per cent of
 time, and the library does not carry it: the slot the device handle reserves for it is read by no
