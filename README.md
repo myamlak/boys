@@ -124,7 +124,11 @@ F_6(30)    = 3.6049669032736188e-08
 The three `OFF`s are there so this builds the library and nothing else — the option probe and the C
 linkage surface are units of the archive itself and not targets beside it — which needs no compiler
 past C++20: the suite and the benchmark drivers are the targets that want C++23, and each is behind
-one of those flags. Drop them to build all three as well; that is the contributor's build.
+one of those flags. Drop them to build all three as well; that is the contributor's build. This
+build carries no test target, so the accuracy gate and the option probe are not in it:
+`cmake -S . -B build -DBOYS_BUILD_TESTS=ON` on the directory you have is what adds them, and *Check
+the figures yourself* in [the specification](docs/specification.md#accuracy-contract) gives the
+command that then runs the gate.
 
 On Windows with the Visual Studio generator the library lands in `build/Release/`. This program is
 [`examples/00_first_call.cpp`](examples/00_first_call.cpp); the contributor's build compiles it and

@@ -268,9 +268,12 @@ report prints how many of its comparisons were bit-for-bit equal.
 
 The measurement is in this tree. Build it and run it — the gate is a target of the test suite, so
 the configure that produces it wants `-DBOYS_BUILD_TESTS=ON` and the vendored googletest beside the
-tree:
+tree. CMake caches what a directory was configured with, so a `build` made with the tests off has no
+gate target however a later `cmake -S . -B <build>` is written, and adding the target means naming
+the option again:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake -S . -B <build> -DBOYS_BUILD_TESTS=ON
+    cmake --build <build> --config Release --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
 It sweeps the documented entries over the committed reference grid (33 orders × 1797 arguments,

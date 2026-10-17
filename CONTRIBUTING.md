@@ -93,10 +93,12 @@ running `boys-option-probe` at configure time and emitting your machine's rankin
 build. So this option takes a header you already have.
 
 The accuracy gate re-measures every documented bound against the committed reference grid and prints
-the comparison lane by lane and region by region:
+the comparison lane by lane and region by region. It is a target of the test suite, so it exists in
+the `build` the block above makes, which leaves `BOYS_BUILD_TESTS` on; a directory configured with
+that option `OFF` has no gate target, and CMake caches the answer:
 
 ```bash
-cmake --build build --target boys-accuracy-gate
+cmake --build build --config Release --target boys-accuracy-gate
 ./build/Release/boys-accuracy-gate --strict   # the config directory is your generator's:
                                               # a Ninja build runs it as ./build/boys-accuracy-gate
 ```

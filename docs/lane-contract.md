@@ -30,9 +30,11 @@ the relative form. The per-region budgets and the bars a fit is cut against stay
 figures and are printed as the measurements they are.
 
 Every figure on this page is measured by a program in this tree, and the command below prints the
-comparison for the machine you run it on:
+comparison for the machine you run it on — in a `<build>` configured with `-DBOYS_BUILD_TESTS=ON`,
+because the gate is a target of the test suite and CMake caches what a directory was configured
+with:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake --build <build> --config Release --target boys-accuracy-gate
     <build>/Release/boys-accuracy-gate --strict      # the config directory is your generator's
 
 It sweeps the documented entries over the committed reference grid and prints, lane by lane and
@@ -1780,7 +1782,7 @@ so a printed row shows which arithmetic the default selected.
 
 The second command prints the bound each name carries:
 
-    cmake --build <build> --target boys-accuracy-gate
+    cmake --build <build> --config Release --target boys-accuracy-gate   # needs -DBOYS_BUILD_TESTS=ON
     <build>/Release/boys-accuracy-gate --strict
 
 which sweeps the documented entries and prints, lane by lane and region by region, the worst error

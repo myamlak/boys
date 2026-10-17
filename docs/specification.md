@@ -309,9 +309,16 @@ counts, the reasons, the two figures side by side and the tolerance table are in
 
 Every figure above is measured, and the measurement is in this tree. Build the gate and run it:
 
-    cmake -S . -B build
-    cmake --build build --target boys-accuracy-gate
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON
+    cmake --build build --config Release --target boys-accuracy-gate
     ./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+
+The first line names the option because the gate is a target of the test suite, and CMake caches what
+a directory was configured with: the README's first recipe sets `BOYS_BUILD_TESTS=OFF`, and a
+re-configure that does not name it again leaves it `OFF`. The target is then absent and the build
+stops with `MSB1009`, naming `boys-accuracy-gate.vcxproj` as a project file that does not exist;
+naming the option `ON` adds the suite's targets to the directory you already have. The gate is a
+C++23 target, and the googletest it needs is vendored in this tree.
 
 It sweeps the documented entries over the committed reference grid — 33 orders × 1797 arguments,
 59,301 points — and prints, lane by lane and region by region, the worst error the lane delivered
@@ -754,8 +761,8 @@ vector tier is present, whether a bare `a * b + c` is one rounding or two in you
 and how your arguments arrive all move the ranking. The library carries the measurement instead of a
 recommendation — a probe you build and run where you deploy:
 
-    cmake -S . -B build
-    cmake --build build --target boys-option-probe
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON
+    cmake --build build --config Release --target boys-option-probe
     ./build/Release/boys-option-probe      # the config directory is your generator's
 
 It reports, per option, the cost per argument, the spread of that cost over the paired rounds it was
