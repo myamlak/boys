@@ -27,11 +27,12 @@
 /// **What is verified on this machine is the arithmetic, not the hardware.** The
 /// modes below \c kFp64 evaluate a *model* of an fp32 accumulator, which is not
 /// what a card's fused sum does. The two split modes' floor is 1.92e-7 to 1.95e-7
-/// absolute — 1.28 to 1.30 times the 1.5e-7 the float lane's fits are cut against
-/// — so they miss that lane's budget at \c m = 1 and carry it from \c m = 2. The
-/// lane's published bound is a fraction of the value rather than a budget, and a
-/// floor of this kind sits inside it only where F_n(x) is above about 0.81: below
-/// that the floor is the larger of the two and does not follow the value down.
+/// absolute — 1.28 to 1.30 times the 1.5e-7 the float lane's fits are cut against,
+/// so they miss that lane's budget. A relaxed accuracy multiplier would have
+/// carried them from \c m = 2; this library carries \c m = 1 only. The lane's
+/// published bound is a fraction of the value rather than a budget, and a floor of
+/// this kind sits inside it only where F_n(x) is above about 0.81: below that the
+/// floor is the larger of the two and does not follow the value down.
 ///
 /// A caller who feeds one order's value to the shipped downward recursion
 /// instead is held to a tighter requirement: that recursion carries order N's
@@ -118,10 +119,10 @@ struct ProductModeInfo {
     const char* name; ///< the name a report prints for the mode
     ModeCertification certification; ///< what the row's bound is a measurement of
     const char* model; ///< the arithmetic or accumulator the bound is a claim about
-    int parts; ///< products per operand: 1, 2 or 3
+    int parts; ///< the operand's part count: 1, 2 or 3
     double fitTerm; ///< the fit's own term of the bound
     double floor; ///< the floor the format adds beside it
-    double delivered; ///< swept worst |F̂ − F| over region A at the reference multiplier
+    double delivered; ///< swept worst |F̂ − F| over region A
 };
 
 /// The region-A transform's arithmetic modes this build carries, one row each,
@@ -192,8 +193,8 @@ inline std::span<const ProductModeInfo> BoysProductModes() noexcept {
 }
 
 /// \cond
-// The kernel behind the entry declared above, defined here so that every
-// multiplier a caller names is instantiable at the call site.
+// The kernel behind the entry declared above, defined here so that its one
+// arithmetic is instantiated where a caller uses it.
 namespace detail {
 
 /// Round v to `bits` significant bits (round-half-to-even): the significand the
@@ -597,6 +598,7 @@ void BoysRegionAProduct(RegionABand band, int nmax, const double* x, double* out
     assert(nmax >= 0 && nmax <= kMaxBoysOrder);
     assert(x != nullptr || count == 0);
     assert(out != nullptr || count == 0);
+    assert(band == RegionABand::kA1 || band == RegionABand::kA2);
 
     using Policy = typename detail::PolicyOf<kMode>::Type;
 
