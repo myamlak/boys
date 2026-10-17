@@ -3,6 +3,13 @@
 // suite rather than by reading (include/boys/boys_build_defaults.hpp states the contract a replacement
 // satisfies). It is a fixture, not a measurement. Each move is quoted where its value is defined.
 
+// The groups this fixture's moved rows name: kCoarsest is not in the front door's default set, so a
+// translation unit carrying this seam includes the partition's own tables.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 
 // Committed: the fit route is pinned where the seam test reads this file (tests/boys_backend_test.cpp,
