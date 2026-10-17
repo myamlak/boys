@@ -94,6 +94,45 @@ inline std::size_t StridedSpanNeeded(std::size_t count, std::size_t stride) noex
     return (count - 1) * stride + 1;
 }
 
+/// Whether an out span of \p outSize values admits the `count * planes` values
+/// a plane-shaped call writes; asked as a division so a product that would wrap
+/// the size type is refused rather than admitted.
+///
+/// \param count   the arguments the call walks
+/// \param planes  the value planes one argument writes
+/// \param outSize the values the out span holds
+inline bool PlanesAdmit(std::size_t count, std::size_t planes,
+                        std::size_t outSize) noexcept {
+    if (count == 0 || planes == 0)
+    {
+        return true;
+    }
+
+    return count <= outSize / planes;
+}
+
+/// The extent `count * planes` values ask of the out span, saturating at the
+/// largest representable size so a refusal can name a bound where the true
+/// product does not fit one.
+///
+/// \param count  the arguments the call walks
+/// \param planes the value planes one argument writes
+inline std::size_t PlanesNeeded(std::size_t count, std::size_t planes) noexcept {
+    const std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+
+    if (count == 0 || planes == 0)
+    {
+        return 0;
+    }
+
+    if (planes > kMax / count)
+    {
+        return kMax;
+    }
+
+    return count * planes;
+}
+
 /// Refuses a span shorter than the call writes: one line naming the call, the
 /// span and the two extents, then an abort.
 ///
@@ -207,11 +246,13 @@ inline void BoysAllN(int nmax,
                      std::span<const double> x,
                      std::span<double> out,
                      std::span<std::size_t> workspace = {}) noexcept {
-    const std::size_t planes = x.size() * (static_cast<std::size_t>(nmax) + 1);
+    const std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+    const std::size_t orders = nmax < 0 ? kMax : static_cast<std::size_t>(nmax) + 1;
 
-    if (out.size() < planes)
+    if (!detail::PlanesAdmit(x.size(), orders, out.size()))
     {
-        detail::RefuseShortSpan("BoysAllN", "out", planes, out.size());
+        detail::RefuseShortSpan(
+            "BoysAllN", "out", detail::PlanesNeeded(x.size(), orders), out.size());
     }
 
     const std::size_t scratch = BoysAllNWorkspaceSize(x.size());
@@ -255,11 +296,13 @@ inline void BoysAllNAtOrders(std::span<const int> n,
         }
     }
 
-    const std::size_t planes = x.size() * (top + 1);
+    const std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+    const std::size_t orders = top == kMax ? kMax : top + 1;
 
-    if (out.size() < planes)
+    if (!detail::PlanesAdmit(x.size(), orders, out.size()))
     {
-        detail::RefuseShortSpan("BoysAllNAtOrders", "out", planes, out.size());
+        detail::RefuseShortSpan(
+            "BoysAllNAtOrders", "out", detail::PlanesNeeded(x.size(), orders), out.size());
     }
 
     BoysAllNAtOrders<Policy>(n.data(), x.data(), out.data(), x.size());

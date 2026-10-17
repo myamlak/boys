@@ -7,6 +7,7 @@
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
+#include "boys/boys_span.hpp"
 
 #include <algorithm>
 #include <array>
@@ -18,6 +19,7 @@
 #include <cstring>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <limits>
 #include <random>
 #include <sstream>
 #include <string>
@@ -1007,6 +1009,38 @@ TEST(BoysAllNTest, TheRouteNamedIsTheRowsAndNotTheSeams) {
         << "naming the route the seam's five name does not move the unnamed call where this "
            "class's row is those five, or moves it nowhere where the row names another "
            "combination: the entry is not resolving through the row its class carries";
+}
+
+// The span overload's plane-count guard. A forged argument span with a huge
+// extent asks for a buffer past the end of the size type; the product that asks
+// the question must not wrap, so the guard is the division check and the call is
+// refused rather than admitted. The guard is exercised directly: the refusal
+// path ends in an abort, and this suite runs no child-process test.
+TEST(BoysAllNTest, ThePlaneSpanGuardRefusesAProductThatWouldOverflow) {
+    using boys::detail::PlanesAdmit;
+    using boys::detail::PlanesNeeded;
+
+    constexpr std::size_t kMax = (std::numeric_limits<std::size_t>::max)();
+
+    // Two arguments at 33 planes each write 66 values: a span of 65 is refused
+    // and one of 66 admitted.
+    EXPECT_FALSE(PlanesAdmit(2, 33, 65));
+    EXPECT_TRUE(PlanesAdmit(2, 33, 66));
+
+    // A forged count past the size type's division refuses rather than wraps:
+    // half the size type's arguments at 33 planes cannot be named.
+    EXPECT_FALSE(PlanesAdmit(kMax / 2, 33, 1024));
+    EXPECT_EQ(PlanesNeeded(kMax / 2, 33), kMax);
+
+    // An order that arrives negative is the saturated plane count and is not
+    // admitted for a non-empty argument span; an empty span writes nothing.
+    EXPECT_FALSE(PlanesAdmit(1, kMax, 0));
+    EXPECT_TRUE(PlanesAdmit(0, kMax, 0));
+
+    // Boundaries: no planes and no arguments ask for nothing.
+    EXPECT_TRUE(PlanesAdmit(5, 0, 0));
+    EXPECT_EQ(PlanesNeeded(5, 0), 0u);
+    EXPECT_EQ(PlanesNeeded(2, 33), 66u);
 }
 
 } // namespace
