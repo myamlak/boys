@@ -332,9 +332,9 @@ licences are listed in THIRD_PARTY_NOTICES.md.
 ## Versioning
 
 - **MAJOR** — an incompatible public API or ABI change: a removal, rename, signature or layout
-  change, a namespace change, or the narrowing or removal of supported domains, lanes, types or
-  m-values. Weakening a documented accuracy budget also belongs here, as does an error-behaviour
-  change that can break callers.
+  change, a namespace change, or the narrowing or removal of supported domains, lanes or types, or
+  of accuracy figures or the lanes that carry them. Weakening a documented accuracy budget also
+  belongs here, as does an error-behaviour change that can break callers.
 - **MINOR** — additive public API, or any internal change to the algorithm, dispatch, region
   boundaries or certified tables that may alter returned bits while preserving every documented
   domain and budget.
@@ -347,7 +347,11 @@ the consumer check compiles against the project value and asserts the header agr
 bumps the one place, and a tag that disagrees with it is a mistake, not a second answer.
 
 The public numerical contract is that for every supported n, x, lane and region the returned value
-satisfies |F̂_n(x) − F_n(x)| ≤ m·B_region at the documented m. Public function signatures and
+satisfies the bound the specification's accuracy contract states for that lane: on the double lanes
+the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, the ladder's first rung scaled by `1e-13`; on
+the float lane the larger of `2^-22 · F_n(x)` and `1.5e-7`, plus the plain reciprocal's `1e-7` term
+where the class's form is the plain form; and on the half lanes `1.5e-7` plus one half-ULP,
+`2.5e-7` plus one half-ULP in the plain-reciprocal form. Public function signatures and
 supported domains are stable within a major version. Bitwise outputs are not: internal region
 thresholds, seed selection, recursion order and dispatch logic may change between minor releases, as
 long as the bound holds. Byte-for-byte reproducibility requires pinning the release tag, the compiler
