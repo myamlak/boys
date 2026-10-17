@@ -94,12 +94,13 @@ What a translation unit needs, by what it is for:
 | is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
 | is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
 
-The archive is still needed for the reporting queries - `BoysLaneContracts`, `BoysEvalSchemes`,
-`BoysEvalSchemeFits`, `BoysEvalSchemeDelivered`, `BoysPackAxes`, `BoysDivisionForms`,
-`BoysFarRepresentations`, `BoysRegionBExps`, `BoysFitGranularities`, `BoysFitRoutes`,
-`BoysFitRoutesF32`, `EvalSchemeName`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`,
-`QueryCombination`, `BoysAvx2Available` - and for the C ABI surface, `boys/boys_c.h`.
-Everything else a call site names compiles from the headers.
+The archive is still needed for two things, and neither is computing F. One is the **reporting
+queries** - the functions that answer what this build carries and what it guarantees: the fit routes,
+the interval granularities, the evaluation schemes and their names, the division forms, the packing
+axes, the far-region representations, the region-B exponentials, the lane contracts, the two accuracy
+figures, and the tolerance query. They are declared in `boys/boys_decl.hpp` and defined in the
+archive, so a translation unit that calls one links it. The other is the C ABI surface,
+`boys/boys_c.h`. Everything else a call site names compiles from the headers.
 
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
