@@ -257,6 +257,25 @@ typename B::Packed FitSum(const typename B::Value* cheb,
     }
 }
 
+// The two summations FitSum names, each taking only the table it reads. A call
+// site that knows its scheme chooses one under `if constexpr`, so the other
+// scheme's `.data()` is never formed: an argument is evaluated whatever the
+// callee does with it, and a Horner-only translation unit must not name the
+// Chebyshev array. FitSum itself stays for the callers that hold both tables.
+template <backend::ArithmeticBackend B>
+typename B::Packed FitSumMono(const typename B::Value* mono,
+                              int deg,
+                              typename B::Packed t) noexcept {
+    return HornerMono<B>(mono, deg, t);
+}
+
+template <backend::ArithmeticBackend B>
+typename B::Packed FitSumCheb(const typename B::Value* cheb,
+                              int deg,
+                              typename B::Packed t) noexcept {
+    return ClenshawSplit<B>(cheb, deg, t);
+}
+
 // A region-A route is a coefficient set and the scheme it is read in, named as a type (the
 // FitPolicy contract, backend.hpp): one body instantiated per (route, scheme) pair, coefficients,
 // degrees and piece intervals being compile-time facts of the generated tables and only the piece
@@ -273,10 +292,19 @@ typename B::Packed FitSum(const typename B::Value* cheb,
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBExtendedSeed(double x) noexcept {
     const double t = 2.0 * (x - kExtendedBX0) / (kX0 - kExtendedBX0) - 1.0;
-    return FitSum<kScheme, backend::ScalarFp64>(detail::kExtendedBcoeffs.data(),
-                                                detail::kMonoExtendedBcoeffs.data(),
-                                                detail::kExtendedBDeg,
-                                                t);
+
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kMonoExtendedBcoeffs.data(),
+                                               detail::kExtendedBDeg,
+                                               t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kExtendedBcoeffs.data(),
+                                               detail::kExtendedBDeg,
+                                               t);
+    }
 }
 
 // The three division forms, one entry each, and the selectors the bodies read. Which is cheapest is
@@ -537,10 +565,18 @@ inline double NarrowRegionBSeed(double x) noexcept {
     const std::size_t offset =
         index * (static_cast<std::size_t>(detail::kNarrowBDeg) + 1);
 
-    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
-                                                detail::kNarrowBMonoCoeffs.data() + offset,
-                                                detail::kNarrowBDeg,
-                                                t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kNarrowBMonoCoeffs.data() + offset,
+                                               detail::kNarrowBDeg,
+                                               t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
+                                               detail::kNarrowBDeg,
+                                               t);
+    }
 }
 
 // Region B's seed from the shipped partition: one polynomial over the whole of
@@ -551,8 +587,14 @@ template <EvalScheme kScheme>
 inline double ShippedRegionBSeed(double x) noexcept {
     const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
 
-    return FitSum<kScheme, backend::ScalarFp64>(
-        detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), detail::kBDeg, t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kMonoBcoeffs.data(), detail::kBDeg, t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kBcoeffs.data(), detail::kBDeg, t);
+    }
 }
 
 // The Chebyshev route, at the scheme its coefficients are summed in: the shipped family, holding
@@ -586,19 +628,34 @@ struct ChebyshevFit {
         if constexpr (kGranularity == FitGranularity::kCoarsest)
         {
             const detail::OrderPiece& piece = detail::kPieces[index];
-            return FitSum<kScheme, backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
-                                                        detail::kMonoCoeffs.data() + piece.offset,
-                                                        piece.deg,
-                                                        t);
+
+            if constexpr (kScheme == EvalScheme::kHorner)
+            {
+                return FitSumMono<backend::ScalarFp64>(detail::kMonoCoeffs.data() + piece.offset,
+                                                       piece.deg,
+                                                       t);
+            }
+            else
+            {
+                return FitSumCheb<backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
+                                                       piece.deg,
+                                                       t);
+            }
         }
         else if constexpr (kGranularity == FitGranularity::kNarrow)
         {
             const detail::OrderPiece& piece = detail::kNarrowAPieces[index];
-            return FitSum<kScheme, backend::ScalarFp64>(
-                detail::kNarrowACoeffs.data() + piece.offset,
-                detail::kNarrowAMonoCoeffs.data() + piece.offset,
-                piece.deg,
-                t);
+
+            if constexpr (kScheme == EvalScheme::kHorner)
+            {
+                return FitSumMono<backend::ScalarFp64>(
+                    detail::kNarrowAMonoCoeffs.data() + piece.offset, piece.deg, t);
+            }
+            else
+            {
+                return FitSumCheb<backend::ScalarFp64>(
+                    detail::kNarrowACoeffs.data() + piece.offset, piece.deg, t);
+            }
         }
         else if constexpr (kGranularity == FitGranularity::kUniform)
         {
@@ -994,24 +1051,42 @@ double UniformOrderAt(const FlatPoint& at, int l) noexcept {
             at.block + static_cast<std::size_t>(l) *
                            static_cast<std::size_t>(kFlatDeg + 1);
 
-        return FitSum<Policy::kScheme, backend::ScalarFp64>(
-            detail::kFlatCoeffs.data() + base, detail::kFlatMonoCoeffs.data() + base, kFlatDeg,
-            at.t);
+        if constexpr (Policy::kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp64>(detail::kFlatMonoCoeffs.data() + base,
+                                                   kFlatDeg,
+                                                   at.t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp64>(detail::kFlatCoeffs.data() + base,
+                                                   kFlatDeg,
+                                                   at.t);
+        }
     }
 }
 
-// The flat grid's one-order fit as the vector tier reads it: FitSum's own coefficients and walk,
-// so the value is the portable body's at every bit - what the flags of the compiling unit change
-// is where the fused step comes from, not the arithmetic. The scalar tier calls it nowhere, so
+// The flat grid's one-order fit as the vector tier reads it: the selected scheme's
+// own summation and walk over the one table handed in, so the value is the portable
+// body's at every bit - what the flags of the compiling unit change is where the
+// fused step comes from, not the arithmetic. The caller picks the table, so no
+// instantiation names the other form's array. The scalar tier calls it nowhere, so
 // where the tier is absent the name stays a declaration and no body is parsed.
 #if BOYS_ISA_AVX2_FMA
 template <EvalScheme kScheme>
-double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept {
-    return FitSum<kScheme, backend::ScalarFp64>(cheb, mono, deg, t);
+double FlatFitSum(const double* c, int deg, double t) noexcept {
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return HornerMono<backend::ScalarFp64>(c, deg, t);
+    }
+    else
+    {
+        return ClenshawSplit<backend::ScalarFp64>(c, deg, t);
+    }
 }
 #else
 template <EvalScheme kScheme>
-double FlatFitSum(const double* cheb, const double* mono, int deg, double t) noexcept;
+double FlatFitSum(const double* c, int deg, double t) noexcept;
 #endif
 
 // One argument's ladder off the uniform table: every order read from its own
@@ -1051,8 +1126,15 @@ double FlatSingleOrder(int n, double x) noexcept {
             at.block + static_cast<std::size_t>(n) *
                            static_cast<std::size_t>(kFlatDeg + 1);
 
-        return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base,
-                                           detail::kFlatMonoCoeffs.data() + base, kFlatDeg, at.t);
+        if constexpr (Policy::kScheme == EvalScheme::kHorner)
+        {
+            return FlatFitSum<Policy::kScheme>(detail::kFlatMonoCoeffs.data() + base, kFlatDeg,
+                                               at.t);
+        }
+        else
+        {
+            return FlatFitSum<Policy::kScheme>(detail::kFlatCoeffs.data() + base, kFlatDeg, at.t);
+        }
     }
     else
     {
@@ -1983,18 +2065,36 @@ BoysForceInline float ChebyshevValueF32(int order, float x) noexcept {
     if constexpr (kGranularity == FitGranularity::kCoarsest)
     {
         const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
-        const float* c = detail::f32::kCoeffs.data() + piece.offset;
-        const float* m = detail::f32::kMonoCoeffs.data() + piece.offset;
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(detail::f32::kMonoCoeffs.data() + piece.offset,
+                                                   piece.deg,
+                                                   t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(detail::f32::kCoeffs.data() + piece.offset,
+                                                   piece.deg,
+                                                   t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
-        const float* c = detail::f32::kNarrowACoeffsF32.data() + piece.offset;
-        const float* m = detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset;
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(c, m, piece.deg, t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(
+                detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset, piece.deg, t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(
+                detail::f32::kNarrowACoeffsF32.data() + piece.offset, piece.deg, t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
@@ -2224,11 +2324,18 @@ float UniformOrderAtF32(const FlatPointF32& at, int l) noexcept {
         const std::size_t base =
             at.block + static_cast<std::size_t>(l) * static_cast<std::size_t>(deg + 1);
 
-        return FitSum<Policy::kScheme, backend::ScalarFp32>(
-            detail::f32::kFlatCoeffsF32.data() + base,
-            detail::f32::kFlatMonoCoeffsF32.data() + base,
-            deg,
-            at.t);
+        if constexpr (Policy::kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(detail::f32::kFlatMonoCoeffsF32.data() + base,
+                                                   deg,
+                                                   at.t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(detail::f32::kFlatCoeffsF32.data() + base,
+                                                   deg,
+                                                   at.t);
+        }
     }
 }
 
@@ -2261,10 +2368,18 @@ template <EvalScheme kScheme>
 inline float ShippedRegionBSeedF32(float x) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
 
-    return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
-                                                detail::f32::kMonoBcoeffs.data(),
-                                                detail::f32::kBDeg,
-                                                t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp32>(detail::f32::kMonoBcoeffs.data(),
+                                               detail::f32::kBDeg,
+                                               t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp32>(detail::f32::kBcoeffs.data(),
+                                               detail::f32::kBDeg,
+                                               t);
+    }
 }
 
 // Float-lane region-B seed; see RegionBSeed.
@@ -2281,13 +2396,24 @@ inline float RegionBSeedF32(float x) noexcept {
         const float a = detail::f32::kNarrowBEdgesF32[static_cast<std::size_t>(index)];
         const float b = detail::f32::kNarrowBEdgesF32[static_cast<std::size_t>(index) + 1];
         const float t = 2.0f * (x - a) / (b - a) - 1.0f;
-        const float* c = detail::f32::kNarrowBcoeffsF32.data()
-                         + static_cast<std::size_t>(index)
-                               * static_cast<std::size_t>(detail::f32::kNarrowBDegF32 + 1);
-        const float* m = detail::f32::kNarrowBMonoCoeffsF32.data()
-                         + static_cast<std::size_t>(index)
-                               * static_cast<std::size_t>(detail::f32::kNarrowBDegF32 + 1);
-        return FitSum<kScheme, backend::ScalarFp32>(c, m, detail::f32::kNarrowBDegF32, t);
+        const std::size_t offset =
+            static_cast<std::size_t>(index)
+            * static_cast<std::size_t>(detail::f32::kNarrowBDegF32 + 1);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(
+                detail::f32::kNarrowBMonoCoeffsF32.data() + offset,
+                detail::f32::kNarrowBDegF32,
+                t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(
+                detail::f32::kNarrowBcoeffsF32.data() + offset,
+                detail::f32::kNarrowBDegF32,
+                t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
@@ -2327,10 +2453,19 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
         const std::ptrdiff_t index = &piece - detail::kPieces.data();
         const int deg = degrees[static_cast<std::size_t>(index)];
         const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-        return FitSum<kScheme, backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
-                                                    detail::kMonoCoeffs.data() + piece.offset,
-                                                    deg,
-                                                    t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp64>(detail::kMonoCoeffs.data() + piece.offset,
+                                                   deg,
+                                                   t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp64>(detail::kCoeffs.data() + piece.offset,
+                                                   deg,
+                                                   t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
@@ -2338,11 +2473,17 @@ double ChebyshevValueWithDegrees(int order, double x, const DegreesArray& degree
         const std::ptrdiff_t index = &piece - detail::kNarrowAPieces.data();
         const int deg = degrees[static_cast<std::size_t>(index)];
         const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-        return FitSum<kScheme, backend::ScalarFp64>(
-            detail::kNarrowACoeffs.data() + piece.offset,
-            detail::kNarrowAMonoCoeffs.data() + piece.offset,
-            deg,
-            t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp64>(
+                detail::kNarrowAMonoCoeffs.data() + piece.offset, deg, t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp64>(
+                detail::kNarrowACoeffs.data() + piece.offset, deg, t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
@@ -2375,11 +2516,16 @@ inline double ShippedRegionBSeedWithDegrees(double x,
                                             int peakOrder) noexcept {
     const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
 
-    return FitSum<kScheme, backend::ScalarFp64>(
-        detail::kBcoeffs.data(),
-        detail::kMonoBcoeffs.data(),
-        degrees[static_cast<std::size_t>(peakOrder)],
-        t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(
+            detail::kMonoBcoeffs.data(), degrees[static_cast<std::size_t>(peakOrder)], t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(
+            detail::kBcoeffs.data(), degrees[static_cast<std::size_t>(peakOrder)], t);
+    }
 }
 
 // The region-B seed at the stored degree for the peak order the caller is
@@ -2406,10 +2552,19 @@ inline double RegionBSeedWithDegrees(double x,
         const std::size_t degree =
             degrees[piece * (static_cast<std::size_t>(kMaxOrder) + 1)
                     + static_cast<std::size_t>(peakOrder)];
-        return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
-                                                    detail::kNarrowBMonoCoeffs.data() + offset,
-                                                    static_cast<int>(degree),
-                                                    t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp64>(detail::kNarrowBMonoCoeffs.data() + offset,
+                                                   static_cast<int>(degree),
+                                                   t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
+                                                   static_cast<int>(degree),
+                                                   t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
@@ -2512,8 +2667,14 @@ constexpr auto RegionBDegreeTableOf() noexcept {
 template <EvalScheme kScheme = kDefaultEvalScheme>
 inline double RegionBSeedWithDegrees(double x, int degree) noexcept {
     const double t = 2.0 * (x - kX0) / (kFlatHi - kX0) - 1.0;
-    return FitSum<kScheme, backend::ScalarFp64>(
-        detail::kBcoeffs.data(), detail::kMonoBcoeffs.data(), degree, t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kMonoBcoeffs.data(), degree, t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kBcoeffs.data(), degree, t);
+    }
 }
 
 // The narrow partition's counterparts of the two above: the same mapped argument and the same
@@ -2526,10 +2687,18 @@ double NarrowRegionAValueWithDegrees(int order, double x, const DegreesArray& de
     const std::ptrdiff_t index = &piece - detail::kNarrowAPieces.data();
     const int deg = degrees[static_cast<std::size_t>(index)];
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
-    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowACoeffs.data() + piece.offset,
-                                                detail::kNarrowAMonoCoeffs.data() + piece.offset,
-                                                deg,
-                                                t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kNarrowAMonoCoeffs.data() + piece.offset,
+                                               deg,
+                                               t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kNarrowACoeffs.data() + piece.offset,
+                                               deg,
+                                               t);
+    }
 }
 
 template <EvalScheme kScheme = kDefaultEvalScheme>
@@ -2539,10 +2708,18 @@ inline double NarrowRegionBSeedWithDegrees(double x, int degree) noexcept {
     const double b = detail::kNarrowBEdges[index + 1];
     const double t = 2.0 * (x - a) / (b - a) - 1.0;
     const std::size_t offset = index * (static_cast<std::size_t>(detail::kNarrowBDeg) + 1);
-    return FitSum<kScheme, backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
-                                                detail::kNarrowBMonoCoeffs.data() + offset,
-                                                degree,
-                                                t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp64>(detail::kNarrowBMonoCoeffs.data() + offset,
+                                               degree,
+                                               t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp64>(detail::kNarrowBcoeffs.data() + offset,
+                                               degree,
+                                               t);
+    }
 }
 
 // The float lane's narrow partition at a cut degree: the same reads, over this
@@ -2557,21 +2734,42 @@ float ChebyshevValueF32WithDegrees(int order, float x, const DegreesArray& degre
         const detail::f32::OrderPiece& piece = FindPieceF32(order, x);
         const std::ptrdiff_t index = &piece - detail::f32::kPieces.data();
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(detail::f32::kCoeffs.data() + piece.offset,
-                                                    detail::f32::kMonoCoeffs.data() + piece.offset,
-                                                    degrees[static_cast<std::size_t>(index)],
-                                                    t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(
+                detail::f32::kMonoCoeffs.data() + piece.offset,
+                degrees[static_cast<std::size_t>(index)],
+                t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(
+                detail::f32::kCoeffs.data() + piece.offset,
+                degrees[static_cast<std::size_t>(index)],
+                t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kNarrow)
     {
         const detail::f32::OrderPiece& piece = FindNarrowPieceF32(order, x);
         const std::ptrdiff_t index = &piece - detail::f32::kNarrowAPiecesF32.data();
         const float t = 2.0f * (x - piece.a) / (piece.b - piece.a) - 1.0f;
-        return FitSum<kScheme, backend::ScalarFp32>(
-            detail::f32::kNarrowACoeffsF32.data() + piece.offset,
-            detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset,
-            degrees[static_cast<std::size_t>(index)],
-            t);
+
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(
+                detail::f32::kNarrowAMonoCoeffsF32.data() + piece.offset,
+                degrees[static_cast<std::size_t>(index)],
+                t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(
+                detail::f32::kNarrowACoeffsF32.data() + piece.offset,
+                degrees[static_cast<std::size_t>(index)],
+                t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
@@ -2603,11 +2801,16 @@ inline float ShippedRegionBSeedF32WithDegrees(float x,
                                               int peakOrder) noexcept {
     const float t = 2.0f * (x - static_cast<float>(kX0)) / static_cast<float>(kX1 - kX0) - 1.0f;
 
-    return FitSum<kScheme, backend::ScalarFp32>(
-        detail::f32::kBcoeffs.data(),
-        detail::f32::kMonoBcoeffs.data(),
-        degrees[static_cast<std::size_t>(peakOrder)],
-        t);
+    if constexpr (kScheme == EvalScheme::kHorner)
+    {
+        return FitSumMono<backend::ScalarFp32>(
+            detail::f32::kMonoBcoeffs.data(), degrees[static_cast<std::size_t>(peakOrder)], t);
+    }
+    else
+    {
+        return FitSumCheb<backend::ScalarFp32>(
+            detail::f32::kBcoeffs.data(), degrees[static_cast<std::size_t>(peakOrder)], t);
+    }
 }
 
 template <EvalScheme kScheme = kDefaultEvalScheme,
@@ -2628,12 +2831,22 @@ inline float RegionBSeedF32WithDegrees(float x,
         const float t = 2.0f * (x - a) / (b - a) - 1.0f;
         const std::size_t offset =
             piece * (static_cast<std::size_t>(detail::f32::kNarrowBDegF32) + 1);
-        return FitSum<kScheme, backend::ScalarFp32>(
-            detail::f32::kNarrowBcoeffsF32.data() + offset,
-            detail::f32::kNarrowBMonoCoeffsF32.data() + offset,
-            degrees[piece * (static_cast<std::size_t>(kMaxOrder) + 1)
-                    + static_cast<std::size_t>(peakOrder)],
-            t);
+        if constexpr (kScheme == EvalScheme::kHorner)
+        {
+            return FitSumMono<backend::ScalarFp32>(
+                detail::f32::kNarrowBMonoCoeffsF32.data() + offset,
+                degrees[piece * (static_cast<std::size_t>(kMaxOrder) + 1)
+                        + static_cast<std::size_t>(peakOrder)],
+                t);
+        }
+        else
+        {
+            return FitSumCheb<backend::ScalarFp32>(
+                detail::f32::kNarrowBcoeffsF32.data() + offset,
+                degrees[piece * (static_cast<std::size_t>(kMaxOrder) + 1)
+                        + static_cast<std::size_t>(peakOrder)],
+                t);
+        }
     }
     else if constexpr (kGranularity == FitGranularity::kUniform)
     {
