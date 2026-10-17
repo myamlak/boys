@@ -8,8 +8,8 @@ defined on the documentation's landing page, together with the full API referenc
 
 ## Accuracy contract {#accuracy-contract}
 
-The bound at a cell is **`1e-13 · F_0(x)`**, for every supported n, x and lane: the ladder's first
-rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
+The bound at a cell on the double lanes is **`1e-13 · F_0(x)`**, for every supported n and x: the
+ladder's first rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
 the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. Until
 4.0.0 the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
 replaces: the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
@@ -137,19 +137,23 @@ that form's rounding leaves the base — 1e-7 + 1e-7 = 2e-7.
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [lane-contract.md](lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
-default as numbers. Two of the choices — the evaluation scheme and the interval partition — were
-set from the option probe's own runs, and **neither was settled by them**. The partition was not
-chosen against its axis at all: every partition-bearing row of the runs that named it is one
-partition, `narrow`, so the comparison that named it measured one member of a three-member axis
-rather than ranking the whole axis. That default has therefore not been derived against the whole
-axis. On the scheme axis the runs did compare both rows and did not separate them.
-The route and the packing axis carry the settings the library has always shipped and have not been
-ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
+default as numbers. **A class's default is its own row in the defaults header, and the row states
+where its cells came from**: the marker above it says how the winner was reached, and its last two
+cells say whether a run ranked the combination or the file chose a cell. The seam's seven names
+(`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking of an axis: their
+scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and a class's row may
+differ from them — the five host double rows in this build all name the uniform grid, where the
+seam names the narrow partition.
 **Which runs, and where this tree keeps them**: the committed default rows are in
 `include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each
 carrying the run its combination came from where a run stands behind it, and its stated basis
-where the file's own criterion chose a cell; a run's own record is the file it wrote, kept under
-`tests/data/`.
+where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
+transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
+same protocol on this host, and it ranks the whole space — its tables carry every member of the
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 56.09
+against 246.21 ns per argument for the fastest narrow row. The route and the packing axis carry
+the settings the library has always shipped and have not been ranked against a timing. The option
+probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
 two accuracies**, so a version that moves one costs no accuracy at any call site that names
 nothing. The exception is the float lane's division form, and it moves the figure the better way:
@@ -592,7 +596,8 @@ not** — and the cost is that a table of narrow pieces stores more in total and
 per call. Three partitions are offered and no spectrum between them. `FitGranularity::kCoarsest` is the
 committed table the library has always carried. `FitGranularity::kNarrow` is a partition of region A
 and of region B derived from the proved truncation bound below rather than placed by sampling, and it
-is the default — the one a call site that names no partition reads. `FitGranularity::kUniform` is the
+is the seam's default — what `SeamPolicy<>` names; a call site that names no policy reads its class's
+row, and the host double rows name the uniform grid. `FitGranularity::kUniform` is the
 grid: one width for every interval, each interval fitted at its own degree, which is what lets a call
 locate its piece by a multiply where the other two need a search.
 `tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer for all three.
