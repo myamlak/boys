@@ -218,8 +218,9 @@ the truncation bound carries the half-width as roughly `(h / 2d)^d`, so **halvin
 `2^d`**, while raising the degree at a fixed width buys far less, because the optimal ellipse
 parameter falls as the degree rises and partly cancels the gain. **Splitting is the design move;
 more degree is not.** The library offers three partitions and no spectrum between them. The narrow one
-is the default: a call site that names no partition reads the pieces cut to the proved bound, and
-`FitGranularity::kCoarsest` is how a caller asks for the committed table by name. Beside those two,
+is the seam's default: `SeamPolicy<>` names the pieces cut to the proved bound, while a call site that
+names no policy reads its class's row. `FitGranularity::kCoarsest` is how a caller asks for the
+committed table by name. Beside those two,
 `FitGranularity::kUniform` is a grid of one fixed width over the whole fitted domain, every order
 fitted independently at one degree and no order built from another, chosen so that a call locates its
 piece by a multiply rather than a search. All three cut one fit, so
@@ -1661,15 +1662,20 @@ offers has one, and an entry that names no policy at the call site is answered b
 class whose row is the five and not otherwise. This section states what each name
 selects and the bound it carries.
 
-**Two of these axes have been measured and two have not, and the table says which is which.** The
-scheme and the partition were set from the option probe's own runs. **The partition default was never
-chosen against its axis.** Every partition-bearing row of those runs is named `narrow`, and the
-comparison that named it had a three-member axis and measured one member of it: `narrow` is the
-default by that comparison and not by a ranking of the whole axis. On the scheme axis the runs compare
-both rows and do not separate them, so that default is one of two rows the instrument could not tell
-apart rather than the row it found cheaper. Which of the two is faster is a property of the host, its flags
-and its card, and the probe is what a consumer runs where they deploy. The route and the packing axis
-carry the settings the library has always shipped and have not been ranked against a timing. Setting
+**A class's default is its own row, and the seam's seven are stated choices.** A class's row carries
+the combination its entries compile when the call site names no policy; the marker above the row
+says how its winner was reached, and its last two cells say whether a run ranked the combination or
+the file chose a cell. On this host the measured cells are the 2026-10-12 run's winners, and the
+float lane's division form is the file's own stated choice (the row says so). **The seam's seven
+names (`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking of an
+axis**: their scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and a
+class's row may differ from them. The committed transcript of the full protocol is
+`tests/data/boys_option_probe_report.txt`, a later run of the same protocol on this host: it ranks
+the whole space, its tables carry every member of the scheme and partition axes, and on it the
+uniform partition leads the fp64 single class — 56.09 against 246.21 ns per argument for the fastest
+narrow row. The route and the packing axis carry the settings the library has always shipped and
+have not been ranked against a timing. Which member is faster is a property of the host, its flags
+and its card, and the probe is what a consumer runs where they deploy. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
 build replaces that file with its own seven rather than editing the tree, which is what lets a
