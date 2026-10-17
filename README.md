@@ -116,7 +116,7 @@ with it — and no contraction pin rides beside it, because MSVC fuses only unde
 this build does not use:
 
     cl /nologo /std:c++20 /EHsc /MD /DBoysFp16=1 /arch:AVX2 /I include try.cpp
-    try.exe                                            # run it from the directory it landed in
+    .\try.exe
 
 `/MD` is the runtime the CMake build uses, and `cl`'s own default is `/MT`: a program that links
 the archive — `build\Release\boys.lib` on the command line — and pulls an object out of it without
