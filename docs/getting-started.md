@@ -492,6 +492,15 @@ An unnamed call therefore costs you no run-time selection, and one instantiation
 choice among many. Naming another policy is what instantiates the version you asked for, in your
 translation unit.
 
+**The measured figures come without the archive too, and they are not the contract.**
+`boys/boys_accuracy_here.hpp` answers, from the headers and the macros this build pins, what the
+build was measured to deliver: each lane's published absolute figure (`BoysLaneFiguresHere()`) and
+the figure the arithmetic in force was measured at (`BoysAccuracyHere<Precision, Shape>()`). It is
+not `BoysAccuracyGuaranteed`: that accessor evaluates the lane's contract at the `(n, x)` it is
+asked about — on the double lane `max(1e-13 · F_n(x), 1e-13 · F_0(x))` — and it is one of the
+archive's reporting queries. Ask the header what this build measured; ask the accessor what a
+calculation at a cell is promised.
+
 ## Where the specification lives
 
 - [The per-lane contract](lane-contract.md) — the bound each lane (one entry together with the

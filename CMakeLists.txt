@@ -1098,6 +1098,27 @@ int main() {
     boys_strict_warnings(boys-consumer-header-only)
     boys_assert_no_linked_library(boys-consumer-header-only)
 
+    # The archive-free accuracy header (include/boys/boys_accuracy_here.hpp) answers the
+    # measured figures from the headers alone; this target is how that is proven. It links
+    # nothing - boys_assert_no_linked_library below holds that - and its unit includes that
+    # header and no other of this library's, so a figure that needed the archive would fail
+    # to link here. The include path and the compile definitions are the ones a headers-only
+    # consumer inherits from boys-tier, so the header is compiled at this build's arithmetic.
+    get_target_property(boysHereIncludes boys-tier INTERFACE_INCLUDE_DIRECTORIES)
+    get_target_property(boysHereDefines boys-tier INTERFACE_COMPILE_DEFINITIONS)
+    if (NOT boysHereIncludes)
+        message(FATAL_ERROR "boys: boys-tier publishes no INTERFACE_INCLUDE_DIRECTORIES; the "
+            "accuracy-here check reads that property and found it empty.")
+    endif()
+    add_executable(boys-accuracy-here tests/boys_accuracy_here_test.cpp)
+    target_include_directories(boys-accuracy-here PRIVATE ${boysHereIncludes})
+    if (boysHereDefines)
+        target_compile_definitions(boys-accuracy-here PRIVATE ${boysHereDefines})
+    endif()
+    target_compile_features(boys-accuracy-here PRIVATE cxx_std_20)
+    boys_strict_warnings(boys-accuracy-here)
+    boys_assert_no_linked_library(boys-accuracy-here)
+
     add_executable(boys-consumer-defaults tests/consumer_defaults.cpp)
     target_link_libraries(boys-consumer-defaults PRIVATE boys)
     boys_strict_warnings(boys-consumer-defaults)
@@ -1337,6 +1358,7 @@ int main() {
     add_test(NAME boys-boundary-standalone COMMAND boys-boundary-standalone)
     add_test(NAME boys-consumer-umbrella COMMAND boys-consumer-umbrella)
     add_test(NAME boys-consumer-header-only COMMAND boys-consumer-header-only)
+    add_test(NAME boys-accuracy-here COMMAND boys-accuracy-here)
     add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
     add_test(NAME boys-consumer-defaults-match-docs COMMAND boys-consumer-defaults-match-docs)
     add_test(NAME boys-consumer-option-space COMMAND boys-consumer-option-space)

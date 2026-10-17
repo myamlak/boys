@@ -102,6 +102,14 @@ figures, and the tolerance query. They are declared in `boys/boys_decl.hpp` and 
 archive, so a translation unit that calls one links it. The other is the C ABI surface,
 `boys/boys_c.h`. Everything else a call site names compiles from the headers.
 
+**The measured figures do not need the archive.** `boys/boys_accuracy_here.hpp` is a header of its
+own — not in `boys/boys.hpp`'s chain — that states each lane's published absolute figure and the
+figure this build's arithmetic was measured to deliver, read at compile time from the macros the
+build pins. It is **not the accuracy contract**: the contract is `BoysAccuracyGuaranteed`'s answer
+at the `(n, x)` a calculation asks about — `max(1e-13·F_n(x), 1e-13·F_0(x))` on the double lane —
+and that accessor is one of the archive's. Read the header as what this build measured, and the
+accessor as what a calculation is promised.
+
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
     cmake --build build --config Release
