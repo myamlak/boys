@@ -587,10 +587,11 @@ locate its piece by a multiply where the other two need a search.
 | `FitGranularity::kNarrow` | 3476 | 316 | 11 |
 
 The grid is a third structure rather than a third row of that table: one width for every interval —
-245 of them — with each interval fitted at its own degree, the double lane's held to degree 8 and the
-float lane's to degree 4, so the coefficients a call reads are that interval's degree and not a
-column of a partition-wide count. `tools/gen_boys_coefficients.py --derive-partition` prints its
-ladder and the degrees it chose.
+496 of them on the double lane, each 1/16 wide — with each interval fitted at its own degree under a
+read cap of 5, so the coefficients a call reads are that interval's degree and not a column of a
+partition-wide count. The float lane carries a grid of its own rather than a re-cut of that one: 77
+intervals of width 1/4 under a read cap of 4. `tools/gen_boys_coefficients.py --derive-partition`
+prints each ladder and the degrees it chose.
 
 **Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
 on the default route and to 6–9 on the rational one, while the table a consumer carries grows from
