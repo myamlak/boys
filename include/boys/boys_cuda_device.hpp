@@ -1413,15 +1413,16 @@ __device__ BoysDeviceStatus BoysDeviceEachOrderF32(const BoysDeviceTables& table
 /// F_0(x)..F_n(x) in single precision from the float lane's uniform grid,
 /// inside the caller's kernel.
 ///
-/// The float lane's own grid and not a re-cut of the double lane's: 245 intervals at
-/// degree 4 against the double lane's 245 at degree 8, fitted over the same
-/// [0, kFlatHi). It is the lane's table throughout — region A's seed is the grid's own
+/// The float lane's own grid and not a re-cut of the double lane's: 77 intervals of
+/// width 1/4 at degree 4 against the double lane's 496 of width 1/16 at degree 5,
+/// over the float lane's own [0, kFlatHiF32) and not the double lane's [0, kFlatHi).
+/// It is the lane's table throughout — region A's seed is the grid's own
 /// block rather than the double piece table the float lane's piecewise entries seed
 /// from, and every sum below the join is a float one — so the bound is the float lane's
 /// own.
 ///
-/// The interval's edges are the correctly rounded float quotients iv/7 and (iv + 1)/7,
-/// which is the grid the fits were measured on. Above kFlatHi the call falls to the
+/// The interval's edges are the correctly rounded float quotients iv/4 and (iv + 1)/4,
+/// which is the grid the fits were measured on. Above kFlatHiF32 the call falls to the
 /// same asymptotic the other float entries end in.
 ///
 /// \tparam kForm the division form the entry's ladder steps divide in. The

@@ -1171,7 +1171,7 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 
 /// F_0(x)..F_nmax(x) in double precision at a fit route the caller names where
 /// the call is compiled - the batch entry's contract (the \c "double batch" row
-/// of the table in the file preamble: |F - F| <= the larger of 1e-13 · F_n(x)
+/// of the table in the file preamble: |F - F_n(x)| <= the larger of 1e-13 · F_n(x)
 /// and 1e-13 · F_0(x), the ladder-scaled figure the lane holds to
 /// in every region), with the named
 /// route's fits serving the intervals they cover.
@@ -1463,7 +1463,7 @@ inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// count * (nmax + 1) doubles.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// bound, |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
+/// bound, |F - F_n(x)| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
 /// contract table in the file
 /// preamble), which is the bound the per-argument BoysAllOrders call meets - the
 /// same contract, not necessarily the same bits. On a host with AVX2 a low-order
@@ -1555,7 +1555,7 @@ void BoysAllN(
 /// padding of the arguments or the output.
 ///
 /// Accuracy: every returned value satisfies the double batch lane's documented
-/// bound, |F - F| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
+/// bound, |F - F_n(x)| <= the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) (the
 /// contract table in the file
 /// preamble). Each column is the per-argument all-orders body run at that
 /// argument's own top order: out[k * count + i] is the value, bit for bit, that
@@ -1679,7 +1679,7 @@ constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 
 
 inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
-/// F_n(x) in single precision, |F - F| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger.
+/// F_n(x) in single precision, |F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger.
 ///
 /// Same piecewise structure as the double lane with per-order float fits. This
 /// is the recommended lane for GPU integral evaluation.
@@ -1691,7 +1691,7 @@ inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
 /// \ingroup boys
 float BoysSingleF32(int n, float x) noexcept;
 
-/// F_0(x)..F_nmax(x) in single precision, |F - F| <= 2^-22 · F_n(x) per value, or the
+/// F_0(x)..F_nmax(x) in single precision, |F - F_n(x)| <= 2^-22 · F_n(x) per value, or the
 /// 1.5e-7 floor where that is the larger.
 ///
 /// \param nmax  highest order, 0..kMaxBoysOrder
@@ -1715,7 +1715,7 @@ void BoysAllOrdersF32(int nmax, float x, float* out) noexcept;
 /// all-orders body at each argument. No speed is claimed for it over the same
 /// loop written at the call site.
 ///
-/// Accuracy: |F - F| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
+/// Accuracy: |F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
 /// the float lane's bound, the same in every region (the contract table in the file
 /// preamble; a policy that names the plain reciprocal adds that form's 1e-7 term) - the bound
 /// BoysAllOrdersF32 meets, and each column is that entry's value at the same
@@ -1751,7 +1751,7 @@ void BoysAllNF32(int nmax, const float* x, float* out, std::size_t count) noexce
 /// no speed is claimed for this entry over the same loop written at the call
 /// site.
 ///
-/// Accuracy: |F - F| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
+/// Accuracy: |F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
 /// the float lane's bound, the same in every region (the contract table in the file
 /// preamble; a policy that names the plain reciprocal adds that form's 1e-7 term) - the bound
 /// BoysSingleF32 meets, and each element is that entry's value at the same
@@ -1780,7 +1780,7 @@ void BoysFixedNF32(
 /// count * (1 + max_i n[i]) floats - the caller's own array, with no padding of
 /// the arguments or the output. count may be 0 (no writes).
 ///
-/// Accuracy: |F - F| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
+/// Accuracy: |F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7 where that is the larger, per value —
 /// the float lane's bound, the same in every region (the contract table in the file
 /// preamble; a policy that names the plain reciprocal adds that form's 1e-7 term). Each column is the
 /// per-argument all-orders body run at that argument's own top order:
@@ -1806,7 +1806,7 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 
 /// F_n(x) in single precision at a fit route the caller names where the call is
 /// compiled - the
-/// single-precision single entry's contract (|F - F| <= 2^-22 · F_n(x), or <= 1.5e-7
+/// single-precision single entry's contract (|F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7
 /// where that is the larger), with
 /// the named
 /// route's fits serving the intervals they cover.

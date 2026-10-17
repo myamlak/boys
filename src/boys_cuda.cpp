@@ -206,8 +206,8 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
 
     // The float lane's own partition and its own grid, which the device lane had no row for: both
     // are the lane's tables and not a re-cut of the double lane's - the narrow pieces are the float
-    // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 245
-    // intervals at degree 4. The grid's rows read the table's one degree per order and interval.
+    // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 77
+    // intervals of width 1/4 at degree 4. The grid's rows read the table's one degree per interval.
     {DeviceEntry::kAllOrdersF32Narrow, "all-orders-fp32-narrow",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,

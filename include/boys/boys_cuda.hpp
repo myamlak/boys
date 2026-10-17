@@ -747,17 +747,17 @@ public:
 
     /// F_0(x[i])..F_n(x[i]) as AllOrdersF64, off the library's third cut of
     /// the double lane's domain: one *uniform* table — a single grid over
-    /// [0, kFlatHi) at one interval width and one stored degree for every
-    /// order, 245 intervals of width 1/7 at degree 7 (kFlatCoeffs,
-    /// boys_coefficients.hpp). Shape, layout and arguments are
+    /// [0, kFlatHi) at one interval width and one degree per interval,
+    /// 496 intervals of width 1/16 at degree 5 (kFlatIntervals, kFlatWidth
+    /// and kFlatDegs, boys_coefficients.hpp). Shape, layout and arguments are
     /// AllOrdersF64's, and a call delivers inside the same documented double
     /// batch budget.
     ///
     /// The route is not a re-cut of the pieces the entries above read: every order
     /// is fitted on its own over each interval, so an argument's ladder is a set of
     /// independent polynomials rather than one recurrence seeded once and walked up.
-    /// That independence is what the table costs 505.3 KiB and a stored degree per
-    /// order to buy.
+    /// That independence is what the table costs 767.25 KiB (98,208 doubles) and a
+    /// degree per interval to buy.
     ///
     /// Above kFlatHi the table reaches no further and the call falls to the one-term
     /// asymptotic and its own upward recurrence — the arm region C runs, from the
@@ -765,7 +765,7 @@ public:
     /// where this route's fit ends.
     ///
     /// **This entry reads the route's full-accuracy arithmetic.** The table's
-    /// one stored degree is the route's own: no coefficient of it is dropped,
+    /// degrees are the route's own: no coefficient of it is dropped,
     /// and a criterion that would cut one has nothing here to cut. What the
     /// entry costs is what the route costs.
     ///
