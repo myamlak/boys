@@ -90,10 +90,9 @@
 /// and this list carries a row for each: one row for both would be a default the
 /// other format reads.
 ///
-/// **The rung is not a key, because the rung is the caller's and not the
-/// library's.** A caller chooses the accuracy before the call and this table
-/// answers what the library then picks, so each class's row is the one its own
-/// m = 1 class measured.
+/// **The table has no accuracy column: this library carries one accuracy, and
+/// each class's row is the class's own default.** No entry takes an accuracy
+/// choice, so a row is what that class compiles and nothing else.
 ///
 /// **EVERY CLASS THE LIBRARY CARRIES HAS A ROW**, and a class without one is a
 /// build error rather than a call answered by something else: `boys::DefaultPolicyFor`
@@ -138,9 +137,10 @@
 /// `<machine>-<date>`, and it is empty exactly where no run stands behind the row.
 /// A name and not a revision: a revision is a second thing to rewrite on every
 /// re-record, and a row that carried one would describe the tree reading it rather
-/// than the run that produced it. The record a name points at is the file that run
-/// wrote, kept under `tests/data/`, which carries the revision the run was taken
-/// at and the paths the measurement depends on.
+/// than the run that produced it. A row's name states the run it came from, and the
+/// probe's committed transcripts are kept under `tests/data/`. The option report
+/// there is a later run of the same protocol on this host, not the host rows' own
+/// transcript.
 ///
 /// The marker above a row is prose and carries the rest: on a measurement, the
 /// figure the class's winner took and how it was reached; on a choice, why the run
