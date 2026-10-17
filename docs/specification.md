@@ -146,11 +146,16 @@ axis. On the scheme axis the runs did compare both rows and did not separate the
 The route and the packing axis carry the settings the library has always shipped and have not been
 ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
 **Which runs, and where this tree keeps them**: the committed default rows are in
-`include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each carrying
-the run its combination came from, and a run's own record is the file it wrote, kept under
+`include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each
+carrying the run its combination came from where a run stands behind it, and its stated basis
+where the file's own criterion chose a cell; a run's own record is the file it wrote, kept under
 `tests/data/`.
-**Each default is a choice between two ways of computing one answer and not between two accuracies**, so
-a version that moves one costs no accuracy at any call site that names nothing.
+**A default's move is normally a choice between two ways of computing one answer and not between
+two accuracies**, so a version that moves one costs no accuracy at any call site that names
+nothing. The exception is the float lane's division form, and it moves the figure the better way:
+the plain reciprocal publishes its own 1e-7 term beside the lane's 1.5e-7 base, so the committed
+rows name the refined reciprocal, which is bit-identical to exact division and publishes the base
+alone — the tighter figure the certified-bound model's 1e-7 fit placement assumes.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two rows are delivered at a
 different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
