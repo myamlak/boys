@@ -9,6 +9,8 @@
 // the packed lane reads 1.3093e-07, inside it. The bound is the float lane's documented one, from the header.
 
 #include "boys/kernels.hpp"
+// The float sweep crosses every route, scheme and partition, so it names every coefficient group.
+#include "boys/boys_all.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"

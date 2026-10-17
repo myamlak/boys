@@ -18,7 +18,9 @@ the half lanes keep their own figures. `docs/specification.md#accuracy-contract`
 lane by lane, and it names the two combinations that hold the wider arm rather than the figure read
 against `F_n(x)`.
 
-**The coefficient file gains the uniform-grid tables** (`include/boys/boys_coefficients.hpp`): one
+**The coefficient file gains the uniform-grid tables**
+(`include/boys/boys_coefficients_d_uniform_*.hpp` and the float lane's
+`boys_coefficients_f32_uniform_*.hpp`): one
 derived grid over `[0, 31.0)` of width `1/16` — 496 intervals — each order fitted at its interval's
 own degree, cap 5, serving `FitGranularity::kUniform`. **The shipped partitions' tables are carried
 beside the grid's rows, not replaced by them**: the file's growth is the uniform grid, and the rows
@@ -27,6 +29,16 @@ is its class's row rather than the seam's seven: every host double row in this b
 uniform grid, read by Horner on the monomial form, while the seam's fallback (`SeamPolicy<>`) names
 the narrow partition. The generator and its provenance record
 (`tests/data/boys_coefficients_provenance.txt`) are committed beside them.
+
+**The generated coefficients are one master and one header per group.** The vector-of-arrays text
+that used to be a single `boys_coefficients.hpp` is now a master carrying the metadata, the extern
+declarations with their extents, and the group tags, plus twenty-one group headers that define the
+arrays. `<boys/boys.hpp>` opens the nine groups the committed class rows and the half-format
+batch seeds read; a caller whose policy names another combination includes the group header the
+fit's own assertion names, and a missing one is a compile-time diagnostic naming that header.
+`include/boys/boys_all.hpp` opens
+every group. The split moves no coefficient value and no arithmetic order; the provenance record's
+manifest covers the whole set.
 
 **The accuracy rung is not offered.** The axis traded accuracy for time, and the library does not
 carry it: the slot the device handle reserves for it is read by no

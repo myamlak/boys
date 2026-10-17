@@ -5,6 +5,8 @@
 
 #include "boys/kernels.hpp"
 #include "boys/boys_effective_degrees.hpp"
+// The scaled far table: the sweep reaches past the grid's top, where the entry runs the ladder.
+#include "boys/boys_coefficients_d_far.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys/boys_span.hpp"
 

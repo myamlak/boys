@@ -3,6 +3,7 @@
 #include "boys/accuracy.hpp"
 #include "boys/backend.hpp"
 #include "boys/boys_coefficients.hpp"
+#include "boys/dependent_false.hpp"
 #include "boys/boys_effective_degrees.hpp"
 
 #include <algorithm>
@@ -11,6 +12,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 /// \file
 /// The region-A transform lane: the per-order Chebyshev fits of the double
@@ -377,6 +379,12 @@ inline constexpr int kMaxBandDegree = BandOf<0>().degree > BandOf<1>().degree
 /// The scan walks the same evaluation domain as the shipped degree tables
 /// (0, 1, 2, then even degrees).
 template <int kIndex> constexpr int BandDegree() noexcept {
+    static_assert(kCoefficientGroupPresent<
+                      DependentGroup<std::integral_constant<int, kIndex>, CoarseChebGroup>> ||
+                      kAlwaysFalse<std::integral_constant<int, kIndex>>,
+                  "the transform's bands read the shipped Chebyshev table "
+                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header in the "
+                  "translation unit that names this route");
     constexpr BandSpec spec = BandOf<kIndex>();
 
     for (int dPrime = 0; dPrime <= spec.degree; ++dPrime)
@@ -416,6 +424,12 @@ void RegionAProductBand(int nmax, const double* x, double* out, std::size_t coun
     constexpr BandSpec kBand = BandOf<kIndex>();
     constexpr int kWidth = BandDegree<kIndex>() + 1;
     constexpr int kOrders = kMaxOrder + 1;
+
+    static_assert(kCoefficientGroupPresent<DependentGroup<Policy, CoarseChebGroup>> ||
+                      kAlwaysFalse<Policy>,
+                  "the transform's bands read the shipped Chebyshev table "
+                  "boys/boys_coefficients_d_coarse_cheb.hpp: include that header in the "
+                  "translation unit that names this route");
 
     // The kept products: every part pairing whose part indices sum below the
     // part count, in part order - the split emulation's own quadrature.

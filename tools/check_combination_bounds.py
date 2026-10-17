@@ -34,7 +34,11 @@ WHAT IS READ FROM THE LIBRARY, AND WHAT IS NOT:
   * the axis members are the library's own tables - ``BoysFitRoutes``, ``BoysEvalSchemes``,
     ``BoysPackAxes``, ``BoysFitGranularities``, ``BoysDivisionForms``, ``BoysRegionBExps`` - read
     by a driver compiled from those tables, never spelled out here;
-  * the figures are what ``BoysAccuracyGuaranteed`` and ``DefaultGuarantee`` answer.
+  * the figures are what ``BoysAccuracyGuaranteed`` and ``DefaultGuarantee`` answer;
+  * the generated coefficient set's census - one header per declared group tag, every marker read
+    naming a declared tag, the front door's default set and the umbrella's - is read from the same
+    revision, so the tables every combination is compiled from are held to their own rule before
+    the driver is built.
 
 HOW THE FIGURES ARE OBTAINED, AND WHY THAT IS NOT A PROBE. This check compiles one small driver
 against the revision's own sources and runs it once. The driver times nothing and emits no seam: it
@@ -112,6 +116,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+
+import coefficient_groups
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -307,6 +313,42 @@ def library_sources(tree: pathlib.Path) -> list[str]:
         raise SystemExit("check_combination_bounds: `add_library(boys ...)` names no source")
 
     return sources
+
+
+def groups_census(tree: pathlib.Path) -> tuple[dict, list[str]]:
+    """The generated coefficient set's census, read from the extracted tree.
+
+    Every combination this check reports a bound for is compiled from the generated tables, so the
+    set is read here as well as in `tools/check_class_combinations.py --groups`: one header per
+    declared group tag, every marker read naming a declared tag, the front door's default set a
+    subset of the group headers, and the umbrella opening all of them. The rule lives once, in
+    `tools/coefficient_groups.py`, and this reads the tree the other state of this check is read
+    from rather than a second copy of it.
+    """
+    directory = tree / "include" / "boys"
+
+    if not directory.is_dir():
+        raise SystemExit(f"check_combination_bounds: no headers at {directory}, so the generated "
+                         "coefficient set cannot be read and this run states nothing about it")
+
+    texts = {str(path.relative_to(tree)).replace(os.sep, "/"):
+             path.read_text(encoding="utf-8", errors="replace")
+             for path in sorted(directory.rglob("*.hpp"))}
+    groups = {path: text for path, text in texts.items()
+              if coefficient_groups.GROUP_HEADER.match(path)
+              and path != coefficient_groups.MASTER}
+    scanners = {path: text for path, text in texts.items()
+                if path not in groups and path != coefficient_groups.MASTER
+                and "kCoefficientGroupPresent<" in text}
+
+    if not groups:
+        raise SystemExit("check_combination_bounds: the tree carries no group header, so the "
+                         "census read nothing and this run states nothing about the coefficient "
+                         "set")
+
+    return coefficient_groups.census(
+        texts.get(coefficient_groups.MASTER, ""), groups, scanners,
+        texts.get(coefficient_groups.DEFAULT_TABLES, ""), texts.get(coefficient_groups.UMBRELLA, ""))
 
 
 def class_rows(header: str) -> list[tuple[str, str, str]]:
@@ -810,6 +852,24 @@ def main() -> int:
             print("check_combination_bounds: the classes or the shapes were read as empty, so this "
                   "run states nothing about the library and its exit status is a failure rather "
                   "than a clean bill")
+            return 1
+
+        # The generated set every combination is compiled from, read before the driver is built:
+        # a set that breaks its own rules is a failure this run can state in a second rather than
+        # after the compile.
+        summary, findings = groups_census(tree)
+
+        print(f"  the generated coefficient set at {revision}: {summary['declared']} tag(s) "
+              f"declared, {summary['group_headers']} group header(s), "
+              f"{summary['marker_reads']} marker read(s), {summary['default_groups']} group(s) "
+              f"opened by the front door")
+        for finding in findings:
+            print(f"DRIFT: {finding}")
+
+        if findings:
+            print(f"check_combination_bounds: {len(findings)} finding(s) in the generated "
+                  "coefficient set, so the tables every combination is compiled from do not hold "
+                  "their own rule")
             return 1
 
         # A host with no compiler this check can address is named here rather than answered below:

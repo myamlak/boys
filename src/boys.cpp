@@ -3,6 +3,10 @@
 #include "boys/boys_cuda_options.hpp"
 #include "boys/kernels.hpp"
 
+// The scaled far table: this unit prebuilds the far ladders' asking leg below, so it names the
+// representation `boys/boys.hpp`'s default set does not open.
+#include "boys/boys_coefficients_d_far.hpp"
+
 #include "boys_backend_registry.hpp"
 
 // Boys function kernel. Regions (fixed kmax=32 boundaries, validated against the mpmath

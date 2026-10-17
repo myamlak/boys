@@ -86,7 +86,7 @@
     },
     {
       "id": "host.double.region-b-band",
-      "body": "include/boys/boys_impl.hpp::Next",
+      "body": "include/boys/boys_fit_chebyshev.hpp::Next",
       "bar": [
         "tests/boys_accuracy_gate.cpp :: kBoundSingleBand"
       ],

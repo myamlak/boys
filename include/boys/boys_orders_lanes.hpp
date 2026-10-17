@@ -17,6 +17,7 @@
 #include "boys/backend.hpp"
 #include "boys/boys_backend_simd.hpp"
 #include "boys/boys_coefficients.hpp"
+#include "boys/dependent_false.hpp"
 #include "boys/isa_tiers.hpp"
 
 #include <cassert>
@@ -24,6 +25,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <type_traits>
 
 namespace boys::detail {
 
@@ -568,10 +570,20 @@ template <bool kHorner>
 const double* ShippedCoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, CoarseMonoGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_coarse_mono.hpp: include that "
+                      "header in the translation unit that names this scheme");
         return kMonoCoeffs.data();
     }
     else
     {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, CoarseChebGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_coarse_cheb.hpp: include that "
+                      "header in the translation unit that names this scheme");
         return kCoeffs.data();
     }
 }
@@ -669,10 +681,22 @@ template <bool kHorner>
 const double* FlatCoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, UniformMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_d_uniform_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
         return kFlatMonoCoeffs.data();
     }
-    else
+    if constexpr (!kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, UniformChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_d_uniform_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
         return kFlatCoeffs.data();
     }
 }
@@ -681,10 +705,20 @@ template <bool kHorner>
 const double* FlatTransposedCoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(kCoefficientGroupPresent<DependentGroup<std::integral_constant<bool, kHorner>,
+                                                              UniformMonoTransposedGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_uniform_mono_transposed.hpp: "
+                      "include that header in the translation unit that names this scheme");
         return kFlatTransposedMonoCoeffs.data();
     }
-    else
+    if constexpr (!kHorner)
     {
+        static_assert(kCoefficientGroupPresent<DependentGroup<std::integral_constant<bool, kHorner>,
+                                                              UniformChebTransposedGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_uniform_cheb_transposed.hpp: "
+                      "include that header in the translation unit that names this scheme");
         return kFlatTransposedCoeffs.data();
     }
 }
@@ -826,10 +860,20 @@ template <bool kHorner>
 const double* NarrowACoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, NarrowMonoGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_narrow_mono.hpp: include that "
+                      "header in the translation unit that names this scheme");
         return kNarrowAMonoCoeffs.data();
     }
-    else
+    if constexpr (!kHorner)
     {
+        static_assert(kCoefficientGroupPresent<
+                          DependentGroup<std::integral_constant<bool, kHorner>, NarrowChebGroup>> ||
+                          kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+                      "this scheme reads boys/boys_coefficients_d_narrow_cheb.hpp: include that "
+                      "header in the translation unit that names this scheme");
         return kNarrowACoeffs.data();
     }
 }
@@ -1065,6 +1109,12 @@ void RationalOrdersBody(int nmax,
     const std::size_t firstFlat = static_cast<std::size_t>(kPieceStart[0] + index);
 
     const double* const base = shippedTable + piece.offset;
+    static_assert(
+        kCoefficientGroupPresent<
+            DependentGroup<std::integral_constant<EvalScheme, kScheme>, CoarseRatGroup>> ||
+            kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
+        "this route reads boys/boys_coefficients_d_coarse_rat.hpp: include that header "
+        "in the translation unit that names this scheme");
     const double* const ratCoeffs = kRatACoeffs.data();
     const double t = 2.0 * (x - piece.a) / (piece.b - piece.a) - 1.0;
 
@@ -1155,6 +1205,12 @@ void NarrowRationalOrdersBody(int nmax,
     constexpr OrdersScheme kOrdersScheme = OrdersSchemeOf(kScheme);
 
     const double* const table = NarrowACoeffTable<kScheme == EvalScheme::kHorner>();
+    static_assert(
+        kCoefficientGroupPresent<
+            DependentGroup<std::integral_constant<EvalScheme, kScheme>, NarrowRatGroup>> ||
+            kAlwaysFalse<std::integral_constant<EvalScheme, kScheme>>,
+        "this route reads boys/boys_coefficients_d_narrow_rat.hpp: include that header "
+        "in the translation unit that names this scheme");
     const double* const ratCoeffs = kNarrowRatACoeffs.data();
 
     int served = 0;
@@ -1627,10 +1683,22 @@ template <bool kHorner>
 const float* F32ShippedCoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_coarse_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
         return f32::kMonoCoeffs.data();
     }
-    else
+    if constexpr (!kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32CoarseChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_coarse_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
         return f32::kCoeffs.data();
     }
 }
@@ -1639,10 +1707,22 @@ template <bool kHorner>
 const float* F32NarrowACoeffTable() noexcept {
     if constexpr (kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowMonoGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_narrow_mono.hpp: include that "
+            "header in the translation unit that names this scheme");
         return f32::kNarrowAMonoCoeffsF32.data();
     }
-    else
+    if constexpr (!kHorner)
     {
+        static_assert(
+            kCoefficientGroupPresent<
+                DependentGroup<std::integral_constant<bool, kHorner>, F32NarrowChebGroup>> ||
+                kAlwaysFalse<std::integral_constant<bool, kHorner>>,
+            "this scheme reads boys/boys_coefficients_f32_narrow_cheb.hpp: include that "
+            "header in the translation unit that names this scheme");
         return f32::kNarrowACoeffsF32.data();
     }
 }
@@ -1859,6 +1939,10 @@ __m256 F32RationalGroup(const F32RatGroup& group, const float* coeffs) noexcept 
 // tail's value is the vector's for the lane it stands for.
 template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
+    static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32CoarseRatGroup>> ||
+                      kAlwaysFalse<CutPairs>,
+                  "this route reads boys/boys_coefficients_f32_coarse_rat.hpp: include that "
+                  "header in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
@@ -1888,6 +1972,10 @@ void F32RationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
 // this partition's own table, so its value is the group reader's for the same lane.
 template <backend::MulAddRoute kMulAddRoute, class CutPairs>
 void F32NarrowRationalBody(int nmax, float x, float* out, CutPairs cuts) noexcept {
+    static_assert(kCoefficientGroupPresent<DependentGroup<CutPairs, F32NarrowRatGroup>> ||
+                      kAlwaysFalse<CutPairs>,
+                  "this route reads boys/boys_coefficients_f32_narrow_rat.hpp: include that "
+                  "header in the translation unit that names this route");
     int l = 0;
 
     for (; l + 8 <= nmax + 1; l += 8)
@@ -2133,7 +2221,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
                 static constexpr auto kPairsA =
-                    RationalRegionAF32Degrees<kRole>();
+                    RationalRegionAF32Degrees<kRole, decltype(kDegreesA)>();
 
                 F32RationalBody<backend::detail::kSelectedRoute>(
                     nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
@@ -2157,7 +2245,7 @@ void BoysAllOrdersF32Packed(int nmax, float x, float* out) noexcept {
                 // role's stored degrees - the table the scalar lane reads, so the two
                 // answer a piece with the same values.
                 static constexpr auto kPairsA =
-                    NarrowRationalRegionAF32Degrees<kRole>();
+                    NarrowRationalRegionAF32Degrees<kRole, decltype(kDegreesA)>();
 
                 F32NarrowRationalBody<backend::detail::kSelectedRoute>(
                     nmax, x, out, F32RungPairs<decltype(kPairsA)>{kPairsA});
@@ -2384,7 +2472,8 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             // degree, at and above it the route's pair at the pair's own cut.
             if constexpr (kRoute == FitRoute::kRationalMinimax)
             {
-                static constexpr auto kPairs = RationalRegionANarrowDegrees();
+                static constexpr auto kPairs =
+                    RationalRegionANarrowDegrees<decltype(kDegrees)>();
 
                 NarrowRationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                     nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});
@@ -2396,7 +2485,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
             }
         } else if constexpr (kRoute == FitRoute::kRationalMinimax)
         {
-            static constexpr auto kPairs = RationalRegionADegrees();
+            static constexpr auto kPairs = RationalRegionADegrees<decltype(kDegrees)>();
 
             RationalOrdersBody<backend::detail::kSelectedRoute, kScheme>(
                 nmax, x, out, 1, kPairs, RungDegree<decltype(kDegrees)>{kDegrees});

@@ -1,5 +1,9 @@
 #include "boys/boys_probe.hpp"
 
+// The probe measures the whole option space, so it names every coefficient group the tables
+// offer: the umbrella is this unit's own include, exactly as it is a consumer's.
+#include "boys/boys_all.hpp"
+
 #include "boys/kernels.hpp"
 
 #include <algorithm>

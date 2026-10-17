@@ -21,6 +21,17 @@ namespace boys::detail {
 template <typename>
 inline constexpr bool kAlwaysFalse = false;
 
+/// The group a coefficient marker read names, carried on a parameter of the template that
+/// reads it.
+///
+/// A group header specializes the marker, and a read whose template argument does not depend
+/// on the reading template is resolved where that template is written: a group header included
+/// afterwards would then specialize a marker already read, which MSVC refuses (C2908). Passing
+/// the group through this alias keeps the read dependent, so it is resolved where the reading
+/// template is instantiated and the caller's includes have been seen.
+template <typename, typename Group>
+using DependentGroup = Group;
+
 } // namespace boys::detail
 
 /// \endcond

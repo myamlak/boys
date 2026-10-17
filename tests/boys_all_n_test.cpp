@@ -5,6 +5,10 @@
 
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
+// The orders axis's split-Clenshaw form and the far lane's shipped partition: neither is in the
+// set `<boys/boys.hpp>` opens.
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_narrow_cheb.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys/boys_span.hpp"

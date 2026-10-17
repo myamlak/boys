@@ -2,6 +2,17 @@
 
 #include "boys/boys.hpp"
 #include "boys/boys_coefficients.hpp"
+// The shipped double partition and the float partitions' whole route space: this unit prebuilds
+// the orders lanes for both schemes and every route the tables offer, and the coarsest forms sit
+// outside the default set.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
+// The scaled far table: this unit prebuilds the far ladders' fused leg below, so it names the
+// representation `boys/boys.hpp`'s default set does not open.
+#include "boys/boys_coefficients_d_far.hpp"
 #include "boys/kernels.hpp"
 
 #include <cassert>

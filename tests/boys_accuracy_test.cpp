@@ -22,6 +22,15 @@
 // untouched (same test binary, same contract).
 
 #include "boys/kernels.hpp"
+// The uniform grid's Chebyshev form: the split-Clenshaw sweeps below name it and the default
+// set does not open it.
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+// The shipped partition's two bases, which the double single role's degree tables read.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+// The same two bases on the float lane.
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 

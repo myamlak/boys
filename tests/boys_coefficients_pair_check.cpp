@@ -4,8 +4,8 @@
 // lane was parsed. The generator's flat_transposed_findings checks the same relation.
 
 #include "boys/boys_coefficients.hpp"
-
-#include <array>
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb_transposed.hpp"
 
 namespace {
 

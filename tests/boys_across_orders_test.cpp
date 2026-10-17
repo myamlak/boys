@@ -27,6 +27,16 @@
 
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
+// The partitions this test compares against the shipped axis: the uniform grid's Chebyshev forms
+// (both stored forms), the narrow Chebyshev form, and the shipped partition's three routes. None
+// is in the set `<boys/boys.hpp>` opens.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
+#include "boys/boys_coefficients_d_narrow_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+#include "boys/boys_coefficients_d_uniform_cheb_transposed.hpp"
+#include "boys/boys_coefficients_d_uniform_rat.hpp"
 #include "boys/boys_impl.hpp"
 #include "boys_orders_simd.hpp"
 

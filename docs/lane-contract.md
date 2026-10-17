@@ -1292,9 +1292,10 @@ through the default entry measures one of the three and speaks for all of them.
 
 **That third row's figure is a reading and not a bound.** The stored table's partition is a
 placeholder — equal width at one degree, over 22 intervals from `kX1` to the right edge at 117.0,
-marked a placeholder in `include/boys/boys_coefficients.hpp` — and its figure is a swept maximum over
-that placeholder, so the row says what the shipped placeholder delivers and not what the far region
-guarantees. The bound over the far region is the recurrence's own: 1e-13 of the ladder's first rung.
+marked a placeholder in `include/boys/boys_coefficients_d_far.hpp` — and its figure is a swept
+maximum over that placeholder, so the row says what the shipped placeholder delivers and not what
+the far region guarantees. The bound over the far region is the recurrence's own: 1e-13 of the
+ladder's first rung.
 
 **The across-arguments lane belongs to this region.** Above the fits the recurrence is a ladder, so
 the orders axis has no lane to trade away there, and the far region is where an argument-packing

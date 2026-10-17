@@ -742,9 +742,15 @@ if (BOYS_BUILD_TESTS)
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
         # The uniform grid's transposed twin, held to the interval-major table by the
-        # one translation unit that indexes both: the lane header no longer can.
+        # one translation unit that indexes both: a lane header cannot, because a
+        # translation unit opens only the group headers its policies name.
         tests/boys_coefficients_pair_check.cpp
         tests/boys_transform_test.cpp
+        # The front door's coefficient set: the nine groups <boys/boys.hpp> opens,
+        # asserted present and the other twelve absent, and every host entry
+        # called so a default path reading a group it does not open is a build
+        # failure here rather than a link failure at a caller.
+        tests/boys_default_tables_test.cpp
         # The refusal's reason: every combination QueryCombination can be asked
         # about, and every member of the device option space, held to the reason
         # its own field documents. The device arm of this file is compiled in by
