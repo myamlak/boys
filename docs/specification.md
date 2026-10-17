@@ -139,12 +139,16 @@ has a named default, and so does the device lane. [lane-contract.md](lane-contra
 states what each selects, the bound it carries, and the command that prints the name and the in-force
 default as numbers. Two of the choices — the evaluation scheme and the interval partition — were
 set from the option probe's own runs, and **neither was settled by them**. The partition was not
-chosen against its axis at all: those runs are dated 2026-09-28, every partition-bearing row in them
-is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
-2026-09-30. That default has therefore not been derived against the whole axis. On the scheme axis
-the runs did compare both rows and did not separate them.
+chosen against its axis at all: every partition-bearing row of the runs that named it is one
+partition, `narrow`, so the comparison that named it measured one member of a three-member axis
+rather than ranking the whole axis. That default has therefore not been derived against the whole
+axis. On the scheme axis the runs did compare both rows and did not separate them.
 The route and the packing axis carry the settings the library has always shipped and have not been
 ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
+**Which runs, and where this tree keeps them**: the committed default rows are in
+`include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each carrying
+the run its combination came from, and a run's own record is the file it wrote, kept under
+`tests/data/`.
 **Each default is a choice between two ways of computing one answer and not between two accuracies**, so
 a version that moves one costs no accuracy at any call site that names nothing.
 
