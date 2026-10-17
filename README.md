@@ -297,6 +297,13 @@ command that measures the bound on your machine.
 what integral calculations actually require, and which of the library's evaluation paths that leaves
 to choose between.
 
+**Something wrong?** Open an issue at <https://github.com/myamlak/boys/issues> — a question, a bug, or
+a proposal to relax the contract. When a returned value is the problem, quote the exact `(n, x)`, the
+lane and the region: *Reporting a suspected violation* in
+[docs/specification.md](docs/specification.md) says how to print the gate's own line for that cell,
+so the issue can quote the line that failed rather than describe it. [CONTRIBUTING.md](CONTRIBUTING.md)
+and its *Getting help* section say what to expect before writing code.
+
 ---
 
 Everything above this line is what a first call needs. The specification — what each evaluation path

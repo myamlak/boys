@@ -546,7 +546,8 @@ packing book carries a measured
 row for each of them, on both routes, at both schemes, through both
 entries that carry the axis, and names the worst cell of each.
 
-**Reporting a suspected violation.** Open an issue with the exact `(n, x)`, the lane and the region,
+**Reporting a suspected violation.** Open an issue at <https://github.com/myamlak/boys/issues> with
+the exact `(n, x)`, the lane and the region,
 and run `./build/Release/boys-accuracy-gate --strict` first — it prints the delivered error beside
 the bound for every lane and region and ends in a verdict, so an issue can quote the line that
 failed rather than describe it. If you suspect the generated tables,
