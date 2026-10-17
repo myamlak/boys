@@ -29,9 +29,11 @@
 
 namespace boys::detail {
 
-// The lanes below pack four arguments of one order. Nothing here is a second arithmetic: every
-// body is the scalar lane's own operations in the scalar lane's own order, so a value a lane
-// returns is that lane's value at every bit.
+// The lanes below pack four arguments of one order. The vector body and the arguments it does
+// not cover run different arithmetic: the body is split Clenshaw over four lanes, the tail calls
+// the scalar body's Horner chain, so the accuracy gate books count = 1 and count = 4 as separate
+// rows and the two bodies' figures are their own rows'. Their values are not bit-identical to
+// one another.
 
 using detail::kX0;
 using detail::kX1;
@@ -58,19 +60,23 @@ inline __m256d Clenshaw4SplitDeg(const detail::OrderPiece& piece, int deg, __m25
     return RegionAClenshaw<backend::Avx2Fp64<>>(detail::kCoeffs.data(), piece, deg, xv);
 }
 
-// The m = 1 entry: the piece's full degree.
+// The piece's full degree: the degree the lane reads.
 inline __m256d Clenshaw4Split(const detail::OrderPiece& piece, __m256d xv) noexcept {
     return Clenshaw4SplitDeg(piece, piece.deg, xv);
 }
 
 
-/// The region-A lane at the vector tier: four arguments at once, the per-argument body's own
-/// arithmetic lane for lane.
+/// The region-A lane at the vector tier: four arguments at once in the split-Clenshaw body, and
+/// the arguments past the last full four in the scalar body's Horner chain.
 ///
 /// \param n     the order
 /// \param x     the caller's arguments
 /// \param out   receives one value per argument
 /// \param count number of arguments
+///
+/// \pre \c x[i] < \c kX0 for every argument the vector body reads. The masks cover region A, and
+///      an argument outside it is served by no piece. The tail carries no such precondition: the
+///      scalar body it calls serves every argument.
 inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t count) noexcept {
     assert(n >= 0 && n <= kMaxBoysOrder);
 
@@ -81,6 +87,7 @@ inline void BoysRegionASimd(int n, const double* x, double* out, std::size_t cou
         for (std::size_t i = 0; i + 3 < count; i += 4)
         {
             const __m256d xv = _mm256_loadu_pd(x + i);
+            assert(x[i] < kX0 && x[i + 1] < kX0 && x[i + 2] < kX0 && x[i + 3] < kX0);
             __m256d acc = _mm256_setzero_pd();
 
             for (int p = first; p < last; ++p)
