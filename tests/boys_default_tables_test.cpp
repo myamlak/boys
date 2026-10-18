@@ -24,7 +24,9 @@ static_assert(boys::detail::kCoefficientGroupPresent<boys::detail::F32NarrowMono
 static_assert(boys::detail::kCoefficientGroupPresent<boys::detail::F32NarrowRatGroup>);
 
 // The twelve groups a policy outside the class rows names: the fit's assertion prints the
-// header that defines each of these.
+// header that defines each of these. A build carrying a replacement seam may open some of them
+// by name, so the absence is stated of the committed seam and not of every build.
+#if !defined(BOYS_BUILD_DEFAULTS_REPLACED)
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::UniformChebGroup>);
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::UniformChebTransposedGroup>);
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::UniformRatGroup>);
@@ -37,6 +39,7 @@ static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::F32CoarseChe
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::F32CoarseMonoGroup>);
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::F32CoarseRatGroup>);
 static_assert(!boys::detail::kCoefficientGroupPresent<boys::detail::CoarseRatGroup>);
+#endif // !defined(BOYS_BUILD_DEFAULTS_REPLACED)
 
 TEST(DefaultTables, EveryHostEntryRunsOnTheDefaultSet) {
     constexpr int kNmax = boys::kMaxBoysOrder;

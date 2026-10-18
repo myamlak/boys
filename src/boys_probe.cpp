@@ -5747,9 +5747,9 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
     }
 
     // The unit calibration: how many calls one timed unit of each option holds, so every unit is
-    // about the same wall time. Each option is warmed before its timed call - a count chosen from
-    // a cold reading would be too low once the same calls run warm. Nothing here enters a figure;
-    // the count does.
+    // about the same wall time. Each option is warmed before its timed calls, and the faster of
+    // two readings prices the call - one descheduled reading would otherwise set the count too
+    // low. Nothing here enters a figure; the count does.
     const double unitCalibrationBegin = NowSeconds();
     std::vector<double> unitNsPerArgument(options_.size(), 0.0);
     std::vector<int> unitRepeats(options_.size(), 1);
@@ -5767,12 +5767,17 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
             // The warm-up call, whose reading is discarded.
             (void)Checksum(unitWork, unitBuffers, options_[index]);
 
-            const Clock::time_point t0 = Clock::now();
-            const double sum = Checksum(unitWork, unitBuffers, options_[index]);
-            const Clock::time_point t1 = Clock::now();
-            (void)sum;
+            double milliseconds = std::numeric_limits<double>::infinity();
 
-            const double milliseconds = MillisecondsBetween(t0, t1);
+            for (int reading = 0; reading < 2; ++reading)
+            {
+                const Clock::time_point t0 = Clock::now();
+                const double sum = Checksum(unitWork, unitBuffers, options_[index]);
+                const Clock::time_point t1 = Clock::now();
+                (void)sum;
+
+                milliseconds = std::min(milliseconds, MillisecondsBetween(t0, t1));
+            }
             unitNsPerArgument[index] = milliseconds * 1e6 / static_cast<double>(unitOptions.count);
 
             const double fullCallMs = milliseconds * static_cast<double>(options.count) /
