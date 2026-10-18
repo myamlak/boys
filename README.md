@@ -10,13 +10,18 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
+This tree is **version 5.0.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
+`project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
+CMake: `boys::VersionString()` answers it.
+
 ## Your first call
 
-Copy this into `try.cpp`, build it, run it. It prints the numbers below. They come from a build that
-does not contract the multiply-add: a product and a sum stay two roundings rather than becoming one.
-A compiler that does answers with values that differ inside this lane's bound. `docs/build-facts.md`
-records per CI leg what each leg does, and `docs/specification.md` says which calls a consumer's own
-flags reach.
+Copy this into `try.cpp`, build it, run it. It prints the nine numbers below. Those numbers were
+produced by a build that does not contract the multiply-add: a product and a sum stay two roundings,
+not one. A build that does contract it evaluates different arithmetic and returns different bits;
+`docs/lane-contract.md` prints the measured figure for each route. `docs/build-facts.md` records, per
+CI leg, which arithmetic that leg compiles, and `docs/specification.md` says which calls a consumer's
+own flags reach.
 
 ```cpp
 #include <boys/boys_span.hpp>
@@ -70,9 +75,13 @@ int main()
 ```
 
 `boys/boys_span.hpp` is the one header a C++ caller needs beyond `boys/boys.hpp`: it adds an
-overload of each many-argument entry taking a `std::span`, so a container goes straight in. It costs
-nothing - the overload forwards to the entry and both spellings compile to the same call - and a call
-passing a pointer and a count still reaches the pointer entry exactly.
+overload taking a `std::span` of each of the double lane's four array entries, so a container goes
+straight in. Each overload compares the extents it was handed against what the call writes and
+refuses a span that is short — a line naming the call and both extents, then an abort — and
+`BoysAllNAtOrders` refuses a top-order span that does not run with the arguments the same way. What
+the span spelling costs is that comparison, and what it buys is that a buffer too small is refused
+rather than written past; a bare pointer carries no size, so the pointer entries cannot check, and a
+call passing a pointer and a count still reaches the pointer entry exactly.
 
 What a translation unit needs, by what it is for:
 
@@ -85,12 +94,21 @@ What a translation unit needs, by what it is for:
 | is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
 | is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
 
-The archive is still needed for the reporting queries - `BoysLaneContracts`, `BoysEvalSchemes`,
-`BoysEvalSchemeFits`, `BoysEvalSchemeDelivered`, `BoysPackAxes`, `BoysDivisionForms`,
-`BoysFarRepresentations`, `BoysRegionBExps`, `BoysFitGranularities`, `BoysFitRoutes`,
-`BoysFitRoutesF32`, `EvalSchemeName`, `BoysAccuracyGuaranteed`, `BoysAccuracyDelivered`,
-`QueryCombination`, `BoysAvx2Available` - and for the C ABI surface, `boys/boys_c.h`.
-Everything else a call site names compiles from the headers.
+The archive is still needed for two things, and neither is computing F. One is the **reporting
+queries** - the functions that answer what this build carries and what it guarantees: the fit routes,
+the interval granularities, the evaluation schemes and their names, the division forms, the packing
+axes, the far-region representations, the region-B exponentials, the lane contracts, the two accuracy
+figures, and the tolerance query. They are declared in `boys/boys_decl.hpp` and defined in the
+archive, so a translation unit that calls one links it. The other is the C ABI surface,
+`boys/boys_c.h`. Everything else a call site names compiles from the headers.
+
+**The measured figures do not need the archive.** `boys/boys_accuracy_here.hpp` is a header of its
+own — not in `boys/boys.hpp`'s chain — that states each lane's published absolute figure and the
+figure this build's arithmetic was measured to deliver, read at compile time from the macros the
+build pins. It is **not the accuracy contract**: the contract is `BoysAccuracyGuaranteed`'s answer
+at the `(n, x)` a calculation asks about — `max(1e-13·F_n(x), 1e-13·F_0(x))` on the double lane —
+and that accessor is one of the archive's. Read the header as what this build measured, and the
+accessor as what a calculation is promised.
 
     git clone https://github.com/myamlak/boys.git && cd boys
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
@@ -102,9 +120,26 @@ or, against a tree you have already built:
         -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
     ./try
 
+On Windows with MSVC, from a Developer Command Prompt or a shell that has run `vcvars64.bat`, the
+same line is spelled with its own switches. `/arch:AVX2` is the whole tier there — MSVC takes F16C
+with it — and no contraction pin rides beside it, because MSVC fuses only under `/fp:fast`, which
+this build does not use:
+
+    cl /nologo /std:c++20 /EHsc /MD /DBoysFp16=1 /arch:AVX2 /I include try.cpp
+    .\try.exe
+
+`/MD` is the runtime the CMake build uses, and `cl`'s own default is `/MT`: a program that links
+the archive — `build\Release\boys.lib` on the command line — and pulls an object out of it without
+`/MD` stops at `LNK2038: mismatch detected for 'RuntimeLibrary'`. This first program references
+nothing in the archive and does not need it on the link line at all, so it builds and runs either
+way.
+
 `-DBoysFp16=1` and the tier flags are the ones the recipe above put on the library, and
 `docs/build-facts.md` states the profile they spell. Every entry is compiled where it is called,
-so a unit that leaves either out builds a program the headers refuse at start-up.
+so a unit that leaves either out builds a program the headers refuse at start-up in a program that
+links the archive. The refusal is a disagreement between two announcements and needs both: the
+archive's own units are the second one, and a program built from the headers alone makes the one
+announcement and runs.
 
 ```
 F_3(1.25)  = 0.055476132923076911
@@ -118,9 +153,14 @@ F_0(30)    = 0.16180215937964007
 F_6(30)    = 3.6049669032736188e-08
 ```
 
-The three `OFF`s are there so this builds the library and nothing else, which needs no compiler past
-C++20 — the suite and the benchmark drivers are the targets that want C++23, and each is behind one
-of those flags. Drop them to build all three as well; that is the contributor's build.
+The three `OFF`s are there so this builds the library and nothing else — the option probe and the C
+linkage surface are units of the archive itself and not targets beside it — which needs no compiler
+past C++20: the suite and the benchmark drivers are the targets that want C++23, and each is behind
+one of those flags. Drop them to build all three as well; that is the contributor's build. This
+build carries no test target, so the accuracy gate and the option probe are not in it:
+`cmake -S . -B build -DBOYS_BUILD_TESTS=ON` on the directory you have is what adds them, and *Check
+the figures yourself* in [the specification](docs/specification.md#accuracy-contract) gives the
+command that then runs the gate.
 
 On Windows with the Visual Studio generator the library lands in `build/Release/`. This program is
 [`examples/00_first_call.cpp`](examples/00_first_call.cpp); the contributor's build compiles it and
@@ -151,12 +191,26 @@ directory, C++20, the tier flags, the contraction answer and the fp16 seam. For 
 alone, with no archive on the link line, link `boys::boys-tier` instead - the same interface, and
 the entries' bodies come inline from the headers.
 
-Installed, after a top-level build and `cmake --install`:
+Installed, from a top-level build:
+
+    cmake --install build --prefix /where/you/want/it     # or set the prefix at configure time
+
+That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
+below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
+`boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
+build carried the device lane; the version file accepts any `5.x` package for a request of `5.0.0`.
+The install rules are written at the top level only, so a consumer that adds this tree as a
+subdirectory already has the targets and needs no package:
 
 ```cmake
 find_package(boys REQUIRED)
 target_link_libraries(app PRIVATE boys::boys)     # or boys::boys-tier, for the headers alone
 ```
+
+With the test suite on, the vendored GoogleTest's own install rules run as part of the top-level
+install: its headers and its four libraries land in the same prefix, and an install from a directory
+whose suite targets were never built stops on `gmock.lib`. Build the tree you install, or configure
+with `-DBOYS_BUILD_TESTS=OFF` as the first recipe does.
 
 Each optional, named one at a time:
 
@@ -175,11 +229,12 @@ suite too: the suite's accuracy gate names the half entries through a policy on 
 so a configure that asks for both is refused rather than half-built. In a submodule, the same
 option is a cache variable the parent sets before `add_subdirectory`.
 
-    cmake --build build --target boys-option-probe     # measures your host; see the guide
+    cmake --build build --target boys-option-probe     # needs the test suite (-DBOYS_BUILD_TESTS=ON); see the guide
 
 Outside CMake the flags are yours to spell, and `docs/build-facts.md` states the profile the
 figures belong to. A unit compiled with the other reading of the fp16 seam or of the tier builds a
-program the headers refuse at start-up.
+program the headers refuse at start-up in a program that links the archive, and one that runs
+against the headers alone.
 
     c++ -std=c++20 -DBoysFp16=1 -I include try.cpp -o try     # the headers alone, no archive
 
@@ -194,7 +249,8 @@ By what you want, not by what the library calls things:
 | F_n at every argument of an array | `BoysFixedN` | when the order is fixed and the arguments vary; takes an output stride |
 | F_0..F_nmax at every argument of an array | `BoysAllN` | the batch shape of an integral engine; the arguments may arrive in any order |
 | ...with each argument's own top order | `BoysAllNAtOrders` | a shell-quartet batch, where no argument is padded to a common order |
-| ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}` | skips the internal sort when your loop already produces a non-decreasing array |
+| ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}`, pointer form only | skips the internal sort when your loop already produces a non-decreasing array |
+| ...when the arguments are not known to be in domain | `BoysSingleChecked`, `BoysAllOrdersChecked`, `BoysFixedNChecked`, `BoysAllNChecked`, `BoysAllNAtOrdersChecked` | the checked twin of every double entry above; it refuses with a status rather than answering |
 | any of the above in single precision | `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32`, `BoysAllNAtOrdersF32` | when the rest of your kernel is `float` |
 | half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16` | 16-bit I/O around the single-precision engine |
 | an answer on a GPU | `boys/boys_cuda.hpp` | device arrays; uploads its tables on first use, so warm the path before measuring |
@@ -203,46 +259,70 @@ By what you want, not by what the library calls things:
 The complete list, with every overload, is the entry-point table in the
 [API reference](https://myamlak.github.io/boys/).
 
+**Choosing among the evaluation settings?** A `SeamPolicy` carries five option axes — the fit route,
+the evaluation scheme, the packing axis, the interval granularity and the division form — and
+[docs/getting-started.md](docs/getting-started.md#what-does-each-setting-change) tabulates what each
+one changes, what the tree has measured about it, and where its figures are. Which member is fastest
+is a property of your machine and its flags: the option probe ranks them where they will run.
+
 **Calling it on a GPU?** The last two rows are the two routes onto a card, and
 [docs/gpu-guide.md](docs/gpu-guide.md) is written for you: which route answers which problem, what a
 device call looks like, what you must allocate and pass, what the library refuses and why that is a
 feature, and how to read the bound you got.
 
-**What the bound is, and what it is not.** For the shipped build the guarantee is **relative**: the
-error of a returned value is at or below **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**,
-for every `n <= 32` and every `x >= 0`. F is decreasing in the order, so the second figure is the
-wider of the two and the arm that binds wherever the order's own value is tiny. The bound holds above
-the lane format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is
-subnormal or zero and no accuracy is claimed. Until this release the guarantee instead carried a
-constant floor, `5.5e-14`, and where F is small the two figures disagree: at
-`n = 32, x = 29`, F is 1.93e-14 and the lane of the day returned 6.87e-14 — an error of 4.94e-14,
-inside the floor of the day, and **2.55 times the true value** read relative to F. That argument is
-served by the fitted grid — whose hi-bound is 31.0 in this build — and the relative figure holds
-there.
+**What the bound is, and what it is not.** For every `n <= 32` and every `x >= 0` the error of a
+returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not
+the value the caller asked for. F is decreasing in the order, so the `1e-13 · F_n(x)` arm of the
+pair is never the wider one, and where the order's own value is tiny the figure the bound is stated
+in is a large part of it. Read against `F_n(x)`'s own value the bound is therefore not uniform: on
+the committed grid the delivered error is 3.496e-14 of `F_n(x)` at the worst cell below the
+region-C boundary, `x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again
+above `x ≈ 93`; in between, the bound costs the value accuracy, and at the worst cell there,
+`n = 32, x = 31`, the returned value is wrong by 140 % of its own. The bound holds above the lane
+format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is subnormal
+or zero and no accuracy is claimed. Until 4.0.0 the guarantee instead carried a constant
+floor, `5.5e-14`, and where F is small the two figures disagree: at
+`n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
+5.5e-14 floor those releases carried, and **2.55 times the true value** read relative to F. That
+argument is served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is
+`kFlatHi`, 31.0 in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of
+the bound at worst.
 
-**Two combinations hold the wider figure rather than the relative one.** The double entries hold the
-ladder-scaled bound everywhere: the bare ladder's own worst cell is the low end of the span it
-serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. Two combinations the option
-space offers do not hold the bound read against `F_n(x)` alone: a lean partition's extended-band
-ladder
-(`FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves) and the rational-minimax
-route's high-order intervals. Each holds the ladder-scaled bound, at a worst measured `0.12` and
-`0.48` of it.
+**Two combinations the option space offers do not hold the bound read against `F_n(x)` alone.** The
+double entries hold the ladder-scaled bound everywhere: the bare ladder's own worst cell is the low
+end of the span it serves, `n = 32, x = 31`, at `0.288` of the bound — a `3.47x` margin. The two are
+a lean partition's extended-band ladder (`FitGranularity::kCoarsest`, `kNarrow`, and `SeamPolicy<>`
+as it resolves) and the rational-minimax route's high-order intervals; each holds the ladder-scaled
+bound, at a worst measured `0.12` and `0.48` of it.
 The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on
-values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger
-of `2^-22 · F_n(x)` and the `1.5e-7` it already published. The
-[accuracy contract](docs/specification.md#accuracy-contract) names the two combinations, the figure
-each holds at its worst cell, and the command that measures the bound on your machine.
+values of order one leaves about `1e-7` behind whatever the value is, so that lane states the
+larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the
+plain-reciprocal form. The [accuracy
+contract](docs/specification.md#accuracy-contract) names the two combinations, the figure each holds
+at its worst cell, and the command that measures the bound on your machine.
 **And no entry checks its arguments**: outside `n` in `[0, 32]` and `x >= 0` the behaviour is
-undefined, and a release build faults on `x < 0` or on a `NaN` anywhere in a batch, while `n > 32`
-answers a wrong number with no diagnostic. The five double entries each have a `*Checked` twin —
-`BoysAllOrdersChecked` and its four siblings — that refuses with a status instead of faulting. The
+undefined, and a release build does not refuse the arguments — the scalar entries answer them.
+A negative argument or an out-of-range order comes back as some value with no meaning; the exact
+value is the build's own and moves with the compiler and the flags. A `NaN` argument comes back
+`NaN`, and a `NaN` anywhere in a batch is worse: on this project's MSVC x64 Release build,
+`BoysAllN` over `{1.0, NaN, 2.0}` is a segmentation fault. A build with assertions live aborts on
+the argument instead. The five double
+entries each have a `*Checked` twin — `BoysAllOrdersChecked` and its four siblings — that refuses
+with a status rather than answering, and it is the call to make wherever the arguments are not known
+to be in domain. The
 [accuracy contract](docs/specification.md#accuracy-contract) carries the per-lane figures and the
 command that measures the bound on your machine.
 
 **How much accuracy do you need?** [docs/consumer-perspective.md](docs/consumer-perspective.md) —
 what integral calculations actually require, and which of the library's evaluation paths that leaves
 to choose between.
+
+**Something wrong?** Open an issue at <https://github.com/myamlak/boys/issues> — a question, a bug, or
+a proposal to relax the contract. When a returned value is the problem, quote the exact `(n, x)`, the
+lane and the region: *Reporting a suspected violation* in
+[docs/specification.md](docs/specification.md) says how to print the gate's own line for that cell,
+so the issue can quote the line that failed rather than describe it. [CONTRIBUTING.md](CONTRIBUTING.md)
+and its *Getting help* section say what to expect before writing code.
 
 ---
 

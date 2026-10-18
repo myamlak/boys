@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <span>
@@ -322,13 +323,20 @@ struct Coverage {
     std::size_t accessorsDisagree = 0;
 };
 
-/// The figure a class's default carries, through the name the library
-/// publishes for it.
+/// The cell every class's figure is reported at. The contract is a figure at a
+/// cell, and one cell serves every class: n = 0 and x = 0 are inside every lane's
+/// documented domain, and the figure a class carries is still the class's own,
+/// read from its own row's axes.
+constexpr int kReportN = 0;
+constexpr double kReportX = 0.0;
+
+/// The figure a class's default carries at one cell, through the name the
+/// library publishes for it.
 ///
 /// Both sides of the interface read the one accessor:
-/// \c DefaultGuarantee<Precision, Shape, Device>() is the name the seam documents
-/// for "the bound a class's default policy carries", it reads the row the table
-/// carries for the class the caller names, and \c kDevice defaults to
+/// \c DefaultGuarantee<Precision, Shape, Device>(n, x) is the name the seam
+/// documents for "the bound a class's default policy carries", it reads the row
+/// the table carries for the class the caller names, and \c kDevice defaults to
 /// \c Device::kHost where a caller does not spell one. A device class reads it
 /// too, rather than assembling the figure here from the axes its own row resolves
 /// to: an assembled reading is this file's answer rather than the library's, and
@@ -337,10 +345,12 @@ struct Coverage {
 /// \tparam kDevice the class's device
 /// \tparam kPrecision the class's lane
 /// \tparam kShape the class's shape
+/// \param n the order
+/// \param x the argument
 /// \returns the figure and whether this build carries the combination
 template <Device kDevice, Precision kPrecision, Shape kShape>
-AccuracyFigure ClassGuarantee() noexcept {
-    return DefaultGuarantee<kPrecision, kShape, kDevice>();
+AccuracyFigure ClassGuarantee(int n, double x) noexcept {
+    return DefaultGuarantee<kPrecision, kShape, kDevice>(n, x);
 }
 
 /// The term the class's division form adds beside the lane's base.
@@ -368,27 +378,64 @@ double MemberTerm(const LaneContractInfo& lane, RegionBExp exp) noexcept {
     return exp == lane.additiveMember ? lane.additive : 0.0;
 }
 
-/// The arithmetic the library states a figure by: the lane's multiplicand plus
-/// the term the named form adds beside it, times the multiplier of the one
-/// accuracy this library serves, plus the term the named region-B exponential
-/// adds beside the base.
+/// The lane's published form at one cell: the part of the figure the row's terms
+/// are added to.
+///
+/// It is the contract's own arithmetic, written here so the report can print the
+/// terms a reader recomputes the figure with and hold the accessor to them. The
+/// double lanes' form is the larger of `1e-13 * F_n(x)` and `1e-13 * F_0(x)`; the
+/// float lanes' the larger of `2^-22 * F_n(x)` and the row's floor; and the half
+/// lanes' their row's base, whose half digit is a term of the returned value and
+/// stays in the row's sentence.
+///
+/// \param lane the lane's contract row
+/// \param n the order
+/// \param x the argument
+/// \returns the base the row's terms are added to
+double CellBase(const LaneContractInfo& lane, int n, double x) noexcept {
+    switch (lane.precision)
+    {
+    case Precision::kFp64:
+    case Precision::kFp64Device:
+        return std::max(1e-13 * BoysSingle(n, x), 1e-13 * BoysSingle(0, x));
+    case Precision::kFp32:
+    case Precision::kFp32Device:
+        return std::max(std::ldexp(1.0, -22) * BoysSingle(n, x), lane.bound);
+    case Precision::kFp16:
+    case Precision::kBf16:
+    case Precision::kFp16Device:
+    case Precision::kBf16Device:
+        break;
+    }
+
+    return lane.bound;
+}
+
+/// The arithmetic the library states a figure by: the lane's form at the cell,
+/// plus the term the named division form adds beside it, plus the term the named
+/// region-B exponential adds beside it.
 ///
 /// It is the accessor's own expression (src/boys.cpp, \c BoysAccuracyGuaranteed),
 /// written out so the report can print the terms a reader recomputes the figure
 /// with and can hold the two to each other.
 ///
 /// \param lane the lane's contract row
+/// \param n the order
+/// \param x the argument
 /// \param form the class's division form
 /// \param exp the class's region-B exponential
 /// \returns the figure the terms compose to
-double ComposedFigure(const LaneContractInfo& lane, DivisionForm form, RegionBExp exp) noexcept {
-    return kBoysFullAccuracyMultiplier * (lane.bound + FormTerm(lane, form)) +
-           MemberTerm(lane, exp);
+double ComposedFigure(const LaneContractInfo& lane,
+                      int n,
+                      double x,
+                      DivisionForm form,
+                      RegionBExp exp) noexcept {
+    return CellBase(lane, n, x) + FormTerm(lane, form) + MemberTerm(lane, exp);
 }
 
 /// One class's row: the class, the six axes the table resolves it to, and the
-/// bound that default carries, stated per the multiplicand and the multiplier it
-/// is computed from.
+/// bound that default carries at the report's cell, stated per the terms it is
+/// computed from.
 ///
 /// \tparam kDevice the class's device
 /// \tparam kPrecision the class's lane
@@ -406,7 +453,7 @@ void PrintClass(Coverage& coverage) {
         "a class's default policy and the table's row for it are not one type");
 
     const LaneContractInfo& lane = LaneRow(kPrecision);
-    const AccuracyFigure figure = ClassGuarantee<kDevice, kPrecision, kShape>();
+    const AccuracyFigure figure = ClassGuarantee<kDevice, kPrecision, kShape>(kReportN, kReportX);
 
     std::printf("  %-6s %-11s %-15s %-16s %-14s %-6s %-9s %-11s %-18s %-8s ",
                 DeviceName(kDevice),
@@ -428,18 +475,22 @@ void PrintClass(Coverage& coverage) {
         return;
     }
 
-    std::printf("bound %.6g = (%.6g + %.6g) x m %.6g + %.6g\n",
+    std::printf("bound %.6g at n=%d x=%g = (%.6g + %.6g) x m %.6g + %.6g\n",
                 figure.value,
-                lane.bound,
+                kReportN,
+                kReportX,
+                CellBase(lane, kReportN, kReportX),
                 FormTerm(lane, Policy::kDivision),
                 kBoysFullAccuracyMultiplier,
                 MemberTerm(lane, Policy::kRegionBExp));
 
-    if (ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp) != figure.value)
+    if (ComposedFigure(lane, kReportN, kReportX, Policy::kDivision, Policy::kRegionBExp) !=
+        figure.value)
     {
         std::printf("    the terms above do not compose to the figure the accessor returned: "
                     "composed %.17g, returned %.17g\n",
-                    ComposedFigure(lane, Policy::kDivision, Policy::kRegionBExp),
+                    ComposedFigure(lane, kReportN, kReportX, Policy::kDivision,
+                                   Policy::kRegionBExp),
                     figure.value);
         ++coverage.compositionFailed;
     }
@@ -448,6 +499,8 @@ void PrintClass(Coverage& coverage) {
     // (include/boys/boys.hpp, \c DefaultGuarantee) as the same figure from the same table as the
     // axis-taking accessor asked with the policy's own axes, the region-B exponential included.
     const AccuracyFigure direct = BoysAccuracyGuaranteed(kPrecision,
+                                                         kReportN,
+                                                         kReportX,
                                                          Policy::kRoute,
                                                          Policy::kScheme,
                                                          Policy::kPack,

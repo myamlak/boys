@@ -7,6 +7,15 @@
 // this says which fixture the build carries, and tests/boys_fixture_pins_test.cpp opens a block
 // on it and pins the five values below to this file's.
 
+// The groups this fixture's moved rows name: kCoarsest is not in the front door's default set, so a
+// translation unit carrying this seam includes the partition's own tables.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
+
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE_FIT_GRANULARITY 1
 
 // Moved: the partition the certified lanes are defined by, in place of the narrow

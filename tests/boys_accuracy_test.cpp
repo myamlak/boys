@@ -21,7 +21,16 @@
 // The file lives alongside boys_test.cpp rather than inside it to keep that file's existing tests
 // untouched (same test binary, same contract).
 
+#include "boys/boys_coefficients_d_uniform_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
 #include "boys/kernels.hpp"
+// The uniform grid's Chebyshev form: the split-Clenshaw sweeps below name it and the default
+// set does not open it.
+// The shipped partition's two bases, which the double single role's degree tables read.
+// The same two bases on the float lane.
 #include "boys/boys_effective_degrees.hpp"
 #include "boys/boys_impl.hpp"
 
@@ -316,14 +325,14 @@ void SweepFloatSingle() {
 // A policy composed from the five is another arithmetic from the class's own once a row spells
 // anything but the five: the two calls would then differ in their route and division form as well.
 using FloatSingleClass = boys::DefaultPolicy<boys::Precision::kFp32, boys::Shape::kSingle>;
-using Fp16SingleBudget = boys::EvalPolicy<FloatSingleClass::kRoute,
+using Fp16SingleBudget = boys::SeamPolicy<FloatSingleClass::kRoute,
                                           FloatSingleClass::kScheme,
                                           boys::BoysBudget::kFp16,
                                           FloatSingleClass::kPack,
                                           FloatSingleClass::kGranularity,
                                           FloatSingleClass::kDivision,
                                           FloatSingleClass::kRegionBExp>;
-using Fp16BatchBudget = boys::EvalPolicy<FloatBatchClass::kRoute,
+using Fp16BatchBudget = boys::SeamPolicy<FloatBatchClass::kRoute,
                                          FloatBatchClass::kScheme,
                                          boys::BoysBudget::kFp16,
                                          FloatBatchClass::kPack,
@@ -419,7 +428,7 @@ void SweepFloatBatch() {
 // reading that separates the Horner coefficients and their arithmetic from the shipped
 // split-Clenshaw lane.
 void SweepDoubleBatchHorner() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
     std::vector<double> batch(boys::kMaxBoysOrder + 1);
 
@@ -452,7 +461,7 @@ void SweepDoubleBatchHorner() {
 // asserts an even degree and says so), so the Clenshaw path asserted in debug and computed silently
 // wrong values in release while a bound for it sat published.
 template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDoubleBatchUniform() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                     kScheme,
                                     boys::BoysBudget::kFloat,
                                     boys::PackAxis::kArguments,
@@ -485,7 +494,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
 // reading where the route is cheapest rather than dearest. It shares the index arithmetic
 // with the ladder above through one FlatLocate, so what this separates is the order lookup.
 template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDoubleSingleUniform() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                     kScheme,
                                     boys::BoysBudget::kFloat,
                                     boys::PackAxis::kArguments,
@@ -508,7 +517,7 @@ template <boys::EvalScheme kScheme = boys::EvalScheme::kHorner> void SweepDouble
 }
 
 void SweepDoubleSingleHorner() {
-    using Policy = boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
+    using Policy = boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner>;
     RegionWorsts worst;
 
     for (const ReferenceRow& row : gReference)
@@ -1157,9 +1166,16 @@ template <boys::Precision kPrecision,
           boys::DivisionForm kForm,
           boys::RegionBExp kExp>
 CellAnswers AskBoth() {
+    // One cell serves every tuple: the stated entry and the run-time accessor are compared at
+    // the same (n, x), and what this test holds is that the two answers are one answer.
+    constexpr int kCellN = 0;
+    constexpr double kCellX = 0.0;
+
     return CellAnswers{
-        boys::BoysAccuracyGuaranteedStated<kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp>(),
-        boys::BoysAccuracyGuaranteed(kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp)};
+        boys::BoysAccuracyGuaranteedStated<kPrecision, kRoute, kScheme, kAxis, kGranularity, kForm, kExp>(
+            kCellN, kCellX),
+        boys::BoysAccuracyGuaranteed(kPrecision, kCellN, kCellX, kRoute, kScheme, kAxis, kGranularity,
+                                     kForm, kExp)};
 }
 
 template <std::size_t kCell>

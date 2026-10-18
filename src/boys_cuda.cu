@@ -13,6 +13,7 @@
 #include <cuda_fp16.h>
 #include <cuda_runtime.h>
 #include <math.h>
+#include <mutex>
 #include <stddef.h>
 
 namespace boys {
@@ -1481,6 +1482,12 @@ __global__ void BoysAllOrdersF32NarrowOrdersRatKernel(const int* n,
 int gTablesDevice = -1; // device ordinal the tables were uploaded to
 
 extern "C" int BoysCudaUploadTables() {
+    // One upload at a time. The check on gTablesDevice, the uploads and the store
+    // below are one critical section: two threads reaching a cold cache serialize,
+    // and the second one finds the first one's ordinal and returns.
+    static std::mutex uploadMutex;
+    const std::lock_guard<std::mutex> uploadLock(uploadMutex);
+
     int device = 0;
 
     if (cudaGetDevice(&device) != cudaSuccess)

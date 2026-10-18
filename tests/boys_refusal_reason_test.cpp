@@ -136,7 +136,7 @@ CombinationWalk WalkTheCombinations() {
                         ++walk.combinations;
 
                         const boys::CombinationCoverage answer = boys::QueryCombination(
-                            precision, route, scheme, axis, granularity, kWalkRequest);
+                            precision, 0, 0.0, route, scheme, axis, granularity, kWalkRequest);
                         const bool refuse =
                             answer.verdict == boys::ToleranceVerdict::kNotCarried;
                         const bool states = answer.reason != nullptr && answer.reason[0] != '\0';

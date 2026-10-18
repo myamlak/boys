@@ -1,3 +1,8 @@
+// The probe measures the whole option space, so it names every coefficient group the tables
+// offer: the umbrella is this unit's own include, exactly as it is a consumer's, and it comes
+// first because its group headers must precede the probe header's policy instantiations.
+#include "boys/boys_all.hpp"
+
 #include "boys/boys_probe.hpp"
 
 #include "boys/kernels.hpp"
@@ -790,7 +795,7 @@ struct ClassRow {
 };
 
 /// The row a class the seam states no row for is read and named against: the
-/// build's own point, which is the combination \c EvalPolicy names.
+/// build's own point, which is the combination \c SeamPolicy names.
 ///
 /// A seam that carries a row list is read instead of the one the five compose, so
 /// a class its list omits has no default policy at all and fails to compile where
@@ -1125,15 +1130,9 @@ double PassPairedSpread(const std::vector<std::vector<double>>& rounds, std::siz
     return widest;
 }
 
-/// The base the half lanes' rows are judged against: the figure the library
-/// publishes for the lane. |F_n(x)| <= 1, so the largest half-ULP a return can
-/// carry is 2^-11 for a binary16 return and 2^-8 for a bfloat16 one.
-double HalfLaneBase() noexcept
-{
-    return BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp16)].bound;
-}
-
-/// The half-ULP representation term of each half format, as above.
+/// The half-ULP representation term of each half format: |F_n(x)| <= 1, so the
+/// largest half-ULP a return can carry is 2^-11 for a binary16 return and 2^-8
+/// for a bfloat16 one.
 constexpr double kHalfFormatTerm = 0x1p-11;
 constexpr double kBf16FormatTerm = 0x1p-8;
 
@@ -1164,15 +1163,19 @@ constexpr double HalfFormatTermOf(OptionPrecision precision) noexcept {
 /// The figure one row of one precision is judged against, read from the
 /// library.
 ///
-/// The lanes document different figures and none substitutes for another: the
-/// double lane's is the error its entries can reach over the
-/// whole domain, the single-precision lane's is its own row of
-/// \c BoysLaneContracts, the half lanes' is the
-/// engine budget's base plus the largest half of a
-/// representable digit their returns can carry, and the device lane's is its own
-/// row of that table plus the term its row states beside
-/// the base. The lane is an argument here because a row judged against another
-/// lane's figure is worse than no row.
+/// The lanes document different absolute figures and none substitutes for another:
+/// the double lane's is the error its runs measured over the whole domain, the
+/// single-precision lane's is its own row of \c BoysLaneContracts, the half
+/// lanes' is the engine budget's base plus the largest half of a representable
+/// digit their returns can carry, and the device lane's is its own row of that
+/// table plus the term its row states beside the base. The lane is an argument
+/// here because a row judged against another lane's figure is worse than no row.
+///
+/// **This is the lane's published absolute figure and not the contract at a
+/// cell.** The contract is scaled by the value and `BoysAccuracyGuaranteed`
+/// answers it at the cell it is asked about; this report compares one absolute
+/// worst over a whole workload against the one absolute figure the lane
+/// published, which is the stricter bar of the two near x = 0.
 ///
 /// The form is an argument for the same reason: the plain reciprocal rounds once
 /// more per step on the lanes whose rows publish a term for it, so a form-aware
@@ -1181,10 +1184,11 @@ constexpr double HalfFormatTermOf(OptionPrecision precision) noexcept {
 /// by it.
 ///
 /// \param precision   the class the row is ranked in
-/// \param route       the row's fit route
-/// \param scheme      the row's evaluation scheme
-/// \param axis        the row's packing axis
-/// \param granularity the row's partition
+/// \param route       the row's fit route (the bound is the lane's, so this is
+///                    taken for the call's own symmetry and not read)
+/// \param scheme      the row's evaluation scheme (as \p route)
+/// \param axis        the row's packing axis (as \p route)
+/// \param granularity the row's partition (as \p route)
 /// \param form        the division form the row's arithmetic runs in
 ///
 /// \returns the figure, per value of F_n
@@ -1194,80 +1198,24 @@ double LaneCellBound(OptionPrecision precision,
                      PackAxis axis,
                      FitGranularity granularity,
                      DivisionForm form) {
-    const double multiplier = kBoysFullAccuracyMultiplier;
+    // The bound is the lane's and no other axis moves it: the four structural axes are the call
+    // site's symmetry with the accessor's own axes and are named by its documentation.
+    (void)route;
+    (void)scheme;
+    (void)axis;
+    (void)granularity;
 
-    switch (precision)
-    {
-    case OptionPrecision::kFp32:
-    {
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp32, route, scheme, axis, granularity, form);
+    const LaneContractInfo& row =
+        BoysLaneContracts()[static_cast<std::size_t>(LaneOf(precision))];
 
-        if (figure.available)
-        {
-            return figure.value;
-        }
+    // The plain reciprocal's own rounding and the region-B member's contribution sit beside the
+    // base on the rows that publish them. The report's cells run at the host's default
+    // exponential unless a cell names another, which the report's own rows carry.
+    const double plain = form == DivisionForm::kPlainReciprocal ? row.plainAdditive : 0.0;
+    const double member = kDefaultHostRegionBExp == row.additiveMember ? row.additive : 0.0;
 
-        // Unreachable from this probe's own book, which enumerates a cell only
-        // where the same call answered a figure; the fallback is the same
-        // arithmetic that answer is formed from, so a cell that somehow reached
-        // here is judged at its lane's figure rather than at a zero.
-        return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32)].bound;
-    }
-
-    case OptionPrecision::kFp32Device:
-    {
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp32Device, route, scheme, axis, granularity, form);
-
-        if (figure.available)
-        {
-            return figure.value;
-        }
-
-        // Unreachable: the caller enumerates a cell only where the call above answered a
-        // figure. The fallback is this lane's own row, not the double lane's - a row judged
-        // against another lane's arithmetic would state a promise no device entry makes.
-        const LaneContractInfo& row =
-            BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp32Device)];
-
-        return multiplier * row.bound + row.additive;
-    }
-
-    case OptionPrecision::kFp16:
-    case OptionPrecision::kBf16:
-    {
-        // The half lanes run the single-precision engine at one budget, so the figure is that
-        // lane's own row at the form it evaluates in, plus the format's half digit. Reading the
-        // row rather than rebuilding it keeps the plain reciprocal's own term in it.
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp16, route, scheme, axis, granularity, form);
-
-        return (figure.available ? figure.value : multiplier * HalfLaneBase()) +
-               HalfFormatTermOf(precision);
-    }
-
-    case OptionPrecision::kFp64:
-    {
-        // The double lane's row, read through the same accessor every other class
-        // reads: its figure is the lane's own documented one, and a cell of it is
-        // judged at the lane's figure rather than at the batch entry's alone.
-        const AccuracyFigure figure =
-            BoysAccuracyGuaranteed(Precision::kFp64, route, scheme, axis, granularity, form);
-
-        if (figure.available)
-        {
-            return figure.value;
-        }
-
-        break;
-    }
-    }
-
-    // Unreachable: the caller enumerates a cell only where the calls above answered a
-    // figure. The lane's own row rather than a zero, times the multiplier the report reads
-    // this figure's provenance from.
-    return multiplier * BoysLaneContracts()[static_cast<std::size_t>(Precision::kFp64)].bound;
+    return kBoysFullAccuracyMultiplier * (row.bound + plain) + member +
+           HalfFormatTermOf(precision);
 }
 /// The name the library prints a route under, read from its own route table
 /// rather than written here, so a coverage line cannot name a route the library
@@ -2055,10 +2003,11 @@ std::vector<OptionProbeCell> EnumerateCells(OptionPrecision precision, OptionPro
 
                             // The form and the exponential are not asked about: they are how a step divides and how
                             // a seed is evaluated, not which entry runs, so the carriage answer is the same for every
-                            // member of either axis.
+                            // member of either axis. The cell is not asked about either: carriage does not depend on
+                            // it, and (0, 0) is inside every lane's documented domain.
                             const AccuracyFigure carriage =
-                                BoysAccuracyGuaranteed(lane, cell.route, cell.scheme, cell.pack,
-                                                       cell.granularity);
+                                BoysAccuracyGuaranteed(lane, 0, 0.0, cell.route, cell.scheme,
+                                                       cell.pack, cell.granularity);
 
                             cell.sorted = false;
                             cell.served = carriage.available;
@@ -2216,7 +2165,7 @@ std::vector<Option> EnumerateOptions(std::span<const backend::BackendInfo> table
 /// region-B exponential are template arguments of the policy and have no
 /// run-time entry, so a consumer
 /// reaches them the way this does, by naming them. Every entry is built at the
-/// library's full-accuracy multiplier, which is the one accuracy it carries, and
+/// one accuracy the library carries, and
 /// the dispatch is the same cross the library's own accuracy
 /// gate measures, so a cell this probe reports as served is a cell some entry of
 /// this build really runs.
@@ -2243,7 +2192,7 @@ template <typename Run,
           RegionBExp kExp>
 void CellEntry(Run&& run) noexcept {
     constexpr BoysBudget kBudget = BoysBudget::kFloat;
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
+    using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     run.template operator()<Policy>();
 }
@@ -2259,7 +2208,7 @@ void CellEntry(Run&& run) noexcept {
 /// - so both the route and the axis are read off the cell rather than assumed.
 ///
 /// Every cell of this partition is served and evaluated through \c CellEntry, the
-/// one place this file names the policy's multiplier, so a cell named here and a
+/// one place this file names the policy, so a cell named here and a
 /// cell of any other partition are built by the same reading.
 ///
 /// A cell outside the partition's own lattice is not one any book of this probe
@@ -2491,7 +2440,7 @@ template <typename Run,
           DivisionForm kDivision,
           RegionBExp kExp>
 void CellEntrySingle(Run&& run) noexcept {
-    using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
+    using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, kGran, kDivision, kExp>;
 
     run.template operator()<Policy>();
 }
@@ -2529,7 +2478,7 @@ void CellUniformSingle(Run&& run,
     // was not stored then, and that is what changed.
     const auto with_scheme = [&]<FitRoute kRoute, EvalScheme kScheme>() {
         const auto with_pack = [&]<PackAxis kPack>() {
-            using Policy = EvalPolicy<kRoute, kScheme, kBudget, kPack, FitGranularity::kUniform,
+            using Policy = SeamPolicy<kRoute, kScheme, kBudget, kPack, FitGranularity::kUniform,
                                       kDivision, kExp>;
 
             run.template operator()<Policy>();
@@ -4056,7 +4005,7 @@ std::string JoinNames(const std::vector<std::string>& items) {
 }
 
 /// The columns of the measurements that are one class: the options of one
-/// precision, built at the library's own full-accuracy multiplier, and
+/// precision, built at the one accuracy the library carries, and
 /// answering one question shape.
 ///
 /// Membership is the shape, never a comparison of documented
@@ -4253,7 +4202,7 @@ constexpr const char* ExpCell(RegionBExp exp) noexcept;
 /// The seven axes of one measured combination, each named in the probe's own spelling
 /// of the library's member — the route, the scheme, the budget the entry's engine runs
 /// at, the packing axis, the partition, the division form and the region-B
-/// exponential, in the order an \c EvalPolicy carries them.
+/// exponential, in the order an \c SeamPolicy carries them.
 ///
 /// A row's own name states the axes its combination moves away from the class's
 /// default and leaves the rest implicit, which is what keeps a name short enough to
@@ -4487,8 +4436,8 @@ void ClassEvidence(const std::vector<std::vector<double>>& rounds,
 /// A rival whose band straddles one cannot be placed, and the class reports it.
 ///
 /// The default comes from one class: the certified double lane's precision at the
-/// library's own full-accuracy multiplier, for the all-orders shape this probe's
-/// workload asks, whose members were all built at that multiplier and all hand
+/// one accuracy the library carries, for the all-orders shape this probe's
+/// workload asks, whose members were all built at that one accuracy and all hand
 /// back the
 /// same thing, so choosing among them trades nothing but speed. Where the class's
 /// own rounds order it, the default is that class's fastest row by the figure this
@@ -4707,8 +4656,8 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
 
     if (pool.empty() || doubles == nullptr)
     {
-        refuse(Text("no option of the certified double lane's precision at the library's own "
-                    "full-accuracy multiplier answering this workload's all-orders question was "
+        refuse(Text("no option of the certified double lane's precision "
+                    "answering this workload's all-orders question was "
                     "measured, and that class is the only pool this probe takes a default from: "
                     "naming any other option would be naming one in a "
                     "different arithmetic or for a caller asking a different question, and none "
@@ -4936,8 +4885,9 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         {
             note = Text("one entry, so this is not a ranking: nothing in this class was measured "
                         "against it, and it is the entry this class names by there being no "
-                        "alternative. It was built at m=%g and documents %.3g",
-                        kBoysFullAccuracyMultiplier, record.entry.bound);
+                        "alternative. It was built at the library's one accuracy and documents "
+                        "%.3g",
+                        record.entry.bound);
         } else if (report.pairedRounds < static_cast<int>(kMinimumPairedRounds))
         {
             note = Text("not ordered: the run took %d paired round(s), and a band over the lower "
@@ -4949,13 +4899,13 @@ void Conclude(OptionProbeReport& report, const std::vector<std::vector<double>>&
         {
             note = Text("ordered: every one of the %zu option(s) behind '%s' was the slower of the "
                         "two in the middle half of the %d paired rounds, and the widest band in "
-                        "the class was %.2f%%. Every row of this class was built at m=%g and "
+                        "the class was %.2f%%. Every row of this class was built at the "
+                        "library's one accuracy and "
                         "answers the same question - %s - so this is the fastest option for that "
                         "question, and nothing in the class traded accuracy for "
                         "its place",
                         record.columns.size() - 1, record.entry.leader.c_str(), report.pairedRounds,
                         100.0 * record.outcome.widestBand,
-                        kBoysFullAccuracyMultiplier,
                         OptionProbeShapeQuestion(record.entry.shape));
         } else
         {
@@ -5796,10 +5746,10 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
         (void)warm;
     }
 
-    // The unit calibration: the pass that decides how many calls one timed unit of each option is
-    // made of, so every unit is about the same wall time. It is timed over a REDUCED argument
-    // count - an option's cost per argument does not move by a factor of two between a sixteenth
-    // of the workload and the whole of it. Nothing measured here enters a figure; the count does.
+    // The unit calibration: how many calls one timed unit of each option holds, so every unit is
+    // about the same wall time. Each option is warmed before its timed calls, and the faster of
+    // two readings prices the call - one descheduled reading would otherwise set the count too
+    // low. Nothing here enters a figure; the count does.
     const double unitCalibrationBegin = NowSeconds();
     std::vector<double> unitNsPerArgument(options_.size(), 0.0);
     std::vector<int> unitRepeats(options_.size(), 1);
@@ -5814,12 +5764,20 @@ OptionProbeReport RunOptionProbe(const ProbeOptions& requested) {
 
         for (std::size_t index = 0; index < options_.size(); ++index)
         {
-            const Clock::time_point t0 = Clock::now();
-            const double sum = Checksum(unitWork, unitBuffers, options_[index]);
-            const Clock::time_point t1 = Clock::now();
-            (void)sum;
+            // The warm-up call, whose reading is discarded.
+            (void)Checksum(unitWork, unitBuffers, options_[index]);
 
-            const double milliseconds = MillisecondsBetween(t0, t1);
+            double milliseconds = std::numeric_limits<double>::infinity();
+
+            for (int reading = 0; reading < 2; ++reading)
+            {
+                const Clock::time_point t0 = Clock::now();
+                const double sum = Checksum(unitWork, unitBuffers, options_[index]);
+                const Clock::time_point t1 = Clock::now();
+                (void)sum;
+
+                milliseconds = std::min(milliseconds, MillisecondsBetween(t0, t1));
+            }
             unitNsPerArgument[index] = milliseconds * 1e6 / static_cast<double>(unitOptions.count);
 
             const double fullCallMs = milliseconds * static_cast<double>(options.count) /
@@ -8498,8 +8456,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     text += "  probe orders inside\n";
     text += "  A class is the set of options that are alternatives for one need a caller has: one "
             "precision\n";
-    text += "  (fp64, fp32, fp16 or bf16), built at the library's full-accuracy multiplier, and one "
-            "question\n";
+    text += "  (fp64, fp32, fp16 or bf16), built at the one accuracy the library carries, and "
+            "one question\n";
     text += "  shape — what the\n";
     text += "  option hands back. The five shapes here are, in the seam's own order:\n";
 
@@ -8536,7 +8494,7 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
             "across lanes\n";
     text += "  is how a class ends up empty by construction. Every row of a class was built at the "
             "same\n";
-    text += "  multiplier and answers the same question, so nothing inside it traded accuracy for "
+    text += "  accuracy and answers the same question, so nothing inside it traded accuracy for "
             "speed and\n";
     text += "  nothing inside it answers something else: the entry each class names is its fastest "
             "option at\n";
@@ -8648,8 +8606,8 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
         {
             text += "             (this is the class the default below is taken from: the library's "
                     "own\n";
-            text += "             default precision at its own full-accuracy multiplier, "
-                    "answering this\n";
+            text += "             default precision at the one accuracy it carries, answering "
+                    "this\n";
             text += "             workload's own question shape. The other shape's class above "
                     "answers a\n";
             text += "             different question and its winner is a claim about that question "
@@ -8933,11 +8891,11 @@ std::string FormatOptionProbe(const OptionProbeReport& report) {
     }
 
     text += "\nrecommendation\n";
-    text += Text("  the %s class — the certified double lane's precision at the library's own\n",
+    text += Text("  the %s class — the certified double lane's precision at the one accuracy\n",
                  doublesClass != nullptr ? doublesClass->name.c_str() : "fp64 all-orders");
-    text += "  full-accuracy multiplier, answering this workload's own question shape (one "
+    text += "  the library carries, answering this workload's own question shape (one "
             "argument per\n";
-    text += "  call, that argument's own ladder), every row of it built at that multiplier, so "
+    text += "  call, that argument's own ladder), every row of it built at that one accuracy, so "
             "nothing in it\n";
     text += "  traded accuracy for speed and nothing in it answers a different question. This is "
             "the pool\n";

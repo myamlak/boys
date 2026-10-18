@@ -1,3 +1,8 @@
+// The scaled far table: this unit prebuilds the far ladders' asking leg below, so it names the
+// representation `boys/boys.hpp`'s default set does not open. A group header is included before the
+// front door: its marker specialization must precede the fit headers that read it.
+#include "boys/boys_coefficients_d_far.hpp"
+
 #include "boys/boys.hpp"
 
 #include "boys/boys_cuda_options.hpp"
@@ -32,10 +37,10 @@ bool BoysAvx2Available() noexcept {
     return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
 }
 
-template float BoysSingleF32<EvalPolicy<>>(int n, float x) noexcept;
-template void BoysAllOrdersF32<EvalPolicy<>>(
+template float BoysSingleF32<SeamPolicy<>>(int n, float x) noexcept;
+template void BoysAllOrdersF32<SeamPolicy<>>(
     int nmax, float x, float* out) noexcept;
-template void BoysAllNF32<EvalPolicy<>>(
+template void BoysAllNF32<SeamPolicy<>>(
     int nmax, const float* x, float* out, std::size_t count) noexcept;
 
 // The far ladders' asking leg: the arm a host without the fused instruction set reaches, prebuilt
@@ -376,7 +381,7 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
     // The rows are the tables' own counts and the certification's own figures, so a regeneration
     // that moved a piece, a degree or a delivered error moves the row. Every entry carries the
     // double lane's tables - the single-precision lanes read tables of their own - so a row here
-    // describes the double lane, and the uniform row states the one route and rung it is carried at.
+    // describes the double lane, and the uniform row states the one route it is carried at.
     static const std::array<FitGranularityInfo, 3> rows = [] {
         static constexpr unsigned kBothAxes = (1u << static_cast<unsigned>(PackAxis::kArguments)) |
                                               (1u << static_cast<unsigned>(PackAxis::kOrders));
@@ -549,9 +554,9 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 
         built[2].granularity = FitGranularity::kUniform;
         built[2].name = GranularityName(FitGranularity::kUniform);
-        // Both routes and one rung. The table holds a Chebyshev fit per order per interval and one
+        // Both routes. The table holds a Chebyshev fit per order per interval and one
         // numerator/denominator pair per interval, so a cell naming either route is one this build
-        // answers; every rung is admissible because the cut's tail scan reaches the full degree, whose
+        // answers; every cell is admissible because the cut's tail scan reaches the full degree, whose
         // tail is zero. Both packing axes are instantiated over this interval-major grid.
         built[2].routes = kChebBit | kRatBit;
         built[2].axes = kBothAxes;
@@ -617,8 +622,8 @@ std::span<const FitGranularityInfo> BoysFitGranularities() noexcept {
 std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
     // The figures these rows carry are the absolute ones their runs measured; the contract is
     // ladder-scaled, the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x) (README, specification.md).
-    // Each is a lane's figure for one value over the whole of x >= 0 at the reference multiplier;
-    // the plain form's own term is stated apart, and only on the lanes that carry such a form.
+    // Each is a lane's figure for one value over the whole of x >= 0; the plain form's own term is
+    // stated apart, and only on the lanes that carry such a form.
     static const std::array<LaneContractInfo, 8> rows = {{
         {Precision::kFp64, "fp64", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
          "throughout, every region"},
@@ -655,11 +660,13 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
         // entries read the double lane's piece tables and region-B seed. It stands apart from the host
         // row because it is a different lane, and a kFp64Device class reads this lane's own statement.
         {Precision::kFp64Device, "fp64-device", 5.5e-14, 0.0, 0.0, RegionBExp::kFast,
-         "the double lane's figure over the whole of x >= 0 on this lane's own entries, which "
-         "publish it in the contract's ladder-scaled form, "
-         "\"|error| <= max(1e-13 * F_n(x), 1e-13 * F_0(x))\" "
-         "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). "
-         "It is the host double lane's number because it is the same arithmetic over the same "
+         "the CUDA double lane's contract (docs/specification.md, the accuracy contract (CUDA "
+         "fp64)): the same contract as the CPU double lanes, the larger of 1e-13 * F_n(x) and "
+         "1e-13 * F_0(x), at the cell asked on "
+         "this lane's own entries, which publish it in that form "
+         "(boys/boys_cuda.hpp, SingleF64 and AllOrdersF64). The lane's own runs measured 5.5e-14 "
+         "at worst, and that figure is documentation rather than the promise. It is the host "
+         "double lane's number because it is the same arithmetic over the same "
          "pieces; it is this row's because the lane is this lane's - a device class asked for "
          "its bound is answered here and not by the host row beside this one. The lane carries "
          "the division axis like every device lane, and the accuracy gate reads every cell of "
@@ -747,6 +754,12 @@ std::span<const LaneContractInfo> BoysLaneContracts() noexcept {
 
 namespace {
 
+// The two figures the lanes whose contract is scaled by the value publish: the double
+// lanes' fraction of the ladder's first rung, and the float lanes' fraction of the
+// value's own F_n. They are the contract's scale factors and not measurements.
+constexpr double kDoubleRelativeFigure = 1e-13;
+constexpr double kFloatRelativeFigure = 0x1p-22;
+
 // Whether this revision carries a combination, and why not where it does not.
 struct Carriage {
     bool carried = false;
@@ -754,17 +767,16 @@ struct Carriage {
 };
 
 // The single-precision lanes' carriage, read off the entries those lanes build. Both packing
-// axes are served on the shipped partition and on the narrow one, whose rungs are cuts of the
-// narrow pieces' own degree table, which this lane derives. The uniform partition is not served
-// on this lane at all: no entry of it reads a grid, and the entries here refuse a policy naming it.
+// axes are served on the shipped partition and on the narrow one, whose tables are cuts of the
+// narrow pieces' own degree table, which this lane derives. The uniform partition is served
+// too: the entries here read the grid it names, and no policy naming it is refused.
 Carriage CarriesSingle(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
                        FitGranularity granularity) noexcept {
     // Every combination this library names is served on both axes and on the three partitions this
-    // lane reads, at every rung. A cut has to be read against the table the scheme actually sums:
-    // the Chebyshev cut under the Horner scheme's monomial table delivers outside the bound on 1964
-    // of 56694 cells at m = 64, and with the basis carried through no cell remains to refuse.
+    // lane reads. A cut is read against the table the scheme actually sums, and with the basis
+    // carried through no cell of the space is refused.
     const std::size_t r = static_cast<std::size_t>(route);
     const std::size_t s = static_cast<std::size_t>(scheme);
     const std::size_t a = static_cast<std::size_t>(axis);
@@ -781,10 +793,10 @@ Carriage CarriesSingle(FitRoute route,
     return {true, ""};
 }
 
-// The device lane's rule, reading that lane's own entries rather than the double lane's beside
-// it: Precision::kFp32Device is the device lane's single-precision one. What it carries is read
-// off the fp32 rows of the option table (src/boys_cuda.cpp): both routes over all three
-// partitions, both packing axes, and no rung refused - a lane at m = 1 alone has none to refuse.
+// The device lane's rule, reading its own rows rather than the double lane's beside it:
+// Precision::kFp32Device is the device lane's single-precision one, and what it carries is read
+// off the fp32 rows of the option table (src/boys_cuda.cpp): both routes, all three partitions,
+// both packing axes, every combination served - one accuracy, each partition's table derived.
 Carriage CarriesDevice(FitRoute route,
                        EvalScheme scheme,
                        PackAxis axis,
@@ -804,10 +816,11 @@ Carriage CarriesDevice(FitRoute route,
 
     // The uniform grid's rational member is a row of this lane now on both precisions - fitted over
     // each lane's own grid, emitted beside the Chebyshev one and read by entries of its own - so no
-    // arm here refuses it, and none can test an accuracy: this lane answers at m = 1 alone.
+    // arm here refuses it, and none can test an accuracy: this lane answers at the one accuracy the
+    // library carries.
 
-    // No arm below tests an accuracy, and none can: this lane answers at m = 1 alone,
-    // which is the one accuracy each of its entries is built at.
+    // No arm below tests an accuracy, and none can: this lane answers at the one accuracy the
+    // library carries, which is the accuracy each of its entries is built at.
 
     return {true, ""};
 }
@@ -863,6 +876,8 @@ Carriage CarriesDeviceF16(FitRoute route,
 } // namespace
 
 AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
+                                      int n,
+                                      double x,
                                       FitRoute route,
                                       EvalScheme scheme,
                                       PackAxis axis,
@@ -880,6 +895,19 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
     if (index >= lanes.size())
     {
         figure.reason = "no lane of this library has that precision";
+
+        return figure;
+    }
+
+    // The contract is a statement about the documented domain and the figure is
+    // the contract evaluated at the cell: a cell outside it is refused rather
+    // than answered with a number the entries are not defined at.
+    if (n < 0 || n > kMaxBoysOrder || !(x >= 0.0))
+    {
+        figure.reason =
+            "the cell named is outside the documented domain: every entry takes an order in "
+            "[0, kMaxBoysOrder] and an argument x >= 0 that is not a NaN, and no figure is "
+            "stated outside it";
 
         return figure;
     }
@@ -974,8 +1002,40 @@ AccuracyFigure BoysAccuracyGuaranteed(Precision precision,
     // same figure.
     const double memberTerm = exp == lane.additiveMember ? lane.additive : 0.0;
 
+    // The lane's published form at the cell. The double lanes' is the ladder's first rung
+    // scaled by 1e-13, so the F_n arm never binds; the float lanes' scales the value's own
+    // F_n over the row's floor; the half lanes' is their row's base, whose half-digit term
+    // is a term of the returned value and stays in the row's sentence.
+    const double base = [&] {
+        switch (precision)
+        {
+        case Precision::kFp64:
+        case Precision::kFp64Device:
+        {
+            const double ladder = BoysSingle(0, x);
+            const double order = BoysSingle(n, x);
+
+            return std::max(kDoubleRelativeFigure * order, kDoubleRelativeFigure * ladder);
+        }
+        case Precision::kFp32:
+        case Precision::kFp32Device:
+        {
+            const double order = BoysSingle(n, x);
+
+            return std::max(kFloatRelativeFigure * order, lane.bound);
+        }
+        case Precision::kFp16:
+        case Precision::kBf16:
+        case Precision::kFp16Device:
+        case Precision::kBf16Device:
+            return lane.bound;
+        }
+
+        return lane.bound;
+    }();
+
     figure.available = true;
-    figure.value = lane.bound + formTerm + memberTerm;
+    figure.value = base + formTerm + memberTerm;
 
     // The sentence moves with the figure. `source` names the forms the base is for, so on
     // a lane whose plain form carries its own term the figure above is not the one that
@@ -994,8 +1054,9 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
                                      FitGranularity granularity) noexcept
 {
     // A combination this build refuses has no delivered figure for the same reason it has
-    // no bound.
-    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
+    // no bound. The cell asked here is one the contract is defined at; only the carriage
+    // answer is read from it, and the delivered figure below does not depend on it.
+    AccuracyFigure figure = BoysAccuracyGuaranteed(precision, 0, 0.0, route, scheme, axis, granularity);
 
     figure.reading = AccuracyReading::kDelivered;
     figure.value = 0.0;
@@ -1085,6 +1146,8 @@ AccuracyFigure BoysAccuracyDelivered(Precision precision,
 }
 
 CombinationCoverage QueryCombination(Precision precision,
+                                     int n,
+                                     double x,
                                      FitRoute route,
                                      EvalScheme scheme,
                                      PackAxis axis,
@@ -1095,7 +1158,7 @@ CombinationCoverage QueryCombination(Precision precision,
     // refusals are theirs.
     CombinationCoverage coverage;
     const AccuracyFigure guaranteed =
-        BoysAccuracyGuaranteed(precision, route, scheme, axis, granularity);
+        BoysAccuracyGuaranteed(precision, n, x, route, scheme, axis, granularity);
 
     coverage.requested = tolerance;
     coverage.source = guaranteed.source;

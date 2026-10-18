@@ -212,6 +212,33 @@ TEST(BoysCTest, DoubleBatchAtOrdersRejectsTheWholeBatchBeforeWriting) {
     EXPECT_EQ(untouched[1], kUnwritten);
 }
 
+// The whole-batch validation rule holds on the fixed-top-order batch entry too: a
+// late invalid argument leaves the earlier columns as the caller left them.
+TEST(BoysCTest, DoubleBatchRejectsTheWholeBatchBeforeWriting) {
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    constexpr int kNmax = 2;
+    const std::size_t cells = 3 * (kNmax + 1);
+    const std::vector<double> xs = {0.5, 0.5, -0.5};
+
+    std::vector<double> out(cells, kUnwritten);
+    EXPECT_EQ(BoysDoubleBatch(kNmax, 3, xs.data(), out.data()), BOYS_ERROR_INVALID_ARGUMENT);
+
+    for (const double v : out)
+    {
+        EXPECT_EQ(v, kUnwritten);
+    }
+
+    const std::vector<double> withNan = {0.5, nan, 0.5};
+    std::vector<double> nanOut(cells, kUnwritten);
+    EXPECT_EQ(BoysDoubleBatch(kNmax, 3, withNan.data(), nanOut.data()),
+              BOYS_ERROR_INVALID_ARGUMENT);
+
+    for (const double v : nanOut)
+    {
+        EXPECT_EQ(v, kUnwritten);
+    }
+}
+
 TEST(BoysCTest, RejectsInvalidArguments) {
     double value = 0.0;
     float fvalue = 0.0f;

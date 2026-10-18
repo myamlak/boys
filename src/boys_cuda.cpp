@@ -32,10 +32,10 @@ constexpr bool kFp16Served = false;
 constexpr const char* kFp16Refusal = "the fp16 seam is closed in this build (BoysFp16 = 0)";
 #endif
 
-// The documented form of each entry, beside the number the device gate audits it at. The form is
-// the contract the entry publishes - the larger of a fraction of F_n(x) and the same fraction of
-// F_0(x) on the double lanes, a fraction of F_n(x) on the float ones (boys_cuda.hpp) - and the
-// number is an absolute bar, the wide end of the figures each lane's fits are cut against.
+// The contract each entry publishes, in this lane's own words, beside the absolute bar the
+// device gate audits it at. The form is the device lane's statement; the number is not the
+// promise but the wide end of the figures its fits were cut against, the bar the gate's rows
+// are judged at. A device figure is answered from the device's own source, not a host page.
 constexpr const char* kFormF64 = "the larger of 1e-13 * F_n(x) and 1e-13 * F_0(x)";
 // The double lane reads the fast member at the lane's own figure: the device's double fast member
 // carries its own fit and cut (boys_cuda_arithmetic.hpp, DeviceRegionBExp) and its error, measured
@@ -54,10 +54,10 @@ constexpr const char* kFormF16 = "1e-7 + half an ULP of the returned value";
 constexpr const char* kFormBf16 =
     "1e-7 + half an ULP of the returned value, which in this format is 2^-8 = 3.90625e-03";
 
-// The figures, with any term a returned value decides dropped - the half ULP and nothing else.
-// The half lane's constant part is the lane's and not the format's (the CUDA surface publishes
-// 1e-7 for both stores, boys/boys_cuda.hpp), so the two constants below hold one number, stated
-// per format because the form beside each is that format's.
+// The audit bars, with any term a returned value decides dropped - the half ULP and nothing
+// else. Each is the absolute figure the device gate judges that lane's rows at; the double
+// row's is the figure its own runs measured at worst, and neither is the promise, which is the
+// form above. The half lane's 1e-7 is the surface's for both stores.
 constexpr double kBoundF64 = 5.5e-14;
 constexpr double kBoundF64Fast = 5.5e-14;
 constexpr double kBoundF32 = 1.5e-7;
@@ -206,8 +206,8 @@ constexpr DeviceOptionInfo kDeviceOptions[] = {
 
     // The float lane's own partition and its own grid, which the device lane had no row for: both
     // are the lane's tables and not a re-cut of the double lane's - the narrow pieces are the float
-    // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 245
-    // intervals at degree 4. The grid's rows read the table's one degree per order and interval.
+    // lane's 218 at degree 6 against the double lane's 311 at degree 10, and the grid is 77
+    // intervals of width 1/4 at degree 4. The grid's rows read the table's one degree per interval.
     {DeviceEntry::kAllOrdersF32Narrow, "all-orders-fp32-narrow",
      DeviceOptionGroup::kLaunched, DeviceOptionPrecision::kFp32, DeviceOptionShape::kAllOrders,
      DeviceOptionQuestion::kAllOrders, DeviceOptionAxis::kPartition, RegionBExp::kAccurate,

@@ -80,7 +80,7 @@ INPUTS = re.compile(r"^accuracy gate, inputs[ \t]+(?P<inputs>\S+)[ \t]*$", re.M)
 
 # Any line that states the run's own content, whatever cell it names: what a fixture's stamp is
 # built over, so a run stamped one way is read whichever way it was stamped.
-STAMP_LINE = re.compile(r"^accuracy gate, (revision|version|inputs)\b")
+STAMP_LINE = re.compile(r"^accuracy gate, (version|inputs)\b")
 
 # What the gate prints when it was built where no content digest was passed to it. It names no
 # tree, and a run that carries it is one this check cannot hold to anything.
@@ -266,16 +266,23 @@ def read(run_path: pathlib.Path) -> tuple[list[str], list[str]]:
 
         for name in expected:
             if name in record_stamp.NOT_GATED:
-                moved = name in recorded and recorded[name] != computed[name]
-                lines.append(
-                    "  " + ("CMakeLists.txt differs from the run's stamp: it holds the flags the "
-                           "gate compiles under as well as the target lists, and this check does "
-                           "not gate it, because a digest does not say which of the two a change "
-                           "was - read it, and re-make the run if it moved a flag the gate "
-                           "compiles under"
-                           if moved else
-                           "CMakeLists.txt reads the same content the run's stamp states")
-                )
+                if name not in recorded:
+                    lines.append(
+                        "  CMakeLists.txt: named by no group of the run's inputs, so this check "
+                        "compared nothing: the line is written by the build and a group it leaves "
+                        "out is one this check cannot compare. Re-make the run from a build of "
+                        "this tree")
+                else:
+                    moved = recorded[name] != computed[name]
+                    lines.append(
+                        "  " + ("CMakeLists.txt differs from the run's stamp: it holds the flags "
+                               "the gate compiles under as well as the target lists, and this check "
+                               "does not gate it, because a digest does not say which of the two a "
+                               "change was - read it, and re-make the run if it moved a flag the "
+                               "gate compiles under"
+                               if moved else
+                               "CMakeLists.txt reads the same content the run's stamp states")
+                    )
 
     # What the run's build reached. The gate states how many of the device lanes its build
     # carries were measured on a card, and a run that measured fewer than it counts is a run of

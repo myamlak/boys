@@ -24,9 +24,9 @@ boundaries are `kX0 = 11.899848152108484` and `kX1 = 28.98933773882074`, both co
 
 | Region | Interval | What it is | The file that implements it | The test that holds it |
 |---|---|---|---|---|
-| A | `[0, kX0)` | Per-order piecewise Chebyshev fits, summed by a split Clenshaw recurrence or by Horner. Its top part — the **extended band** — is one fit of its own read by upward recursion, dispatched per order at the tier thresholds | Piece lookup and summation: `include/boys/boys_impl.hpp` (`RegionAValue`, `ChebyshevFit`, `ClenshawSplit`, `FitSum`, `RegionBExtendedSeed`). The stored fits: `include/boys/boys_coefficients.hpp` (generated). The partitions: `ShippedRegionAPartition`, `NarrowRegionAPartition` and the `UniformFit` specializations, all in `boys_impl.hpp` | `tests/boys_accuracy_test.cpp` (per-region budgets on the grid), `tests/boys_across_orders_test.cpp` (the packed-orders lane), `tests/boys_transform_test.cpp` (the transform lane), `tests/boys_accuracy_gate.cpp` (every documented bound) |
+| A | `[0, kX0)` | Per-order piecewise Chebyshev fits, summed by a split Clenshaw recurrence or by Horner. Its top part — the **extended band** — is one fit of its own read by upward recursion, dispatched per order at the tier thresholds | Piece lookup and summation: `include/boys/boys_impl.hpp` (`RegionAValue`, `ChebyshevFit`, `ClenshawSplit`, `FitSum`, `RegionBExtendedSeed`). The stored fits: the generated master `include/boys/boys_coefficients.hpp` (metadata, extents, group markers) and the group headers it names (below). The partitions: `ShippedRegionAPartition`, `NarrowRegionAPartition` and the `UniformFit` specializations, all in `boys_impl.hpp` | `tests/boys_accuracy_test.cpp` (per-region budgets on the grid), `tests/boys_across_orders_test.cpp` (the packed-orders lane), `tests/boys_transform_test.cpp` (the transform lane), `tests/boys_accuracy_gate.cpp` (every documented bound) |
 | A, vector tier | as above | The same fits evaluated four arguments or four orders to a register, and the AVX2 arithmetic behind them | The lanes a caller's own unit compiles: `include/boys/boys_arguments_lanes.hpp` (across arguments), `include/boys/boys_orders_lanes.hpp` (across orders), `include/boys/boys_backend_simd.hpp` (the 4-wide double arithmetic). The measurement-only lanes stay out of line: `src/boys_simd.cpp` (regions B and C, the half-format lanes, the backend append) and `src/boys_orders_simd.cpp` with `src/boys_orders_simd.hpp` (the across-orders measurement entries) | `tests/boys_across_orders_test.cpp`, `tests/boys_orders_f32_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
-| B | `[kX0, kX1)` | One `F_0` fit plus upward recursion; the exponential that seeds it is an axis | `include/boys/boys_impl.hpp` (`ShippedRegionBSeed`, `NarrowRegionBSeed`, `RegionBHalfExp`, `UpwardStep`); the seed's coefficients in `boys_coefficients.hpp` | `tests/boys_accuracy_test.cpp`, `tests/boys_boundary_test.cpp` |
+| B | `[kX0, kX1)` | One `F_0` fit plus upward recursion; the exponential that seeds it is an axis | `include/boys/boys_impl.hpp` (`ShippedRegionBSeed`, `NarrowRegionBSeed`, `RegionBHalfExp`, `UpwardStep`); the seed's coefficients in the generated master and the group header that defines them | `tests/boys_accuracy_test.cpp`, `tests/boys_boundary_test.cpp` |
 | C | `[kX1, inf)` | The asymptotic form `1/2 sqrt(pi/x)` plus upward recursion; no stored fit | `include/boys/boys_impl.hpp` (`kBoysHalfSqrtPi`, `BoysAllNBodyRegionC`), the vector tier in `src/boys_simd.cpp` (`BoysRegionCSimd`) | `tests/boys_accuracy_test.cpp`, `tests/boys_half_native_test.cpp` |
 | Which region one argument takes | — | The dispatch itself: zero, tabulated, extended, middle, asymptotic | `include/boys/boys_impl.hpp`, `BoysPath` and `BoysClassifyPath` | the region-boundary cases in `tests/boys_accuracy_test.cpp` and `tests/boys_boundary_test.cpp` |
 
@@ -34,6 +34,55 @@ Two more things are stated per region rather than per lane, and both live in the
 `include/boys/boys_effective_degrees.hpp` carries the lane roles the region budgets and the
 truncation amplification are read through. `tools/gen_boys_coefficients.py` is what places the
 fits and emits the boundaries and degrees.
+
+## The generated coefficient set
+
+`tools/gen_boys_coefficients.py` writes one master and twenty-one group headers. The master,
+`include/boys/boys_coefficients.hpp`, is what a fit body parses against: the region boundaries,
+the piece metadata, an `extern` declaration of every stored array with its extent and the header
+that defines it, and the tag of every group. A group header,
+`include/boys/boys_coefficients_<name>.hpp`, defines the arrays of one coefficient family and
+marks its group present. The fit that reads a family asserts that marker, so a translation unit
+that names a policy whose fit needs a group it did not include fails to compile, with the header's
+name in the message; it never reaches a link error. The marker's read is carried on a parameter of
+the reading template (`include/boys/dependent_false.hpp`, `DependentGroup`), so the read resolves
+where the reading template is instantiated; **the group header is included before the front door**,
+because the front door's own chain instantiates the reading templates and a specialization seen
+after that instantiation is ill-formed on clang.
+
+`include/boys/boys_default_tables.hpp`, reached by `<boys/boys.hpp>`, opens the nine groups the
+committed class rows read: `d_uniform_mono`, `d_uniform_mono_transposed`, `d_narrow_mono`,
+`d_narrow_rat`, `d_narrow_cheb` (the half-format rows' batch seeds read it before they round to
+single), `f32_uniform_mono`, `f32_narrow_cheb`, `f32_narrow_mono` and `f32_narrow_rat`.
+`include/boys/boys_all.hpp` opens every group. A caller whose policy names another combination
+includes the group header the fit's assertion names, before the front door; the table below reads
+the axes to the headers. "Double" and "float" name the lane a policy's budget selects.
+
+| Policy axes | Lane | Group header |
+|---|---|---|
+| `Chebyshev` + `Horner`, uniform | double | `boys_coefficients_d_uniform_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, uniform | double | `boys_coefficients_d_uniform_cheb.hpp` |
+| `Chebyshev` + `Horner`, narrow | double | `boys_coefficients_d_narrow_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, narrow | double | `boys_coefficients_d_narrow_cheb.hpp` |
+| `Chebyshev` + `Horner`, coarsest | double | `boys_coefficients_d_coarse_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, coarsest | double | `boys_coefficients_d_coarse_cheb.hpp` |
+| `RationalMinimax`, uniform | double | `boys_coefficients_d_uniform_rat.hpp` |
+| `RationalMinimax`, narrow | double | `boys_coefficients_d_narrow_rat.hpp` |
+| `RationalMinimax`, coarsest | double | `boys_coefficients_d_coarse_rat.hpp` |
+| `Chebyshev` + `Horner`, uniform | float | `boys_coefficients_f32_uniform_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, uniform | float | `boys_coefficients_f32_uniform_cheb.hpp` |
+| `Chebyshev` + `Horner`, narrow | float | `boys_coefficients_f32_narrow_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, narrow | float | `boys_coefficients_f32_narrow_cheb.hpp` |
+| `Chebyshev` + `Horner`, coarsest | float | `boys_coefficients_f32_coarse_mono.hpp` |
+| `Chebyshev` + `SplitClenshaw`, coarsest | float | `boys_coefficients_f32_coarse_cheb.hpp` |
+| `RationalMinimax`, uniform | float | `boys_coefficients_f32_uniform_rat.hpp` |
+| `RationalMinimax`, narrow | float | `boys_coefficients_f32_narrow_rat.hpp` |
+| `RationalMinimax`, coarsest | float | `boys_coefficients_f32_coarse_rat.hpp` |
+
+Three groups are not selected by a policy axis. The across-orders lane reads the uniform grid by
+an argument-major stride from `boys_coefficients_d_uniform_mono_transposed.hpp` and
+`boys_coefficients_d_uniform_cheb_transposed.hpp`; the `kScaledTable` far representation's ladder
+reads `boys_coefficients_d_far.hpp`.
 
 ## The lanes, and the entry points that serve them
 
@@ -83,16 +132,16 @@ case names, and this page does not guess past that.
 
 An axis is a choice a call site can name. Five are the host call site's — the fit route, the
 evaluation scheme, the packing axis, the fit granularity and the division form — and they are the
-five axes a host `EvalPolicy` holds. The region-B exponential is the device lane's own choice and
+five axes a host `SeamPolicy` holds. The region-B exponential is the device lane's own choice and
 is named at the device entry rather than in the host policy. The multiply-add route is the build's,
 and no call site names it.
 
 | Axis | The enumeration | The file that defines it | Where it is read | The test that holds it |
 |---|---|---|---|---|
-| fit route | `FitRoute` | `include/boys/accuracy.hpp` | `RouteFit` and the route tables in `include/boys/boys_impl.hpp`; the stored fits in `boys_coefficients.hpp` | `tests/boys_accuracy_test.cpp`, `tests/consumer_option_space.cpp` |
+| fit route | `FitRoute` | `include/boys/accuracy.hpp` | `RouteFit` and the route tables in `include/boys/boys_impl.hpp`; the stored fits in the generated master and its group headers | `tests/boys_accuracy_test.cpp`, `tests/consumer_option_space.cpp` |
 | evaluation scheme | `EvalScheme` | `include/boys/accuracy.hpp` | `ChebyshevValue` and `FitSum` in `boys_impl.hpp`; the across-orders lane has its own summation enumeration, `OrdersScheme`, in `include/boys/boys_orders_lanes.hpp` | `tests/boys_across_orders_test.cpp`, `tests/consumer_option_space.cpp`, `tools/check_enum_arms_covered.py` (over `OrdersScheme`, whose switches must name every member) |
 | region-B exponential | `RegionBExp` | `include/boys/accuracy.hpp` | `RegionBHalfExp` and `RegionBHalfExpF32` in `boys_impl.hpp`; the device's own bodies in `include/boys/boys_cuda_arithmetic.hpp` | `tests/boys_accuracy_test.cpp`, `tests/boys_cuda_accuracy_gate.cpp` (the device sweep over both members), `tests/consumer_option_space.cpp` |
-| fit granularity | `FitGranularity` | `include/boys/accuracy.hpp` | the partitions and `FitAnswersPartition` in `boys_impl.hpp`; the per-piece rows in `boys_coefficients.hpp` | `tests/boys_fixture_pins_test.cpp`, the `build_defaults_uniform` tree built by CI, `tools/check_class_combinations.py` |
+| fit granularity | `FitGranularity` | `include/boys/accuracy.hpp` | the partitions and `FitAnswersPartition` in `boys_impl.hpp`; the per-piece rows in the generated master and its group headers | `tests/boys_fixture_pins_test.cpp`, the `build_defaults_uniform` tree built by CI, `tools/check_class_combinations.py` |
 | division form | `DivisionForm` | `include/boys/accuracy.hpp` | `DivideExact`, `DividePlain`, `DivideByReciprocal`, `DivideStep` in `boys_impl.hpp` | `tests/build_defaults_division_form.hpp` (the fixture that moves it on the host), `tests/boys_cuda_test.cpp` (all three on the device), `tools/check_combination_bounds.py` |
 | packing axis | `PackAxis` | `include/boys/accuracy.hpp` | the vector lanes in `include/boys/boys_arguments_lanes.hpp` and `include/boys/boys_orders_lanes.hpp`. The device's reading of the same question is `DevicePacking` in `include/boys/boys_cuda_options.hpp`, which adds the `kNotApplicable` member a one-order entry states | `tests/boys_across_orders_test.cpp`, `tools/check_host_entry_bijection.py` |
 | multiply-add route (the build's, not a call-site one) | `MulAddRoute` | `include/boys/accuracy.hpp` | the named arithmetic backends in `include/boys/boys_backend_simd.hpp`, appended to the table through `src/boys_backend_registry.hpp`; the device's is `include/boys/boys_cuda_muladd.hpp` | `tests/boys_backend_test.cpp`, `tests/boys_muladd_route_test.cpp`, `tests/boys_muladd_route_simd_test.cpp` |
@@ -163,7 +212,7 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 
 | Artifact | Written by | Refresh with | The check that holds it |
 |---|---|---|---|
-| `include/boys/boys_coefficients.hpp`, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites both and the record beside them | its own `--check`: the record's digests when the generator, the pins and the environment are unchanged, and a byte-for-byte re-derivation of both when any of them has moved |
+| `include/boys/boys_coefficients.hpp` and the twenty-one `include/boys/boys_coefficients_*.hpp` group headers, `tests/data/boys_reference.csv` | `tools/gen_boys_coefficients.py` | run it with no flag; it rewrites the whole set and the record beside them | its own `--check`: the record's digests when the generator, the pins and the environment are unchanged, and a byte-for-byte re-derivation of the set when any of them has moved |
 | `tests/data/boys_coefficients_provenance.txt` | the same run that writes the tables, from what the tree carries as it runs | the same run | its own `--check`, which is what reads it |
 | `tests/data/boys_accuracy_gate_reference.csv` | `tools/gen_boys_accuracy_gate_reference.py` | run it with no flag | its own `--check` |
 | `tests/data/boys_far_gate_reference.csv` | `tools/gen_boys_far_gate_reference.py` | run it with no flag | its own `--check` |
@@ -173,7 +222,7 @@ is a run kept as a file: nothing re-derives it, so it is re-made by running the 
 | The `DeviceEntryArithmeticOf` block in `include/boys/boys_cuda_options.hpp` | `tools/gen_entry_aliases.py`, from the entries' own bodies in `include/boys/boys_cuda.hpp` | run it with no flag | its own `--check` |
 | `tests/data/boys_accuracy_gate_run.txt` | a run of `boys-accuracy-gate`, kept as a file | build the gate, run it, write its output there | `tools/check_recorded_run.py` (is it this tree's run) and `tools/check_bound_transcripts.py` (do the documents quote it) |
 | `tests/data/boys_option_probe_report.txt` | a run of `boys-option-probe` | build the driver, run it, write its output there | `tools/check_class_combinations.py --report`, `tools/combination_matrix.py` |
-| `tests/data/boys_device_probe_report.txt` | a run of `boys-device-probe` on a machine with a card | as above | `tools/status.py` and the device checkers that read it |
+| `tests/data/boys_device_probe_report.txt` | a run of `boys-device-probe` on a machine with a card | as above | `tools/status.py` reads it for its closure; no checker holds it to the tree, because it carries no version/inputs stamp |
 | `tools/host-shapes.json` | a person | edit it when a host entry moves between shapes | `tools/check_host_entry_bijection.py`, which reads it against the headers in both directions |
 | The seam, `include/boys/boys_build_defaults.hpp` | a person — the committed five host names and two device ones | or: `tools/splice_default_rows.py --emitted <file> --seam <seam>` writes the rows a probe run emitted with `--emit-defaults` into it — matched by class and never by position, a class the emission did not place is left as the seam carries it, marker and cells together, and a splice that would leave the file naming a run its rows do not is refused rather than written | `tools/check_seam_macros.py` requires every name it offers to be expanded somewhere in `include/` or `src/`; `tools/splice_default_rows.py --control` holds the refusals the splicer makes; the CI legs that build against `tests/build_defaults_*.hpp` are what compiles a moved axis |
 

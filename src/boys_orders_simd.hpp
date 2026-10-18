@@ -5,6 +5,15 @@
 // measures against the entries a consumer compiles. Private to the library, declared here and
 // defined in boys_orders_simd.cpp, over the closure and OrdersScheme that path declares.
 
+// The groups these entries read sit outside the default set, and a group header is included before
+// the front door: its marker specialization must precede the fit headers that read it.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_far.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
+
 #include "boys/backend.hpp"
 #include "boys/boys.hpp"
 #include "boys/boys_orders_lanes.hpp"
@@ -58,7 +67,7 @@ void BoysAllOrdersSimdComposed(
 /// a vector, with the eight coefficient bases gathered one instruction per step.
 ///
 /// The packed lane's own entry, at the scheme and the route the policy named and
-/// at the degree the multiplier's effective-degree table cuts each fit to. It is
+/// at the stored degree the effective-degree table holds for each fit. It is
 /// this lane's region-A body, and it covers region A alone: past kX0 the
 /// engine's own entry runs the certified scalar single lane one order at a time,
 /// exactly as the double lane's does past its own interval.
@@ -89,9 +98,8 @@ void BoysAllOrdersF32Simd(
 void BoysAllOrdersF32SimdComposed(
     OrdersScheme scheme, FitRoute route, int nmax, float x, float* out) noexcept;
 
-// The two entries above are the reference rung's reading, where every fit is read whole. A relaxed
-// rung is the same lane reading the same fits at the degrees a truncation criterion certifies - a
-// table rather than a body - so the rung reaches the lane through the pair the public orders axis
-// dispatches to: boys_orders_lanes.hpp's BoysAllOrdersPacked and BoysAllOrdersF32Packed.
+// The two entries above evaluate region A at the stored degrees - every fit read whole. Another
+// partition reaches the same lane through the pair the public orders axis dispatches to:
+// boys_orders_lanes.hpp's BoysAllOrdersPacked and BoysAllOrdersF32Packed.
 
 } // namespace boys::detail

@@ -8,6 +8,10 @@
 // rational lane reads 1.7277e-07 against the double lane - over the 1.5e-07 the route is certified against - and
 // the packed lane reads 1.3093e-07, inside it. The bound is the float lane's documented one, from the header.
 
+// The float sweep crosses every route, scheme and partition, so it names every coefficient group:
+// the umbrella opens them, and a group header precedes the front door below.
+#include "boys/boys_all.hpp"
+
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
@@ -88,7 +92,7 @@ std::vector<float> RegionAGridF32() {
 // entry at the same policy with the shipped packing axis, the axis the default
 // policy names.
 template <class Policy> float PerOrder(int n, float x) noexcept {
-    using ArgsAxis = boys::EvalPolicy<Policy::kRoute,
+    using ArgsAxis = boys::SeamPolicy<Policy::kRoute,
                                        Policy::kScheme,
                                        Policy::kBudget,
                                        boys::PackAxis::kArguments>;
@@ -200,7 +204,7 @@ template <class Policy> void SweepPolicy(const char* name, SweepTotals& totals) 
 // policy answered with kFloat degrees would deliver the looser figure under the
 // tighter name.
 template <boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::BoysBudget kBudget>
-using Orders = boys::EvalPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
+using Orders = boys::SeamPolicy<kRoute, kScheme, kBudget, boys::PackAxis::kOrders>;
 
 } // namespace
 
@@ -209,7 +213,7 @@ static_assert(Orders<boys::FitRoute::kChebyshev,
                      boys::EvalScheme::kSplitClenshaw,
                      boys::BoysBudget::kFloat>::kPack == boys::PackAxis::kOrders,
               "the orders policy does not name the orders axis");
-static_assert(boys::EvalPolicy<>{}.kPack == boys::PackAxis::kArguments,
+static_assert(boys::SeamPolicy<>{}.kPack == boys::PackAxis::kArguments,
               "the default axis moved");
 
 // Every configuration the lane carries: three schemes on the shipped route and
@@ -430,7 +434,7 @@ namespace {
 // uniform partition's own domain ends inside of.
 template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
 using SingleF32 =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments, kGranularity, boys::DivisionForm::kExactDivision>;
 
 // What the uniform partition answers over the band between the grid's join and

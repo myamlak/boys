@@ -7,6 +7,10 @@
 // together; each reports its minimum over the rounds with the max/min spread beside it, and the
 // ratio to the same band's fp64 row is the result. Arguments are log-uniform across the band from a
 // fixed formula, and every row writes one buffer, so the rows differ in arithmetic only.
+
+// The transform lane's region-A fit is the shipped partition's Chebyshev form; a group header
+// precedes the front door, so the table is opened here.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
 #include "boys/boys_transform.hpp"
 
 #include <algorithm>

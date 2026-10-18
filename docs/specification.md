@@ -8,24 +8,28 @@ defined on the documentation's landing page, together with the full API referenc
 
 ## Accuracy contract {#accuracy-contract}
 
-The bound at a cell is **the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`**, for every supported
-n, x and lane. The form is relative — a fraction of a value, not one figure for the whole range —
-and since F is decreasing in the order, the wider arm at a cell is the one scaled by the ladder's
-first rung, `F_0(x)`. Until this release the bound instead carried a constant floor, `5.5e-14`,
-which the second arm replaces: the same kind of rescue, scaled by the ladder's own first value
-rather than by a fixed number.
+The bound at a cell on the double lanes is **`1e-13 · F_0(x)`**, for every supported n and x: the
+ladder's first rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
+the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. Until
+4.0.0 the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
+replaces: the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
+number.
 
-**B is a fraction of the value, so a small value is held to a small error.** The form this contract
-had before was absolute — one figure for the whole range, whatever the value — and it judged every
-cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane of that revision
-returned 6.87e-14 —
-an error of 4.94e-14, inside the absolute figure of the day, 5.5e-14, and 0.897 of it, so that form
-passed the cell.
-Read relative to F, the same cell is **2.55 times the true value**. The ladder-scaled bound holds
-there (the fitted grid serves that argument, its hi-bound being 31.0). That is what the relative
-form
-binds and the absolute form did not: a budget spent where the value is tiny is spent where nothing
-needs it.
+**B is a fraction of the ladder's first rung, so read against the value it is not uniform.** The form
+this contract had before was absolute — one figure for the whole range, whatever the value — and it
+judged every cell against that one figure. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned
+6.87e-14 under that form — an error of 4.94e-14, inside the 5.5e-14 it carried, and 0.897 of it, so
+that form passed the cell. Read relative to F, the same cell is **2.55 times the true value**. The
+ladder-scaled bound holds there (the uniform grid, `FitGranularity::kUniform`, serves that argument:
+its hi-bound is `kFlatHi`, 31.0). That is what the ladder-scaled form binds and the absolute form did
+not: a budget spent where the value is tiny is spent where nothing needs it. What the same form does
+not give is a figure the returned value holds to in its own right: on the committed grid the double
+entries' delivered error is 3.496e-14 of `F_n(x)` at the worst cell below the region-C boundary,
+`x = 28.98933773882074`, and at `n = 32` it is under `1e-13` of the value again above `x ≈ 93`;
+between those, the bound `1e-13 · F_0(x)` permits 4.85 times the value at the worst cell,
+`n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the value
+3.2822575294956117e-15, and the delivered error there measured 1.40 times the value, 4.582e-15,
+0.288 of the bound.
 
 B binds above the lane format's smallest normal — 2^-1022 for the double lanes, 2^-126 for the
 float ones. Below it the returned value is subnormal or zero, the format's own floor is what
@@ -65,16 +69,17 @@ cannot be judged against — the double lane's published figure and the far-repr
 figures — and prints their readings rather than a verdict, and `boys-tests` takes the same reading
 of its far-representation bars.
 
-**Two combinations of the double lane hold the wider arm of the bound and not the relative one.**
-The bound above is the one the lanes' own entries hold, with margin: the double entries'
-worst relative error over the gate's grid is 9.99e-15 of F_n(x), a full order below the relative
-arm, at n = 32,
-x = 29.0412. Two
-families of cells are held by the bound's wider arm and not by the relative one:
+**Two combinations of the double lane hold the bound's ladder-scaled arm and not a figure read
+against `F_n(x)`.** The bound above is the one the lanes' own entries hold, with margin: the gate's
+recorded run puts the double lane's worst delivered error at `0.288` of it, at `n = 32, x = 31`. The
+same cell is the worst the tree's own reference grid holds read against the value — a delivered
+error of 1.396 · F_32(31) — and the grid's worst below the region-C boundary,
+`x = 28.98933773882074`, is 3.496e-14 of `F_n(x)`. Two families of cells are held by the
+ladder-scaled arm and not by a figure read against `F_n(x)`:
 
 | Family | What it holds | The cell it is worst at |
 |---|---|---|
-| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `EvalPolicy<>` as it resolves | the ladder-scaled bound, `0.12` of it at worst | the ladder's cell, n = 32, x = 10.7846; the documented cell n = 32, x = 10.7836 delivers 3.93e-09 · F_n(x), and a fit's cell, n = 8, x = 2.1613, delivers 6.68e-14 · F_n(x) |
+| a lean partition's region-A fits and the ladder that carries the orders above them: `FitGranularity::kCoarsest`, `kNarrow`, and `SeamPolicy<>` as it resolves | the ladder-scaled bound, `0.12` of it at worst | the ladder's cell, n = 32, x = 10.7846; the documented cell n = 32, x = 10.7836 delivers 3.93e-09 · F_n(x), and a fit's cell, n = 8, x = 2.1613, delivers 6.68e-14 · F_n(x) |
 | the rational-minimax route's high-order intervals | the ladder-scaled bound, `0.48` of it at worst | n = 2, x = 10.7936; the documented cell n = 32, x = 11.6879 delivers 4.69e-09 · F_n(x) |
 
 So the double lane's bound as it stands is **the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x)**, and
@@ -134,16 +139,31 @@ that form's rounding leaves the base — 1e-7 + 1e-7 = 2e-7.
 **Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
 has a named default, and so does the device lane. [lane-contract.md](lane-contract.md#the-default-policy-per-precision-and-per-device)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
-default as numbers. Two of the choices — the evaluation scheme and the interval partition — were
-set from the option probe's own runs, and **neither was settled by them**. The partition was not
-chosen against its axis at all: those runs are dated 2026-09-28, every partition-bearing row in them
-is one partition, and the uniform partition reached the host lanes on 2026-09-29 and every lane on
-2026-09-30. That default has therefore not been derived against the whole axis. On the scheme axis
-the runs did compare both rows and did not separate them.
-The route and the packing axis carry the settings the library has always shipped and have not been
-ranked against a timing. The option probe below is what ranks any of them, on the machine it is run on.
-**Each default is a choice between two ways of computing one answer and not between two accuracies**, so
-a version that moves one costs no accuracy at any call site that names nothing.
+default as numbers. **A class's default is its own row in the defaults header, and the row states
+where its cells came from**: the marker above it says how the winner was reached, and its last two
+cells say whether a run ranked the combination or the file chose a cell. The seam's seven names
+(`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking of an axis: their
+scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and a class's row may
+differ from them — the five host double rows in this build all name the uniform grid, where the
+seam names the narrow partition.
+**Which runs, and where this tree keeps them**: the committed default rows are in
+`include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each
+carrying the run its combination came from where a run stands behind it, and its stated basis
+where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
+transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
+same protocol on this host, and it ranks the whole space — its tables carry every member of the
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 105.75
+against 271.54 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
+route; the fastest rational-route narrow row is 392.66
+(`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
+the settings the library has always shipped and have not been ranked against a timing. The option
+probe below is what ranks any of them, on the machine it is run on.
+**A default's move is normally a choice between two ways of computing one answer and not between
+two accuracies**, so a version that moves one costs no accuracy at any call site that names
+nothing. The exception is the float lane's division form, and it moves the figure the better way:
+the plain reciprocal publishes its own 1e-7 term beside the lane's 1.5e-7 base, so the committed
+rows name the refined reciprocal, which is bit-identical to exact division and publishes the base
+alone — the tighter figure the certified-bound model's 1e-7 fit placement assumes.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two rows are delivered at a
 different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
@@ -266,21 +286,31 @@ entries are not the host lane's beside it, which is why the default-policy table
 keys a device class by the device lane: that table is keyed `(device, precision, shape)`, and the
 device classes it holds are the twelve of those four lanes by the three questions the device option
 probe ranks.
-`BoysAccuracyGuaranteed(...)` returns the bound a
-combination carries — its lane's figure, plus the lane's own additive term where it
-documents one — and `BoysAccuracyDelivered(...)` returns the figure it was measured to deliver,
-which is the one to rank two combinations by. They are different questions, and the `reading` field
-of the returned `AccuracyFigure` says which answer a figure is. A combination the library does not
-carry has no figure: both accessors say so and give the library's own reason rather than returning a
-number.
+`BoysAccuracyGuaranteed(precision, n, x, ...)` returns the bound a combination carries **at the
+cell it is asked about** — the lane's published form evaluated at `(n, x)`, plus the lane's own
+additive term where it documents one — and `BoysAccuracyDelivered(...)` returns the figure it was
+measured to deliver, which is the one to rank two combinations by. They are different questions, and
+the `reading` field of the returned `AccuracyFigure` says which answer a figure is. The bound is the
+contract and not the measured absolute figure: at x = 0 the double lane's figure is `1e-13`, and the
+`5.5e-14` the lane's runs measured is documentation (`BoysLaneContracts()` publishes it and the
+lane-contract page states where it crosses the contract). A combination the library does not carry,
+or a cell outside the documented domain, has no figure: both accessors say so and give the library's
+own reason rather than returning a number.
 
 **Choosing a combination is a name.** The four structural axes —
-route, scheme, partition, packing axis — are the fields of an `EvalPolicy`, so a combination is a type
+route, scheme, partition, packing axis — are the fields of a `SeamPolicy`, so a combination is a type
 the call site writes once and the compiler resolves where it is written: 8 lanes × 24 axis
 combinations, **192 combinations, each reachable as a name**. Naming one costs nothing at the call —
 there is no table to look a combination up in, no string to match and no search at run time, which is
 why those axes are not call arguments. All of them are named and all of them are evaluated by
 `tests/consumer_option_space.cpp`, which prints the counts per precision.
+
+**`SeamPolicy<>` is the explicitly-spelled policy — the seven names the build's seam header states —
+and not what a call site that names no policy runs:** an entry whose call site names no policy
+compiles `DefaultPolicy<Precision, Shape>`, its class's own row, and the two disagree wherever the
+row's cells differ from the seam's. A caller who wants the seam's own point writes `SeamPolicy<>`; a
+caller who wants the class's row names nothing.
+
 A caller holding a route and a scheme as values names the route where the call is compiled and the
 scheme at the call instead:
 `BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)` on the ladder shape. The single-order
@@ -288,7 +318,8 @@ float shape takes a route and no scheme — `BoysSingleF32WithRoute<kRoute>(n, x
 there is a template argument rather than a call argument.
 
 **A caller that has a target rather than a comparison asks it directly.** `QueryCombination(...)`
-takes the same axes and the absolute error the caller needs, and answers with a verdict beside
+takes the same axes, the cell `(n, x)`, and the absolute error the caller needs, and answers with a
+verdict beside
 the numbers it was made on: `kGuaranteedInside` where the bound is at or below the tolerance,
 `kDeliveredInside` where the bound is above it and the figure the combination's fits were measured
 to deliver is at or below it, `kOutside` where neither is, and `kNotCarried` where the library does not have
@@ -306,14 +337,27 @@ counts, the reasons, the two figures side by side and the tolerance table are in
 
 Every figure above is measured, and the measurement is in this tree. Build the gate and run it:
 
-    cmake -S . -B build
-    cmake --build build --target boys-accuracy-gate
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON
+    cmake --build build --config Release --target boys-accuracy-gate
     ./build/Release/boys-accuracy-gate --strict      # the config directory is your generator's
+
+The first line names the option because the gate is a target of the test suite, and CMake caches what
+a directory was configured with: the README's first recipe sets `BOYS_BUILD_TESTS=OFF`, and a
+re-configure that does not name it again leaves it `OFF`. The target is then absent and the build
+stops with `MSB1009`, naming `boys-accuracy-gate.vcxproj` as a project file that does not exist;
+naming the option `ON` adds the suite's targets to the directory you already have. The gate is a
+C++23 target, and the googletest it needs is vendored in this tree.
 
 It sweeps the documented entries over the committed reference grid — 33 orders × 1797 arguments,
 59,301 points — and prints, lane by lane and region by region, the worst error the lane delivered
 beside the bound it claims. `--per-order` adds the same comparison order by order, naming the cells
 the bound actually binds on; `--probe n x` prints one cell from every lane for one argument.
+
+**The first five lines it prints are a record and not a failure.** They begin `EXCEEDED (record, not
+judged)`, at the smallest arguments, and they are a slot the gate keeps from a withdrawn reading of
+the header's table so the reason it was withdrawn stays visible: the lane does not meet that reading
+in the band, and no verdict counts the lines. [lane-contract.md](lane-contract.md) says what the
+reading was.
 
 The run ends with a verdict line and an exit status: `PASS: every documented claim met at this
 revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
@@ -335,9 +379,12 @@ your arithmetic, and the rows are compared cell by cell rather than as one numbe
 
 Run on the tree the run's file names, it printed this (an excerpt; the full run carries one row per
 lane and region). **Both columns are that run's own output, the `Bound claimed` one included**: the
-figures in it are the bounds the gate was judged against at the revision the run names, which is
-older than the contract above — read the column as that run's record and not as this page's
-contract, and read the delivered column beside it the same way:
+figures in it are the bounds the gate was judged against at the version and content the run names,
+which is older than the contract above — read the column as that run's record and not as this page's
+contract, and read the delivered column beside it the same way. **The `C` row's two figures are in
+units of the cell's own `F_n(x)`**: that row's worst cell is `n = 32, x = 31`, so it reads delivered
+`1.4 × F_32(31)` against a claimed `4.85 × F_32(31)` — the 140 % error above, beside the bound that
+carried it:
 
 | Lane | Region | Worst delivered | Bound claimed |
 |---|---|---|---|
@@ -359,7 +406,7 @@ and `1e-13 · F_0(x)`, the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, a
 `1.5e-7` plus one half-ULP. The per-region absolute budgets the lane's fits were placed against
 (`≤ 1e-15` on `A`, `≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
 [lane-contract.md](lane-contract.md), and they are cut against the absolute figures the lanes
-published before this release; the contract above states the one figure the lane holds to over all
+published before 4.0.0; the contract above states the one figure the lane holds to over all
 four, in the ladder-scaled form.
 
 ### Arguments outside the documented domain
@@ -373,7 +420,7 @@ for stepping outside that is not the same on every surface:
 | C (`boys_c.h`) | Every entry validates and returns a status instead: `BOYS_ERROR_INVALID_ARGUMENT` (1) for an order outside [0, 32], a negative or NaN x, or a null pointer. No abort and no undefined behaviour. |
 | CUDA | The single, batch and all-N entries return `boys::BoysStatus`, whose `kInvalidArgument` is the same validation as the C surface's; the device-callable entries take their orders as template arguments, so an order outside the range does not compile. |
 | Native half (`BoysAllOrdersHalf2`, `BoysAllNF16Native`) | Same `assert`, and one precondition of its own: the entry covers region C only, so an x below the region-C boundary is a violation rather than a fallback to the table regions. |
-| Output spans | The caller sizes them. A span shorter than the call writes is an out-of-bounds write with no check on any surface, and no entry reallocates or truncates. |
+| Output spans | The caller sizes them, and no entry reallocates or truncates. The four `std::span` overloads in `boys/boys_span.hpp` compare the extent they were handed against what the call writes and refuse a short one - a line naming the call and both extents, then an abort - and `BoysAllNAtOrders` refuses a top-order span that does not run with the arguments the same way. The pointer surfaces cannot make either check: a `double*` carries no size, so a span shorter than the call writes is an out-of-bounds write there. |
 
 ### Fit routes
 
@@ -387,12 +434,12 @@ the entry runs the default route and returns its values bit for bit, so the lane
 1e-15 is untouched. A route name the build does not serve evaluates the default route rather than
 returning something the caller did not ask for. **No speed is claimed for either route.**
 
-The route composes with the evaluation scheme into one `EvalPolicy`, which every templated
+The route composes with the evaluation scheme into one `SeamPolicy`, which every templated
 double-precision entry takes. The route entry itself names the route where the call is compiled and
 takes the scheme as a value:
 `BoysAllOrdersWithRoute<kRoute>(scheme, nmax, x, out)`. The float
 lane's single-order shape takes a route and no scheme, `BoysSingleF32WithRoute<kRoute>(n, x)` — a
-scheme there is the `EvalPolicy` below.
+scheme there is the `SeamPolicy` below.
 
 [lane-contract.md](lane-contract.md#the-two-fit-routes) carries this in full: the table of
 routes with each one's stored count, measured error and bar; the criterion each is accepted against;
@@ -408,7 +455,7 @@ one thing changed — which fit supplies the lane's region-A seed and its region
 no coefficient under either route, so naming one there changes nothing.
 
 **The same choice is open through a policy as well, and there it carries the scheme too.** The lane's
-entries take the `EvalPolicy` above, so a caller who templates on it names the route and the scheme as
+entries take the `SeamPolicy` above, so a caller who templates on it names the route and the scheme as
 the first two template arguments instead of calling `BoysSingleF32WithRoute`. Both fields are read:
 the route selects which family supplies the lane's fits, and the scheme selects which of
 that family's stored forms is summed, so naming another pair there is answered rather than refused.
@@ -478,7 +525,7 @@ accuracy should read the two measured figures and pick; the default is unchanged
 ### The packing axis
 
 A packed lane keeps four doubles in a register and the call has to supply four of something. That
-something is a choice, and it is the fourth field of `EvalPolicy`: `PackAxis::kArguments`, the
+something is a choice, and it is the fourth field of `SeamPolicy`: `PackAxis::kArguments`, the
 shipped axis, puts four arguments at one order in a register, and `PackAxis::kOrders` puts four
 orders at one argument there — which is the axis `BoysAllOrders(nmax, x, out)` actually has, since
 that entry computes every order at a single argument. `BoysPackAxes()` reports both, with the
@@ -533,26 +580,30 @@ packing book carries a measured
 row for each of them, on both routes, at both schemes, through both
 entries that carry the axis, and names the worst cell of each.
 
-**Reporting a suspected violation.** Open an issue with the exact `(n, x)`, the lane and the region,
-and run `./build/Release/boys-accuracy-gate --strict` first — it prints the delivered error beside
+**Reporting a suspected violation.** Open an issue at <https://github.com/myamlak/boys/issues> with
+the exact `(n, x)`, the lane and the region, and run `./build/Release/boys-accuracy-gate --strict`
+first — it prints the delivered error beside
 the bound for every lane and region and ends in a verdict, so an issue can quote the line that
 failed rather than describe it. If you suspect the generated tables,
-`python3 tools/gen_boys_coefficients.py --check` reports any drift: it re-derives them and the
-reference grid and compares them byte for byte when the record committed beside them
+`python3 tools/gen_boys_coefficients.py --check` reports any drift: it re-derives the whole
+generated set — the master, its twenty-one group headers, and the reference grid — and compares
+them byte for byte when the record committed beside them
 (`tests/data/boys_coefficients_provenance.txt`) does not name the generator, the pins and the
-environment in front of it, and otherwise verifies that record and the header's own read-back rules.
+environment in front of it, and otherwise verifies that record's artifact digests and manifest
+and the committed headers' own read-back rules.
 `ctest --test-dir build --output-on-failure` runs the whole suite.
 
 ### Interval granularity
 
-How narrowly the fitted domain is cut into pieces is the fifth field of `EvalPolicy`, and it is a
+How narrowly the fitted domain is cut into pieces is the fifth field of `SeamPolicy`, and it is a
 choice with a price on each side. A narrower piece needs a lower degree to hold the same bound —
 halving a piece buys about `2^d` in the truncation, so **splitting is the lever and more degree is
 not** — and the cost is that a table of narrow pieces stores more in total and needs a piece lookup
 per call. Three partitions are offered and no spectrum between them. `FitGranularity::kCoarsest` is the
 committed table the library has always carried. `FitGranularity::kNarrow` is a partition of region A
 and of region B derived from the proved truncation bound below rather than placed by sampling, and it
-is the default — the one a call site that names no partition reads. `FitGranularity::kUniform` is the
+is the seam's default — what `SeamPolicy<>` names; a call site that names no policy reads its class's
+row, and the host double rows name the uniform grid. `FitGranularity::kUniform` is the
 grid: one width for every interval, each interval fitted at its own degree, which is what lets a call
 locate its piece by a multiply where the other two need a search.
 `tools/gen_boys_coefficients.py --derive-partition` prints the design law's answer for all three.
@@ -563,10 +614,11 @@ locate its piece by a multiply where the other two need a search.
 | `FitGranularity::kNarrow` | 3476 | 316 | 11 |
 
 The grid is a third structure rather than a third row of that table: one width for every interval —
-245 of them — with each interval fitted at its own degree, the double lane's held to degree 8 and the
-float lane's to degree 4, so the coefficients a call reads are that interval's degree and not a
-column of a partition-wide count. `tools/gen_boys_coefficients.py --derive-partition` prints its
-ladder and the degrees it chose.
+496 of them on the double lane, each 1/16 wide — with each interval fitted at its own degree under a
+read cap of 5, so the coefficients a call reads are that interval's degree and not a column of a
+partition-wide count. The float lane carries a grid of its own rather than a re-cut of that one: 77
+intervals of width 1/4 under a read cap of 4. `tools/gen_boys_coefficients.py --derive-partition`
+prints each ladder and the degrees it chose.
 
 **Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
 on the default route and to 6–9 on the rational one, while the table a consumer carries grows from
@@ -661,13 +713,14 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 4.0.0**. That number is written down once, in `CMakeLists.txt`'s
-`project(boys VERSION ...)`, and the test suite fails if anything else disagrees with it. A caller
+This tree is **version 5.0.0**. That number is written down once, in `CMakeLists.txt`'s
+`project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
+disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).
 
-**The accuracy promise is why this release is a major one.** A lane's bound is stated as a multiple
+**The accuracy promise is why 4.0.0 is a major one.** A lane's bound is stated as a multiple
 of a value the call returns - the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, in
 `lane-contract.md` - where the lane carried a constant floor of its own, the absolute 5.5e-14,
 before it. The change is what one promise means in another currency. The second arm is the one the
@@ -679,7 +732,7 @@ two wherever the ladder's first rung exceeds the cell's own value, and near the 
 where the value is close to 1, it permits about twice the absolute error the constant did. A
 published guarantee that a consumer pinned on changed, which is a break, and the version carries it.
 
-The version badge at the top of this file shows the latest *release tag*. It names the same version
+The version badge at the top of the README shows the latest *release tag*. It names the same version
 when a release is cut, and can be older than the tree you are reading.
 
 Public function signatures and supported domains are stable within a major version. Bitwise outputs
@@ -691,7 +744,7 @@ and *whose* compiler and flags is not one answer for the whole library, because 
 call you write. An entry that names no policy at the fp64 lanes, and any policy whose packing axis
 is the orders one, is instantiated in the library and takes the library's flags. A policy naming the
 arguments packing axis, and the default fp32 ladder and batch, are instantiated in your translation
-unit and take yours: the `With*` helpers all derive from `EvalPolicy<>`, whose packing axis is the
+unit and take yours: the `With*` helpers all derive from `SeamPolicy<>`, whose packing axis is the
 arguments one, so a call written through them is compiled where it is called. What moves a value is
 FMA being available together with contraction being permitted; where it moves, it moves by less than
 the absolute bound the lane publishes, and largest in relative terms at the smallest values the lane
@@ -748,8 +801,8 @@ vector tier is present, whether a bare `a * b + c` is one rounding or two in you
 and how your arguments arrive all move the ranking. The library carries the measurement instead of a
 recommendation — a probe you build and run where you deploy:
 
-    cmake -S . -B build
-    cmake --build build --target boys-option-probe
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON
+    cmake --build build --config Release --target boys-option-probe
     ./build/Release/boys-option-probe      # the config directory is your generator's
 
 It reports, per option, the cost per argument, the spread of that cost over the paired rounds it was
@@ -1002,23 +1055,25 @@ mistyped name cannot block every pull request.
 ## Reproducibility
 
 - `tests/data/boys_reference.csv` — the committed 45-digit reference grid.
-- `tools/gen_boys_coefficients.py` — regenerates the Chebyshev tables and the grid from the cited
-  formulas, using a pinned public `mpmath`, and writes beside them a record of what produced them,
+- `tools/gen_boys_coefficients.py` — regenerates the generated coefficient set (the master and its
+  twenty-one group headers) and the grid from the cited formulas, using a pinned public `mpmath`,
+  and writes beside them a record of what produced them,
   `tests/data/boys_coefficients_provenance.txt`: a digest of its own source, one of
-  `requirements-boys.txt`, the versions those pins name, and a digest of each artefact. One CI leg
-  runs its `--check`: the linux-x86 gcc Release leg, in the workflow's Generator consistency step.
-  Whenever that record's generator, pins or environment does not match the tree, the check
-  re-derives both artefacts into scratch copies and compares them byte for byte without writing
-  either committed file; otherwise it verifies the record's digests and the committed header's
-  read-back rules. The other legs build and test without it. The emitted header is
-  clang-format output, so
+  `requirements-boys.txt`, the versions those pins name, a digest of each artefact and a manifest
+  digest over the artifact set. One CI leg runs its `--check`: the linux-x86 gcc Release leg, in
+  the workflow's Generator consistency step. Whenever that record's generator, pins or environment
+  does not match the tree, the check re-derives the whole set and the grid into scratch copies and
+  compares them byte for byte without writing either committed file; otherwise it verifies the
+  record's digests and the committed headers' read-back rules. The other legs build and test
+  without it. The emitted headers are clang-format output, so
   `requirements-boys.txt` pins the formatter as well. The script reads `$CLANG_FORMAT` before
   searching `PATH`. Without a formatter it fails, rather than writing bytes the gate would report as
   drift.
 
 ## Citation
 
-The published works the numerical claims rest on are listed in [CITATION.bib](../CITATION.bib).
+The library itself, and the published works its numerical claims rest on, are listed in
+[CITATION.bib](../CITATION.bib).
 
 ## License
 

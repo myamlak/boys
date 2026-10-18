@@ -3,6 +3,10 @@
 // verified at this revision exits non-zero. The far-representation book at the end reads a second
 // grid of its own, because the far arms dispatch on boundaries the first cannot resolve.
 
+// The gate sweeps every combination, so it names every group: the umbrella opens them, and a
+// group header precedes the front door below.
+#include "boys/boys_all.hpp"
+
 #include <boys/kernels.hpp>
 #include <boys/f16.hpp>
 #include <boys/version.hpp>
@@ -83,15 +87,19 @@ constexpr const char* kNativeHalfAbsent =
 #include <type_traits>
 #include <vector>
 
-// CMake passes the measured revision and the content the run was taken from; a build
-// that bypasses either still says so rather than naming a revision or a content it
-// did not read. The version is not passed: the gate prints the library's own, from
-// the header it compiles against.
-#ifndef BoysGateRevision
-#define BoysGateRevision "unknown"
-#endif
+// CMake passes the content the run was taken from; a build that bypasses it still
+// says so rather than naming a content it did not read. The version is not passed:
+// the gate prints the library's own, from the header it compiles against. The run
+// names no revision: its identity is that version and this content (tools/record_stamp.py).
 #ifndef BoysGateInputs
 #define BoysGateInputs "unknown"
+#endif
+// The reference grid's directory as the tree spells it, for the lines a recorded run keeps: an
+// absolute path in a record names the checkout the run was made in rather than the tree. A build
+// that bypasses the define prints the absolute one rather than a relative spelling it cannot
+// resolve.
+#ifndef BoysDataDirRelative
+#define BoysDataDirRelative BoysDataDir
 #endif
 
 // The instrument, the reference and the row shape come from tests/boys_gate_reference.hpp,
@@ -134,6 +142,46 @@ double DoubleCellFigure(double figure, double rung, double value)
     const double magnitude = std::abs(value);
 
     return magnitude > 0.0 ? figure * rung / magnitude : figure;
+}
+
+// The contract's figure at one cell, composed here from a lane row and the scale factors the
+// specification states. `BoysAccuracyGuaranteed` answers the same figure from the same row, and
+// the combination book holds the two to each other at the cell it asks about: two paths over one
+// statement, so a change to either moves both or the run goes red.
+double ContractAt(const boys::LaneContractInfo& lane,
+                  int n,
+                  double x,
+                  boys::DivisionForm form,
+                  boys::RegionBExp exp)
+{
+    double base = lane.bound;
+
+    switch (lane.precision)
+    {
+    case boys::Precision::kFp64:
+    case boys::Precision::kFp64Device:
+        // The larger of 1e-13 * F_n(x) and 1e-13 * F_0(x); F falls with the order, so the
+        // ladder's first rung is the wider arm and is evaluated here as the contract states it.
+        base = std::max(1e-13 * boys::BoysSingle(n, x), 1e-13 * boys::BoysSingle(0, x));
+
+        break;
+    case boys::Precision::kFp32:
+    case boys::Precision::kFp32Device:
+        base = std::max(std::ldexp(1.0, -22) * boys::BoysSingle(n, x), lane.bound);
+
+        break;
+    case boys::Precision::kFp16:
+    case boys::Precision::kBf16:
+    case boys::Precision::kFp16Device:
+    case boys::Precision::kBf16Device:
+        break;
+    }
+
+    const double plain =
+        form == boys::DivisionForm::kPlainReciprocal ? lane.plainAdditive : 0.0;
+    const double member = exp == lane.additiveMember ? lane.additive : 0.0;
+
+    return base + plain + member;
 }
 
 // The floor a relative figure binds above: the smallest normal of each budget's format (DBL_MIN,
@@ -525,16 +573,16 @@ const char* RouteLaneF32(boys::FitRoute route, boys::AccuracyRegion region) {
 
 // The policy the scheme book's rows are measured under: the shipped Chebyshev
 // route at the scheme the row names. That is the pair BoysEvalSchemeFits()
-// reports, and the pair a call site reaches by naming one EvalPolicy.
+// reports, and the pair a call site reaches by naming one SeamPolicy.
 template <boys::EvalScheme kScheme>
-using SchemePolicy = boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme>;
+using SchemePolicy = boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme>;
 
 // The same pair with the partition named: the packed region-A lane holds one stored table and
 // one recurrence, so it is the shipped partition's and no other's - a probe that left the
 // partition to the default would read the partition while claiming to read the scheme.
 template <boys::EvalScheme kScheme>
 using SchemeLanePolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev,
                      kScheme,
                      boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments,
@@ -544,7 +592,7 @@ using SchemeLanePolicy =
 // partition named, which is the whole of the axis.
 template <boys::EvalScheme kScheme, boys::FitGranularity kGranularity>
 using GranularityPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev,
                      kScheme,
                      boys::BoysBudget::kFloat,
                      boys::PackAxis::kArguments,
@@ -590,7 +638,7 @@ double PartitionFitValue(boys::EvalLane lane, int n, double x) {
 // which is the axis's only difference from SchemePolicy.
 template <boys::EvalScheme kScheme>
 using OrdersPackPolicy =
-    boys::EvalPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
+    boys::SeamPolicy<boys::FitRoute::kChebyshev, kScheme, boys::BoysBudget::kFloat,
                      boys::PackAxis::kOrders>;
 
 // The stored fit one lane names, summed by one scheme, on the shipped partition.
@@ -729,19 +777,19 @@ void RunProbe(const Reference& ref, int n, double x)
         // engine, divides through the form the policy names. Naming each form here separates a
         // formula from the entry that reaches it - the engine's answer would make all three agree.
         {
-            using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PExact = boys::SeamPolicy<boys::kDefaultFitRoute,
                                             boys::kDefaultEvalScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::kDefaultPackAxis,
                                             boys::kDefaultFitGranularity,
                                             boys::DivisionForm::kExactDivision>;
-            using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PPlain = boys::SeamPolicy<boys::kDefaultFitRoute,
                                             boys::kDefaultEvalScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::kDefaultPackAxis,
                                             boys::kDefaultFitGranularity,
                                             boys::DivisionForm::kPlainReciprocal>;
-            using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+            using PRefined = boys::SeamPolicy<boys::kDefaultFitRoute,
                                               boys::kDefaultEvalScheme,
                                               boys::BoysBudget::kFloat,
                                               boys::kDefaultPackAxis,
@@ -2158,6 +2206,11 @@ int RunFloorControl()
 
 int main(int argc, char** argv) {
     std::string reference = std::string(BoysDataDir) + "/boys_accuracy_gate_reference.csv";
+    // What the record's own lines print: the tree's spelling of the same file, so a run kept as
+    // a file names the grid it read and not the machine it was made on. A caller's own
+    // --reference is printed as given.
+    std::string referenceShown =
+        std::string(BoysDataDirRelative) + "/boys_accuracy_gate_reference.csv";
     bool perOrder = false;
     bool strict = false;
     bool driftDump = false;
@@ -2188,6 +2241,7 @@ int main(int argc, char** argv) {
         } else
         {
             reference = arg;
+            referenceShown = arg;
         }
     }
 
@@ -2243,7 +2297,7 @@ int main(int argc, char** argv) {
     // The entry the orders-axis claim measures: the float ladder over the
     // orders packing axis, named once here because the claim's figure is read
     // off it and the sweep below instantiates it.
-    using FloatOrdersAxis = boys::EvalPolicy<boys::FitRoute::kChebyshev,
+    using FloatOrdersAxis = boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                              boys::EvalScheme::kSplitClenshaw,
                                              boys::BoysBudget::kFloat,
                                              boys::PackAxis::kOrders>;
@@ -2306,7 +2360,7 @@ int main(int argc, char** argv) {
     const std::vector<int> singleClaims = {kSingleA, kSingleBand, kSingleB, kSingleC};
 
     std::printf("boys accuracy gate\n");
-    std::printf("reference    : %s\n", reference.c_str());
+    std::printf("reference    : %s\n", referenceShown.c_str());
     std::printf("               %zu orders x %zu arguments = %zu points\n",
                 ref.orderCount,
                 ref.count,
@@ -2948,8 +3002,8 @@ int main(int argc, char** argv) {
                     for (int n = 0; n <= nmax; ++n)
                     {
                         ++cells;
-                        const double a = boys::BoysSingle< boys::EvalPolicy<kRoute>>(n, ref.x[i]);
-                        const double b = boys::BoysSingle< boys::EvalPolicy<>>(n, ref.x[i]);
+                        const double a = boys::BoysSingle< boys::SeamPolicy<kRoute>>(n, ref.x[i]);
+                        const double b = boys::BoysSingle< boys::SeamPolicy<>>(n, ref.x[i]);
 
                         if (std::memcmp(&a, &b, sizeof(double)) != 0)
                         {
@@ -2969,8 +3023,8 @@ int main(int argc, char** argv) {
                 {
                     std::array<double, 33> a{};
                     std::array<double, 33> b{};
-                    boys::BoysAllOrders< boys::EvalPolicy<kRoute>>(nmax, ref.x[i], a.data());
-                    boys::BoysAllOrders< boys::EvalPolicy<>>(nmax, ref.x[i], b.data());
+                    boys::BoysAllOrders< boys::SeamPolicy<kRoute>>(nmax, ref.x[i], a.data());
+                    boys::BoysAllOrders< boys::SeamPolicy<>>(nmax, ref.x[i], b.data());
 
                     for (int n = 0; n <= nmax; ++n)
                     {
@@ -3003,9 +3057,9 @@ int main(int argc, char** argv) {
                     permArgs.size() * (static_cast<std::size_t>(nmax) + 1);
                 std::vector<double> a(planeSize);
                 std::vector<double> b(planeSize);
-                boys::BoysAllN< boys::EvalPolicy<kRoute>>(
+                boys::BoysAllN< boys::SeamPolicy<kRoute>>(
                     nmax, permArgs.data(), a.data(), permArgs.size());
-                boys::BoysAllN< boys::EvalPolicy<>>(
+                boys::BoysAllN< boys::SeamPolicy<>>(
                     nmax, permArgs.data(), b.data(), permArgs.size());
 
                 for (std::size_t k = 0; k < planeSize; ++k)
@@ -3032,8 +3086,8 @@ int main(int argc, char** argv) {
                         ++cells;
                         double a = 0.0;
                         double b = 0.0;
-                        boys::BoysFixedN< boys::EvalPolicy<kRoute>>(n, &ref.x[i], &a, 1);
-                        boys::BoysFixedN< boys::EvalPolicy<>>(n, &ref.x[i], &b, 1);
+                        boys::BoysFixedN< boys::SeamPolicy<kRoute>>(n, &ref.x[i], &a, 1);
+                        boys::BoysFixedN< boys::SeamPolicy<>>(n, &ref.x[i], &b, 1);
 
                         if (std::memcmp(&a, &b, sizeof(double)) != 0)
                         {
@@ -3108,7 +3162,7 @@ int main(int argc, char** argv) {
             };
 
             std::vector<double> planes(count * (static_cast<std::size_t>(nmax) + 1));
-            boys::BoysAllN< boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+            boys::BoysAllN< boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
                 nmax, ref.x.data(), planes.data(), count);
 
             for (std::size_t i = 0; i < count; ++i)
@@ -3126,7 +3180,7 @@ int main(int argc, char** argv) {
 
             for (int n = 0; n <= nmax; ++n)
             {
-                boys::BoysFixedN< boys::EvalPolicy<boys::FitRoute::kRationalMinimax>>(
+                boys::BoysFixedN< boys::SeamPolicy<boys::FitRoute::kRationalMinimax>>(
                     n, ref.x.data(), columns.data() + static_cast<std::size_t>(n) * count, count);
             }
 
@@ -3143,14 +3197,14 @@ int main(int argc, char** argv) {
         }
 
         // ---- the selector's two-argument form: route and scheme named together, the
-        // pair a compile-time call site reaches through one EvalPolicy. The values must be the same
+        // pair a compile-time call site reaches through one SeamPolicy. The values must be the same
         // values, not merely inside the same bound.
         const auto runtimePair = [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
             // The entry a call site writes for this pair: the policy names the route and the
             // scheme and leaves the other axes to the class, which is the reading the entry
             // itself makes for the axes its caller did not name (boys_impl.hpp,
             // BoysAllOrdersWithRoute).
-            using Counterpart = boys::EvalPolicy<kRoute,
+            using Counterpart = boys::SeamPolicy<kRoute,
                                                  kScheme,
                                                  RouteClass::kBudget,
                                                  RouteClass::kPack,
@@ -3755,21 +3809,21 @@ int main(int argc, char** argv) {
         constexpr boys::DivisionForm kPolicyForm = boys::kDefaultDivisionForm;
 
         using ShippedPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kCoarsest,
                              kPolicyForm>;
         using HornerPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kHorner,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kCoarsest,
                              kPolicyForm>;
         using RationalPair =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -3779,14 +3833,14 @@ int main(int argc, char** argv) {
         // region-B seed: the partition is the only difference from the pairs
         // above, and naming it is the whole of that axis.
         using NarrowPair =
-            boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            boys::SeamPolicy<boys::FitRoute::kChebyshev,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kNarrow,
                              kPolicyForm>;
         using NarrowRationalPair =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -4149,13 +4203,13 @@ int main(int argc, char** argv) {
     int narrowRatClaims[3] = {-1, -1, -1};
     {
         using NarrowRational =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
                              boys::FitGranularity::kNarrow>;
         using ShippedRational =
-            boys::EvalPolicy<boys::FitRoute::kRationalMinimax,
+            boys::SeamPolicy<boys::FitRoute::kRationalMinimax,
                              boys::EvalScheme::kSplitClenshaw,
                              boys::BoysBudget::kFloat,
                              boys::PackAxis::kArguments,
@@ -6097,7 +6151,7 @@ int main(int argc, char** argv) {
             constexpr std::size_t kRouteIdx = static_cast<std::size_t>(kRoute);
             constexpr std::size_t kPartIdx = static_cast<std::size_t>(kPart);
             constexpr std::size_t kSchemeIdx = static_cast<std::size_t>(kScheme);
-            using Policy = boys::EvalPolicy<kRoute,
+            using Policy = boys::SeamPolicy<kRoute,
                                             kScheme,
                                             boys::BoysBudget::kFloat,
                                             boys::PackAxis::kOrders,
@@ -6560,11 +6614,10 @@ int main(int argc, char** argv) {
     sweepGranularity.template operator()<0, boys::EvalScheme::kSplitClenshaw>();
     sweepGranularity.template operator()<1, boys::EvalScheme::kHorner>();
 
-    std::printf("\naccuracy gate, revision %s\n", BoysGateRevision);
-    std::printf("accuracy gate, version %s\n", boys::kVersionString);
+    std::printf("\naccuracy gate, version %s\n", boys::kVersionString);
     std::printf("accuracy gate, inputs %s\n", BoysGateInputs);
     std::printf("  reference: %s (%zu arguments per order, %zu orders, %s)\n",
-                reference.c_str(),
+                referenceShown.c_str(),
                 ref.x.size(),
                 static_cast<std::size_t>(nmax) + 1,
                 "independent of the code under test");
@@ -6682,7 +6735,7 @@ int main(int argc, char** argv) {
     const auto sweepEntryBook =
         [&]<boys::FitRoute kRoute, boys::EvalScheme kScheme, boys::PackAxis kAxis>(
             BatchEntry kind, EntryBookRow& row) {
-            using Policy = boys::EvalPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
+            using Policy = boys::SeamPolicy<kRoute, kScheme, boys::BoysBudget::kFloat, kAxis,
                                             boys::FitGranularity::kUniform>;
 
             const auto open = [&]() {
@@ -8443,19 +8496,19 @@ int main(int argc, char** argv) {
     double formWorstX = 0.0;
 
     {
-        using PExact = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PExact = boys::SeamPolicy<boys::kDefaultFitRoute,
                                         boys::kDefaultEvalScheme,
                                         boys::BoysBudget::kFloat,
                                         boys::kDefaultPackAxis,
                                         boys::kDefaultFitGranularity,
                                         boys::DivisionForm::kExactDivision>;
-        using PPlain = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PPlain = boys::SeamPolicy<boys::kDefaultFitRoute,
                                         boys::kDefaultEvalScheme,
                                         boys::BoysBudget::kFloat,
                                         boys::kDefaultPackAxis,
                                         boys::kDefaultFitGranularity,
                                         boys::DivisionForm::kPlainReciprocal>;
-        using PRefined = boys::EvalPolicy<boys::kDefaultFitRoute,
+        using PRefined = boys::SeamPolicy<boys::kDefaultFitRoute,
                                           boys::kDefaultEvalScheme,
                                           boys::BoysBudget::kFloat,
                                           boys::kDefaultPackAxis,
@@ -9048,7 +9101,7 @@ int main(int argc, char** argv) {
                  "an entry that takes a policy reads the route that policy names, wherever the "
                  "route's own selector takes over: naming it changes the values it answers with, "
                  "and naming the default changes none of them",
-                 "README.md, \"the route names the fits\"; include/boys/boys.hpp, EvalPolicy and "
+                 "README.md, \"the route names the fits\"; include/boys/boys.hpp, SeamPolicy and "
                  "the entries' \\tparam Policy",
                  routeCarriageMissed == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu entries that were handed the rational route answered it with "
@@ -9085,7 +9138,7 @@ int main(int argc, char** argv) {
                  "the selector's route-and-scheme form answers each pair as the "
                  "compile-time entry for that pair does, value for value",
                  "include/boys/boys.hpp, BoysAllOrdersWithRoute<kRoute>(scheme, ...) and "
-                 "EvalPolicy; boys_impl.hpp, BoysAllOrdersWithRoute for the axes the pair does "
+                 "SeamPolicy; boys_impl.hpp, BoysAllOrdersWithRoute for the axes the pair does "
                  "not name",
                  routeRuntimeDiff == 0 ? Verdict::Verified : Verdict::Exceeded,
                  Fmt("%zu of %zu cell(s) differ between the run-time pair selector and the "
@@ -9177,7 +9230,7 @@ int main(int argc, char** argv) {
                  "policies cover in common; the batch entry's region-A rows, whose value comes "
                  "from the double lane's fit at the pair the policy names, are reported apart "
                  "rather than required to change",
-                 "include/boys/boys.hpp, EvalPolicy and the float entries' \\tparam Policy; "
+                 "include/boys/boys.hpp, SeamPolicy and the float entries' \\tparam Policy; "
                  "boys_impl.hpp, FloatBatchRegionASeed",
                  (f32PolicyNotCarried == 0 && f32PolicyUncovered == 0) ? Verdict::Verified
                                                                         : Verdict::Exceeded,
@@ -9717,7 +9770,7 @@ int main(int argc, char** argv) {
          "site unswept and unrefused, which is what the run-time probe is read for"},
         {"the region-A transform lane (BoysRegionAProduct and its modes)",
          "no evaluation policy at all",
-         "its modes are the lane's own arguments rather than an EvalPolicy, so a "
+         "its modes are the lane's own arguments rather than a SeamPolicy, so a "
          "scheme is not among the axes a caller can name there. Its claims are the transform "
          "rows above, judged against that lane's own table"},
         {"the packed and half-precision lanes reached through the batch entries",
@@ -10251,6 +10304,13 @@ int main(int argc, char** argv) {
         // beside its base, and it is printed so a figure above the base cannot read as a defect.
         double judgedBound = 0.0;
         double accessorBound = 0.0;
+        // The gate's own composition of the contract at the cell the accessor was asked at, at
+        // this row's form and member: the accessor's answer and this figure are one number or the
+        // run is red. It is not the sweep's bar (`bound`): the sweep judges cells against a bar,
+        // and the accessor answers the contract at one cell.
+        double contractBound = 0.0;
+        double contractFormBound = 0.0;
+        double contractPlainBound = 0.0;
         // The same answer for the form this build's unnamed calls divide in, which is what the
         // tolerance query and BoysAccuracyDelivered read: neither names a form, so both read the
         // build's default, and the query's `bound` is this figure, not `accessorBound`.
@@ -10608,22 +10668,22 @@ int main(int argc, char** argv) {
             constexpr boys::BoysBudget kBudget =
                 kFamily < 2 ? boys::BoysBudget::kFloat : boys::BoysBudget::kFp16;
 
-            using PExactA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PExactA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kExactDivision,
                                             boys::RegionBExp::kAccurate>;
-            using PPlainA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PPlainA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kPlainReciprocal,
                                             boys::RegionBExp::kAccurate>;
-            using PRefinedA = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PRefinedA = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                               boys::DivisionForm::kRefinedReciprocal,
                                               boys::RegionBExp::kAccurate>;
-            using PExactF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PExactF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kExactDivision,
                                             boys::RegionBExp::kFast>;
-            using PPlainF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PPlainF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                             boys::DivisionForm::kPlainReciprocal,
                                             boys::RegionBExp::kFast>;
-            using PRefinedF = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
+            using PRefinedF = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis, kGran,
                                               boys::DivisionForm::kRefinedReciprocal,
                                               boys::RegionBExp::kFast>;
 
@@ -11821,11 +11881,14 @@ int main(int argc, char** argv) {
                     {
                         for (const boys::PackAxisInfo& axisRow : boys::BoysPackAxes())
                         {
-                            // What this lane's own carrier says about the
-                            // member: a refusal is the cross's owed row, and
-                            // this arm is not the instrument that decides it.
+                            // What this lane's own carrier says about the member: a
+                            // refusal is the cross's owed row, and this arm is not the
+                            // instrument that decides it. Carriage is the lane's and
+                            // does not depend on the cell, so (0, 0) is asked.
                             const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                                 static_cast<boys::Precision>(lane),
+                                0,
+                                0.0,
                                 route,
                                 schemeRow.scheme,
                                 axisRow.axis,
@@ -12682,10 +12745,35 @@ int main(int argc, char** argv) {
                     {
                         const boys::PackAxisInfo& axisRow =
                             boys::BoysPackAxes()[static_cast<std::size_t>(ai)];
+
+                        // The measured cell this combination's row was read at. It carries the
+                        // row's delivered figures, and the accessor is asked at the one cell below.
+                        const CombCell* const measuredCell = [&] {
+                            for (const CombCell& m : combMeasured)
+                            {
+                                if (m.lane == lane &&
+                                    m.route == static_cast<int>(route) &&
+                                    m.scheme == static_cast<int>(scheme) &&
+                                    m.partition == static_cast<int>(partition.granularity) &&
+                                    m.axis == static_cast<int>(axisRow.axis))
+                                {
+                                    return &m;
+                                }
+                            }
+
+                            return static_cast<const CombCell*>(nullptr);
+                        }();
+
+                        // The accessor is asked at n = 0, x = 0, the one cell every lane's
+                        // contract is defined at and the cell the gate's own composition below
+                        // uses. The contract moves with the cell, so the two sides must name the
+                        // same one; the per-cell contract is what the lane rows above measure.
+                        constexpr int cellN = 0;
+                        constexpr double cellX = 0.0;
+
                         // The division form is named, and it is the one argument this call was
                         // leaving to the build: the accessor answers the figure for the form it is
-                        // given, and the figure this row is judged by is the lane's base, so the two
-                        // are one number. The region-B member is named for the same reason.
+                        // given. The region-B member is named for the same reason.
 #ifdef BOYS_GATE_CUDA
                         // The member the device arm read this row at, which is the member
                         // its figure was taken at (kCombDeviceRowMember above). A build
@@ -12697,6 +12785,8 @@ int main(int argc, char** argv) {
 #endif
                         const boys::AccuracyFigure guaranteed = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
+                            cellN,
+                            cellX,
                             route,
                             scheme,
                             axisRow.axis,
@@ -12709,6 +12799,8 @@ int main(int argc, char** argv) {
                         // default one, and the tolerance query's own `bound` is this figure.
                         const boys::AccuracyFigure guaranteedForm =
                             boys::BoysAccuracyGuaranteed(static_cast<boys::Precision>(lane),
+                                                         cellN,
+                                                         cellX,
                                                          route,
                                                          scheme,
                                                          axisRow.axis,
@@ -12719,6 +12811,8 @@ int main(int argc, char** argv) {
                         // arm judged that form by the bar this figure is held to below.
                         const boys::AccuracyFigure guaranteedPlain = boys::BoysAccuracyGuaranteed(
                             static_cast<boys::Precision>(lane),
+                            cellN,
+                            cellX,
                             route,
                             scheme,
                             axisRow.axis,
@@ -12742,6 +12836,18 @@ int main(int argc, char** argv) {
                         c.accessorBound = guaranteed.value;
                         c.accessorFormBound = guaranteedForm.value;
                         c.accessorPlainBound = guaranteedPlain.value;
+                        // The gate's own composition of the same contract at the same cell: the
+                        // two are compared below and are one number or the run is red.
+                        c.contractBound =
+                            ContractAt(combLaneRows[static_cast<std::size_t>(lane)], cellN, cellX,
+                                       boys::DivisionForm::kRefinedReciprocal, rowExp);
+                        c.contractFormBound = ContractAt(combLaneRows[static_cast<std::size_t>(lane)],
+                                                         cellN, cellX,
+                                                         boys::kDefaultDivisionForm,
+                                                         boys::kDefaultHostRegionBExp);
+                        c.contractPlainBound =
+                            ContractAt(combLaneRows[static_cast<std::size_t>(lane)], cellN, cellX,
+                                       boys::DivisionForm::kPlainReciprocal, rowExp);
                         c.accessorDelivered = delivered.value;
                         c.accessorDeliveredKnown = delivered.available;
 
@@ -12751,6 +12857,8 @@ int main(int argc, char** argv) {
                         // entry compares the request with the figure it reports - `guaranteedForm`.
                         const boys::CombinationCoverage askedAtBound =
                             boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                   cellN,
+                                                   cellX,
                                                    route,
                                                    scheme,
                                                    axisRow.axis,
@@ -12758,6 +12866,8 @@ int main(int argc, char** argv) {
                                                    guaranteedForm.value);
                         const boys::CombinationCoverage askedAtHalf =
                             boys::QueryCombination(static_cast<boys::Precision>(lane),
+                                                   cellN,
+                                                   cellX,
                                                    route,
                                                    scheme,
                                                    axisRow.axis,
@@ -12771,42 +12881,26 @@ int main(int argc, char** argv) {
                         c.toleranceDeliveredKnown = askedAtBound.deliveredKnown;
                         c.toleranceReason = askedAtBound.reason;
 
-                        const CombCell* cell = nullptr;
-
-                        for (const CombCell& m : combMeasured)
+                        if (measuredCell != nullptr)
                         {
-                            if (m.lane == lane &&
-                                m.route == static_cast<int>(route) &&
-                                m.scheme == static_cast<int>(scheme) &&
-                                m.partition == static_cast<int>(partition.granularity) &&
-                                m.axis == static_cast<int>(axisRow.axis))
-                            {
-                                cell = &m;
-
-                                break;
-                            }
-                        }
-
-                        if (cell != nullptr)
-                        {
-                            c.cells = cell->cells;
-                            c.below = cell->below;
-                            c.over = cell->over;
-                            c.delivered = cell->delivered;
-                            c.bound = cell->bound;
-                            c.judgedBound = cell->judgedTo > cell->bound ? cell->judgedTo
-                                                                        : cell->bound;
-                            c.worstN = cell->worstN;
-                            c.worstX = cell->worstX;
-                            c.worstForm = cell->worstForm;
-                            c.forms = cell->forms;
-                            c.plainBar = cell->plainBar;
+                            c.cells = measuredCell->cells;
+                            c.below = measuredCell->below;
+                            c.over = measuredCell->over;
+                            c.delivered = measuredCell->delivered;
+                            c.bound = measuredCell->bound;
+                            c.judgedBound = measuredCell->judgedTo > measuredCell->bound ? measuredCell->judgedTo
+                                                                        : measuredCell->bound;
+                            c.worstN = measuredCell->worstN;
+                            c.worstX = measuredCell->worstX;
+                            c.worstForm = measuredCell->worstForm;
+                            c.forms = measuredCell->forms;
+                            c.plainBar = measuredCell->plainBar;
 
                             for (std::size_t f = 0; f < kCombForms; ++f)
                             {
-                                c.formWorst[f] = cell->formWorst[f];
-                                c.formWorstN[f] = cell->formWorstN[f];
-                                c.formWorstX[f] = cell->formWorstX[f];
+                                c.formWorst[f] = measuredCell->formWorst[f];
+                                c.formWorstN[f] = measuredCell->formWorstN[f];
+                                c.formWorstX[f] = measuredCell->formWorstX[f];
                             }
                             c.state = c.over == 0
                                           ? "certified and published"
@@ -12816,13 +12910,13 @@ int main(int argc, char** argv) {
                             // and no others: a reason for a number that is not the number beside it.
                             std::string barTerms;
 
-                            if (cell->plainTerm > 0.0)
+                            if (measuredCell->plainTerm > 0.0)
                             {
                                 barTerms += "the plain reciprocal's own rounding, which that "
                                             "form adds beside the base";
                             }
 
-                            if (cell->valueTerm > 0.0)
+                            if (measuredCell->valueTerm > 0.0)
                             {
                                 if (!barTerms.empty())
                                 {
@@ -12840,24 +12934,24 @@ int main(int argc, char** argv) {
                             // figure per form is owed the numbers they were read from.
                             std::string formFigures;
 
-                            if (combIsDeviceLane(lane) && cell->forms > 1)
+                            if (combIsDeviceLane(lane) && measuredCell->forms > 1)
                             {
                                 const double baseWorst =
-                                    std::max(cell->formWorst[0],
-                                             cell->formWorst[2]);
+                                    std::max(measuredCell->formWorst[0],
+                                             measuredCell->formWorst[2]);
 
                                 formFigures = Fmt(
                                     ": %.6g at worst over the forms that share the lane's "
                                     "base, and %.6g under the plain reciprocal at n=%d, "
                                     "x=%.6g",
                                     baseWorst,
-                                    cell->formWorst[1],
-                                    cell->formWorstN[1],
-                                    cell->formWorstX[1]);
+                                    measuredCell->formWorst[1],
+                                    measuredCell->formWorstN[1],
+                                    measuredCell->formWorstX[1]);
                             }
 
                             const char* formClause =
-                                cell->forms > 1 && formFigures.empty()
+                                measuredCell->forms > 1 && formFigures.empty()
                                     ? ", and the row was read at every form"
                                     : "";
 
@@ -12960,7 +13054,7 @@ int main(int argc, char** argv) {
         {
             ++combAccessorHostOnly;
 
-            if (c.accessorBound != c.bound)
+            if (c.accessorBound != c.contractBound)
             {
                 ++combAccessorDisagreeing;
             }
@@ -12968,15 +13062,15 @@ int main(int argc, char** argv) {
             continue;
         }
 
-        if (c.accessorBound != c.bound)
+        if (c.accessorBound != c.contractBound)
         {
             ++combAccessorDisagreeing;
         }
 
-        // The same equality for the form a row publishes its own figure for: the bar the arm
-        // judged that form by is the accessor's answer for it, which is what makes the row's
-        // per-form figure one a consumer reads rather than one this gate composed.
-        if (c.accessorPlainBound != c.plainBar)
+        // The same equality for the form a row publishes its own figure for: the figure the
+        // contract states at that form is what the accessor answers for it, which is what makes
+        // the row's per-form figure one a consumer reads rather than one this gate composed.
+        if (c.accessorPlainBound != c.contractPlainBound)
         {
             ++combAccessorDisagreeing;
         }
@@ -13082,19 +13176,19 @@ int main(int argc, char** argv) {
         }
     }
 
-    // ---- the accessor beside the figure it is judged by ---------------------
-    // One row per lane: `bound` is the figure the lane documents for the combination, `delivered`
-    // what the combination's own rows were measured to deliver, and `row bound` and `call measured`
-    // are the same two questions asked of this row by this gate. The figures are one number.
-    std::printf("\n  the accessor beside the figure the row is judged by, one combination per "
-                "lane.\n  `bound` is what a caller may rely on, `delivered` is what the "
-                "combination's fits were\n  measured to deliver, and the last two are the same "
-                "two questions asked of the row by this\n  gate:\n");
+    // ---- the accessor beside the contract this gate composes -----------------
+    // One row per lane: `bound` is the accessor's figure at n = 0, x = 0, `delivered` what the
+    // combination's fits were measured to deliver, and `contract` and `call measured` are the
+    // same two questions asked of the row by this gate.
+    std::printf("\n  the accessor beside the contract this gate composes, one combination per "
+                "lane.\n  `bound` is what a caller may rely on at n = 0, x = 0, `delivered` is "
+                "what the\n  combination's fits were measured to deliver, and the last two are "
+                "the same two questions\n  asked of the row by this gate:\n");
     std::printf("  %-58s %-14s %-14s %-14s %-14s %s\n",
                 "combination",
                 "bound",
                 "delivered",
-                "row bound",
+                "contract",
                 "call measured",
                 "state and the source the accessor read");
 
@@ -13133,7 +13227,8 @@ int main(int argc, char** argv) {
                                               ? Fmt("%.6g", shown->accessorDelivered)
                                               : std::string("no figure");
         const std::string rowBoundText =
-            shown->bound > 0.0 ? Fmt("%.6g", shown->bound) : std::string("not judged");
+            shown->contractBound > 0.0 ? Fmt("%.6g", shown->contractBound)
+                                       : std::string("not judged");
         const std::string measuredText =
             shown->cells > 0 ? Fmt("%.6g", shown->delivered) : std::string("not measured");
 
@@ -14560,9 +14655,9 @@ int main(int argc, char** argv) {
             boys::PackAxis kAxis>(const std::array<std::size_t, 4>& refDiffer,
                                   bool plane,
                                   const char* entryName) {
-            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+            using GridReading = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis,
                                                  boys::FitGranularity::kUniform>;
-            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget, kAxis,
+            using NarrowReading = boys::SeamPolicy<kRoute, kScheme, kBudget, kAxis,
                                                    boys::FitGranularity::kNarrow>;
 
             PartitionCarriageRowF32 row;
@@ -14625,10 +14720,10 @@ int main(int argc, char** argv) {
     // and the two entries are swept on both axes under it.
     const auto sweepPartitionF32Arm =
         [&]<boys::BoysBudget kBudget, boys::FitRoute kRoute, boys::EvalScheme kScheme>() {
-            using GridReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+            using GridReading = boys::SeamPolicy<kRoute, kScheme, kBudget,
                                                  boys::PackAxis::kArguments,
                                                  boys::FitGranularity::kUniform>;
-            using NarrowReading = boys::EvalPolicy<kRoute, kScheme, kBudget,
+            using NarrowReading = boys::SeamPolicy<kRoute, kScheme, kBudget,
                                                    boys::PackAxis::kArguments,
                                                    boys::FitGranularity::kNarrow>;
 
@@ -15321,8 +15416,9 @@ int main(int argc, char** argv) {
                     "most a factor of two. It is a reading\n              of the partition the "
                     "header carries, and that partition is a placeholder: equal\n"
                     "              width at one degree, over %d intervals from kX1 to the right "
-                    "edge at %g\n              marked PROVISIONAL in the same file, with the "
-                    "derived partition spliced in where\n              it lands. So the row says "
+                    "edge at %g,\n              a placeholder marked in that file, with the\n"
+                    "              derived partition spliced in where\n"
+                    "              it lands. So the row says "
                     "what the shipped placeholder delivers and not what\n              the far "
                     "region guarantees. A bound can be written for the axis once the derived\n"
                     "              partition's own rows carry what it delivers; until then this "

@@ -39,6 +39,8 @@ import subprocess
 import sys
 import tempfile
 
+import coefficient_groups
+
 
 class Reader:
     """The library read at one revision, or from a scratch tree already exported from one.
@@ -70,6 +72,20 @@ class Reader:
 
         self._text[relative] = value
         return value
+
+    def paths(self, prefix: str) -> list[str]:
+        """Every path under a directory at this revision, repository-relative."""
+        if self.exported is not None:
+            root = self.exported
+            directory = root / prefix
+            if not directory.is_dir():
+                return []
+            return sorted(str(path.relative_to(root)).replace(os.sep, "/")
+                          for path in directory.rglob("*.hpp"))
+        done = subprocess.run(
+            ["git", "-C", str(self.root), "ls-tree", "-r", "--name-only", self.rev, "--", prefix],
+            capture_output=True, text=True, encoding="utf-8", errors="replace")
+        return [line for line in done.stdout.splitlines() if line]
 
     def export(self) -> pathlib.Path:
         if self.exported is not None:
@@ -478,7 +494,7 @@ def compiled(tree: pathlib.Path, source: str, definitions: list[str]) -> bool:
 
 
 def policy(precision: str, pack: str) -> str:
-    return (f"boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
+    return (f"boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
             f"boys::BoysBudget::{BUDGET[precision]}, boys::PackAxis::{pack}, "
             f"boys::FitGranularity::kNarrow, boys::DivisionForm::kRefinedReciprocal, "
             f"boys::RegionBExp::kFast>")
@@ -502,18 +518,74 @@ def unit_for(precision: str, shape: str, pack: str) -> str:
             "}\n")
 
 
+def groups_report(reader: Reader) -> int:
+    """The generated coefficient set's census, read at the revision.
+
+    The report-driven checks below count combinations; this one counts the headers those
+    combinations are compiled from. It runs without a report and exits non-zero on any rule the
+    set breaks.
+    """
+    paths = reader.paths("include/boys")
+    groups = {path: reader.text(path) for path in paths
+              if coefficient_groups.GROUP_HEADER.match(path) and path != coefficient_groups.MASTER}
+    scanned = {path: reader.text(path) for path in paths
+               if path.endswith(".hpp") and path not in groups
+               and path != coefficient_groups.MASTER
+               and "kCoefficientGroupPresent<" in reader.text(path)}
+
+    if not groups:
+        print("check_class_combinations: the revision carries no group header, so the census "
+              "read nothing and this run states nothing about the coefficient set")
+        return 1
+
+    summary, findings = coefficient_groups.census(
+        reader.text(coefficient_groups.MASTER), groups, scanned,
+        reader.text(coefficient_groups.DEFAULT_TABLES), reader.text(coefficient_groups.UMBRELLA))
+
+    print(f"coefficient groups at {reader.rev}: {summary['declared']} tag(s) declared, "
+          f"{summary['group_headers']} group header(s), {summary['marker_reads']} marker read(s), "
+          f"{summary['default_groups']} group(s) opened by the front door")
+    for finding in findings:
+        print(f"DRIFT: {finding}")
+
+    if findings:
+        print(f"check_class_combinations: {len(findings)} finding(s) in the generated set")
+        return 1
+
+    print("check_class_combinations: every tag has one header, every header marks its tag "
+          "present, every read names a declared tag, and the front door and the umbrella open "
+          "the sets they state")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--report", required=True, help="the option probe's report")
+    parser.add_argument("--report", help="the option probe's report")
     parser.add_argument("--root", default=".")
     parser.add_argument("--rev", default="HEAD",
                         help="the revision the library is read at (never the working tree)")
     parser.add_argument("--no-compile", action="store_true",
                         help="skip the compilation control (the check then asserts, not proves)")
+    parser.add_argument("--groups", action="store_true",
+                        help="the generated coefficient set's census: one header per group tag, "
+                             "every marker read naming a declared tag, the front door's set and "
+                             "the umbrella's")
     parser.add_argument("--check", action="store_true",
                         help="the CI spelling; a class whose measured count falls short of the "
                              "combinations it can be instantiated at exits non-zero either way")
     arguments = parser.parse_args()
+
+    root = pathlib.Path(arguments.root).resolve()
+    reader = Reader(root, arguments.rev)
+
+    if arguments.groups:
+        print(f"library read at {arguments.rev} ({reader.rev_id()}), never from the working tree")
+        return groups_report(reader)
+
+    if not arguments.report:
+        print("check_class_combinations: --report is required unless --groups is given",
+              file=sys.stderr)
+        return 1
 
     # The report is the account of the library this check compares against, so a path that holds
     # none is a reading it cannot take: `read_text` used to raise FileNotFoundError from here and
@@ -524,9 +596,6 @@ def main() -> int:
               f"read from it, and a class whose combinations are not in it is not a class this "
               f"check can compare", file=sys.stderr)
         return 1
-
-    root = pathlib.Path(arguments.root).resolve()
-    reader = Reader(root, arguments.rev)
 
     print(f"library read at {arguments.rev} ({reader.rev_id()}), never from the working tree")
 

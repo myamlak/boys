@@ -3,6 +3,15 @@
 // suite rather than by reading (include/boys/boys_build_defaults.hpp states the contract a replacement
 // satisfies). It is a fixture, not a measurement. Each move is quoted where its value is defined.
 
+// The groups this fixture's moved rows name: kCoarsest is not in the front door's default set, so a
+// translation unit carrying this seam includes the partition's own tables.
+#include "boys/boys_coefficients_d_coarse_cheb.hpp"
+#include "boys/boys_coefficients_d_coarse_mono.hpp"
+#include "boys/boys_coefficients_d_coarse_rat.hpp"
+#include "boys/boys_coefficients_f32_coarse_cheb.hpp"
+#include "boys/boys_coefficients_f32_coarse_mono.hpp"
+#include "boys/boys_coefficients_f32_coarse_rat.hpp"
+
 #define BOYS_BUILD_DEFAULTS_TEST_FIXTURE 1
 
 // Committed: the fit route is pinned where the seam test reads this file (tests/boys_backend_test.cpp,
@@ -18,7 +27,7 @@
 // Committed, and unmovable: the orders axis is not an axis on a shape producing one order, and the
 // library refuses it in its own words at include/boys/boys_impl.hpp (BoysSingleImpl) and again in the
 // batch entries. Naming kOrders here fails to compile in the library's own sources - src/boys.cpp
-// instantiates the single-order entry at EvalPolicy<> - which is the answer and not a default.
+// instantiates the single-order entry at SeamPolicy<> - which is the answer and not a default.
 #define BOYS_BUILD_DEFAULT_PACK_AXIS PackAxis::kArguments
 
 // Moved: a reciprocal per divisor and a product per step, in place of the refined form's quotient.

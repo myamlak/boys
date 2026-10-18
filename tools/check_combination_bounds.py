@@ -34,12 +34,17 @@ WHAT IS READ FROM THE LIBRARY, AND WHAT IS NOT:
   * the axis members are the library's own tables - ``BoysFitRoutes``, ``BoysEvalSchemes``,
     ``BoysPackAxes``, ``BoysFitGranularities``, ``BoysDivisionForms``, ``BoysRegionBExps`` - read
     by a driver compiled from those tables, never spelled out here;
-  * the figures are what ``BoysAccuracyGuaranteed`` and ``DefaultGuarantee`` answer.
+  * the figures are what ``BoysAccuracyGuaranteed`` and ``DefaultGuarantee`` answer;
+  * the generated coefficient set's census - one header per declared group tag, every marker read
+    naming a declared tag, the front door's default set and the umbrella's - is read from the same
+    revision, so the tables every combination is compiled from are held to their own rule before
+    the driver is built.
 
 HOW THE FIGURES ARE OBTAINED, AND WHY THAT IS NOT A PROBE. This check compiles one small driver
-against the revision's own sources and runs it once. The driver evaluates no F_n, times nothing and
-emits no seam: it calls the two accessors above, of which the header says "it is a table read and
-not a measurement: nothing is evaluated and nothing is timed", and prints what they answer. It is
+against the revision's own sources and runs it once. The driver times nothing and emits no seam: it
+calls the two accessors above, of which the header says the figure is a table read and a contract
+evaluation and not a measurement - the accessor evaluates F_0(x) and F_n(x) to carry the lane's
+contract to the cell it is asked about - and prints what they answer at n = 0, x = 0. It is
 neither ``boys-option-probe`` nor ``boys-device-probe`` and it does not measure the option space;
 it reads one. The compile is the slow part, and a compile is not a probe.
 
@@ -111,6 +116,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+
+import coefficient_groups
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
@@ -308,6 +315,42 @@ def library_sources(tree: pathlib.Path) -> list[str]:
     return sources
 
 
+def groups_census(tree: pathlib.Path) -> tuple[dict, list[str]]:
+    """The generated coefficient set's census, read from the extracted tree.
+
+    Every combination this check reports a bound for is compiled from the generated tables, so the
+    set is read here as well as in `tools/check_class_combinations.py --groups`: one header per
+    declared group tag, every marker read naming a declared tag, the front door's default set a
+    subset of the group headers, and the umbrella opening all of them. The rule lives once, in
+    `tools/coefficient_groups.py`, and this reads the tree the other state of this check is read
+    from rather than a second copy of it.
+    """
+    directory = tree / "include" / "boys"
+
+    if not directory.is_dir():
+        raise SystemExit(f"check_combination_bounds: no headers at {directory}, so the generated "
+                         "coefficient set cannot be read and this run states nothing about it")
+
+    texts = {str(path.relative_to(tree)).replace(os.sep, "/"):
+             path.read_text(encoding="utf-8", errors="replace")
+             for path in sorted(directory.rglob("*.hpp"))}
+    groups = {path: text for path, text in texts.items()
+              if coefficient_groups.GROUP_HEADER.match(path)
+              and path != coefficient_groups.MASTER}
+    scanners = {path: text for path, text in texts.items()
+                if path not in groups and path != coefficient_groups.MASTER
+                and "kCoefficientGroupPresent<" in text}
+
+    if not groups:
+        raise SystemExit("check_combination_bounds: the tree carries no group header, so the "
+                         "census read nothing and this run states nothing about the coefficient "
+                         "set")
+
+    return coefficient_groups.census(
+        texts.get(coefficient_groups.MASTER, ""), groups, scanners,
+        texts.get(coefficient_groups.DEFAULT_TABLES, ""), texts.get(coefficient_groups.UMBRELLA, ""))
+
+
 def class_rows(header: str) -> list[tuple[str, str, str]]:
     """The (device, precision, shape) triples the default-policy table carries.
 
@@ -426,7 +469,7 @@ def compiled(tree: pathlib.Path, source: str, timeout: float = 900) -> bool:
 
 def control_unit(precision: str, shape: str, pack: str) -> str:
     """A translation unit instantiating one class's entry at one packing axis member."""
-    policy = (f"boys::EvalPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
+    policy = (f"boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kHorner, "
               f"boys::BoysBudget::{BUDGET[precision]}, boys::PackAxis::{pack}, "
               f"boys::FitGranularity::kNarrow, boys::DivisionForm::kRefinedReciprocal, "
               f"boys::RegionBExp::kFast>")
@@ -486,7 +529,8 @@ void Figure(const char* kind, const char* label, int lane, int route, int scheme
 template <boys::Precision kLane, boys::Shape kShape, boys::Device kDevice>
 void Default(int index, const char* label) {{
     using Policy = boys::DefaultPolicy<kLane, kShape, kDevice>;
-    const boys::AccuracyFigure figure = boys::DefaultGuarantee<kLane, kShape, kDevice>();
+    // The figure is the contract at n = 0, x = 0, the cell every lane's contract is defined at.
+    const boys::AccuracyFigure figure = boys::DefaultGuarantee<kLane, kShape, kDevice>(0, 0.0);
 
     std::printf("DEFAULT%c%d%c%s%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%d%c%.17g%c%s%c%s\\n",
                 kSep, index, kSep, label, kSep, static_cast<int>(kLane), kSep,
@@ -569,7 +613,7 @@ int main() {{
                                 Figure("FIG", lanes[l].name,
                                        static_cast<int>(lanes[l].precision), r, s, a, p, f, e,
                                        boys::BoysAccuracyGuaranteed(
-                                           lanes[l].precision,
+                                           lanes[l].precision, 0, 0.0,
                                            static_cast<boys::FitRoute>(r),
                                            static_cast<boys::EvalScheme>(s),
                                            static_cast<boys::PackAxis>(a),
@@ -591,7 +635,7 @@ int main() {{
     for (int l = 0; l < static_cast<int>(lanes.size()); ++l) {{
         Figure("GUARD", lanes[l].name, static_cast<int>(lanes[l].precision), 0, 0, axes, 0, 0, 0,
                boys::BoysAccuracyGuaranteed(
-                   lanes[l].precision, boys::FitRoute::kChebyshev,
+                   lanes[l].precision, 0, 0.0, boys::FitRoute::kChebyshev,
                    boys::EvalScheme::kSplitClenshaw, static_cast<boys::PackAxis>(axes),
                    boys::FitGranularity::kCoarsest, boys::DivisionForm::kExactDivision,
                    boys::RegionBExp::kAccurate));
@@ -808,6 +852,24 @@ def main() -> int:
             print("check_combination_bounds: the classes or the shapes were read as empty, so this "
                   "run states nothing about the library and its exit status is a failure rather "
                   "than a clean bill")
+            return 1
+
+        # The generated set every combination is compiled from, read before the driver is built:
+        # a set that breaks its own rules is a failure this run can state in a second rather than
+        # after the compile.
+        summary, findings = groups_census(tree)
+
+        print(f"  the generated coefficient set at {revision}: {summary['declared']} tag(s) "
+              f"declared, {summary['group_headers']} group header(s), "
+              f"{summary['marker_reads']} marker read(s), {summary['default_groups']} group(s) "
+              f"opened by the front door")
+        for finding in findings:
+            print(f"DRIFT: {finding}")
+
+        if findings:
+            print(f"check_combination_bounds: {len(findings)} finding(s) in the generated "
+                  "coefficient set, so the tables every combination is compiled from do not hold "
+                  "their own rule")
             return 1
 
         # A host with no compiler this check can address is named here rather than answered below:
@@ -1192,7 +1254,13 @@ def main() -> int:
                     if figure is not None and figure["available"]:
                         stated.add(f"{figure['value']:.3g}")
 
-            if stated and row["bound"] not in stated:
+            # The run prints its figure at six significant digits and the accessor is read
+            # here at three: both sides are rounded to the same precision before they are
+            # compared, because a figure is one number and not a spelling. The rounding is
+            # what lets 2.38419e-07 (the run's) meet 2.38e-07 (the accessor's).
+            recorded = number(row["bound"])
+
+            if stated and (recorded is None or f"{recorded:.3g}" not in stated):
                 disagreed.append((row, sorted(stated)))
 
         print(f"    the run's accessor table: {len(accessor_rows)} lane(s) with a recorded figure, "

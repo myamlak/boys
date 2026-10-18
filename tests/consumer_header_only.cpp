@@ -15,7 +15,17 @@
 //       <build>/boys-consumer-header-only, or ctest --test-dir <build> -R boys-consumer-header-only
 
 #include <algorithm>
-#include <boys/boys_all.hpp>
+// The front door opens the nine groups the class rows and the half-format batch seeds read. The
+// policies below name the rational route at the uniform and the coarsest partitions, in both
+// lanes, so this unit opens those four groups beside it - the header each policy names, not the
+// umbrella that carries all of them.
+#include <boys/boys_coefficients_d_coarse_rat.hpp>
+#include <boys/boys_coefficients_d_uniform_rat.hpp>
+#include <boys/boys_coefficients_f32_coarse_rat.hpp>
+#include <boys/boys_coefficients_f32_uniform_rat.hpp>
+#include <boys/boys.hpp>
+// The transform lane's region boundary, which the single bound below splits its domain at.
+#include <boys/boys_transform.hpp>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -289,7 +299,7 @@ using HalfClass = boys::DefaultPolicy<boys::Precision::kFp16, boys::Shape::kAllO
 /// the call below can take.
 template <class Row, boys::FitRoute kRoute, boys::EvalScheme kScheme,
           boys::FitGranularity kGranularity = Row::kGranularity>
-using MovedFrom = boys::EvalPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
+using MovedFrom = boys::SeamPolicy<kRoute, kScheme, Row::kBudget, boys::PackAxis::kArguments,
                                    kGranularity, Row::kDivision, Row::kRegionBExp>;
 
 /// Whether a policy is off every class row the calls below reach.

@@ -7,10 +7,12 @@
 //   perf stat -e instructions:u,uops_retired.retire_slots:u: boys-across-orders-benchmark
 //   --variant=orders-across-direct --reps=20000 (the f32 variants --reps=2000)
 
+// The packed lane's groups, which its header opens, come before the front door below.
+#include "boys_orders_simd.hpp"
+
 #include "boys/kernels.hpp"
 #include "boys/boys_coefficients.hpp"
 #include "boys/boys_impl.hpp"
-#include "boys_orders_simd.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -194,14 +196,14 @@ void NarrowPerOrderFits(boys::EvalScheme scheme, int nmax, double x, double* out
     {
         if (scheme == boys::EvalScheme::kHorner)
         {
-            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kHorner,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
                                                        boys::FitGranularity::kNarrow>>(l, x);
         } else
         {
-            out[l] = boys::BoysSingle<boys::EvalPolicy<boys::FitRoute::kChebyshev,
+            out[l] = boys::BoysSingle<boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                                        boys::EvalScheme::kSplitClenshaw,
                                                        boys::BoysBudget::kFloat,
                                                        boys::PackAxis::kArguments,
@@ -432,7 +434,7 @@ double Run(const Config& config) {
                 } else if (name == "orders-f32-orders-axis")
                 {
                     using OrdersAxis =
-                        boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                        boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                           boys::EvalScheme::kSplitClenshaw,
                                           boys::BoysBudget::kFloat,
                                           boys::PackAxis::kOrders>;
@@ -586,7 +588,7 @@ int main(int argc, char** argv) {
             } else if (config.variant == "orders-f32-orders-axis")
             {
                 using OrdersAxis =
-                    boys::EvalPolicy<boys::FitRoute::kChebyshev,
+                    boys::SeamPolicy<boys::FitRoute::kChebyshev,
                                       boys::EvalScheme::kSplitClenshaw,
                                       boys::BoysBudget::kFloat,
                                       boys::PackAxis::kOrders>;

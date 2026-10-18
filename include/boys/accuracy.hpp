@@ -2,8 +2,8 @@
 
 /// \file
 /// The compile-time facts the rest of the library is written against: the
-/// highest order the kernel serves, the multiplier m = 1 that is every lane's
-/// default accuracy, and the axes a call site selects an evaluation by - the
+/// highest order the kernel serves, the one accuracy every lane carries, and the
+/// axes a call site selects an evaluation by - the
 /// route its fits come from, the scheme their coefficients are summed in, the
 /// exponential a region-B ladder is seeded with, the cut of the domain those
 /// fits are read from, the form each of a ladder's divisions is performed in,
@@ -41,9 +41,9 @@ namespace boys {
 /// Highest Boys order supported by the kernel.
 inline constexpr int kMaxBoysOrder = 32;
 
-/// The accuracy multiplier of every lane, and the only one: m = 1 is full static
-/// accuracy, bit-identical to the certified lanes (the documented contract).
-/// Every bound this library documents is this multiplier's figure.
+/// The accuracy scale of every lane, and the only one: 1.0 is full static
+/// accuracy, the arithmetic the certified lanes run (the documented contract).
+/// Every bound this library documents is stated at this scale.
 inline constexpr double kBoysFullAccuracyMultiplier = 1.0;
 
 /// Which certified fit serves a region, where the library carries more than
@@ -101,7 +101,7 @@ inline constexpr FitRoute kDefaultFitRoute = BOYS_BUILD_DEFAULT_FIT_ROUTE;
 /// are the split Clenshaw route's and are not offered under the other scheme.
 ///
 /// The scheme is one axis of the evaluation and the fit route (FitRoute) is
-/// another, and the two are named together by an EvalPolicy. They select
+/// another, and the two are named together by a SeamPolicy. They select
 /// different things: the route names the fits that serve the regions, and the
 /// scheme names the summation a fit's coefficients are read in. A fit whose
 /// coefficients have two stored forms is summed by either scheme; a fit whose
@@ -170,7 +170,7 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///    whose worst over a dense sweep of region B is 0.53 ulp, and 2 ulp on the
 ///    device - so it holds the target's own figure in every region
 ///    and needs no term of its own there. On the device it is the arithmetic the
-///    f32 batch bodies run: at m = 1 a single and a batch evaluation of the same
+///    f32 batch bodies run: a single and a batch evaluation of the same
 ///    (n, x) return the same bits outside region A, and that is why it is that
 ///    lane's default. On the host it is the arithmetic the single-precision
 ///    lane's region B has always run, and the one both lanes' region-A paths
@@ -186,7 +186,7 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///    the error back to the approximation's own few ulp, flat in the argument. Its
 ///    bound is the lane's plus its own seed's contribution, certified at 8e-8 -
 ///    0.41 of the lane's budget - which the condition number derives and the
-///    device gate's sweep confirms (5.0e-8 measured at m = 1). On the host it is
+///    device gate's sweep confirms (5.0e-8 measured). On the host it is
 ///    the reduced-argument polynomial this library fits for itself
 ///    (`kRegionBExpReduced` and the reduction around it, `boys/boys_impl.hpp`):
 ///    degree 10 on |r| <= ln 2/2, 4.458e-16 relative, reduced by the textbook
@@ -201,7 +201,7 @@ inline constexpr EvalScheme kDefaultEvalScheme = BOYS_BUILD_DEFAULT_EVAL_SCHEME;
 ///    narrowing - the same evaluation, rounded once to single - so the cut applies
 ///    to it unchanged and its error there is the narrowing's half ulp.
 ///
-/// The bare approximation is not offered at any multiplier: its failing band is
+/// The bare approximation is not offered at all: its failing band is
 /// interior to region B, which a caller cannot name a sub-range of. On the device
 /// that is what removing the residual buys, and on the host what the library
 /// routine below the cut buys.
@@ -290,7 +290,7 @@ inline constexpr RegionBExp kDefaultDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE
 /// Region B's seed is read for itself, so a narrow piece there is held to the
 /// same bound as any other fit of that interval. Region A's pieces are read two
 /// ways: a single-order call reads one for its own value, and the batch entry's
-/// relaxed path reads one as the seed of a downward recursion that carries its
+/// own path reads one as the seed of a downward recursion that carries its
 /// error down to F_0 with a gain of `max(1, b^n / prod(j + 1/2))` at the piece's
 /// right end `b`. That gain's envelope over region A reaches 1.04e5, at order 12
 /// and the region's right edge, while the seeding fallback is taken only below
@@ -322,7 +322,7 @@ inline constexpr RegionBExp kDefaultDeviceRegionBExp = BOYS_BUILD_DEFAULT_DEVICE
 /// per-order cut
 /// with a gathered fetch, reading each of the four orders it holds its own
 /// piece and coefficients instead of stepping one piece's coefficients at a
-/// fixed stride. This includes the single-precision lanes, whose narrow rung
+/// fixed stride. This includes the single-precision lanes, whose narrow
 /// tables are derived like the double lane's rather than absent.
 ///
 /// **It stands here rather than in backend.hpp, where it was defined,** because it
@@ -423,7 +423,7 @@ inline constexpr FitGranularity kDefaultFitGranularity = BOYS_BUILD_DEFAULT_FIT_
 /// That lane's downward ladder divides by the step's constant, and the step reads
 /// whichever form the caller named. The plain form rounds once more there, which
 /// takes the ladder past the lane's base: over the accuracy gate's own
-/// reference grid at the reference multiplier its worst cell is 1.7514e-07 at
+/// reference grid its worst cell is 1.7514e-07 at
 /// n = 0, x = 9.74054909, where the lane's exact and refined forms deliver
 /// 1.0835e-07 at worst — two absolute readings of one cell, 6.67e-8 apart. So the
 /// lane publishes a term beside its base for that form — 2^-22 · F_n(x), or
@@ -508,7 +508,7 @@ inline constexpr DivisionForm kDefaultDeviceDivisionForm = BOYS_BUILD_DEFAULT_DE
 /// arithmetic and differ in what the vector lanes hold, so they are not rungs of
 /// one design and neither replaces the other.
 ///
-/// The axis is one field of an \c EvalPolicy. Naming the orders axis on an entry
+/// The axis is one field of an \c SeamPolicy. Naming the orders axis on an entry
 /// that has one order is a combination this library does not carry and is refused
 /// where it is named: a packed lane keeps four orders of one argument and such a
 /// call produces one.

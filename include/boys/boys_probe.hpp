@@ -14,8 +14,8 @@
 /// Everything else an option varies — fit route, scheme, region partition,
 /// packing axis, division form, and whether a sorted array is declared — is an
 /// interchangeable way of computing one answer, so it competes inside the class
-/// and never divides it. Every option is evaluated at the library's
-/// full-accuracy multiplier, so the class's documented figure is the only one its
+/// and never divides it. Every option is evaluated at the one accuracy the
+/// library carries, so the class's documented figure is the only one its
 /// members are held to. The default this report names is the fastest measured row
 /// of the certified double lane's class for the all-orders shape.
 ///
@@ -1058,8 +1058,8 @@ struct OptionProbeReport {
 
     /// **The default combination, and there is exactly one of it whenever the pool
     /// was measured at all.** It is the certified double lane's precision for the
-    /// all-orders shape — a class whose members are all built at the library's
-    /// full-accuracy multiplier, so choosing among them trades nothing but speed
+    /// all-orders shape — a class whose members are all built at the one accuracy
+    /// the library carries, so choosing among them trades nothing but speed
     /// within one question.
     ///
     /// **It is the row the refinement stage's vote named, where that stage ran** —
@@ -1407,7 +1407,7 @@ std::string FormatBuildDefaults(const OptionProbeReport& report,
 /// OptionProbeReport::unoffered; and the axes a policy carries are walked over
 /// the sets the library reports, once per precision lane, so the coverage section
 /// can account for every cell of the space, served or refused. Every option is
-/// evaluated at the library's full-accuracy multiplier.
+/// evaluated at the one accuracy the library carries.
 ///
 /// The pass protocol in ProbeOptions is then run: every pass carries runs of the
 /// fixed-work canary beside its rounds, and each round calls every option once in
