@@ -1,4 +1,4 @@
-boys option probe | started 2026-10-18T00:07:41Z | finished 2026-10-18T00:15:57Z | seed 47 | version 5.0.0 | inputs src=06469da8cf73df9e,include=bfcfb4346ce0702d,driver=7c21432eb4bc8106,cmake=bcb93d5c1923a0e3 | verdict RECOMMEND
+boys option probe | started 2026-10-18T00:07:41Z | finished 2026-10-18T00:15:57Z | seed 47 | version 5.0.1 | inputs src=06469da8cf73df9e,include=f0a7d387466c3c8b,driver=7c21432eb4bc8106,cmake=7e36a573a2a2b14c | verdict RECOMMEND
 default batch-exact-division-accurate-fp64 | reached by refined
 boys option probe — this result is about this machine, this build and this process.
   machine: 12 logical processors | AVX2+FMA tier: present
