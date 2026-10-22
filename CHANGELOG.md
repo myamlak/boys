@@ -120,10 +120,6 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 - `boys-cuda-accuracy-gate` answers for the device lane against the same committed reference grid,
   and the option probe and the device probe measure their whole spaces
   (`tests/data/boys_option_probe_report.txt`, `tests/data/boys_device_probe_report.txt`).
-- The libint2 v2.13.1 comparison, `BoysAllOrders` against `FmEval_Chebyshev7<double>` at matched
-  accuracy, was measured while preparing this release; its comparator is not carried in this tree.
-  A figure from it is one host's, and `docs/consumer-perspective.md` states what may be read off a
-  timing.
 
 ## Before 4.0.0
 
