@@ -108,9 +108,12 @@ verdict, and `boys-tests` takes the same reading of its far-representation bars.
 
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
-the extended band, 5e-14 for the region-B seed, 5.5e-14 for region C — that last one being the
-absolute figure the lane published before 4.0.0, and the figure its row still carries in
-`BoysLaneContracts()` below. The route table below prints them beside what each route delivers.
+the extended band, 5.5e-14 for region C — that last one being the absolute figure the lane published
+before 4.0.0, and the figure its row still carries in `BoysLaneContracts()` below. Region B is the
+exception: its seed is placed against the release contract itself, and its bar is 2.57e-14, the band
+maximum of `1e-13 · F_0(x)` at x = 11.899848152108484, which is what `kRegionBFitBar` states. The
+5e-14 earlier revisions printed for the region-B seed is a pre-release absolute figure and is not
+this tree's bar. The route table below prints each bar beside what its route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
 that shows. A batch call answers every order to nmax at once, so no per-order figure bounds it:
@@ -148,12 +151,18 @@ to deliver against the committed reference; and the bar it is certified against.
 |---|---|---|---|---|---|---|
 | chebyshev (default) | A | 0 | 0 | 1320 | 1.74e-16 | 3e-14 |
 | rational minimax | A | 0 | 1.0855252345349333 | 891 | 2.46e-14 | 3e-14 |
-| chebyshev (default) | B | 11.899848152108484 | 11.899848152108484 | 19 | 9.92e-15 | 5e-14 |
-| rational minimax | B | 11.899848152108484 | 11.899848152108484 | 12 | 4.46e-14 | 5e-14 |
+| chebyshev (default) | B | 11.899848152108484 | 11.899848152108484 | 25 | 5.09e-17 | 2.57e-14 |
+| rational minimax | B | 11.899848152108484 | 11.899848152108484 | 13 | 1.69e-14 | 2.57e-14 |
 
 Region A's rows count the whole per-order table: one piece for each order over each of the region's
 two bands, so 66 pieces, and "stored" is their coefficients summed. Region B's rows are the one seed
 each route evaluates there, carried to higher orders by the region's own upward recursion.
+
+**The bar column states two bases.** Region A's 3e-14 is the absolute budget the fits there were
+placed against. Region B's 2.57e-14 is not an absolute budget: it is the band maximum of the
+release's `1e-13 · F_0(x)` contract, reached at the region's left end x = 11.899848152108484. The
+two figures are therefore not on one scale, and neither of them is the pre-release absolute 5e-14
+that earlier revisions printed for the two region-B rows.
 
 **The rational route in region A does not take over from zero, and it takes over per order.** Its
 pieces span the same intervals as the Chebyshev ones, but the lane stops reading an order from that
@@ -180,7 +189,7 @@ arithmetic the rational table's worst error after the gain is 6.01e-12, where th
 under against none of the default pieces. **The rational route buys the interval's values, not a
 seed.**
 
-**The comparison is not "12 against 19" in region A.** Region B's two rows are two seeds for one
+**The comparison is not "13 against 25" in region A.** Region B's two rows are two seeds for one
 interval, so their stored counts sit directly against each other. In region A the rows count whole
 tables — 1320 coefficients across the region's 66 pieces against 891 — and what the pair says is
 that over the same intervals, against the same reference and in the same arithmetic, the default
@@ -204,7 +213,7 @@ route's rows cover, and naming the default changes nothing.
 
 **What the carriage delivers.** `BoysAllN` and `BoysFixedN` are swept over the whole committed grid,
 every order, and judged against the named route's own bar for the region the argument falls in —
-113,388 cells, worst delivered 5e-14 at n = 32, x = 28.98933773882074, no cell over. That bar is the
+118,602 cells, worst delivered 2.21663e-14 at n = 2, x = 9.88955, no cell over. That bar is the
 route's, not the entry's: the route's region-A row promises the region's 3e-14 bar, where the lane's
 published figure is the larger of 1e-13 · F_n(x) and 1e-13 · F_0(x) — tighter than that bar wherever
 F_0(x) is below 0.3, and looser above it — and the entry holds the route's bar over the region,
@@ -234,19 +243,20 @@ partition is a coarser form of the other.
 **The shipped partition's shape is the double lane's; the single-precision lane cuts the same
 regions differently.** On the double lane, region A is two equal-width bands per order, at degree 20
 and degree 18 — 40 stored coefficients per order, 1320 across the whole table — and region B is one
-seed fit at degree 18, 19 stored. The single-precision lane's region A is per order again but two to
-four pieces an order, all at degree 10 — 1067 stored across its table — and its region B is one seed
+seed fit at degree 24, 25 stored. The single-precision lane's region A is per order again but two to
+four pieces an order, all at degree 10 — 1408 stored across its table — and its region B is one seed
 at degree 10, 11 stored. What the partition names is the structure the two lanes share: a per-order
 piecewise region A and a single-seed region B. What it does not name is the piece count or the
 degree, and those differ by lane.
 
 The extended band is its own fit at degree 24 and is not a choice either member makes.
 Read against the a-priori truncation bound below at the quantum-chemistry target of
-1e-14, the double lane's region A holds 3.14e-18 and 2.58e-18 across its two bands, and the
-extended-band seed holds 5.98e-18 — all far inside the target. **The region-B seed is the one piece
-the bound does not cover: 1.36e-13, above the target**, and the piece's *measured* truncation is
-9.92e-15, inside it. So the shipped seed meets the target by measurement and misses it by the bound,
-and that gap is the honest statement of where the shipped design stands against a 1e-14 target.
+1e-14, the double lane's region A holds 3.14e-18 and 2.58e-18 across its two bands, the
+extended-band seed holds 5.98e-18, and the region-B seed holds 1.67e-17 over
+`[11.899848152108484, 31)` — all far inside the target. The bound covers the region-B seed at this
+revision: the degree-24 fit's proved truncation bound is 1.67e-17, and the gate's certified run
+measures 5.09e-17 against the 2.57e-14 bar. The 1.36e-13 bound and the 9.92e-15 delivered figure
+that earlier revisions printed belong to the degree-18 seed and are not this tree's.
 
 **Region A's pieces are held to a second reading, and it is not the bound above.** A region-A piece
 is read two ways. The single-order lane reads it at its own size, where region A is documented at
@@ -309,20 +319,23 @@ degree 18, and 3.14e-18 at degree 20. Its series also agrees with the fit path's
 to a worst relative difference of 2.4e-26.
 
 **The derived narrower partition, region B.** Equalising the bound at 1e-14 and walking `[11.8998481521,
-28.9893377388)` left to right gives, per degree:
+31)` left to right gives, per degree:
 
 | degree per piece | pieces | stored in total | read per evaluation |
 | --- | --- | --- | --- |
 | 10 | 5 | 55 | 11 |
 | 12 | 3 | 39 | 13 |
-| 14 | 2 | 30 | 15 |
+| 14 | 3 | 45 | 15 |
 | 16 | 2 | 34 | 17 |
 | 18 | 2 | 38 | 19 |
-| 20 | 1 | 21 | 21 |
+| 20 | 2 | 42 | 21 |
+| 24 | 1 | 25 | 25 |
 
-The narrow member is the first row: five pieces of width 2.86, 3.41, 4.09, 4.95 and 1.79, each
-holding 1e-14 by the bound, **11 stored against the shipped seed's 19** — the coefficient count an
-evaluation reads falls by 8, and the table grows from 19 to 55.
+The narrow member is the first row: five pieces of width 2.86, 3.41, 4.09, 4.95 and 3.80, each
+holding 1e-14 by the bound, **11 read against the shipped seed's 25** — the coefficient count an
+evaluation reads falls by 14, and the table grows from 25 to 55. The last row is the shipped seed
+itself, one fit over the whole interval, which is why the ladder's narrowest row costs what the
+shipped seed costs in storage and in one evaluation's read.
 
 **The derived narrower partition, region A.** Every order's interval is walked from zero to where
 that order's last shipped piece ends — so the narrow member serves the whole of what it replaces and
@@ -339,55 +352,56 @@ the coefficients one evaluation reads:
 
 | | `FitGranularity::kCoarsest` | `FitGranularity::kNarrow` |
 | --- | --- | --- |
-| stored coefficients | 1339 (1320 region A + 19 region B) | 3476 (3421 + 55) |
+| stored coefficients | 1345 (1320 region A + 25 region B) | 3476 (3421 + 55) |
 | stored rows | 67 (66 pieces + 1 seed) | 316 (311 + 5) |
-| degree | 20 and 18 in region A, 18 in region B | 10 everywhere |
-| read per evaluation | 19 to 21 | 11 |
+| degree | 20 and 18 in region A, 24 in region B | 10 everywhere |
+| read per evaluation | 19 to 25 | 11 |
 
 **The rational route's narrow table, and what it adds to those counts.** The route fitted over the
-narrow cut stores 2646 coefficients in the same 316 rows — 2611 over region A and 35 over region B —
-against the 891 its shipped region-A cover and its 12-coefficient shipped seed cost, and a region-A
+narrow cut stores 2650 coefficients in the same 316 rows — 2611 over region A and 39 over region B —
+against the 891 its shipped region-A cover and its 13-coefficient shipped seed cost, and a region-A
 evaluation reads 6 to 9 coefficients from a piece rather than the 11 the Chebyshev fits on the same
 pieces read. Its region-A pieces are fitted to the target the shipped rational table was fitted to and
 published at that route's 3e-14 bar, of which they deliver 2.42365e-14; its
-region-B seed is published at the seed's 5e-14 and delivers 4.09566e-14, and it is five pieces with
+region-B seed is published at the region's 2.57e-14 bar — the band maximum of the release's
+`1e-13 · F_0(x)` contract — and delivers 1.39086e-14, and it is five pieces with
 their own degree pairs rather than one numerator/denominator pair over the region, because it is the
 narrow cut that makes a region-B seed of several pieces possible at all. Every one of those figures
 is the worse of the two multiply-add routes, measured in the arithmetic the kernel runs on the
 coefficients as they are stored, which is the criterion this lane's fits are accepted under and not
 the exact reading the shipped tables were accepted on.
 
-**What the member measures, and why it is not the narrowing that buys it.** Over region B the
-committed tables are the first row of the degree ladder, and over the interval their pieces cover the
-seed delivers a worst absolute error of 7.21645e-16 at n = 0 against the committed reference —
-published as the bound 8.88178e-16, the round-up the stored rows use. The shipped seed's own row
-reads 9.9365e-15 against its published 1.42109e-14, so 9.9365e-15 / 7.21645e-16 = 13.8 is how much
-smaller the narrow member's error is. **That difference is the derivation and not the split**: the
-shipped seed was placed by bisecting on a sampled residual at a 5e-14 tolerance, while the narrow
-pieces are placed by the proved bound at 1e-14, and a tighter criterion is what the accuracy
-difference measures. What the split buys is reaching that tighter criterion at *eleven* coefficients
-an evaluation rather than nineteen — the bound is conservative by a factor near 14 at this width (see
-the degree ladder above), so the 1e-14 the pieces are solved for is not the 1e-14 they deliver. Over
-region A the narrow pieces read 2.22045e-16, one unit in the last place of a value near 1, against
-the region's published 1e-15 bar and the shipped table's own 2.22045e-16 — the same figure at 11
-coefficients instead of 19 to 21, which is what the region's redesign buys there. The gain the walk
-holds costs nothing measurable either: the widest it gets on a call the dispatch can
-make is 2.171050, and the region reads 2.22045e-16 at both partitions.
+**What the member measures, and what the split does not buy.** Over region B the committed tables
+are the first row of the degree ladder, and over the interval their pieces cover the gate's sweep
+measures a worst error of 2.81428e-15 at n = 0, x = 11.9447. That is the reading a call gets; the
+header's row for the same fits publishes 8.88178e-16, and the two figures do not agree. The shipped
+seed's own row measures 2.21141e-16 at n = 0, x = 12.4643, so 2.81428e-15 / 2.21141e-16 = 12.7 is
+how much *larger* the narrow member's error is here. **That difference is the derivation and not the
+split**: the shipped seed is the degree-24 fit placed under the release contract itself, while the
+narrow pieces are placed by the proved bound at 1e-14, and the conservative bound is what the
+difference measures — it is conservative by a factor near 14 at this width (see the degree ladder
+above), so the 1e-14 the pieces are solved for is not the 1e-14 they deliver. What the split buys is
+holding that proved bound at *eleven* coefficients an evaluation rather than twenty-five. Over
+region A the narrow pieces read 5.68258e-16 against the region's published 1e-15 bar, where the
+shipped table reads 2.99763e-16 — both inside the bar, at 11 coefficients instead of 19 to 21, which
+is what the region's redesign buys there. The gain the walk holds costs nothing measurable either:
+the widest it gets on a call the dispatch can make is 2.171050, and both readings above stay inside
+the region's bar.
 
-**The trade, stated as a trade.** A consumer trades coefficients read per evaluation (19–21 → 11)
-against table size (1339 → 3476) and a piece lookup per call. Nothing about it is a saving, and a
+**The trade, stated as a trade.** A consumer trades coefficients read per evaluation (19–25 → 11)
+against table size (1345 → 3476) and a piece lookup per call. Nothing about it is a saving, and a
 consumer whose cost is the table should not take it.
 
 **Splitting the seed alone does not meet a 1e-14 target.** The degree has to follow the width, and
-what decides is the proved bound rather than a coefficient count. At width 2.4413557 — the region-B
-seed's own 17.09 divided by seven — a degree-6 fit of F_0 delivers a worst measured error of
-5.15e-11 and its a-priori bound is 8.57e-10, which is four to five orders worse than 1e-14. The
-degree that reaches the target at that width is 10, at 11 stored. The bound is conservative rather
-than vacuous, and consistently so. At degree 6 it is 8.57068e-10 against a measured 5.14888e-11, a
-ratio of 16.6; at degree 8 it is 1.39861e-12 against 8.95157e-14, a ratio of 15.6; at degree 10 it
-is 2.01396e-15 against 1.41743e-16, a ratio of 14.2. **Seven stored is what a width-2.44 piece needs
-at a target near 1e-10, not at 1e-14; the denominator there is 5.14888e-11 / 8.57068e-10 — the
-measured truncation over the bound.**
+what decides is the proved bound rather than a coefficient count. At width 2.7285931 — the seed's own
+19.10 divided by seven — a degree-6 fit of F_0 delivers a worst measured error of 1.05e-10 and its
+a-priori bound is 1.76e-9, which is four to five orders worse than 1e-14. The degree that reaches the
+target at that width is 10, at 11 stored. The bound is conservative rather than vacuous, and
+consistently so. At degree 6 it is 1.75672e-9 against a measured 1.04996e-10, a ratio of 16.7; at
+degree 8 it is 3.53129e-12 against 2.24464e-13, a ratio of 15.7; at degree 10 it is 6.27377e-15
+against 4.54963e-16, a ratio of 13.8. **Seven stored is what a width-2.73 piece needs at a target
+near 1e-10, not at 1e-14; the denominator there is 1.04996e-10 / 1.75672e-9 — the measured
+truncation over the bound.**
 
 **The option is exposed, certified, and refused only where a table or a kernel is still owed.**
 `FitGranularity::kNarrow` is a field of `SeamPolicy` and a name the report can print. Its tables are
@@ -398,39 +412,51 @@ on the row — and three more for the rational route
 over the narrow partition. The call shapes are the stored fits read directly, the batch
 entry below the band (where the seeding fallback is taken), the batch and plane entries over the band
 and below, the batch entry over region B, the single-order entry at region A's cell, and the
-single-order, fixed-order and plane entries over the whole grid. Three rows move between the
-partitions, and every other row is the same figure under either name. The first column is what the
-row measures, the two middle columns are the two partitions, and the last is the bar the row was
-certified against:
+single-order, fixed-order and plane entries over the whole grid. Four of the six Chebyshev rows move
+between the partitions; the band-and-below row and the whole-grid row read the same figure under
+either name. The first column is what the row measures, the two middle columns are the two
+partitions, and the last is the bound the gate's row promises, stated in the basis its route uses:
 
 | row, worst over both schemes | shipped | narrow | bar |
 | --- | --- | --- | --- |
-| batch entry, below band | 1.11022e-16 | 1.23165e-16 (n=32, x=1e-08) | 5.5e-14 |
-| stored seed, region B | 9.9365e-15 | 7.21645e-16 (n=0, x=11.8998) | 3e-14 |
-| batch entry, region B | 9.9365e-15 | 7.51675e-16 (n=32, x=11.8998) | 5.5e-14 |
-| stored fits and single entry, region A | 2.22045e-16 | 2.22045e-16 | 1e-15 |
-| batch and plane entry, band and below | 3.21618e-15 (n=16, x=4.89985) | 3.21618e-15 | 5.5e-14 |
-| single, fixed-order and plane entry, whole grid | 5e-14 (n=32, x=28.9893) | 5e-14 | per region (B_region) |
-| rational route, region-A pieces | 2.46e-14 (shipped cover) | 2.21663e-14 (n=2, x=9.88955) | 3e-14 |
-| rational route, region-B seed | 4.46e-14 (shipped seed) | 4.12448e-14 (n=0, x=12) | 5e-14 |
-| rational route, batch entry | — | 5e-14 (n=32, x=28.9893) | 5.5e-14 |
+| batch entry, below band | 1.51607e-16 (n=0, x=1.07824) | 2.15136e-14 (n=32, x=1.05638) | contract: 1e-13 · F_n, 1e-13 · F_0 |
+| stored seed, region B | 2.21141e-16 (n=0, x=12.4643) | 2.81428e-15 (n=0, x=11.9447) | contract: 1e-13 · F_n, 1e-13 · F_0 |
+| batch entry, region B | 8.50281e-10 (n=32, x=11.8998) | 4.76515e-09 (n=32, x=11.8998) | contract: 1e-13 · F_n, 1e-13 · F_0 |
+| stored fits and single entry, region A | 2.99763e-16 (n=0, x=5.7174) | 5.68258e-16 (n=0, x=9.14453) | contract: 1e-13 · F_n, 1e-13 · F_0 |
+| batch and plane entry, band and below | 5.55227e-09 (n=32, x=10.7836) | 5.55227e-09 (n=32, x=10.7836) | contract: 1e-13 · F_n, 1e-13 · F_0 |
+| single, fixed-order and plane entry, whole grid | 1.39576 (n=32, x=31) | 1.39576 (n=32, x=31) | per region (B_region) |
+| rational route, region-A pieces | 2.46e-14 (shipped cover, published) | 2.21663e-14 (n=2, x=9.88955) | absolute: 3e-14 |
+| rational route, region-B seed | 1.69e-14 (shipped seed, published) | 1.35447e-14 (n=0, x=14.9055) | absolute: 2.57e-14 (contract band max) |
+| rational route, batch entry | — | 3.20701e-10 (n=5, x=10.2881) | contract: 1e-13 · F_n, 1e-13 · F_0 |
 
-**The rows are met and the books around them do not move.** The last three rows are the rational
-route's own narrow fits, judged against the route's published bars rather than the Chebyshev rows'
-figures: the shipped cover of region A delivers 2.46e-14 and the narrow pieces 2.21663e-14, the
-shipped seed of region B delivers 4.46e-14 and the five narrow seed pieces 4.12448e-14, and the batch
-entry read through the narrow route lands at 5e-14, absolute like the rest of the row, against the
-5.5e-14 bar the region's fits are cut against (the lane's published figure is a fraction of the
-value and not this bar). The block is
-counted apart from the lane book and from the scheme rows, and those read what they read at that run's
-own revision: 39 of 39 claims and 44 of 44 scheme rows, whose combinations book read its own space with
-none refused — **the space carries a third partition, and the book below is the current one**. What
-does move is the option space, which reads 36 of
-36 members supported, bounded and reachable: the piecewise partitions are two of them, each measured over 2819824 cells at both
-schemes with 1543994 of them reading differently under the other partition and none over the bar its
-row is judged at. The block reports its own carrying fraction, 4125493 of 5710087 cells (72.2%), as
-the cells able to discriminate; the other 1584594 carry a bound at least as large as the value
-itself, so no error can exceed them, and they are not counted in the rows above.
+**The bar column is not one scale, and each row states the basis it was judged on.** The six
+Chebyshev rows are judged against the release contract, and the cell prints its coefficient, `1e-13`:
+at a cell the bound is the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, and the delivered figure
+is the gate's worst error over the value. The two are not on one scale. Where the F_0 arm binds the
+bound relative to the value is `1e-13 · F_0 / F_n`, well above the printed coefficient; the batch
+row's 5.55227e-09 is judged against that arm and reads 0.0962 of its bound. The
+whole-grid row is the one the gate books as `per region (B_region)`, and region B's own bar there is
+the 2.57e-14 band maximum. The rational route's two piece rows are absolute figures on the other
+scale — 3e-14 for region A and 2.57e-14, the band maximum of the scaled contract, for the region-B
+seed — and their delivered figures are absolute beside them, while its batch row is judged against
+the contract again. Neither 3e-14 nor 2.57e-14 is the pre-release absolute 5e-14 an earlier revision
+printed for the two region-B rows.
+
+**The rows are met.** The last three rows are the rational route's own fits, judged against the
+route's published bars rather than the Chebyshev rows' figures: the shipped cover of region A
+delivers 2.46e-14 and the narrow pieces 2.21663e-14 against the route's absolute 3e-14 bar, the
+shipped seed of region B delivers 1.69e-14 and the five narrow seed pieces 1.35447e-14 against the
+region's 2.57e-14 band maximum, and the batch entry read through the narrow route lands at
+3.20701e-10 at n = 5, x = 10.2881 against the contract's 1e-13. The block is counted apart from the
+lane book and from the scheme rows, and those read what they read at that run's own revision: 32 of
+32 claims and 29 of 29 scheme rows, whose combinations book read its own space with none refused —
+**the space carries a third partition, and the book below is the current one**. What does move is
+the option space, which reads 16 of 16 members supported, bounded and reachable: the piecewise
+partitions are two of them, each measured over 413,260 cells at both schemes with 190,013 of them
+reading differently under the other partition and none over the bar its row is judged at. The
+partition book reports its own carrying fraction, 681,370 of 899,566 axis cells (75.7%), as the
+cells able to discriminate; the other 218,196 carry a bound at least as large as the value itself,
+so no error can exceed them, and they are not counted in the rows above.
 
 **What is carried, and what is still refused.** The narrow partition is a field of `SeamPolicy` and
 a name the report prints, and every double-precision entry this library has reads it: the stored fits
@@ -491,7 +517,7 @@ split Clenshaw figures are the table's above, unchanged.
 
 | Route | Region | Interval | Stored | Measured (absolute) | Bar (absolute) |
 |---|---|---|---|---|---|
-| chebyshev (default) | A | 0 | 1067 | 1.24e-07 | 1.5e-07 |
+| chebyshev (default) | A | 0 | 1408 | 1.24e-07 | 1.5e-07 |
 | rational minimax | A | 0 | 465 | 1.44e-07 | 1.5e-07 |
 | chebyshev (default) | B | 11.899848152108484 | 11 | 3.14e-08 | 1.5e-07 |
 | rational minimax | B | 11.899848152108484 | 6 | 7.50e-08 | 1.5e-07 |
@@ -528,7 +554,7 @@ a call there reads 7 coefficients where the shipped seed reads 11.
 
 **The stored counts are upper bounds, not minima.** Each count is the first the degree scan found
 holding the target, not the family's minimum, so a cheaper cover may exist. **The two routes are a
-trade and not a ranking**: region A stores 465 coefficients against 1067 and delivers 1.44e-07
+trade and not a ranking**: region A stores 465 coefficients against 1408 and delivers 1.44e-07
 against 1.24e-07, and region B stores 6 against 11 and delivers 7.50e-08 against 3.14e-08. Half the
 coefficients at more error is worth having on a machine that pays for coefficient fetches and not on
 one that does not, and no measurement here ranks the two.
@@ -707,7 +733,7 @@ degree d costs d + 1 steps, and this library's fits run
 |---|---|
 | x < 1.0855252345349333 | 19 or 21, by order |
 | 1.0855252345349333 ≤ x < 11.899848152108484 | 25 |
-| 11.899848152108484 ≤ x < 28.98933773882074 | 19, once per value: the orders above 0 come from the upward recursion |
+| 11.899848152108484 ≤ x < 28.98933773882074 | 25, once per value: the orders above 0 come from the upward recursion |
 | x ≥ 28.98933773882074 | 0 |
 
 for the double lane — the float lane's are 11 at every argument below 11.899848152108484 — so a
@@ -857,7 +883,7 @@ fill is the contracted one, which the two measurements above already give.
 **Every bound on this page holds on both.** The contracted arithmetic's 2.74e-15 is 0.0915 of its 3e-14,
 its float single row's 6.36e-08 is 0.424 of its 1.5e-07 and its float batch row's 9.11e-08 is 0.607 of
 that same 1.5e-07, and no cell of any lane exceeded its bound on any of the
-six configurations. Five of them print `39 of 39` documented claims met; on the sixth, gcc on arm64,
+six configurations. Five of them print `32 of 32` documented claims met; on the sixth, gcc on arm64,
 the gate is the `boys-accuracy-gate --strict` test in its ctest run, and that test passes. Its
 consumer check prints 55 rule rows and every one reports zero cells above its bound. What a caller
 reads — the bound — is the same on either arithmetic, which is why a row is judged against the same
@@ -911,10 +937,10 @@ same reading twice and differ only by the arithmetic that carried the sum.
 | scheme | stored fit | degree | stored | bound, fused route | bound, separate route |
 | --- | --- | --- | --- | --- | --- |
 | split Clenshaw | region A (per-order fits) | 20 | 21 | 4.441e-16 | 4.441e-16 |
-| split Clenshaw | region B seed | 18 | 19 | 1.421e-14 | 1.421e-14 |
+| split Clenshaw | region B seed | 24 | 25 | 1.110e-16 | 1.110e-16 |
 | split Clenshaw | extended band seed | 24 | 25 | 2.220e-16 | 2.220e-16 |
 | Horner | region A (per-order fits) | 20 | 21 | 2.220e-16 | 4.441e-16 |
-| Horner | region B seed | 18 | 19 | 1.421e-14 | 1.421e-14 |
+| Horner | region B seed | 24 | 25 | 1.110e-16 | 1.110e-16 |
 | Horner | extended band seed | 24 | 25 | 2.220e-16 | 2.220e-16 |
 
 Each bound is the worst error a sweep over the fit's own interval reached against the 60-digit
