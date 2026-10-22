@@ -1,0 +1,7 @@
+comparator: qcx BoysAllOrders vs libint2 FmEval_Chebyshev7<double> - matched accuracy
+libint2 pin: v2.13.1 = 5fb07b4862f219749c51d59ee08073d20a56d506, header-only
+libint2 path timed: 4-wide AVX Chebyshev interpolation (__AVX__ set)
+timing discipline: every recorded pass runs five times - a warm-up of both arms, then libint2 warm-up, libint2 timed, qcx warm-up, qcx timed, in that order
+kernel: qcx-batch | workload: molecular | count: 4194304 | passes: 3 | min_ms: 38.772 | median_ms: 39.821 | max_ms: 45.019 | median_Mvals_per_s: 105.329
+kernel: libint2-cheb7-ladder | workload: molecular | count: 4194304 | passes: 3 | min_ms: 46.463 | median_ms: 47.785 | max_ms: 60.905 | median_Mvals_per_s: 87.774
+sink: qcx 3093846.7532909745 | libint2 3093846.7532909745

@@ -1,0 +1,12 @@
+# The records below are evidence: manifests in this tree publish SHA-256 digests over their
+# exact bytes. Store and check them out byte for byte, without the repository-wide LF
+# conversion, so a digest check after checkout matches the manifest.
+*.csv   -text
+*.json  -text
+*.log   -text
+*.sha256 -text
+*.tsv   -text
+*.txt   -text
+
+# Source files stay under the repository rule.
+CMakeLists.txt text eol=lf

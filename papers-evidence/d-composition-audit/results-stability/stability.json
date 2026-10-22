@@ -1,0 +1,693 @@
+{
+  "schema": 1,
+  "runs": [
+    {
+      "label": "msvc-fused",
+      "dir": "results",
+      "target": "msvc",
+      "route": "fused",
+      "compiler": "msvc",
+      "compiler_version": "1951",
+      "boys_revision": "482fd3388c276091834a6c12a642d9de2481c9f2",
+      "canary_verdict": "wide",
+      "arguments_sha256": "04eb574b48ce60360c2f61302ba86b2a24522a4b25f11cb700efc6103f277a08",
+      "verdict": "interaction-material",
+      "verdict_by_alpha": {
+        "0.05": "interaction-material",
+        "0.1": "interaction-material",
+        "0.2": "interaction-material"
+      },
+      "violation_count": 0,
+      "max_figure_ratio": 0.9985908700338076,
+      "cells": 576,
+      "precisions_present": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp64"
+      ],
+      "material_pairs": [
+        "pack+form",
+        "partition+form",
+        "partition+pack",
+        "precision+form",
+        "precision+pack",
+        "precision+partition",
+        "precision+route",
+        "precision+scheme",
+        "route+form",
+        "route+pack",
+        "route+partition",
+        "route+scheme",
+        "scheme+form",
+        "scheme+pack",
+        "scheme+partition"
+      ],
+      "material_sets": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      }
+    },
+    {
+      "label": "msvc-separate",
+      "dir": "results-msvc-separate",
+      "target": "msvc",
+      "route": "separate",
+      "compiler": "msvc",
+      "compiler_version": "1951",
+      "boys_revision": "482fd3388c276091834a6c12a642d9de2481c9f2",
+      "canary_verdict": "wide",
+      "arguments_sha256": "04eb574b48ce60360c2f61302ba86b2a24522a4b25f11cb700efc6103f277a08",
+      "verdict": "interaction-material",
+      "verdict_by_alpha": {
+        "0.05": "interaction-material",
+        "0.1": "interaction-material",
+        "0.2": "interaction-material"
+      },
+      "violation_count": 0,
+      "max_figure_ratio": 0.9985908700338076,
+      "cells": 576,
+      "precisions_present": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp64"
+      ],
+      "material_pairs": [
+        "pack+form",
+        "partition+form",
+        "partition+pack",
+        "precision+form",
+        "precision+pack",
+        "precision+partition",
+        "precision+route",
+        "precision+scheme",
+        "route+form",
+        "route+pack",
+        "route+partition",
+        "route+scheme",
+        "scheme+form",
+        "scheme+pack",
+        "scheme+partition"
+      ],
+      "material_sets": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      }
+    },
+    {
+      "label": "gcc-fused",
+      "dir": "results-gcc-fused",
+      "target": "gcc",
+      "route": "fused",
+      "compiler": "gnu-or-clang",
+      "compiler_version": "15.2.0",
+      "boys_revision": "482fd3388c276091834a6c12a642d9de2481c9f2",
+      "canary_verdict": "wide",
+      "arguments_sha256": "04eb574b48ce60360c2f61302ba86b2a24522a4b25f11cb700efc6103f277a08",
+      "verdict": "interaction-material",
+      "verdict_by_alpha": {
+        "0.05": "interaction-material",
+        "0.1": "interaction-material",
+        "0.2": "interaction-material"
+      },
+      "violation_count": 0,
+      "max_figure_ratio": 0.9985908700338076,
+      "cells": 576,
+      "precisions_present": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp64"
+      ],
+      "material_pairs": [
+        "pack+form",
+        "partition+form",
+        "partition+pack",
+        "precision+form",
+        "precision+pack",
+        "precision+partition",
+        "precision+route",
+        "precision+scheme",
+        "route+form",
+        "route+pack",
+        "route+partition",
+        "route+scheme",
+        "scheme+form",
+        "scheme+pack",
+        "scheme+partition"
+      ],
+      "material_sets": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      }
+    },
+    {
+      "label": "gcc-separate",
+      "dir": "results-gcc-separate",
+      "target": "gcc",
+      "route": "separate",
+      "compiler": "gnu-or-clang",
+      "compiler_version": "15.2.0",
+      "boys_revision": "482fd3388c276091834a6c12a642d9de2481c9f2",
+      "canary_verdict": "wide",
+      "arguments_sha256": "04eb574b48ce60360c2f61302ba86b2a24522a4b25f11cb700efc6103f277a08",
+      "verdict": "interaction-material",
+      "verdict_by_alpha": {
+        "0.05": "interaction-material",
+        "0.1": "interaction-material",
+        "0.2": "interaction-material"
+      },
+      "violation_count": 0,
+      "max_figure_ratio": 0.9985908700338076,
+      "cells": 576,
+      "precisions_present": [
+        "bf16",
+        "fp16",
+        "fp32",
+        "fp64"
+      ],
+      "material_pairs": [
+        "pack+form",
+        "partition+form",
+        "partition+pack",
+        "precision+form",
+        "precision+pack",
+        "precision+partition",
+        "precision+route",
+        "precision+scheme",
+        "route+form",
+        "route+pack",
+        "route+partition",
+        "route+scheme",
+        "scheme+form",
+        "scheme+pack",
+        "scheme+partition"
+      ],
+      "material_sets": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      }
+    }
+  ],
+  "agreement": {
+    "grid_identical": true,
+    "cells_identical": true,
+    "lanes_identical": true,
+    "safety_clean": true,
+    "verdict_identical": true,
+    "material_pairs_identical": true,
+    "material_sets_identical": false
+  },
+  "magnitudes": {
+    "form+exp": {
+      "min": 0.0,
+      "max": 0.0,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.0,
+        "msvc-separate": 0.0,
+        "gcc-fused": 0.0,
+        "gcc-separate": 0.0
+      }
+    },
+    "pack+exp": {
+      "min": 0.0,
+      "max": 0.0,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.0,
+        "msvc-separate": 0.0,
+        "gcc-fused": 0.0,
+        "gcc-separate": 0.0
+      }
+    },
+    "pack+form": {
+      "min": 0.6571784285675675,
+      "max": 0.6571784285675675,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.6571784285675675,
+        "msvc-separate": 0.6571784285675675,
+        "gcc-fused": 0.6571784285675675,
+        "gcc-separate": 0.6571784285675675
+      }
+    },
+    "partition+exp": {
+      "min": 0.04302460315130701,
+      "max": 0.04302460315130701,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.04302460315130701,
+        "msvc-separate": 0.04302460315130701,
+        "gcc-fused": 0.04302460315130701,
+        "gcc-separate": 0.04302460315130701
+      }
+    },
+    "partition+form": {
+      "min": 0.5728723631155653,
+      "max": 0.5882727896628367,
+      "spread_fraction": 0.02617905641377358,
+      "by_run": {
+        "msvc-fused": 0.5882727896628367,
+        "msvc-separate": 0.5728723631155653,
+        "gcc-fused": 0.5882727896628367,
+        "gcc-separate": 0.5728723631155653
+      }
+    },
+    "partition+pack": {
+      "min": 0.7161146181039513,
+      "max": 0.7161146181039513,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.7161146181039513,
+        "msvc-separate": 0.7161146181039513,
+        "gcc-fused": 0.7161146181039513,
+        "gcc-separate": 0.7161146181039513
+      }
+    },
+    "precision+exp": {
+      "min": 0.0,
+      "max": 0.0,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.0,
+        "msvc-separate": 0.0,
+        "gcc-fused": 0.0,
+        "gcc-separate": 0.0
+      }
+    },
+    "precision+form": {
+      "min": 0.618620635850205,
+      "max": 0.655358479441658,
+      "spread_fraction": 0.056057630661546294,
+      "by_run": {
+        "msvc-fused": 0.618620635850205,
+        "msvc-separate": 0.655358479441658,
+        "gcc-fused": 0.618620635850205,
+        "gcc-separate": 0.655358479441658
+      }
+    },
+    "precision+pack": {
+      "min": 0.6683753480548746,
+      "max": 0.7129272373227036,
+      "spread_fraction": 0.06249149553485597,
+      "by_run": {
+        "msvc-fused": 0.7129272373227036,
+        "msvc-separate": 0.6683753480548746,
+        "gcc-fused": 0.7129272373227036,
+        "gcc-separate": 0.6683753480548746
+      }
+    },
+    "precision+partition": {
+      "min": 0.716114566584981,
+      "max": 0.7161145673004783,
+      "spread_fraction": 9.991380719279175e-10,
+      "by_run": {
+        "msvc-fused": 0.716114566584981,
+        "msvc-separate": 0.7161145673004783,
+        "gcc-fused": 0.716114566584981,
+        "gcc-separate": 0.7161145673004783
+      }
+    },
+    "precision+route": {
+      "min": 0.7157016475508616,
+      "max": 0.7259522436046386,
+      "spread_fraction": 0.01412020714045698,
+      "by_run": {
+        "msvc-fused": 0.7259522436046386,
+        "msvc-separate": 0.7157016475508616,
+        "gcc-fused": 0.7259522436046386,
+        "gcc-separate": 0.7157016475508616
+      }
+    },
+    "precision+scheme": {
+      "min": 0.3574449445812733,
+      "max": 0.4193415476591444,
+      "spread_fraction": 0.1476042701310933,
+      "by_run": {
+        "msvc-fused": 0.3574449445812733,
+        "msvc-separate": 0.4193415476591444,
+        "gcc-fused": 0.3574449445812733,
+        "gcc-separate": 0.4193415476591444
+      }
+    },
+    "route+exp": {
+      "min": 0.0,
+      "max": 0.0,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.0,
+        "msvc-separate": 0.0,
+        "gcc-fused": 0.0,
+        "gcc-separate": 0.0
+      }
+    },
+    "route+form": {
+      "min": 0.38130655514858824,
+      "max": 0.3915571519178625,
+      "spread_fraction": 0.026179056413773636,
+      "by_run": {
+        "msvc-fused": 0.3915571519178625,
+        "msvc-separate": 0.38130655514858824,
+        "gcc-fused": 0.3915571519178625,
+        "gcc-separate": 0.38130655514858824
+      }
+    },
+    "route+pack": {
+      "min": 0.7157018241490805,
+      "max": 0.8014228932221877,
+      "spread_fraction": 0.10696109357253142,
+      "by_run": {
+        "msvc-fused": 0.8014228932221877,
+        "msvc-separate": 0.7157018241490805,
+        "gcc-fused": 0.8014228932221877,
+        "gcc-separate": 0.7157018241490805
+      }
+    },
+    "route+partition": {
+      "min": 1.0369065500019312,
+      "max": 1.0370342509835748,
+      "spread_fraction": 0.0001231405631226646,
+      "by_run": {
+        "msvc-fused": 1.0369065500019312,
+        "msvc-separate": 1.0370342509835748,
+        "gcc-fused": 1.0369065500019312,
+        "gcc-separate": 1.0370342509835748
+      }
+    },
+    "route+scheme": {
+      "min": 0.3574449445812733,
+      "max": 0.4193415476591444,
+      "spread_fraction": 0.1476042701310933,
+      "by_run": {
+        "msvc-fused": 0.3574449445812733,
+        "msvc-separate": 0.4193415476591444,
+        "gcc-fused": 0.3574449445812733,
+        "gcc-separate": 0.4193415476591444
+      }
+    },
+    "scheme+exp": {
+      "min": 0.0,
+      "max": 0.0,
+      "spread_fraction": 0.0,
+      "by_run": {
+        "msvc-fused": 0.0,
+        "msvc-separate": 0.0,
+        "gcc-fused": 0.0,
+        "gcc-separate": 0.0
+      }
+    },
+    "scheme+form": {
+      "min": 0.21215633513945237,
+      "max": 0.24889417873090544,
+      "spread_fraction": 0.14760427013109287,
+      "by_run": {
+        "msvc-fused": 0.21215633513945237,
+        "msvc-separate": 0.24889417873090544,
+        "gcc-fused": 0.21215633513945237,
+        "gcc-separate": 0.24889417873090544
+      }
+    },
+    "scheme+pack": {
+      "min": 0.24823909796040844,
+      "max": 0.3168414750757024,
+      "spread_fraction": 0.21651956107988352,
+      "by_run": {
+        "msvc-fused": 0.3168414750757024,
+        "msvc-separate": 0.24823909796040844,
+        "gcc-fused": 0.3168414750757024,
+        "gcc-separate": 0.24823909796040844
+      }
+    },
+    "scheme+partition": {
+      "min": 0.1984877294658315,
+      "max": 0.28633125800364234,
+      "spread_fraction": 0.30678986691943155,
+      "by_run": {
+        "msvc-fused": 0.1984877294658315,
+        "msvc-separate": 0.28633125800364234,
+        "gcc-fused": 0.1984877294658315,
+        "gcc-separate": 0.28633125800364234
+      }
+    }
+  },
+  "max_interaction_share_by_configuration": {
+    "cross_lane_exact": {
+      "min": 0.38090595726899684,
+      "max": 0.38090595726899684
+    },
+    "fp32": {
+      "min": 0.6695102600775833,
+      "max": 0.8264532765129654
+    },
+    "fp64": {
+      "min": 0.9510343191473021,
+      "max": 0.9551701507259102
+    }
+  },
+  "detail": {
+    "material_sets_by_run": {
+      "msvc-fused": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      },
+      "msvc-separate": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      },
+      "gcc-fused": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      },
+      "gcc-separate": {
+        "fp64": [
+          "partition+pack",
+          "route+partition"
+        ],
+        "fp32": [
+          "pack+form",
+          "partition+form",
+          "partition+pack",
+          "partition+pack+form",
+          "route+form",
+          "route+pack",
+          "route+partition",
+          "route+partition+form",
+          "route+partition+pack",
+          "route+scheme",
+          "route+scheme+partition",
+          "scheme+partition"
+        ],
+        "cross_lane_exact": [
+          "partition+pack",
+          "precision+form",
+          "precision+pack",
+          "precision+partition",
+          "precision+partition+pack",
+          "precision+route",
+          "precision+route+partition",
+          "precision+route+partition+pack",
+          "route+partition",
+          "route+partition+pack"
+        ]
+      }
+    }
+  },
+  "notes": [
+    "at least one configuration reports a canary verdict other than quiet; its rows are provisional"
+  ],
+  "stability": "material-set-unstable"
+}

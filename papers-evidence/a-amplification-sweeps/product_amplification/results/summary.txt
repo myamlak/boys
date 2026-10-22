@@ -1,0 +1,47 @@
+first sweep summary
+reference: C:\Users\myaml\dev\papers-a-v5\papers\boys-crossover\sweeps\product_amplification\data\reference.csv
+arguments: A1 4812, A2 4540, total 9352; cells 308616
+
+replica admission:
+  downward  arguments  1312, cells   43296, bit-identical   43296
+  exact     arguments     1, cells      33, bit-identical      33
+  upward    arguments  8039, cells  133667, bit-identical  133667
+
+gain replica against the closed form:
+  worst relative difference 4.534e-10 at A2 n=21 x=10.783587858916762
+  downward window A1: worst accumulated gain 0.034461118534471293 at n=31 x=1.0855252345349331 (closed form 0.034461118556664543)
+  ungated upward A1: A_32 at x=1.0855252345349333 measured 1.8916808607325811e+33, closed form 1.8916808609129674e+33
+  ungated upward A2: A_32 at x=5.9499240760542422 measured 4294967297.2989922, closed form 4294967296.0000001
+
+band worsts:
+  A1 absolute recursed 6.1496734209610638e-15 at (n=8, x=2.0481916375089066), direct 2.2079726518177837e-16 at (n=0, x=0.060321154747383421), ratio 27.852126772938739
+  A1 relative recursed 1.0868595846822213e-11 at (n=16, x=4.9439138953385218), direct 3.3624014029554793e-14 at (n=25, x=5.9499240760249048), ratio 323.23909445400981
+  A2 absolute recursed 5.1186918492029267e-15 at (n=32, x=10.83362640605775), direct 8.1041118871823205e-17 at (n=0, x=6.4939169076894512), ratio 63.161663121887376
+  A2 relative recursed 1.1483893074442709e-8 at (n=32, x=10.83362640605775), direct 2.9711790573482529e-13 at (n=32, x=11.860236372698131), ratio 38650.962640709937
+  largest A1 per-cell ratio 219994.07140512249 at (n=15, x=5.852261028973726), recursed 5.3668251491204246e-17, direct 2.4395317177603995e-22
+  largest A2 per-cell ratio 1327725.582486937 at (n=32, x=11.412434992214418), recursed 2.3332000679193653e-16, direct 1.7572908880380942e-22
+
+point-count deviation: the paper reports 9354 arguments (4812 A1, 4542 A2).
+This grid yields 4812 A1 and 4540 A2 arguments, 9352 in total.
+The two missing A2 arguments are not recoverable from the surviving records and
+are not synthesised. The argument 5.949924076060192 in the surviving gain table
+is not one of them: it is the p = -12 L point of A2 and this grid contains it.
+
+reference validation:
+  reference validation
+  grid: C:\Users\myaml\dev\papers-a-v5\papers\boys-crossover\sweeps\product_amplification\data\grid.csv
+  arguments: 9352, orders: 33, dps: 60, digits: 60
+  
+  R2 series                        3.365019e-52 at A2 n=32 x=11.847477844967859 over 308583 cells
+  R2b imported series              1.049587e-51 at imported series A2 n=0 x=11.718958946556576 over 3168 cells
+  R3 quadrature                    4.856164e-59 at A2 n=29 x=7.6175297497139765 over 2409 cells
+  R4 committed grid (absolute)     4.975493e-46 at A1 n=2 x=3.162277660168379e-06 over 2409 cells
+  R5 identity                      9.624506e-57 at A2 n=0 x=11.844648661168527 over 299232 cells
+  R6 F0 gamma against erf          3.020869e-61 at A2 x=11.844889383073827 over 9351 cells
+  R7 accuracy-gate grid            4.944563e-25 at A2 n=16 x=11.235743927045055 over 21318 cells
+  
+  strict: on
+  all evaluated routes inside their stated bounds
+
+reconstructed protocol: the L/R sets use 128 log-spaced points, both ends included,
+recovered from surviving at_x values; the paper states the rule but not the count.

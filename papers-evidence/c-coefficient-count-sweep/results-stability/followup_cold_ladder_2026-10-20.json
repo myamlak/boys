@@ -1,0 +1,449 @@
+{
+  "schema": "cold-ladder-followup-1",
+  "follow_up_to": "results-stability\\pass_2026-10-20.json",
+  "reason": "the pass moved this row: the accepted pair fails on the 4,001-node grid",
+  "row": "rel:1e-13|2^5",
+  "target": {
+    "kind": "rel",
+    "value": 1e-13
+  },
+  "grid_nodes": 4001,
+  "settings": {
+    "nodes": 4000,
+    "remez_iters": 120,
+    "outer": 600,
+    "dps": 60,
+    "k_max": 8
+  },
+  "pass": {
+    "verdict": {
+      "accepted_meets": [
+        false,
+        false
+      ],
+      "below_meets": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "cheb_reported": 25,
+      "cheb_doubled": 25,
+      "cheb_stable": true,
+      "stable": false,
+      "cold_ladder_needed": true
+    },
+    "old_stored": 16,
+    "old_m": 7,
+    "old_k": 8,
+    "old_residual_rel": "1.1882344170500528e-13"
+  },
+  "batches": [
+    {
+      "stored": 16,
+      "seconds": 2843.7,
+      "jobs": 8,
+      "cached_jobs": 1,
+      "pairs": [
+        {
+          "stored": 16,
+          "m": 14,
+          "k": 1,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "2.8508726501278744e-11",
+                "abs": "7.2512982654196593e-12"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "2.4234265784953593e-10",
+                "abs": "3.3037778808557671e-11"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 13,
+          "k": 2,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "2.8338857452110057e-11",
+                "abs": "7.2152269411638197e-12"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "2.7921066221072223e-10",
+                "abs": "3.7346115010844668e-11"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 12,
+          "k": 3,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "1.199585108828401e-12",
+                "abs": "3.054208805017704e-13"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "1.877343519513534e-12",
+                "abs": "2.5265318710249525e-13"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 11,
+          "k": 4,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "4.665660542959883e-13",
+                "abs": "1.1657895281953336e-13"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "4.0091562638328478e-12",
+                "abs": "5.3624890160014834e-13"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 10,
+          "k": 5,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "1.799962978975405e-13",
+                "abs": "4.1537864036685651e-14"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "2.0656442275232958e-12",
+                "abs": "2.8275930419474685e-13"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 9,
+          "k": 6,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "7.5496692048520541e-13",
+                "abs": "1.8849354325350118e-13"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "3.1562790307945142e-13",
+                "abs": "4.3793771435454841e-14"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 8,
+          "k": 7,
+          "role": "below",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "1.6462923202709142e-12",
+                "abs": "2.2020155622820207e-13"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 16,
+          "m": 7,
+          "k": 8,
+          "role": "accepted",
+          "cached": true,
+          "solvers": [
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "1.2231155888544165e-13",
+                "abs": "1.7036428118648258e-14"
+              }
+            }
+          ],
+          "meets": false
+        }
+      ]
+    },
+    {
+      "stored": 17,
+      "seconds": 3099.4,
+      "jobs": 8,
+      "cached_jobs": 0,
+      "pairs": [
+        {
+          "stored": 17,
+          "m": 15,
+          "k": 1,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "1.0773932641180539e-11",
+                "abs": "2.7406425210110403e-12"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "1.5198476426344446e-10",
+                "abs": "2.0418379365704297e-11"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 17,
+          "m": 14,
+          "k": 2,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "3.8124650650338403e-12",
+                "abs": "9.7131585130292248e-13"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "9.1958914321079566e-11",
+                "abs": "1.2300061048225845e-11"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 17,
+          "m": 13,
+          "k": 3,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": false,
+              "residual": {
+                "rel": "2.3742687068689619e-13",
+                "abs": "6.0450170118229606e-14"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "2.4279074570407439e-13",
+                "abs": "3.2647724471732029e-14"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 17,
+          "m": 12,
+          "k": 4,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": true,
+              "residual": {
+                "rel": "7.7732691389288941e-14",
+                "abs": "1.9850233057553484e-14"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "5.2025804920757969e-12",
+                "abs": "6.9587661112885039e-13"
+              }
+            }
+          ],
+          "meets": true
+        },
+        {
+          "stored": 17,
+          "m": 11,
+          "k": 5,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "remez",
+              "meets": true,
+              "residual": {
+                "rel": "8.4250889233670007e-14",
+                "abs": "1.9619024998622285e-14"
+              }
+            },
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "2.5339299084076458e-13",
+                "abs": "3.4109513678532836e-14"
+              }
+            }
+          ],
+          "meets": true
+        },
+        {
+          "stored": 17,
+          "m": 10,
+          "k": 6,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "lawson",
+              "meets": false,
+              "residual": {
+                "rel": "4.9582244210169659e-13",
+                "abs": "6.6319250851935202e-14"
+              }
+            }
+          ],
+          "meets": false
+        },
+        {
+          "stored": 17,
+          "m": 9,
+          "k": 7,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "lawson",
+              "meets": true,
+              "residual": {
+                "rel": "7.3156620673083305e-14",
+                "abs": "1.8577073205757171e-14"
+              }
+            }
+          ],
+          "meets": true
+        },
+        {
+          "stored": 17,
+          "m": 8,
+          "k": 8,
+          "role": "ladder",
+          "cached": false,
+          "solvers": [
+            {
+              "solver": "lawson",
+              "meets": true,
+              "residual": {
+                "rel": "4.8239660791127671e-14",
+                "abs": "1.2259176112931e-14"
+              }
+            }
+          ],
+          "meets": true
+        }
+      ]
+    }
+  ],
+  "new_stored": 17,
+  "started": "2026-10-20T23:59:52",
+  "total_seconds": 5946.9
+}

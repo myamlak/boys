@@ -1,0 +1,132 @@
+[19:54:39] ====================================================================
+[19:54:39] rebuild-instruments-v500: tree=/mnt/c/Users/myaml/dev/_boys-v500-482fd33
+[19:54:39] tree revision : 482fd3388c276091834a6c12a642d9de2481c9f2  (v5.0.0)
+[19:54:39] tree dirty    : 0 path(s)
+[19:54:39] build dir     : /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build  (fresh; the tree's build dirs are never written)
+[19:54:39] archive out   : /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build/libboys.a   instruments out=/mnt/c/Users/myaml/dev/boys-libint2-run-v500
+[19:54:39] gate header   : /mnt/c/Users/myaml/dev/_boys-v500-482fd33/include/boys/boys_coefficients.hpp
+[19:54:39]                 2026-10-19 19:53:36.190448400 +0200  143213 bytes  sha256=8ce5e17157a4be5f621d695f377094d212cb839732e278d47f23aa225b4d9204
+[19:54:39] flags         : -std=c++23 -O3 -DNDEBUG -mavx2 -mfma -mf16c -ffp-contract=off -DBOYS_SCALAR_CONTRACTS=0 -DBOYS_SIMD_X86=1 -DBoysFp16=1
+[19:54:39] g++           : g++ (Ubuntu 15.2.0-16ubuntu1) 15.2.0
+[19:54:39] cmake         : cmake version 4.2.3
+[19:54:39] ====================================================================
+[19:54:40] --- configure
+[19:54:40] $ cmake -S /mnt/c/Users/myaml/dev/_boys-v500-482fd33 -B /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build -G Unix Makefiles -DCMAKE_BUILD_TYPE=Release -DBOYS_ISA_AVX2=ON
+-- The CXX compiler identification is GNU 15.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The C compiler identification is GNU 15.2.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- boys: scalar multiply-add route = fused (one rounding)
+-- boys: build defaults = the committed header (the shipped choices)
+-- Performing Test BOYS_SCALAR_CONTRACTS
+-- Performing Test BOYS_SCALAR_CONTRACTS - Failed
+-- boys: this target does not contract a bare product-plus-add (two roundings) — the scalar lanes' two routes are two arithmetics here, and the claims a build carries are compiled against that answer.
+-- Performing Test BOYS_ARCH_X86_64
+-- Performing Test BOYS_ARCH_X86_64 - Success
+-- Performing Test BOYS_GATE_BATCH_ACCEPTS_ROUTE
+-- Performing Test BOYS_GATE_BATCH_ACCEPTS_ROUTE - Success
+-- boys: a route the batch or fixed-order entry does not carry is ACCEPTED
+-- Performing Test BOYS_GATE_FIXEDN_ACCEPTS_ORDERS
+-- Performing Test BOYS_GATE_FIXEDN_ACCEPTS_ORDERS - Failed
+-- boys: the orders axis on BoysFixedN is REFUSED, measured by compiling the call
+-- Performing Test BOYS_GATE_F32_ACCEPTS_ORDERS
+-- Performing Test BOYS_GATE_F32_ACCEPTS_ORDERS - Success
+-- Performing Test BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS
+-- Performing Test BOYS_GATE_F32_SINGLE_ACCEPTS_ORDERS - Failed
+-- boys: the orders packing axis on the single-precision engines is ACCEPTED, measured by compiling the call
+-- boys: the one-order entry on the single-precision engines is REFUSED the orders axis, measured by compiling the call
+-- Performing Test BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
+-- Performing Test BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL - Success
+-- Performing Test BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL
+-- Performing Test BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL - Success
+-- boys: a default call compiles and links from boys/boys.hpp alone, with no archive on the link line, and a call naming a policy compiles from boys/kernels.hpp, measured by building both
+-- Failed to find LLVM FileCheck
+-- Found Git: /usr/bin/git (found version "2.53.0")
+-- Google Benchmark version: v5.0.0, normalized to 5.0.0
+-- Looking for shm_open in rt
+-- Looking for shm_open in rt - found
+-- Performing Test HAVE_CXX_FLAG_WALL
+-- Performing Test HAVE_CXX_FLAG_WALL - Success
+-- Performing Test HAVE_CXX_FLAG_WEXTRA
+-- Performing Test HAVE_CXX_FLAG_WEXTRA - Success
+-- Performing Test HAVE_CXX_FLAG_WSHADOW
+-- Performing Test HAVE_CXX_FLAG_WSHADOW - Success
+-- Performing Test HAVE_CXX_FLAG_WFLOAT_EQUAL
+-- Performing Test HAVE_CXX_FLAG_WFLOAT_EQUAL - Success
+-- Performing Test HAVE_CXX_FLAG_WOLD_STYLE_CAST
+-- Performing Test HAVE_CXX_FLAG_WOLD_STYLE_CAST - Success
+-- Performing Test HAVE_CXX_FLAG_WCONVERSION
+-- Performing Test HAVE_CXX_FLAG_WCONVERSION - Success
+-- Performing Test HAVE_CXX_FLAG_WFORMAT_2
+-- Performing Test HAVE_CXX_FLAG_WFORMAT_2 - Success
+-- Performing Test HAVE_CXX_FLAG_WERROR
+-- Performing Test HAVE_CXX_FLAG_WERROR - Success
+-- Performing Test HAVE_CXX_FLAG_WSUGGEST_OVERRIDE
+-- Performing Test HAVE_CXX_FLAG_WSUGGEST_OVERRIDE - Success
+-- Performing Test HAVE_CXX_FLAG_PEDANTIC
+-- Performing Test HAVE_CXX_FLAG_PEDANTIC - Success
+-- Performing Test HAVE_CXX_FLAG_PEDANTIC_ERRORS
+-- Performing Test HAVE_CXX_FLAG_PEDANTIC_ERRORS - Success
+-- Performing Test HAVE_CXX_FLAG_WSHORTEN_64_TO_32
+-- Performing Test HAVE_CXX_FLAG_WSHORTEN_64_TO_32 - Failed
+-- Performing Test HAVE_CXX_FLAG_FSTRICT_ALIASING
+-- Performing Test HAVE_CXX_FLAG_FSTRICT_ALIASING - Success
+-- Performing Test HAVE_CXX_FLAG_WNO_DEPRECATED_DECLARATIONS
+-- Performing Test HAVE_CXX_FLAG_WNO_DEPRECATED_DECLARATIONS - Success
+-- Performing Test HAVE_CXX_FLAG_WNO_DEPRECATED
+-- Performing Test HAVE_CXX_FLAG_WNO_DEPRECATED - Success
+-- Performing Test HAVE_CXX_FLAG_WSTRICT_ALIASING
+-- Performing Test HAVE_CXX_FLAG_WSTRICT_ALIASING - Success
+-- Performing Test HAVE_CXX_FLAG_WTHREAD_SAFETY
+-- Performing Test HAVE_CXX_FLAG_WTHREAD_SAFETY - Failed
+-- Performing Test HAVE_CXX_FLAG_COVERAGE
+-- Performing Test HAVE_CXX_FLAG_COVERAGE - Success
+-- Performing Test STD_REGEX -- success
+-- Performing Test STEADY_CLOCK -- success
+-- Performing Test PTHREAD_AFFINITY -- success
+-- Found Python3: /usr/bin/python3 (found version "3.14.4") found components: Interpreter
+-- Configuring done (85.3s)
+-- Generating done (8.6s)
+-- Build files have been written to: /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build
+[19:56:14] --- configure rc=0 secs=94
+[19:56:14] --- archive-build
+[19:56:14] $ cmake --build /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build --target boys -j3
+[ 50%] Building CXX object CMakeFiles/boys.dir/src/boys.cpp.o
+[ 50%] Building CXX object CMakeFiles/boys.dir/src/boys_orders_simd.cpp.o
+[ 50%] Building CXX object CMakeFiles/boys.dir/src/boys_defaults.cpp.o
+[ 66%] Building CXX object CMakeFiles/boys.dir/src/boys_simd.cpp.o
+[ 83%] Building CXX object CMakeFiles/boys.dir/src/boys_c.cpp.o
+[ 83%] Building CXX object CMakeFiles/boys.dir/src/boys_probe.cpp.o
+[100%] Linking CXX static library libboys.a
+[100%] Built target boys
+[20:02:38] --- archive-build rc=0 secs=384
+[20:02:38] archive: 2026-10-19 20:02:38.788906200 +0200  19446014 bytes
+[20:02:39] archive md5   : 60fd8657c826d21ab3769f34b0c9f53b
+[20:02:39] archive sha256: ff03c0d3fa3b4e8529501eb76a41fcc028c6ea80601ad11710c4936cc503a63f
+[20:02:39] --- compile-far-exp
+[20:02:39] $ g++ -std=c++23 -O3 -DNDEBUG -mavx2 -mfma -mf16c -ffp-contract=off -DBOYS_SCALAR_CONTRACTS=0 -DBOYS_SIMD_X86=1 -DBoysFp16=1 -I./shim -I/mnt/c/Users/myaml/dev/_boys-v500-482fd33/include -I/mnt/c/Users/myaml/dev/libint-2.13.1/inst/include /mnt/c/Users/myaml/dev/_boys-build/wave-5run/new/benchmarks/boys_libint2_benchmark.cpp /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build/libboys.a -o benchmark-far-exp.new
+[20:02:58] --- compile-far-exp rc=0 secs=19
+[20:02:58] --- compile-gate-exp
+[20:02:58] $ g++ -std=c++23 -O3 -DNDEBUG -mavx2 -mfma -mf16c -ffp-contract=off -DBOYS_SCALAR_CONTRACTS=0 -DBOYS_SIMD_X86=1 -DBoysFp16=1 -I./shim -I/mnt/c/Users/myaml/dev/_boys-v500-482fd33/include -I/mnt/c/Users/myaml/dev/libint-2.13.1/inst/include /mnt/c/Users/myaml/dev/_boys-build/wave-5run/new/benchmarks/boys_libint2_benchmark.cpp /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build/libboys.a -o benchmark-gate-exp.new
+[20:03:16] --- compile-gate-exp rc=0 secs=18
+[20:03:16] installed: benchmark-far-exp benchmark-gate-exp
+[20:03:16] ====================================================================
+[20:03:16] instruments rebuilt against the v5.0.0 tree; the freshness gate passes
+[20:03:16] gate header : /mnt/c/Users/myaml/dev/_boys-v500-482fd33/include/boys/boys_coefficients.hpp  2026-10-19 19:53:36.190448400 +0200
+[20:03:16] archive     : /mnt/c/Users/myaml/dev/_boys-build/rebuild-instr-v500-build/libboys.a  sha256=ff03c0d3fa3b4e8529501eb76a41fcc028c6ea80601ad11710c4936cc503a63f
+[20:03:16] benchmark-far-exp : 2026-10-19 20:02:58.885901200 +0200  3868952 bytes  sha256=78b4023ac805baa0982ecb52e369b52d41f78fadb8e58b9c5f9c9ba70d78d512
+[20:03:17] benchmark-gate-exp: 2026-10-19 20:03:16.244911600 +0200  3868952 bytes  sha256=78b4023ac805baa0982ecb52e369b52d41f78fadb8e58b9c5f9c9ba70d78d512
+[20:03:17] log         : /mnt/c/Users/myaml/dev/_boys-build/wave-5run-v500/rebuild-instruments-v500.log
+[20:03:17] rebuild-instruments-v500: DONE
+[20:03:17] ====================================================================

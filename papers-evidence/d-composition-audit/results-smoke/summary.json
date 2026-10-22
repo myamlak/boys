@@ -1,0 +1,2087 @@
+{
+  "schema": 3,
+  "materiality": {
+    "primary_alpha": 0.1,
+    "alphas": [
+      0.05,
+      0.1,
+      0.2
+    ],
+    "pairwise_definition": "|I| > alpha * max(E00,E10,E01,E11), informative contrasts only",
+    "multiway_definition": "a component's or an interaction order's share of the point's centred total sum of squares > alpha; the mean (order 0) is excluded from the centred total",
+    "definition": "pairwise: |I| > alpha * max(E00,E10,E01,E11), informative only; multi-way: share of the point's centred total sum of squares > alpha, with the mean excluded",
+    "rationale": "10% is a pre-registered engineering materiality margin, not a significance level. The pairwise margin is in response units: an interaction of one tenth of the largest response in the contrast, far above the double-double reference's resolution. The multi-way margin is a variance share, bounded by 1 and not inflated by the number of factor levels or cells; the orthonormal coefficient is reported as a descriptive effect but is not the materiality measure. The 5% and 20% columns make both choices transparent."
+  },
+  "counts": {
+    "data_rows": 1056,
+    "cells": 8,
+    "expected_cells": 576,
+    "design_cells": 576,
+    "precisions_present": [
+      "bf16",
+      "fp16",
+      "fp32",
+      "fp64"
+    ],
+    "resolving_lanes": [
+      "fp32",
+      "fp64"
+    ],
+    "store_dominated_lanes": [
+      "bf16",
+      "fp16"
+    ],
+    "resolving_cells": 6,
+    "store_dominated_cells": 2,
+    "refusals": 0,
+    "informative_contrasts": 0,
+    "material_contrasts": 0,
+    "material_contrasts_by_alpha": {
+      "0.05": 0,
+      "0.1": 0,
+      "0.2": 0
+    },
+    "material_multway_readings": 0,
+    "material_multway_readings_by_alpha": {
+      "0.05": 0,
+      "0.1": 0,
+      "0.2": 0
+    },
+    "rows_by_argument_kind": {
+      "exact": 528,
+      "generic": 528
+    }
+  },
+  "refusals": [],
+  "safety": {
+    "definition": "figure_ratio = |err| / limit, where limit is the lane row's whole statement: the accessor's figure plus, on the half lanes, half of the last representable digit of the returned value. accessor_ratio = |err| / figure, reported apart: on a half lane it exceeds 1 wherever the digit binds, which is the row's shape and not a violation",
+    "max_figure_ratio": 0.9910391052748153,
+    "max_figure_ratio_at": {
+      "cell": {
+        "precision": "fp16",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "point": [
+        0,
+        1.0
+      ]
+    },
+    "max_accessor_ratio": 4869.218749513503,
+    "max_accessor_ratio_at": {
+      "cell": {
+        "precision": "bf16",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "point": [
+        0,
+        1.0
+      ]
+    },
+    "accessor_only_exceeded": 82,
+    "by_lane": {
+      "bf16": {
+        "max_figure_ratio": 0.9547765232260498,
+        "max_figure_ratio_at": [
+          2,
+          11.7
+        ],
+        "max_accessor_ratio": 4869.218749513503,
+        "max_accessor_ratio_at": [
+          0,
+          1.0
+        ],
+        "accessor_only_exceeded": 43,
+        "violations": 0
+      },
+      "fp16": {
+        "max_figure_ratio": 0.9910391052748153,
+        "max_figure_ratio_at": [
+          0,
+          1.0
+        ],
+        "max_accessor_ratio": 1614.0104161801694,
+        "max_accessor_ratio_at": [
+          0,
+          1.0
+        ],
+        "accessor_only_exceeded": 39,
+        "violations": 0
+      },
+      "fp32": {
+        "max_figure_ratio": 0.16938986161618141,
+        "max_figure_ratio_at": [
+          0,
+          1.0
+        ],
+        "max_accessor_ratio": 0.16938986161618141,
+        "max_accessor_ratio_at": [
+          0,
+          1.0
+        ],
+        "accessor_only_exceeded": 0,
+        "violations": 0
+      },
+      "fp64": {
+        "max_figure_ratio": 0.285424625269749,
+        "max_figure_ratio_at": [
+          13,
+          11.7
+        ],
+        "max_accessor_ratio": 0.285424625269749,
+        "max_accessor_ratio_at": [
+          13,
+          11.7
+        ],
+        "accessor_only_exceeded": 0,
+        "violations": 0
+      }
+    },
+    "violations": [],
+    "violation_count": 0
+  },
+  "cells": [
+    {
+      "cell": {
+        "precision": "bf16",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "E_f0": 0.0020701609536096515,
+      "E_at": [
+        0,
+        11.7
+      ],
+      "R_figure": 0.9547765232260498,
+      "R_at": [
+        2,
+        11.7
+      ],
+      "worst_abs_err": 0.0007303828124270254,
+      "worst_point": [
+        0,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp16",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "E_f0": 0.00032417479804155156,
+      "E_at": [
+        0,
+        1.0
+      ],
+      "R_figure": 0.9910391052748153,
+      "R_at": [
+        0,
+        1.0
+      ],
+      "worst_abs_err": 0.0002421015624270254,
+      "worst_point": [
+        0,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp32",
+        "route": "chebyshev",
+        "scheme": "horner",
+        "partition": "uniform",
+        "pack": "arguments",
+        "form": "refined-reciprocal",
+        "exp": "fast"
+      },
+      "E_f0": 4.493761485971426e-08,
+      "E_at": [
+        0,
+        24.0
+      ],
+      "R_figure": 0.08815808988182045,
+      "R_at": [
+        1,
+        1.0
+      ],
+      "worst_abs_err": 1.3223713482273066e-08,
+      "worst_point": [
+        1,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp32",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "E_f0": 7.120668607096198e-08,
+      "E_at": [
+        0,
+        11.7
+      ],
+      "R_figure": 0.12299315927968164,
+      "R_at": [
+        0,
+        11.7
+      ],
+      "worst_abs_err": 1.8448973891952246e-08,
+      "worst_point": [
+        0,
+        11.699999809265137
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp32",
+        "route": "rational-minimax",
+        "scheme": "horner",
+        "partition": "narrow",
+        "pack": "orders",
+        "form": "plain-reciprocal",
+        "exp": "fast"
+      },
+      "E_f0": 6.30670489807284e-08,
+      "E_at": [
+        0,
+        1.0
+      ],
+      "R_figure": 0.16938986161618141,
+      "R_at": [
+        0,
+        1.0
+      ],
+      "worst_abs_err": 4.7099994164071344e-08,
+      "worst_point": [
+        0,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp64",
+        "route": "chebyshev",
+        "scheme": "horner",
+        "partition": "uniform",
+        "pack": "arguments",
+        "form": "refined-reciprocal",
+        "exp": "fast"
+      },
+      "E_f0": 1.8334036816328185e-15,
+      "E_at": [
+        0,
+        1.0
+      ],
+      "R_figure": 0.018334036816328215,
+      "R_at": [
+        0,
+        1.0
+      ],
+      "worst_abs_err": 1.3692301146305407e-15,
+      "worst_point": [
+        0,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp64",
+        "route": "chebyshev",
+        "scheme": "split-clenshaw",
+        "partition": "shipped",
+        "pack": "arguments",
+        "form": "exact-division",
+        "exp": "accurate"
+      },
+      "E_f0": 1.605400378016269e-16,
+      "E_at": [
+        0,
+        24.0
+      ],
+      "R_figure": 0.001605400378016269,
+      "R_at": [
+        0,
+        24.0
+      ],
+      "worst_abs_err": 3.6962485080352814e-17,
+      "worst_point": [
+        0,
+        1.0
+      ]
+    },
+    {
+      "cell": {
+        "precision": "fp64",
+        "route": "rational-minimax",
+        "scheme": "horner",
+        "partition": "narrow",
+        "pack": "orders",
+        "form": "plain-reciprocal",
+        "exp": "fast"
+      },
+      "E_f0": 2.85424625269749e-14,
+      "E_at": [
+        13,
+        11.7
+      ],
+      "R_figure": 0.285424625269749,
+      "R_at": [
+        13,
+        11.7
+      ],
+      "worst_abs_err": 7.395080023178913e-15,
+      "worst_point": [
+        13,
+        11.7
+      ]
+    }
+  ],
+  "pairs": [
+    {
+      "pair": [
+        "precision",
+        "route"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "precision",
+        "scheme"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "precision",
+        "partition"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "precision",
+        "pack"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "precision",
+        "form"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "precision",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "route",
+        "scheme"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "route",
+        "partition"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "route",
+        "pack"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "route",
+        "form"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "route",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "scheme",
+        "partition"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "scheme",
+        "pack"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "scheme",
+        "form"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "scheme",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "partition",
+        "pack"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "partition",
+        "form"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "partition",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "pack",
+        "form"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "pack",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    },
+    {
+      "pair": [
+        "form",
+        "exp"
+      ],
+      "contrasts": [],
+      "informative": 0,
+      "material": {
+        "0.05": 0,
+        "0.1": 0,
+        "0.2": 0
+      },
+      "material_at_primary": 0,
+      "max_abs_interaction": 0.0,
+      "max_relative": 0.0,
+      "pointwise_max_abs_interaction": 0.0,
+      "profiled_contrasts": 0,
+      "profiled_sign_changes": 0
+    }
+  ],
+  "store_dominated": {
+    "lanes": [
+      "bf16",
+      "fp16"
+    ],
+    "informative_contrasts": 0,
+    "material_contrasts_by_alpha": {
+      "0.05": 0,
+      "0.1": 0,
+      "0.2": 0
+    },
+    "material_multway_readings_by_alpha": {
+      "0.05": 0,
+      "0.1": 0,
+      "0.2": 0
+    },
+    "pairs": [
+      {
+        "pair": [
+          "precision",
+          "route"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "precision",
+          "scheme"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "precision",
+          "partition"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "precision",
+          "pack"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "precision",
+          "form"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "precision",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "route",
+          "scheme"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "route",
+          "partition"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "route",
+          "pack"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "route",
+          "form"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "route",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "scheme",
+          "partition"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "scheme",
+          "pack"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "scheme",
+          "form"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "scheme",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "partition",
+          "pack"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "partition",
+          "form"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "partition",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "pack",
+          "form"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "pack",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      },
+      {
+        "pair": [
+          "form",
+          "exp"
+        ],
+        "informative": 0,
+        "material": {
+          "0.05": 0,
+          "0.1": 0,
+          "0.2": 0
+        },
+        "max_relative": 0.0
+      }
+    ],
+    "note": "reported, not verdict-bearing. The half lanes' returned value carries a store quantum three to four orders above the axis terms; a contrast here measures that quantum's interaction with the axes and the argument, not the composition of the axis bounds"
+  },
+  "liveness": {
+    "pack_by_lane": {
+      "fp64": {
+        "rows": 396,
+        "live": 198
+      },
+      "fp32": {
+        "rows": 396,
+        "live": 198
+      },
+      "fp16": {
+        "rows": 132,
+        "live": 66
+      },
+      "bf16": {
+        "rows": 132,
+        "live": 66
+      }
+    },
+    "partition_domain_by_level": {
+      "shipped": {
+        "rows": 528,
+        "live": 528
+      },
+      "narrow": {
+        "rows": 264,
+        "live": 264
+      },
+      "uniform": {
+        "rows": 264,
+        "live": 264
+      }
+    },
+    "axis_value_changes": {
+      "route": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      },
+      "scheme": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      },
+      "partition": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      },
+      "pack": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      },
+      "form": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      },
+      "exp": {
+        "bf16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp16": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp32": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        },
+        "fp64": {
+          "blocks": 0,
+          "points": 0,
+          "live_points": 0,
+          "live_exact": 0,
+          "live_generic": 0,
+          "max_spread": 0.0,
+          "max_spread_at": null
+        }
+      }
+    }
+  },
+  "multiway": {
+    "within_lane": {
+      "fp64": {
+        "factors": [
+          "route",
+          "scheme",
+          "partition",
+          "pack",
+          "form",
+          "exp"
+        ],
+        "points": 0,
+        "missing_count": 141,
+        "missing_cells": [
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp64",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "narrow",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "accurate"
+          }
+        ],
+        "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+        "used_in_verdict": true,
+        "role": "resolving: the published figure is the axis sum and the returned value resolves it"
+      },
+      "fp32": {
+        "factors": [
+          "route",
+          "scheme",
+          "partition",
+          "pack",
+          "form",
+          "exp"
+        ],
+        "points": 0,
+        "missing_count": 141,
+        "missing_cells": [
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp32",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "narrow",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "accurate"
+          }
+        ],
+        "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+        "used_in_verdict": true,
+        "role": "resolving: the published figure is the axis sum and the returned value resolves it"
+      },
+      "fp16": {
+        "factors": [
+          "route",
+          "scheme",
+          "partition",
+          "pack",
+          "form",
+          "exp"
+        ],
+        "points": 0,
+        "missing_count": 143,
+        "missing_cells": [
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "fp16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "narrow",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "accurate"
+          }
+        ],
+        "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+        "used_in_verdict": false,
+        "role": "store-dominated: the published figure includes the value's half digit, which is the dominant term and leaves no resolution for an axis contrast"
+      },
+      "bf16": {
+        "factors": [
+          "route",
+          "scheme",
+          "partition",
+          "pack",
+          "form",
+          "exp"
+        ],
+        "points": 0,
+        "missing_count": 143,
+        "missing_cells": [
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "arguments",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "accurate"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "exact-division",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "plain-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "accurate"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "shipped",
+            "pack": "orders",
+            "form": "refined-reciprocal",
+            "exp": "fast"
+          },
+          {
+            "precision": "bf16",
+            "route": "chebyshev",
+            "scheme": "split-clenshaw",
+            "partition": "narrow",
+            "pack": "arguments",
+            "form": "exact-division",
+            "exp": "accurate"
+          }
+        ],
+        "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+        "used_in_verdict": false,
+        "role": "store-dominated: the published figure includes the value's half digit, which is the dominant term and leaves no resolution for an axis contrast"
+      }
+    },
+    "cross_lane_exact": {
+      "factors": [
+        "precision",
+        "route",
+        "scheme",
+        "partition",
+        "pack",
+        "form",
+        "exp"
+      ],
+      "points": 0,
+      "missing_count": 282,
+      "missing_cells": [
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "exact-division",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "plain-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "plain-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "refined-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "refined-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "exact-division",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "exact-division",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "plain-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "plain-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "refined-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "refined-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "narrow",
+          "pack": "arguments",
+          "form": "exact-division",
+          "exp": "accurate"
+        }
+      ],
+      "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+      "used_in_verdict": true,
+      "role": "resolving lanes, exact arguments"
+    },
+    "cross_lane_exact_all_lanes": {
+      "factors": [
+        "precision",
+        "route",
+        "scheme",
+        "partition",
+        "pack",
+        "form",
+        "exp"
+      ],
+      "points": 0,
+      "missing_count": 568,
+      "missing_cells": [
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "exact-division",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "plain-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "plain-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "refined-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "arguments",
+          "form": "refined-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "exact-division",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "exact-division",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "plain-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "plain-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "refined-reciprocal",
+          "exp": "accurate"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "shipped",
+          "pack": "orders",
+          "form": "refined-reciprocal",
+          "exp": "fast"
+        },
+        {
+          "precision": "fp64",
+          "route": "chebyshev",
+          "scheme": "split-clenshaw",
+          "partition": "narrow",
+          "pack": "arguments",
+          "form": "exact-division",
+          "exp": "accurate"
+        }
+      ],
+      "note": "the factorial is incomplete: a structurally refused or unserved cell breaks the balanced design, so no multi-way decomposition is reported for this block",
+      "used_in_verdict": false,
+      "role": "all four lanes: the half lanes' store quantum is in the response, and a precision contrast changes the store format by construction"
+    },
+    "cross_lane_exact_all_lanes_material_by_alpha": {
+      "0.05": 0,
+      "0.1": 0,
+      "0.2": 0
+    }
+  },
+  "verdict_by_alpha": {
+    "0.05": "inconclusive",
+    "0.1": "inconclusive",
+    "0.2": "inconclusive"
+  },
+  "verdict": "inconclusive"
+}

@@ -1,0 +1,103 @@
+[2026-10-20T12:41:14Z] wave-5run-v500 wrapper start; reps=5
+[2026-10-20T12:41:14Z] lock claimed; reps=5; out=/mnt/c/Users/myaml/dev/_boys-build/wave-5run-v500/repeat; loadavg 2.12 0.50 0.17
+[2026-10-20T12:41:15Z] == canary wave-before
+[2026-10-20T12:41:15Z]   canary wave-before: -10.31 +40.30 +12.04 %
+[2026-10-20T12:41:15Z] == repetition 1 start; loadavg 2.12 0.50 0.17
+[2026-10-20T12:41:15Z] == canary rep1-before
+[2026-10-20T12:41:15Z]   canary rep1-before: -24.92 +9.24 +18.20 %
+[2026-10-20T12:41:32Z]   region     rc=0
+[2026-10-20T12:42:06Z]   order      rc=0
+[2026-10-20T12:42:12Z]   stratify   rc=0
+[2026-10-20T12:42:46Z]   gate-order rc=0
+[2026-10-20T12:42:48Z]   uniform    rc=0
+[2026-10-20T12:42:50Z]   molecular  rc=0
+[2026-10-20T12:42:50Z] == canary rep1-after
+[2026-10-20T12:42:50Z]   canary rep1-after: +0.76 -3.26 +12.26 %
+[2026-10-20T12:42:50Z] == repetition 1 end secs=95; loadavg 1.23 0.64 0.25
+[2026-10-20T12:42:50Z] == repetition 2 start; loadavg 1.23 0.64 0.25
+[2026-10-20T12:42:50Z] == canary rep2-before
+[2026-10-20T12:42:50Z]   canary rep2-before: +12.27 +3.81 -17.99 %
+[2026-10-20T12:43:05Z]   region     rc=0
+[2026-10-20T12:43:36Z]   order      rc=0
+[2026-10-20T12:43:41Z]   stratify   rc=0
+[2026-10-20T12:44:14Z]   gate-order rc=0
+[2026-10-20T12:44:17Z]   uniform    rc=0
+[2026-10-20T12:44:18Z]   molecular  rc=0
+[2026-10-20T12:44:18Z] == canary rep2-after
+[2026-10-20T12:44:18Z]   canary rep2-after: -2.72 -3.21 -1.21 %
+[2026-10-20T12:44:18Z] == repetition 2 end secs=88; loadavg 1.13 0.75 0.33
+[2026-10-20T12:44:18Z] == repetition 3 start; loadavg 1.13 0.75 0.33
+[2026-10-20T12:44:18Z] == canary rep3-before
+[2026-10-20T12:44:19Z]   canary rep3-before: +20.72 -8.57 +1.07 %
+[2026-10-20T12:44:35Z]   region     rc=0
+[2026-10-20T12:45:06Z]   order      rc=0
+[2026-10-20T12:45:12Z]   stratify   rc=0
+[2026-10-20T12:45:44Z]   gate-order rc=0
+[2026-10-20T12:45:47Z]   uniform    rc=0
+[2026-10-20T12:45:48Z]   molecular  rc=0
+[2026-10-20T12:45:48Z] == canary rep3-after
+[2026-10-20T12:45:48Z]   canary rep3-after: +10.36 +23.12 +59.81 %
+[2026-10-20T12:45:48Z] == repetition 3 end secs=89; loadavg 1.03 0.82 0.39
+[2026-10-20T12:45:48Z] == repetition 4 start; loadavg 1.03 0.82 0.39
+[2026-10-20T12:45:48Z] == canary rep4-before
+[2026-10-20T12:45:48Z]   canary rep4-before: +26.11 +4.32 +2.31 %
+[2026-10-20T12:46:06Z]   region     rc=0
+[2026-10-20T12:46:38Z]   order      rc=0
+[2026-10-20T12:46:45Z]   stratify   rc=0
+[2026-10-20T12:47:17Z]   gate-order rc=0
+[2026-10-20T12:47:20Z]   uniform    rc=0
+[2026-10-20T12:47:21Z]   molecular  rc=0
+[2026-10-20T12:47:21Z] == canary rep4-after
+[2026-10-20T12:47:21Z]   canary rep4-after: +7.31 +5.06 +19.08 %
+[2026-10-20T12:47:21Z] == repetition 4 end secs=93; loadavg 1.00 0.87 0.46
+[2026-10-20T12:47:21Z] == repetition 5 start; loadavg 1.00 0.87 0.46
+[2026-10-20T12:47:21Z] == canary rep5-before
+[2026-10-20T12:47:21Z]   canary rep5-before: -16.15 +11.58 +13.96 %
+[2026-10-20T12:47:37Z]   region     rc=0
+[2026-10-20T12:48:09Z]   order      rc=0
+[2026-10-20T12:48:16Z]   stratify   rc=0
+[2026-10-20T12:48:49Z]   gate-order rc=0
+[2026-10-20T12:48:52Z]   uniform    rc=0
+[2026-10-20T12:48:53Z]   molecular  rc=0
+[2026-10-20T12:48:53Z] == canary rep5-after
+[2026-10-20T12:48:53Z]   canary rep5-after: +14.33 +2.94 +7.37 %
+[2026-10-20T12:48:53Z] == repetition 5 end secs=92; loadavg 1.00 0.91 0.51
+[2026-10-20T12:48:53Z] == canary wave-after
+[2026-10-20T12:48:53Z]   canary wave-after: +4.52 -15.60 +21.48 %
+[2026-10-20T12:48:53Z] loadavg end 1.00 0.91 0.51
+[2026-10-20T12:48:53Z] == 5 repetition(s) done; pooling is a separate read of /mnt/c/Users/myaml/dev/_boys-build/wave-5run-v500/repeat
+[2026-10-20T12:48:53Z] repeat script rc=0
+pooled over 5 repetitions (ratio qcx/libint2; below 1.0 = qcx faster):
+canary readings (12; tag and deltas in n = 0,1,2 order):
+  wave-before      -10.31/+40.30/+12.04 %
+  rep1-before      -24.92/+9.24/+18.20 %
+  rep1-after       +0.76/-3.26/+12.26 %
+  rep2-before      +12.27/+3.81/-17.99 %
+  rep2-after       -2.72/-3.21/-1.21 %
+  rep3-before      +20.72/-8.57/+1.07 %
+  rep3-after       +10.36/+23.12/+59.81 %
+  rep4-before      +26.11/+4.32/+2.31 %
+  rep4-after       +7.31/+5.06/+19.08 %
+  rep5-before      -16.15/+11.58/+13.96 %
+  rep5-after       +14.33/+2.94/+7.37 %
+  wave-after       +4.52/-15.60/+21.48 %
+window canary: pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL: no figure ships
+  region-sweep, all rows             mean 0.624   min 0.611   max 0.647   sd 0.0151   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  region A                           mean 0.666   min 0.643   max 0.697   sd 0.0217   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  region B                           mean 0.824   min 0.786   max 0.880   sd 0.0419   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  region C                           mean 0.496   min 0.475   max 0.511   sd 0.0168   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  order-sweep uniform marginal       mean 0.759   min 0.747   max 0.768   sd 0.0081   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  order-sweep molecular marginal     mean 0.593   min 0.581   max 0.601   sd 0.0083   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  stratify molecular                 mean 0.730   min 0.714   max 0.744   sd 0.0131   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  whole uniform stream               mean 0.740   min 0.600   max 0.856   sd 0.0954   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+  whole molecular stream             mean 0.847   min 0.773   max 0.960   sd 0.0684   (5 reps)
+      canary pre -10.31/+40.30/+12.04 %  post +4.52/-15.60/+21.48 %  max|delta| 59.81 %  PROVISIONAL
+[2026-10-20T12:48:53Z] pool rc=0
