@@ -221,6 +221,7 @@ Each optional, named one at a time:
     cmake -S . -B build -DBOYS_BUILD_PROBE=ON                        # the option probe, in the archive
     cmake -S . -B build -DBOYS_BUILD_DEFAULTS=my_seam.hpp            # your own default choices
     cmake -S . -B build -DBOYS_WERROR=OFF                            # drop -Werror
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON -DBOYS_GATE_EXTERNAL_BOOST=ON  # external Boost row
     cmake -S . -B build -DBUILD_CUDA=ON                              # the device lane
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
 

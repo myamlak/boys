@@ -108,6 +108,27 @@ each claim it could not confirm. Run it before changing a bound, a threshold, or
 `ctest` runs it as one of its tests, but a passing `ctest` prints only how long the test took. The
 figures are in this binary's own output.
 
+### The gate's external-row application
+
+The gate can carry another library's documented claim as rows of its own book. Configure with
+`-DBOYS_GATE_EXTERNAL_BOOST=ON`, OFF by default, beside `-DBOYS_BUILD_TESTS=ON`. It needs Boost >=
+1.92 with Boost.Math and Boost.Multiprecision, found as a CMake package or through `BOOST_ROOT`, and
+Python 3 for the test.
+
+```bash
+cmake -S . -B build -DBOYS_BUILD_TESTS=ON -DBOYS_GATE_EXTERNAL_BOOST=ON
+cmake --build build --config Release --target boys-accuracy-gate
+ctest --test-dir build -C Release -R boys-external-boost-gate --output-on-failure
+```
+
+It measures Boost.Math's documented Airy sentence ("less than 100 eps" relative error for x > 0)
+against `boost::multiprecision::cpp_bin_float_100` at 100 decimal digits, over the audit's grid and
+a dense scan, and adds rows `boost.math.airy_ai_100eps` and `boost.math.airy_bi_100eps`. Both print
+`EXCEEDED`, so `--strict` exits non-zero by design. `ctest` runs `tests/external_boost_gate_test.py`
+as `boys-external-boost-gate`; it passes when both rows carry an exceeded verdict, name their worst
+cell in eps and the audit's cells (`x=35.9` for ai, `x=78.1252` for bi), the `cpp_bin_float_100`
+reference under Boost 1.92, and a non-zero exit. With the option OFF, nothing changes.
+
 The regeneration check, which is what CI runs - the mode that writes the tables is the local
 one:
 
