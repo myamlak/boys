@@ -860,13 +860,13 @@ if (BOYS_BUILD_TESTS)
         endif()
         # Both the entry under test and its reference must be present.
         list(GET Boost_INCLUDE_DIRS 0 _boys_boost_include)
-        foreach (_boys_boost_header
-                 boost/math/special_functions/airy.hpp
-                 boost/math/special_functions/relative_difference.hpp
-                 boost/multiprecision/cpp_bin_float.hpp)
-            if (NOT EXISTS "${_boys_boost_include}/${_boys_boost_header}")
+        foreach (_boys_boost_stem
+                 math/special_functions/airy
+                 math/special_functions/relative_difference
+                 multiprecision/cpp_bin_float)
+            if (NOT EXISTS "${_boys_boost_include}/boost/${_boys_boost_stem}.hpp")
                 message(FATAL_ERROR
-                    "boys: ${_boys_boost_include} has no ${_boys_boost_header}; "
+                    "boys: ${_boys_boost_include} has no boost/${_boys_boost_stem}.hpp; "
                     "BOYS_GATE_EXTERNAL_BOOST needs Boost.Math and Boost.Multiprecision "
                     "(Boost >= 1.92)")
             endif()
