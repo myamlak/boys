@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+from pathlib import Path
 
 ROWS = (
     ("airy/ai", "35.9", "boost.math.airy_ai_100eps"),
@@ -41,7 +42,7 @@ def main(argv: list[str]) -> int:
         return 1
 
     run = subprocess.run(
-        [argv[1], "--strict"],
+        [str(Path(argv[1]).resolve()), "--strict"],
         capture_output=True,
         text=True,
         encoding="utf-8",
