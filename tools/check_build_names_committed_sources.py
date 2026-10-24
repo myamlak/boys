@@ -14,7 +14,9 @@ by CMake itself, but it is caught here first and with a clearer sentence.
 Two things in a build file name a path without being one the build reads: a commented
 line, and the argument of a `message(` command. A diagnostic names a header by the
 spelling its `#include` uses - `boys/boys.hpp` for `include/boys/boys.hpp` - and no
-clone fails over a sentence. Neither is read here.
+clone fails over a sentence. Neither is read here. A `find_path(` or `find_file(`
+argument is a third: it asks CMake to search for a file that may come from outside the
+repository, so its absence from the tree is the normal case, not a defect.
 
     python tools/check_build_names_committed_sources.py
     python tools/check_build_names_committed_sources.py --check    # exit 1 on a finding
@@ -78,13 +80,14 @@ def in_comment(text: str, position: int) -> bool:
 
 
 def diagnostic_spans(text: str) -> list[tuple[int, int]]:
-    """The argument list of every `message(` command, as (start, end) offsets.
+    """The argument list of every `message(`, `find_path(` or `find_file(` command.
 
     A message may run over several lines and its strings may hold parentheses, so the
-    list is found by walking to the paren that closes the one the command opened.
+    list is found by walking to the paren that closes the one the command opened. A
+    search command's argument names a file to locate, not one the build reads.
     """
     spans = []
-    for command in re.finditer(r"(?<![\w.])message\s*\(", text):
+    for command in re.finditer(r"(?<![\w.])(?:message|find_path|find_file)\s*\(", text):
         if in_comment(text, command.start()):
             continue
         depth, index = 0, command.end() - 1

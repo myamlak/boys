@@ -10,7 +10,7 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
-This tree is **version 5.0.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
+This tree is **version 5.1.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
 `project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
 CMake: `boys::VersionString()` answers it.
 
@@ -198,7 +198,7 @@ Installed, from a top-level build:
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
 `boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
-build carried the device lane; the version file accepts any `5.x` package for a request of `5.0.0`.
+build carried the device lane; the version file accepts any `5.x` package for a request of `5.1.0`.
 The install rules are written at the top level only, so a consumer that adds this tree as a
 subdirectory already has the targets and needs no package:
 
@@ -221,6 +221,7 @@ Each optional, named one at a time:
     cmake -S . -B build -DBOYS_BUILD_PROBE=ON                        # the option probe, in the archive
     cmake -S . -B build -DBOYS_BUILD_DEFAULTS=my_seam.hpp            # your own default choices
     cmake -S . -B build -DBOYS_WERROR=OFF                            # drop -Werror
+    cmake -S . -B build -DBOYS_BUILD_TESTS=ON -DBOYS_GATE_EXTERNAL_BOOST=ON  # external Boost row
     cmake -S . -B build -DBUILD_CUDA=ON                              # the device lane
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
 

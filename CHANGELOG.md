@@ -4,6 +4,36 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.1.0
+
+**The accuracy gate can carry another library's documented claim as rows of its own book.** A build
+configured with `BOYS_GATE_EXTERNAL_BOOST=ON` (OFF by default) measures Boost.Math's documented Airy
+accuracy sentence against `boost::multiprecision::cpp_bin_float_100` at 100 decimal digits and adds
+two rows to the same book a strict run judges. Both rows are exceeded at Boost 1.92; the CTest entry
+`boys-external-boost-gate` asserts the rows, their audit cells, the reference route and the
+non-zero exit. `CONTRIBUTING.md` documents the option and the commands.
+
+**The numerical contract, the stored tables and the entries are those of 5.0.0.** The bound, the
+fits and the generated headers are unchanged; the device and scalar lanes measure what they measured.
+
+**The libint2 comparison note is removed from the 5.0.0 notes.** The comparator it described was
+never carried in this tree, so the note pointed at something a consumer could not build.
+
+**The region-B seed figures are corrected.** The docs described an earlier revision's seed: 19
+Chebyshev coefficients and 12 rational ones, delivering `9.92e-15` and `4.46e-14`. This tree stores
+25 and 13 — the Chebyshev seed at degree 24, the rational one a degree-4/8 numerator/denominator
+pair — delivering `5.09e-17` and `1.69e-14`. Its bar is `2.57e-14`, the band maximum of the release's
+`1e-13 · F_0(x)` contract, not the pre-release absolute `5e-14` the earlier text printed.
+
+**The granularity figures are re-read from the committed gate run.** 1345 stored coefficients on the
+shipped partition and 2650 on the rational route's narrow cut; an evaluation reads 19 to 25, against
+the narrow cut's 11. The certification table, the scheme table's region-B row (degree 24, 25 stored,
+bound `1.110e-16`), the run's book counts and its carrying fractions now state what
+`tests/data/boys_accuracy_gate_run.txt` records.
+
+**The single-precision lane's region-A stored count is corrected from 1067 to 1408.** Its measured
+and bar columns are unchanged.
+
 ## 5.0.0
 
 **The numerical contract is unchanged from 4.0.0.** The bound, the delivered figures, and the
@@ -120,10 +150,6 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 - `boys-cuda-accuracy-gate` answers for the device lane against the same committed reference grid,
   and the option probe and the device probe measure their whole spaces
   (`tests/data/boys_option_probe_report.txt`, `tests/data/boys_device_probe_report.txt`).
-- The libint2 v2.13.1 comparison, `BoysAllOrders` against `FmEval_Chebyshev7<double>` at matched
-  accuracy, was measured while preparing this release; its comparator is not carried in this tree.
-  A figure from it is one host's, and `docs/consumer-perspective.md` states what may be read off a
-  timing.
 
 ## Before 4.0.0
 

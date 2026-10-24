@@ -64,6 +64,7 @@ constexpr const char* kNativeHalfAbsent =
 
 #include "boys/boys_impl.hpp" // the region kernels
 #include "boys_gate_reference.hpp" // the committed reference, the row shape
+#include "boys_gate_external_boost.hpp" // Boost.Math's Airy sentence as rows; opt-in macro
 
 #include <algorithm>
 #include <array>
@@ -8640,6 +8641,54 @@ int main(int argc, char** argv) {
         Verdict::Verified,
         "tree command, run by the operator, not by this binary: "
         "`ctest --test-dir build --output-on-failure`");
+
+    // The external row: Boost.Math's documented Airy accuracy sentence, measured here; its rows
+    // join this book, so --strict judges them with every other row.
+#ifdef BOYS_GATE_EXTERNAL_BOOST
+    {
+        const boost_gate_external::AiryWitness boostAiry =
+            boost_gate_external::MeasureBoostAiry();
+
+        const auto addAiryRow =
+            [&add](const char* id,
+                   const char* page,
+                   const char* domain,
+                   const boost_gate_external::AiryFunctionWitness& witness) {
+            const char* tail =
+                witness.worst.breached
+                    ? "which exceeds the documented figure: the witness set alone refutes the "
+                      "sentence over the sampled domain"
+                    : "so the witness set does not exceed the documented figure";
+
+            add(id,
+                "In general though, the relative error is low (less than 100 eps) for x > 0 "
+                "while only the absolute error is low for x < 0 as the following error plot "
+                "illustrates (the document's epsilon symbol, written eps here)",
+                std::string("Boost.Math documentation, ") + page + " page, accuracy section",
+                witness.worst.breached ? Verdict::Exceeded : Verdict::Verified,
+                Fmt("measured under Boost %s, here in the claim's own unit (eps = 2^-52, "
+                    "std::numeric_limits<double>::epsilon()) against "
+                    "boost::multiprecision::cpp_bin_float_100, the same function evaluated at "
+                    "100 decimal digits: the worst cell of the witness set delivers %.6g eps "
+                    "at x=%.17g, and the audit's own reported cell at x=%.6g delivers %.6g "
+                    "eps; the reference at the worst cell is %s; the witness set is the "
+                    "audit's linear grid, the published arguments, and a dense scan of x in "
+                    "%s, %zu arguments in all - %s",
+                    boost_gate_external::VersionString().c_str(),
+                    witness.worst.eps,
+                    witness.worst.x,
+                    witness.audit.x,
+                    witness.audit.eps,
+                    witness.worst.reference.c_str(),
+                    domain,
+                    witness.points,
+                    tail));
+        };
+
+        addAiryRow("boost.math.airy_ai_100eps", "airy/ai", "(0, 35.9]", boostAiry.ai);
+        addAiryRow("boost.math.airy_bi_100eps", "airy/bi", "(0, 100]", boostAiry.bi);
+    }
+#endif // BOYS_GATE_EXTERNAL_BOOST
 
     // Withdrawn: "orders 0 through 3 are 95.2% of the calls measured in a production integral
     // engine". The counts are not in this tree, and a distribution measured elsewhere describes the

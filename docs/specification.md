@@ -403,11 +403,13 @@ x = 1.0855252345349333, `band` is the rest of the range below x = 11.89984815210
 `C` are the two regions beyond that. The `Bound claimed` column carries the figure the gate judged
 each row against at that revision: the double lane's published figure, the larger of `1e-13 · F_n(x)`
 and `1e-13 · F_0(x)`, the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, and the half lanes'
-`1.5e-7` plus one half-ULP. The per-region absolute budgets the lane's fits were placed against
-(`≤ 1e-15` on `A`, `≤ 3e-14` on `band` and `B`, `≤ 5.5e-14` on `C`) are measurements kept in
-[lane-contract.md](lane-contract.md), and they are cut against the absolute figures the lanes
-published before 4.0.0; the contract above states the one figure the lane holds to over all
-four, in the ladder-scaled form.
+`1.5e-7` plus one half-ULP. The per-region budgets the lane's fits were placed against
+(`≤ 1e-15` on the per-order fits' own arguments, `≤ 3e-14` on `band`, `≤ 5.5e-14` on `C`) are
+measurements kept in [lane-contract.md](lane-contract.md), and they are cut against the absolute
+figures the lanes published before 4.0.0. Region `B` is the exception: its seed was placed against
+the release contract itself, and its bar is the contract's band maximum, `2.57e-14`, which is what
+`kRegionBFitBar` states. The contract above states the one figure the lane holds to over all four,
+in the ladder-scaled form.
 
 ### Arguments outside the documented domain
 
@@ -467,7 +469,7 @@ the row states no `servesFrom` above zero.
 
 | Route | Region | Interval | Stored | Measured | Bar |
 |---|---|---|---|---|---|
-| chebyshev (default) | A | [0, 11.899848152108484) | 1067 | 1.24e-07 | 1.5e-07 |
+| chebyshev (default) | A | [0, 11.899848152108484) | 1408 | 1.24e-07 | 1.5e-07 |
 | rational minimax | A | [0, 11.899848152108484) | 465 | 1.44e-07 | 1.5e-07 |
 | chebyshev (default) | B | [11.899848152108484, 28.98933773882074) | 11 | 3.14e-08 | 1.5e-07 |
 | rational minimax | B | [11.899848152108484, 28.98933773882074) | 6 | 7.50e-08 | 1.5e-07 |
@@ -478,7 +480,7 @@ figure that covers one of them understates the other; the gate prints each row's
 beside the worst it measures itself, on the entry the row names, every order 0..32 and every sample
 of the row's interval. Both routes hold the lane's own bound, and the two region-A rows are the
 comparison: the same interval, the same reference, the same arithmetic, 465 stored coefficients
-against 1067. The rational route's pieces are its own cover of each order's interval rather than the
+against 1408. The rational route's pieces are its own cover of each order's interval rather than the
 Chebyshev table's breaks, and both were accepted against the same criterion — the lane's own bar,
 weighted by the downward recursion's gain, **on the coefficients as they are stored**, read in both
 multiply-add routes with the worse taken, at every argument of the region's acceptance grid and at
@@ -489,7 +491,7 @@ arithmetic and 19 under the separate one, so a search against it does not close.
 **`FitGranularity::kNarrow` is served by this lane too, on both its routes.** The partition cuts
 region A of this lane into 218 pieces at degree 6 and region B into four pieces at the same degree,
 and each route stores its own fit on that cut: 1526 coefficients either way on the Chebyshev route
-against the shipped table's 1067, and 1241 on the rational route against 465. Region B's seed is
+against the shipped table's 1408, and 1241 on the rational route against 465. Region B's seed is
 where the narrowing is visible in the other direction: 28 stored on the Chebyshev route against the
 shipped seed's 11, and 18 on the rational route against its 6. The gate's single-entry policy rows,
 read in binary32 on the coefficients as stored, are 1.02681e-07 over region A and 4.51733e-08 over
@@ -502,7 +504,7 @@ in both over region B for the rational ones. The route the build runs is the fig
 the row against.
 
 **The Chebyshev route's fits are stored in both of the forms the two schemes read**, one monomial
-coefficient per Chebyshev coefficient: 1067 stored either way in region A and 11 in region B, the same
+coefficient per Chebyshev coefficient: 1408 stored either way in region A and 11 in region B, the same
 pieces, intervals and degrees, so naming a scheme chooses a table and not a shape. Over region A the
 worse route reads 1.24e-07 at the split Clenshaw reading's worst cell and 8.98e-08 of the Horner
 reading, over region B 3.14e-08 and 2.19e-08, all inside the lane's 1.5e-07 bar. The second form costs
@@ -610,7 +612,7 @@ locate its piece by a multiply where the other two need a search.
 
 | partition | stored coefficients | stored rows | read per evaluation |
 | --- | --- | --- | --- |
-| `FitGranularity::kCoarsest` | 1339 | 67 | 19 to 21 |
+| `FitGranularity::kCoarsest` | 1345 | 67 | 19 to 25 |
 | `FitGranularity::kNarrow` | 3476 | 316 | 11 |
 
 The grid is a third structure rather than a third row of that table: one width for every interval —
@@ -620,9 +622,9 @@ partition-wide count. The float lane carries a grid of its own rather than a re-
 intervals of width 1/4 under a read cap of 4. `tools/gen_boys_coefficients.py --derive-partition`
 prints each ladder and the degrees it chose.
 
-**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–21 to 11
+**Narrowing is a trade and not a saving.** The coefficients an evaluation reads fall from 19–25 to 11
 on the default route and to 6–9 on the rational one, while the table a consumer carries grows from
-1339 to 3476 on the default route, and the rational route's narrow table adds 2646 of its own over
+1345 to 3476 on the default route, and the rational route's narrow table adds 2650 of its own over
 the same 316 piece rows, with a piece lookup on every call. A consumer whose cost is per evaluation
 gains; one whose cost is the table gains nothing and pays the lookup.
 
@@ -649,19 +651,23 @@ granularity, because the upward recursion it feeds runs the other way and an err
 size it is.
 
 **The member is certified.** Measured against the committed high-precision
-reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst absolute
-error of 2.22e-16 over region A at region A's published 1e-15 bar — the shipped table's own figure —
-and 7.21645e-16 over region B against the shipped seed's 9.9365e-15, a factor of 13.8. The gate's
+reference over the interval its own pieces cover, `FitGranularity::kNarrow` delivers a worst error
+over the value of 5.68258e-16 over region A against region A's published 1e-15 bar, where the
+shipped table's own row reads 2.99763e-16, and 2.81428e-15 over region B against the shipped seed's
+2.21141e-16 — the narrow pieces the less accurate of the two there, by a factor of 12.7, because
+the shipped seed is the degree-24 fit placed under the release contract while the pieces are placed
+by the proved bound at 1e-14, conservative by near 14 at their width. The gate's
 granularity block carries its rows — one per partition, scheme and call shape, plus three for the
 rational route over the narrow partition: its region-A pieces, its region-B
 seed and the batch entry read through it — each judged against the bar the published table holds for
 the cell it ran in, with the worst cell named. Those three rational rows
-read 2.21663e-14 against the region's 3e-14, 4.12448e-14 against the seed's 5e-14 and 5e-14 against
-the batch lane's pre-move figure, the absolute 5.5e-14 those rows are still judged at — the gate's
+read 2.21663e-14 against the region's absolute 3e-14 bar, 1.35447e-14 against the seed's 2.57e-14
+band maximum, and 3.20701e-10 — an error over the value, like the Chebyshev rows — against the
+batch lane's contract bound — the gate's
 own measured rows for those fits, on the run's multiply-add route. The figures the generated header publishes for the two fitted rows are
-2.42365e-14 over region A and 4.09566e-14 over region B, the same under both multiply-add routes,
-and both are inside their bars as well. The block reports the trade above and the 4125493 of 5710087
-axis cells (72.2%) that can discriminate, the rest carrying a bound at least as large as the value
+2.42365e-14 over region A and 1.39086e-14 over region B, the same under both multiply-add routes,
+and both are inside their bars as well. The block reports the trade above and the 681370 of 899566
+axis cells (75.7%) that can discriminate, the rest carrying a bound at least as large as the value
 itself.
 Those rows are counted apart from every other book the gate reports, so nothing the library already
 published moves.
@@ -713,7 +719,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.0.0**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.1.0**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,

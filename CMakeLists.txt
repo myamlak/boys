@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.0.0 LANGUAGES CXX)
+project(boys VERSION 5.1.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -819,6 +819,69 @@ if (BOYS_BUILD_TESTS)
         BoysGateInputs="${BOYS_GATE_INPUTS}")
     boys_strict_warnings(boys-accuracy-gate)
 
+    # The external-row application: when ON, the gate measures Boost.Math's documented Airy
+    # sentence as two rows of its own book. Requires Boost >= 1.92; OFF leaves the build unchanged.
+    option(BOYS_GATE_EXTERNAL_BOOST
+        "Measure Boost.Math's documented Airy accuracy claim as rows of the gate's book"
+        OFF)
+    if (BOYS_GATE_EXTERNAL_BOOST)
+        # A package config if present, otherwise a header tree named by BOOST_ROOT.
+        find_package(Boost 1.92 CONFIG QUIET)
+        if (NOT Boost_FOUND)
+            find_path(BOYS_GATE_BOOST_INCLUDE boost/version.hpp
+                HINTS "${BOOST_ROOT}/include" "$ENV{BOOST_ROOT}/include"
+                      "${BOOST_ROOT}" "$ENV{BOOST_ROOT}"
+                DOC "Boost headers for the gate's external row")
+            if (NOT BOYS_GATE_BOOST_INCLUDE)
+                message(FATAL_ERROR
+                    "boys: BOYS_GATE_EXTERNAL_BOOST is ON and no Boost >= 1.92 was found. "
+                    "Install that Boost with its CMake package, or point BOOST_ROOT at its "
+                    "source tree.")
+            endif()
+            set(Boost_INCLUDE_DIRS "${BOYS_GATE_BOOST_INCLUDE}")
+            file(STRINGS "${BOYS_GATE_BOOST_INCLUDE}/boost/version.hpp" _boys_boost_version
+                REGEX "#define BOOST_LIB_VERSION")
+            string(REGEX REPLACE ".*\"([^\"]+)\".*" "\\1" Boost_VERSION_STRING
+                "${_boys_boost_version}")
+            string(REPLACE "_" "." Boost_VERSION_STRING "${Boost_VERSION_STRING}")
+        endif()
+        if (NOT Boost_INCLUDE_DIRS AND Boost_INCLUDE_DIR)
+            set(Boost_INCLUDE_DIRS "${Boost_INCLUDE_DIR}")
+        endif()
+        if (NOT Boost_INCLUDE_DIRS)
+            message(FATAL_ERROR
+                "boys: Boost was found but names no include directory; the external row "
+                "cannot be compiled")
+        endif()
+        if (Boost_VERSION_STRING VERSION_LESS "1.92")
+            message(FATAL_ERROR
+                "boys: BOYS_GATE_EXTERNAL_BOOST is stated at Boost 1.92; this tree is "
+                "Boost ${Boost_VERSION_STRING}")
+        endif()
+        # Both the entry under test and its reference must be present.
+        list(GET Boost_INCLUDE_DIRS 0 _boys_boost_include)
+        foreach (_boys_boost_stem
+                 math/special_functions/airy
+                 math/special_functions/relative_difference
+                 multiprecision/cpp_bin_float)
+            if (NOT EXISTS "${_boys_boost_include}/boost/${_boys_boost_stem}.hpp")
+                message(FATAL_ERROR
+                    "boys: ${_boys_boost_include} has no boost/${_boys_boost_stem}.hpp; "
+                    "BOYS_GATE_EXTERNAL_BOOST needs Boost.Math and Boost.Multiprecision "
+                    "(Boost >= 1.92)")
+            endif()
+        endforeach()
+        target_compile_definitions(boys-accuracy-gate PRIVATE BOYS_GATE_EXTERNAL_BOOST=1)
+        # Boost's headers are not this tree's to keep warning-clean; C4714 comes at code generation.
+        target_include_directories(boys-accuracy-gate SYSTEM PRIVATE ${Boost_INCLUDE_DIRS})
+        if (MSVC)
+            target_compile_options(boys-accuracy-gate PRIVATE
+                "$<$<COMPILE_LANGUAGE:CXX>:/wd4714>")
+        endif()
+        message(STATUS "boys: the external Boost row is ON - Boost ${Boost_VERSION_STRING} from "
+            "${Boost_INCLUDE_DIRS}")
+    endif()
+
     # The DEVICE LANE's arm of that cross. The gate measures the device lane
     # where the build carries it, through the CUDA surface's own entries, so
     # this target links boys-cuda and states BOYS_GATE_CUDA in exactly the
@@ -1380,6 +1443,15 @@ int main() {
     # and named with their reason rather than counted as evidence this revision
     # failed to produce.
     add_test(NAME boys-accuracy-gate COMMAND boys-accuracy-gate --strict)
+    # The external-row reading: same binary, its own script; the run must exit non-zero with
+    # both rows exceeded.
+    if (BOYS_GATE_EXTERNAL_BOOST)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        add_test(NAME boys-external-boost-gate
+            COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/external_boost_gate_test.py"
+                    $<TARGET_FILE:boys-accuracy-gate>)
+    endif()
     set_tests_properties(boys-boundary-standalone PROPERTIES
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/data")
 
