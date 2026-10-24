@@ -719,7 +719,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.0.1**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.1.0**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,

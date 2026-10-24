@@ -4,10 +4,17 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
-## 5.0.1
+## 5.1.0
 
-**A documentation release: the numerical contract, the stored tables and the entries are those of
-5.0.0.** The bound, the fits and the generated headers are unchanged.
+**The accuracy gate can carry another library's documented claim as rows of its own book.** A build
+configured with `BOYS_GATE_EXTERNAL_BOOST=ON` (OFF by default) measures Boost.Math's documented Airy
+accuracy sentence against `boost::multiprecision::cpp_bin_float_100` at 100 decimal digits and adds
+two rows to the same book a strict run judges. Both rows are exceeded at Boost 1.92; the CTest entry
+`boys-external-boost-gate` asserts the rows, their audit cells, the reference route and the
+non-zero exit. `CONTRIBUTING.md` documents the option and the commands.
+
+**The numerical contract, the stored tables and the entries are those of 5.0.0.** The bound, the
+fits and the generated headers are unchanged; the device and scalar lanes measure what they measured.
 
 **The libint2 comparison note is removed from the 5.0.0 notes.** The comparator it described was
 never carried in this tree, so the note pointed at something a consumer could not build.
