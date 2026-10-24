@@ -111,7 +111,7 @@ the certified fit routes, measured:
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
 accuracy gate, version 5.1.0
-accuracy gate, inputs src=06469da8cf73df9e,include=7c715d2e4bcc6f59,gate=6f1de6fc4007f671,grid=970db44ddb6a7da5,cmake=badf7d348c418068
+accuracy gate, inputs src=06469da8cf73df9e,include=2875a93c19ce1b2a,gate=6f1de6fc4007f671,grid=970db44ddb6a7da5,cmake=badf7d348c418068
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
