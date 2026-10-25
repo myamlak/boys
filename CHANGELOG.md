@@ -12,12 +12,12 @@ transcription of `ClenshawSplit` in `tools/gen_boys_coefficients.py` seeded its 
 which at an odd degree is the degree's own top coefficient, `c[deg]`. Every odd-degree Chebyshev fit
 evaluated through the transcription was therefore one odd term short, and the delivered error
 reported beside it was an overestimate. The fits the generator measures through this evaluator are
-the region-B Chebyshev seed (degree 24) and the narrow region-A pieces (degree 10), both even, where
-the two seeds are the same index; the committed tables, the numerical contract and the entries are
-unchanged, and no emitted coefficient reads the corrected value. A test,
-`tests/gen_boys_clenshaw_split_test.py`, now holds the evaluator to a direct Chebyshev sum at 60
-digits over odd and even degrees 0 through 64, relative `1e-12`; `ctest` runs it as
-`boys-generator-clenshaw-split`.
+the region-B Chebyshev seed (degree 24) and the shipped region-A Chebyshev pieces read beside the
+rational route (degrees 18 and 20), all even, where the two seeds are the same index; the committed
+tables, the numerical contract and the entries are unchanged, and no emitted coefficient reads the
+corrected value. A test, `tests/gen_boys_clenshaw_split_test.py`, now holds the evaluator to a
+direct Chebyshev sum at 60 digits over odd and even degrees 0 through 64, relative `1e-12`;
+`ctest` runs it as `boys-generator-clenshaw-split`.
 
 ## 5.1.0
 
