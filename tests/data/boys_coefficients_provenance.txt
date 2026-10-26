@@ -4,8 +4,8 @@
 # relative to the repository root. `--check` recomputes them; it re-derives
 # the tables themselves only when this record's generator, pins or env cell
 # does not match the tree.
-version 4.0.0
-generator 21409b9e708d821d
+version 5.1.1
+generator b99277305dc972d1
 pins 3972594217ee8daa
 env mpmath=1.4.1,backend=gmpy,clang-format=18.1.3
 artifact:include/boys/boys_coefficients.hpp d9046acfdbd6d1d6

@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.1.0 LANGUAGES CXX)
+project(boys VERSION 5.1.1 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -1424,6 +1424,22 @@ int main() {
                     "find")
             endif()
         endif()
+    endif()
+
+    # The generator's split-Clenshaw evaluator against a direct Chebyshev sum:
+    # the instrument the region-B Chebyshev route's delivered error is measured
+    # with, held at both parities, because an odd degree's top coefficient is
+    # the term a mis-seeded odd part drops while still returning a plausible
+    # number. It reads the generator's pinned mpmath; a machine without it skips
+    # with 77, the generator's own answer to a missing dependency.
+    if (Python3_FOUND)
+        add_test(NAME boys-generator-clenshaw-split
+            COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/gen_boys_clenshaw_split_test.py")
+        set_tests_properties(boys-generator-clenshaw-split PROPERTIES SKIP_RETURN_CODE 77)
+    else()
+        message(STATUS "boys: the generator's split-Clenshaw test is not registered — it needs a "
+            "Python interpreter this configure did not find")
     endif()
 
     add_test(NAME boys-tests COMMAND boys-tests)

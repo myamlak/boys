@@ -3904,9 +3904,12 @@ def clenshaw_split_double(cs, t):
         b2 = b1
         b1 = b0
     even = rat_fma(v, b1, cs[0] - b2)
-    o1 = cs[2 * m - 1]
+    # The odd part seeds at the degree's top odd coefficient c[2 * mo - 1] with
+    # mo = (deg + 1) / 2, so at an odd degree it reads c[deg].
+    mo = (deg + 1) // 2
+    o1 = cs[2 * mo - 1]
     o2 = 0.0
-    for k in range(m - 2, 0, -1):
+    for k in range(mo - 2, 0, -1):
         o0 = rat_fma(two_v, o1, cs[2 * k + 1] - o2)
         o2 = o1
         o1 = o0

@@ -152,9 +152,9 @@ carrying the run its combination came from where a run stands behind it, and its
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
 transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
 same protocol on this host, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 105.75
-against 271.54 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 392.66
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 66.27
+against 263.18 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
+route; the fastest rational-route narrow row is 273.25
 (`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
 the settings the library has always shipped and have not been ranked against a timing. The option
 probe below is what ranks any of them, on the machine it is run on.
@@ -719,7 +719,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.1.0**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.1.1**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
