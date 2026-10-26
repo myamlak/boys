@@ -247,6 +247,46 @@ def record_name(report_text: str) -> str:
     return f"host-{match.group('date')}"
 
 
+def coefficient_groups(body: list[str]) -> list[str]:
+    """The coefficient group headers the emitted rows name, sorted and unique.
+
+    A replacement seam may name any combination the report measured, and a group header is
+    what makes that combination compile: the fit definitions refuse a policy whose table was
+    not included before them. The committed seam needs none, because its rows are the
+    committed defaults; this seam's rows are a measurement's and can name a group the default
+    tables do not carry.
+    """
+    lane_word = {"kFloat": "d", "kFp32": "f32", "kFp16": "f32", "kBf16": "f32"}
+    granularity_word = {"kCoarsest": "coarse", "kNarrow": "narrow", "kUniform": "uniform"}
+    scheme_word = {"kHorner": "mono", "kClenshaw": "cheb", "kSplitClenshaw": "cheb"}
+    found: set[str] = set()
+
+    for row in body:
+        route = re.search(r"FitRoute::(\w+)", row)
+        scheme = re.search(r"EvalScheme::(\w+)", row)
+        budget = re.search(r"BoysBudget::(\w+)", row)
+        granularity = re.search(r"FitGranularity::(\w+)", row)
+        pack = re.search(r"PackAxis::(\w+)", row)
+
+        if not (route and scheme and budget and granularity):
+            continue
+
+        lane = lane_word.get(budget.group(1))
+        gran = granularity_word.get(granularity.group(1))
+        kind = "rat" if route.group(1) == "kRationalMinimax" else scheme_word.get(scheme.group(1))
+
+        if lane and gran and kind:
+            found.add(f"boys_coefficients_{lane}_{gran}_{kind}.hpp")
+
+        # The orders-packed uniform form reads the transposed tables, and only the double
+        # lane carries them (the float lane's uniform tables are stored one way).
+        if lane == "d" and gran == "uniform" and kind in ("mono", "cheb") and pack and \
+                pack.group(1) == "kOrders":
+            found.add(f"boys_coefficients_{lane}_{gran}_{kind}_transposed.hpp")
+
+    return sorted(found)
+
+
 def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
     """The seam header the committed report implies, as the text of a replacement seam."""
     names = seam_names(seam_text)
@@ -336,6 +376,9 @@ def emit(report_text: str, seam_text: str, accuracy_text: str) -> str:
             " - a class the replacement drops is a class its calls cannot resolve")
 
     text = SEAM_PROSE
+    text = text.replace("#pragma once\n",
+                        "#pragma once\n\n" + "".join(f'#include "boys/{h}"\n' for h in
+                                                      coefficient_groups(body)), 1)
 
     for macro in host + DEVICE_NAMES:
         text += f"#define {macro} {names[macro]}\n\n"
