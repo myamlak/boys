@@ -1,0 +1,648 @@
+{
+  "revision": {
+    "library_tag": "v5.1.1",
+    "library_commit": "834bdbb18a30ac8538b519436429f78d41f187ce",
+    "lane": "BoysSingleF16 / BoysSingleBf16 (store-half scalar entries)",
+    "bound": "HalfBound = 1e-7 + 0.5*ulp(got)"
+  },
+  "orders": [
+    0,
+    32
+  ],
+  "reference": {
+    "dps": 45,
+    "series": "boys_ref(n, x, RAT_TAIL_FLOOR, RAT_TERMS)",
+    "series_max_x": 250.0,
+    "identity": "F_n = (Gamma(n+1/2) - Gamma(n+1/2, x)) / (2 x^(n+1/2))",
+    "overlap_series_vs_identity": [
+      {
+        "x": 100.0,
+        "n": 0,
+        "rel_agreement": 3.705928111000917e-46
+      },
+      {
+        "x": 100.0,
+        "n": 16,
+        "rel_agreement": 3.430480699444242e-46
+      },
+      {
+        "x": 100.0,
+        "n": 32,
+        "rel_agreement": 5.96445442208102e-46
+      },
+      {
+        "x": 150.0,
+        "n": 0,
+        "rel_agreement": 1.2103510527184781e-45
+      },
+      {
+        "x": 150.0,
+        "n": 16,
+        "rel_agreement": 5.390025175634331e-46
+      },
+      {
+        "x": 150.0,
+        "n": 32,
+        "rel_agreement": 1.5028191987191181e-46
+      },
+      {
+        "x": 200.0,
+        "n": 0,
+        "rel_agreement": 5.240973795757202e-46
+      },
+      {
+        "x": 200.0,
+        "n": 16,
+        "rel_agreement": 3.2342882204087924e-46
+      },
+      {
+        "x": 200.0,
+        "n": 32,
+        "rel_agreement": 6.326259251897362e-46
+      },
+      {
+        "x": 250.0,
+        "n": 0,
+        "rel_agreement": 1.8555358319712986e-45
+      },
+      {
+        "x": 250.0,
+        "n": 16,
+        "rel_agreement": 1.3047500323991528e-45
+      },
+      {
+        "x": 250.0,
+        "n": 32,
+        "rel_agreement": 1.4530186919521851e-46
+      }
+    ]
+  },
+  "formats": {
+    "binary16": {
+      "arguments": 31743,
+      "cells": 1047519,
+      "non_finite_returns": 0,
+      "zero_returns": 369692,
+      "worst": {
+        "n": 0,
+        "arg_bits_hex": "0x1B82",
+        "x": 0.003665924072265625,
+        "got_bits_hex": "0x3BFE",
+        "delivered": 0.9990234375,
+        "reference": 0.9987793680370024,
+        "bound": 0.000244240625,
+        "error": 0.00024406946299759813,
+        "ratio": 0.999299207482777
+      },
+      "margin_per_cent": 0.07007925172229923,
+      "route": {
+        "cells_via_gamma_identity": 271887
+      },
+      "top_cells": [
+        {
+          "n": 0,
+          "arg_bits_hex": "0x1B82",
+          "x": 0.003665924072265625,
+          "got_bits_hex": "0x3BFE",
+          "delivered": 0.9990234375,
+          "bound": 0.000244240625,
+          "ratio": 0.999299207482777
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x3FBE",
+          "x": 1.935546875,
+          "got_bits_hex": "0x38D8",
+          "delivered": 0.60546875,
+          "bound": 0.000244240625,
+          "ratio": 0.9992251448393329
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x1D42",
+          "x": 0.00513458251953125,
+          "got_bits_hex": "0x3BFD",
+          "delivered": 0.99853515625,
+          "bound": 0.000244240625,
+          "ratio": 0.9992219049287362
+        },
+        {
+          "n": 1,
+          "arg_bits_hex": "0x3780",
+          "x": 0.46875,
+          "got_bits_hex": "0x340E",
+          "delivered": 0.25341796875,
+          "bound": 0.0001221703125,
+          "ratio": 0.999164866289538
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x1201",
+          "x": 0.0007328987121582031,
+          "got_bits_hex": "0x3BFF",
+          "delivered": 0.99951171875,
+          "bound": 0.000244240625,
+          "ratio": 0.9991596769010743
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x421C",
+          "x": 3.0546875,
+          "got_bits_hex": "0x3801",
+          "delivered": 0.50048828125,
+          "bound": 0.000244240625,
+          "ratio": 0.9990978042538751
+        },
+        {
+          "n": 1,
+          "arg_bits_hex": "0x142B",
+          "x": 0.0010175704956054688,
+          "got_bits_hex": "0x3555",
+          "delivered": 0.333251953125,
+          "bound": 0.0001221703125,
+          "ratio": 0.9990966471645375
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x3928",
+          "x": 0.64453125,
+          "got_bits_hex": "0x3A92",
+          "delivered": 0.8212890625,
+          "bound": 0.000244240625,
+          "ratio": 0.9990823159872896
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x48A6",
+          "x": 9.296875,
+          "got_bits_hex": "0x34A6",
+          "delivered": 0.29052734375,
+          "bound": 0.0001221703125,
+          "ratio": 0.99900764567959
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x1881",
+          "x": 0.0021991729736328125,
+          "got_bits_hex": "0x3BFE",
+          "delivered": 0.9990234375,
+          "bound": 0.000244240625,
+          "ratio": 0.9989665935774072
+        }
+      ],
+      "cells_within_1e-9_of_worst": 1,
+      "per_order_worst": [
+        {
+          "n": 0,
+          "ratio": 0.999299207482777,
+          "arg_bits_hex": "0x1B82"
+        },
+        {
+          "n": 1,
+          "ratio": 0.999164866289538,
+          "arg_bits_hex": "0x3780"
+        },
+        {
+          "n": 2,
+          "ratio": 0.9983623505050798,
+          "arg_bits_hex": "0x2953"
+        },
+        {
+          "n": 3,
+          "ratio": 0.9984289891940751,
+          "arg_bits_hex": "0x1313"
+        },
+        {
+          "n": 4,
+          "ratio": 0.9967473193384973,
+          "arg_bits_hex": "0x196E"
+        },
+        {
+          "n": 5,
+          "ratio": 0.9965964238921301,
+          "arg_bits_hex": "0x1235"
+        },
+        {
+          "n": 6,
+          "ratio": 0.9965551153011442,
+          "arg_bits_hex": "0x3072"
+        },
+        {
+          "n": 7,
+          "ratio": 0.99672347432529,
+          "arg_bits_hex": "0x19E3"
+        },
+        {
+          "n": 8,
+          "ratio": 0.99365700555344,
+          "arg_bits_hex": "0x10E4"
+        },
+        {
+          "n": 9,
+          "ratio": 0.9934505063318254,
+          "arg_bits_hex": "0x0587"
+        },
+        {
+          "n": 10,
+          "ratio": 0.9934122784761957,
+          "arg_bits_hex": "0x20A6"
+        },
+        {
+          "n": 11,
+          "ratio": 0.993672899022002,
+          "arg_bits_hex": "0x137A"
+        },
+        {
+          "n": 12,
+          "ratio": 0.9934766665908359,
+          "arg_bits_hex": "0x1B22"
+        },
+        {
+          "n": 13,
+          "ratio": 0.9936267733036466,
+          "arg_bits_hex": "0x209C"
+        },
+        {
+          "n": 14,
+          "ratio": 0.9935582764250595,
+          "arg_bits_hex": "0x1F39"
+        },
+        {
+          "n": 15,
+          "ratio": 0.9932946966770776,
+          "arg_bits_hex": "0x20F0"
+        },
+        {
+          "n": 16,
+          "ratio": 0.9871329562653898,
+          "arg_bits_hex": "0x2D6C"
+        },
+        {
+          "n": 17,
+          "ratio": 0.9870845412525,
+          "arg_bits_hex": "0x2182"
+        },
+        {
+          "n": 18,
+          "ratio": 0.9870085105189079,
+          "arg_bits_hex": "0x3551"
+        },
+        {
+          "n": 19,
+          "ratio": 0.9869987401675749,
+          "arg_bits_hex": "0x1B96"
+        },
+        {
+          "n": 20,
+          "ratio": 0.9871961287290519,
+          "arg_bits_hex": "0x297B"
+        },
+        {
+          "n": 21,
+          "ratio": 0.9871635079238272,
+          "arg_bits_hex": "0x190F"
+        },
+        {
+          "n": 22,
+          "ratio": 0.9869996337368513,
+          "arg_bits_hex": "0x3204"
+        },
+        {
+          "n": 23,
+          "ratio": 0.9871937640376384,
+          "arg_bits_hex": "0x3514"
+        },
+        {
+          "n": 24,
+          "ratio": 0.987061562374129,
+          "arg_bits_hex": "0x3054"
+        },
+        {
+          "n": 25,
+          "ratio": 0.9869848571299099,
+          "arg_bits_hex": "0x0EE3"
+        },
+        {
+          "n": 26,
+          "ratio": 0.9871317958370388,
+          "arg_bits_hex": "0x018E"
+        },
+        {
+          "n": 27,
+          "ratio": 0.987009162658602,
+          "arg_bits_hex": "0x03A1"
+        },
+        {
+          "n": 28,
+          "ratio": 0.9869746657190079,
+          "arg_bits_hex": "0x0B81"
+        },
+        {
+          "n": 29,
+          "ratio": 0.9871596280870419,
+          "arg_bits_hex": "0x2982"
+        },
+        {
+          "n": 30,
+          "ratio": 0.9868451768678763,
+          "arg_bits_hex": "0x12C8"
+        },
+        {
+          "n": 31,
+          "ratio": 0.9871976693860579,
+          "arg_bits_hex": "0x199A"
+        },
+        {
+          "n": 32,
+          "ratio": 0.9744549146057844,
+          "arg_bits_hex": "0x182F"
+        }
+      ]
+    },
+    "bfloat16": {
+      "arguments": 32639,
+      "cells": 1077087,
+      "non_finite_returns": 0,
+      "zero_returns": 456092,
+      "worst": {
+        "n": 0,
+        "arg_bits_hex": "0x3FA4",
+        "x": 1.28125,
+        "got_bits_hex": "0x3F33",
+        "delivered": 0.69921875,
+        "reference": 0.6972656908714802,
+        "bound": 0.001953225,
+        "error": 0.0019530591285198406,
+        "ratio": 0.9999150781501572
+      },
+      "margin_per_cent": 0.00849218498427673,
+      "route": {
+        "cells_via_gamma_identity": 507045
+      },
+      "top_cells": [
+        {
+          "n": 0,
+          "arg_bits_hex": "0x3FA4",
+          "x": 1.28125,
+          "got_bits_hex": "0x3F33",
+          "delivered": 0.69921875,
+          "bound": 0.001953225,
+          "ratio": 0.9999150781501572
+        },
+        {
+          "n": 5,
+          "arg_bits_hex": "0x3D31",
+          "x": 0.043212890625,
+          "got_bits_hex": "0x3DB4",
+          "delivered": 0.087890625,
+          "bound": 0.000244240625,
+          "ratio": 0.9995920938047282
+        },
+        {
+          "n": 7,
+          "arg_bits_hex": "0x3991",
+          "x": 0.0002765655517578125,
+          "got_bits_hex": "0x3D89",
+          "delivered": 0.06689453125,
+          "bound": 0.000244240625,
+          "ratio": 0.9995517023997909
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x4073",
+          "x": 3.796875,
+          "got_bits_hex": "0x3EE7",
+          "delivered": 0.451171875,
+          "bound": 0.0009766625,
+          "ratio": 0.9994414749451915
+        },
+        {
+          "n": 6,
+          "arg_bits_hex": "0x3994",
+          "x": 0.00028228759765625,
+          "got_bits_hex": "0x3D9D",
+          "delivered": 0.07666015625,
+          "bound": 0.000244240625,
+          "ratio": 0.9994399720229733
+        },
+        {
+          "n": 0,
+          "arg_bits_hex": "0x4084",
+          "x": 4.125,
+          "got_bits_hex": "0x3EDE",
+          "delivered": 0.43359375,
+          "bound": 0.0009766625,
+          "ratio": 0.9993412205649053
+        },
+        {
+          "n": 3,
+          "arg_bits_hex": "0x3BE3",
+          "x": 0.006927490234375,
+          "got_bits_hex": "0x3E11",
+          "delivered": 0.1416015625,
+          "bound": 0.00048838125,
+          "ratio": 0.9992937552784654
+        },
+        {
+          "n": 4,
+          "arg_bits_hex": "0x399C",
+          "x": 0.00029754638671875,
+          "got_bits_hex": "0x3DE4",
+          "delivered": 0.111328125,
+          "bound": 0.000244240625,
+          "ratio": 0.9992610997998255
+        },
+        {
+          "n": 6,
+          "arg_bits_hex": "0x3993",
+          "x": 0.0002803802490234375,
+          "got_bits_hex": "0x3D9E",
+          "delivered": 0.0771484375,
+          "bound": 0.000244240625,
+          "ratio": 0.9992206725168868
+        },
+        {
+          "n": 4,
+          "arg_bits_hex": "0x399D",
+          "x": 0.0002994537353515625,
+          "got_bits_hex": "0x3DE3",
+          "delivered": 0.11083984375,
+          "bound": 0.000244240625,
+          "ratio": 0.9992102784148043
+        }
+      ],
+      "cells_within_1e-9_of_worst": 1,
+      "per_order_worst": [
+        {
+          "n": 0,
+          "ratio": 0.9999150781501572,
+          "arg_bits_hex": "0x3FA4"
+        },
+        {
+          "n": 1,
+          "ratio": 0.9991837742343632,
+          "arg_bits_hex": "0x3AD5"
+        },
+        {
+          "n": 2,
+          "ratio": 0.9991901537008399,
+          "arg_bits_hex": "0x3F99"
+        },
+        {
+          "n": 3,
+          "ratio": 0.9992937552784654,
+          "arg_bits_hex": "0x3BE3"
+        },
+        {
+          "n": 4,
+          "ratio": 0.9992610997998255,
+          "arg_bits_hex": "0x399C"
+        },
+        {
+          "n": 5,
+          "ratio": 0.9995920938047282,
+          "arg_bits_hex": "0x3D31"
+        },
+        {
+          "n": 6,
+          "ratio": 0.9994399720229733,
+          "arg_bits_hex": "0x3994"
+        },
+        {
+          "n": 7,
+          "ratio": 0.9995517023997909,
+          "arg_bits_hex": "0x3991"
+        },
+        {
+          "n": 8,
+          "ratio": 0.9989931054402802,
+          "arg_bits_hex": "0x3E5E"
+        },
+        {
+          "n": 9,
+          "ratio": 0.9989958664279057,
+          "arg_bits_hex": "0x39D4"
+        },
+        {
+          "n": 10,
+          "ratio": 0.9991311999865586,
+          "arg_bits_hex": "0x3E70"
+        },
+        {
+          "n": 11,
+          "ratio": 0.9983206839319514,
+          "arg_bits_hex": "0x3B6B"
+        },
+        {
+          "n": 12,
+          "ratio": 0.9990270304810415,
+          "arg_bits_hex": "0x3B13"
+        },
+        {
+          "n": 13,
+          "ratio": 0.9988273360275632,
+          "arg_bits_hex": "0x3ABD"
+        },
+        {
+          "n": 14,
+          "ratio": 0.9974152860371136,
+          "arg_bits_hex": "0x3DCF"
+        },
+        {
+          "n": 15,
+          "ratio": 0.9975157647000017,
+          "arg_bits_hex": "0x3EC1"
+        },
+        {
+          "n": 16,
+          "ratio": 0.9980813684444072,
+          "arg_bits_hex": "0x3D85"
+        },
+        {
+          "n": 17,
+          "ratio": 0.9976142456076457,
+          "arg_bits_hex": "0x3B25"
+        },
+        {
+          "n": 18,
+          "ratio": 0.9982738757185484,
+          "arg_bits_hex": "0x3EA7"
+        },
+        {
+          "n": 19,
+          "ratio": 0.9980073983385562,
+          "arg_bits_hex": "0x3B35"
+        },
+        {
+          "n": 20,
+          "ratio": 0.9981227185810315,
+          "arg_bits_hex": "0x3AD2"
+        },
+        {
+          "n": 21,
+          "ratio": 0.9983569286678539,
+          "arg_bits_hex": "0x3886"
+        },
+        {
+          "n": 22,
+          "ratio": 0.9982668767276606,
+          "arg_bits_hex": "0x3B4D"
+        },
+        {
+          "n": 23,
+          "ratio": 0.997933043321945,
+          "arg_bits_hex": "0x3DE6"
+        },
+        {
+          "n": 24,
+          "ratio": 0.9975738247370993,
+          "arg_bits_hex": "0x3C8A"
+        },
+        {
+          "n": 25,
+          "ratio": 0.998078670891459,
+          "arg_bits_hex": "0x3A58"
+        },
+        {
+          "n": 26,
+          "ratio": 0.9980822309547737,
+          "arg_bits_hex": "0x39E9"
+        },
+        {
+          "n": 27,
+          "ratio": 0.996478283482275,
+          "arg_bits_hex": "0x3B4B"
+        },
+        {
+          "n": 28,
+          "ratio": 0.9979929390947743,
+          "arg_bits_hex": "0x3ACF"
+        },
+        {
+          "n": 29,
+          "ratio": 0.9977533948474868,
+          "arg_bits_hex": "0x3DA4"
+        },
+        {
+          "n": 30,
+          "ratio": 0.998023364621684,
+          "arg_bits_hex": "0x3BC9"
+        },
+        {
+          "n": 31,
+          "ratio": 0.9962023177966246,
+          "arg_bits_hex": "0x3E12"
+        },
+        {
+          "n": 32,
+          "ratio": 0.9952195709477925,
+          "arg_bits_hex": "0x3BD2"
+        }
+      ]
+    }
+  },
+  "wall_seconds": {
+    "reference": 308.0778725000564,
+    "total": 309.13818770006765
+  }
+}

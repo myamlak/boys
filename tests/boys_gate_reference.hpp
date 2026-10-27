@@ -53,6 +53,10 @@ struct OrderAccum {
 struct Accum {
     std::string lane;
     std::string region;
+    // The book this slot belongs to, printed on every line the slot can emit outside its own
+    // table: a recorded-and-not-judged reading names the book it is recorded in, so a printed
+    // zero or an excused cell can never be read against another one.
+    const char* book = "the claim book";
     double baseBound = 0.0;
     // The form the figure is stated in: relative judges a cell against `baseBound * |F_n(x)|` above
     // the lane's format floor, and the cell is outside the claim below it; absolute judges it
@@ -133,6 +137,7 @@ inline int AddClaim(const char* lane,
     Accum a;
     a.lane = lane;
     a.region = region;
+    a.book = "the lane book";
     a.baseBound = bound;
     a.judged = judged;
     a.relative = form.relative;
@@ -269,9 +274,12 @@ inline void MeasureAt(Accum& a,
 
         if (a.failures <= kMaxReportedExceeded)
         {
+            const std::string marker =
+                a.judged ? std::string(" ")
+                         : std::string(" (") + a.book + ", record, not judged)";
             std::printf("  EXCEEDED%s %s / %s  n=%d x=%.17g  err=%.6g  bound=%.6g  "
                         "ratio=%.4g  ref=%.6g (1e%d)\n",
-                        a.judged ? " " : " (record, not judged)",
+                        marker.c_str(),
                         a.lane.c_str(),
                         a.region.c_str(),
                         n,
@@ -526,7 +534,7 @@ inline Reference LoadReference(const std::string& path) {
 
 // --- the row a report prints -----------------------------------------------
 
-inline void PrintClaim(const Accum& a) {
+inline void PrintClaim(const Accum& a, const char* book = nullptr) {
     const std::size_t real = a.points - a.vacuous;
     char location[96] = "-";
     char delivered[64] = "-";
@@ -545,7 +553,13 @@ inline void PrintClaim(const Accum& a) {
     // The trailing field is the one thing a summary row cannot show: whether
     // the row has a verdict at all. A slot kept for the record has none, and
     // its ratio can be above 1.0 in a green run, so the row says so rather
-    // than leaving it to be inferred from the RESULT line not counting it.
+    // than leaving it to be inferred from the RESULT line not counting it. A
+    // caller that names its book prints the name beside the mark, so a
+    // recorded reading can never be attributed to another table.
+    const std::string mark =
+        a.judged ? std::string()
+                 : (book == nullptr ? std::string("  record, not judged")
+                                    : std::string("  ") + book + ", record, not judged");
     std::printf("  %-24s %-9s %8zu %8zu  %-24s %-24s %8zu %8zu%s\n",
                 a.lane.c_str(),
                 a.region.c_str(),
@@ -555,7 +569,7 @@ inline void PrintClaim(const Accum& a) {
                 location,
                 a.vacuous,
                 a.vacuousZero,
-                a.judged ? "" : "  record, not judged");
+                mark.c_str());
 }
 
 } // namespace boys_gate

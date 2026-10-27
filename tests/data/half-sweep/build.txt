@@ -1,0 +1,47 @@
+Build and run commands, as used.
+
+Toolchain: Visual Studio 18 Community, MSVC 19.51.36256.0 (toolset 14.51.36231), x64;
+CMake 4.4.2, generator "Visual Studio 18 2026".
+
+Library (the revision measured: tag v5.1.1, commit 834bdbb18a30ac8538b519436429f78d41f187ce):
+
+    cmake -S C:\Users\myaml\dev\_mainonly -B C:\Users\myaml\dev\_half-sweep-work\build ^
+          -G "Visual Studio 18 2026" -A x64 ^
+          -DBOYS_BUILD_TESTS=OFF -DBUILD_BENCHMARKS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_CUDA=OFF
+    cmake --build C:\Users\myaml\dev\_half-sweep-work\build --config Release --target boys
+
+Configure exits 0 (5.7 s). The build exits 0 and writes build\Release\boys.lib
+(79,379,968 bytes).
+
+Harness (from this directory):
+
+    call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+    cl /nologo /std:c++20 /O2 /EHsc /MD /DBoysFp16=1 ^
+       /I C:\Users\myaml\dev\_mainonly\include ^
+       half_sweep.cpp C:\Users\myaml\dev\_half-sweep-work\build\Release\boys.lib ^
+       /Fe:half_sweep.exe
+
+Compile and link exit 0.
+
+/DBoysFp16=1 is the library's own half seam (option BOYS_FP16_SEAM, ON in the shipped
+configuration); the half entries do not exist without it.
+
+The two entries are header-defined, so the same harness links without boys.lib as well; both
+links were run and their sweep files are byte-identical (cmp, exit 0).
+
+Run the sweep:
+
+    half_sweep.exe half_sweep.bin        (0.96 s, exit 0, 46,741,352 bytes)
+The file is a 20-byte header - magic 'HSWP' (u32), version u32 = 1, nmax u32 = 32, row count
+u64 - then one 22-byte record per cell:
+format u8 (0 binary16, 1 bfloat16), n u8, argument bits u16, returned bits u16,
+returned value f64, the lane's bound at that returned value f64.
+
+Reference pass (Python 3.14.7, mpmath 1.4.1; the generator at
+C:\Users\myaml\dev\bladawiec\external\boys\tools\gen_boys_coefficients.py):
+
+    python half_sweep_oracle.py half_sweep.bin results.json --jobs 8
+
+Exits 0; 308.1 s in the reference pass, 309.1 s total.
+
+The oracle needs mpmath from the user site, so it is run without -I.
