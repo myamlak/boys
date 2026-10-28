@@ -110,8 +110,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 5.2.0
-accuracy gate, inputs src=06469da8cf73df9e,include=f77b71aeae641bd4,gate=f47abd3c94888534,grid=970db44ddb6a7da5,cmake=71b4b4140153b643
+accuracy gate, version 5.2.1
+accuracy gate, inputs src=06469da8cf73df9e,include=b031944ffd63e9b5,gate=a938a72fbc1ac38f,grid=970db44ddb6a7da5,cmake=6984cf9623c21ed1
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -286,8 +286,8 @@ documented claims, each with one verdict:
       measured at the sweep's worst cell of each format: half a quantum of the returned value is 0.999181 of the bound for fp16 at (n=0, x=9.29688), and 0.999898 for bf16 at (n=0, x=3.79688), so the 1e-7 base is 0.0008185 and 0.0001024 of the bound there and the arithmetic has the remainder. The older x = 721 cell the sentence used to name reads 0.993489; it is a magnitude the document no longer states, and the row now reads the worst cell the sweep actually finds
       falsified by: the row fails if the representation term at either format's worst cell falls below 99%% of the bound, which would mean the 1e-7 arithmetic floor is no longer nearly spent at the place the sweep binds
   [met over the stated domain] domain: the arguments where |F_n(x)| > 1e-7 + one half-ULP of the returned value - the domain a base the half lanes' fits are cut for carves, tighter than the 1.5e-7 the library publishes and so wider than the published claim, and no others
-      the half lanes' ceiling is a domain restriction: past it the return is the format's floor, no accuracy is claimed, and the points are counted rather than passed
-      docs/lane-contract.md, half; include/boys/boys.hpp, the same paragraph
+      the half lanes' ceiling is a domain restriction: past it no accuracy is claimed and the points are counted rather than passed; in f16 the ceiling and the floor coincide, so the return there is a subnormal half and then exactly zero, while in bf16 the exponent range equals float's, so the base is met by the arithmetic down to about 2^-126
+      docs/lane-contract.md, half; include/boys/boys_decl.hpp, the half lanes' budget paragraph
       the counted side, per lane and region cell. Where the bound exceeds the value: fp16 single 21949 of 47256 swept points, 21949 of those returning no usable value (largest discarded |F| = 1.295e-07 at n=20, x=13); fp16 batch 33994 of 59301, 33994 no value; bf16 single 33657 of 59301, 17791 no value - and the last of those is the difference the two formats' exponent ranges make, since 15866 of bf16's bound-covered points return a normal bf16 and meet the bound by arithmetic. The binding side is the separate row code.half_domain_stop
       falsified by: the row fails if the document ever reads as claiming accuracy past that ceiling - a claim over the whole argument range would make every point past the ceiling a failure, and the counters above are the number of them; it also fails if a point past the ceiling returns a usable value the count does not carry
   [verified at this revision] domain: orders 3 to 32 on region C (x >= kX1), the part of the half lane's argument range where the returns are subnormal or zero
@@ -311,8 +311,8 @@ documented claims, each with one verdict:
       src/boys_simd.cpp, region-partitioned kernels
       worst 0.999 of budget at (n=0, x=17.2242): delivered 0.0004877 against 0.0004884
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
-  [verified at this revision] the fp16/bf16 budget is a claim only where |F_n(x)| exceeds it: there the lane returns a value inside the bound, while below it the return is a subnormal number or the format's zero, the bound is met by the format's floor, and no accuracy is claimed
-      include/boys/boys.hpp, the half lanes' budget paragraph
+  [verified at this revision] the fp16/bf16 budget is a claim only where the returned value exceeds it: below that ceiling the format's floor answers and no accuracy is claimed; in f16 the ceiling and the floor coincide, so every argument past it returns a subnormal half and then exactly zero, while in bf16 the exponent range equals float's, so the base is met by the arithmetic down to about 2^-126
+      include/boys/boys_decl.hpp, the half lanes' budget paragraph
       the ten half lane x region cells over the whole sweep: 108227 points in the binding domain, 0 of them returned the format's zero (largest |F_n(x)| so discarded 0) and 0 landed outside the bound; 15860 returns inside the domain were subnormal yet inside the bound, which the claim permits. The complement is the vacuous set counted under LC.half.vacuous_floor and never as met
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [met over the stated domain] domain: region C, x >= 28.984375 = fp16(kX1), over the arguments whose returned value is a normal half - the lane offers no other region and claims no accuracy outside it

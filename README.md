@@ -10,7 +10,7 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
-This tree is **version 5.2.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
+This tree is **version 5.2.1**. The number is written down once, in the top-level `CMakeLists.txt`'s
 `project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
 CMake: `boys::VersionString()` answers it.
 
@@ -198,7 +198,7 @@ Installed, from a top-level build:
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
 `boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
-build carried the device lane; the version file accepts any `5.x` package for a request of `5.2.0`.
+build carried the device lane; the version file accepts any `5.x` package for a request of `5.2.1`.
 The install rules are written at the top level only, so a consumer that adds this tree as a
 subdirectory already has the targets and needs no package:
 

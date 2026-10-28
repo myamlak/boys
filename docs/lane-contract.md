@@ -453,10 +453,10 @@ lane book and from the scheme rows, and those read what they read at that run's 
 **the space carries a third partition, and the book below is the current one**. What does move is
 the option space, which reads 16 of 16 members supported, bounded and reachable: the piecewise
 partitions are two of them, each measured over 413,260 cells at both schemes with 190,013 of them
-reading differently under the other partition and none over the bar its row is judged at. The
-partition book reports its own carrying fraction, 681,370 of 899,566 axis cells (75.7%), as the
-cells able to discriminate; the other 218,196 carry a bound at least as large as the value itself,
-so no error can exceed them, and they are not counted in the rows above.
+reading differently under the other partition and none over the bar its row is judged at. The partition
+book reports its carrying fraction, 681,370 of 899,566 axis cells (75.7%), as the cells able to
+discriminate; the other 218,196 carry a bound at least as large as the value: a zero return, or complete
+loss of the value, cannot exceed it; any larger error can. They are not counted in the rows above.
 
 **What is carried, and what is still refused.** The narrow partition is a field of `SeamPolicy` and
 a name the report prints, and every double-precision entry this library has reads it: the stored fits
