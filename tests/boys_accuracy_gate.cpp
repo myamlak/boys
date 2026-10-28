@@ -8065,9 +8065,13 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_FP16
 
     add("LC.half.vacuous_floor",
-        "the half lanes' ceiling is a domain restriction: past it the return is the format's "
-        "floor, no accuracy is claimed, and the points are counted rather than passed",
-        "docs/lane-contract.md, half; include/boys/boys.hpp, the same paragraph",
+        "the half lanes' ceiling is a domain restriction: past it no accuracy is claimed and "
+        "the points are counted rather than passed; in f16 the ceiling and the floor coincide, "
+        "so the return there is a subnormal half and then exactly zero, while in bf16 the "
+        "exponent range equals float's, so the base is met by the arithmetic down to about "
+        "2^-126",
+        "docs/lane-contract.md, half; include/boys/boys_decl.hpp, the half lanes' budget "
+        "paragraph",
 #ifdef BOYS_GATE_FP16
         Verdict::MetOverDomain,
         Fmt("the counted side, per lane and region cell. Where the bound exceeds the value: "
@@ -8377,11 +8381,12 @@ int main(int argc, char** argv) {
                                             kBf16PackedC});
 
         add("code.half_domain_stop",
-            "the fp16/bf16 budget is a claim only where |F_n(x)| exceeds it: there the lane "
-            "returns a value inside the bound, while below it the return is a subnormal "
-            "number or the format's zero, the bound is met by the format's floor, and no "
-            "accuracy is claimed",
-            "include/boys/boys.hpp, the half lanes' budget paragraph",
+            "the fp16/bf16 budget is a claim only where the returned value exceeds it: below "
+            "that ceiling the format's floor answers and no accuracy is claimed; in f16 the "
+            "ceiling and the floor coincide, so every argument past it returns a subnormal "
+            "half and then exactly zero, while in bf16 the exponent range equals float's, so "
+            "the base is met by the arithmetic down to about 2^-126",
+            "include/boys/boys_decl.hpp, the half lanes' budget paragraph",
 #ifdef BOYS_GATE_FP16
             halfDomain.points == 0
                 ? Verdict::EvidenceAbsent

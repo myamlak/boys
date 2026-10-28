@@ -4,6 +4,18 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.1
+
+**Two statements the referees found false are corrected, and no measured figure moves.** The
+accuracy gate's `code.half_domain_stop` row said that below the fp16/bf16 budget ceiling the return
+is a subnormal number or the format's zero; `LC.half.vacuous_floor` carried the same claim as "past
+it the return is the format's floor". That is true in f16, where the ceiling and the floor coincide,
+but bf16's smallest normal is 2^-126, so a return below the ceiling can still be normal and meet the
+bound by arithmetic. Both rows now state the budget paragraph's own account, and their sources name
+`include/boys/boys_decl.hpp`. `docs/lane-contract.md` said that a bound at least as large as the
+value means no error can exceed it; it now says what that means: a zero return, or complete loss of
+the value, cannot exceed such a bound, while any larger error can.
+
 ## 5.2.0
 
 **The accuracy gate's claim book is registered against the documents it quotes.** Each documented

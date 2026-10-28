@@ -23,10 +23,10 @@ inline constexpr int kVersionMajor = 5;
 inline constexpr int kVersionMinor = 2;
 
 /// Patch version: a compatible change that does not.
-inline constexpr int kVersionPatch = 0;
+inline constexpr int kVersionPatch = 1;
 
 /// The version as a string, "MAJOR.MINOR.PATCH".
-inline constexpr const char* kVersionString = "5.2.0";
+inline constexpr const char* kVersionString = "5.2.1";
 
 /// The library's version, as a caller queries it.
 ///
