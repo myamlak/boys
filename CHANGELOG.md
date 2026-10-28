@@ -4,6 +4,51 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.0
+
+**The accuracy gate's claim book is registered against the documents it quotes.** Each documented
+claim the book carries now names the sentence it restates — quoted verbatim, with the file and the
+anchor — in a registration table beside the rows. A run begins by checking the table against the
+book and the files: a registered row the book does not hold, a book row that no claim reaches and
+that is marked neither retained nor supporting nor external, or a quote that is not in the file it
+names each fail the run with the claim named, and the run exits with status 2 before reporting a
+verdict table. The table holds 38 entries over 37 documented claims; the rows that carry none are
+marked with their treatment and the reason, so a row cannot stop being registered silently.
+
+**Six documented claims the book measured but did not state have rows of their own.** The
+double lane's worst cell (`LC.double.worst_cell`), the region-A fits' `1e-15` bar
+(`LC.region_A.fit_bar`), the half lanes' returned-value floor and the base its threshold is stated
+at (`LC.half.returned_value_floor`), the native half lane's published worst of 4.3 in ULP
+(`native.half.suite_worst`), the packed lane's representation cost (`LC.packed.representation_cost`)
+and region C's relative error below the asymptotic boundary (`LC.regionC.asym_relative`). Each row
+measures the object its sentence names; where this gate's grid reads below the document's figure
+rather than contradicting it, the row states both and says which is which. The double lane's row
+also prints the cell it locates, because the sentence's `x = 31` is not the grid's only argument
+that spells as 31: the cell the sentence's own `F_0` and `F_32` name is `31.000000000000004`, and
+at the exact `31.0` the same call is accurate to `2.2e-14` of that cell's value rather than to the
+1.40 the sentence records.
+
+**Twelve row statements now restate the document's sentence, figure for figure**, so a reader
+comparing the enumeration to the book finds the same domain, the same bound and the same quantifier:
+the float lane's ceiling and its `4.0` times, the half budget with its `1e-7` and the `1.5e-7` the
+lanes publish, the half lane's exhaustive-sweep sentence with both margins, the representation
+figure narrowed to the worst cell it is about, the packed lane's no-rescaling clause and its crossing
+table down to the order counts, and four rows' wording brought in line with the document. Every
+figure a rewritten row states is one its own evidence already printed.
+
+**The exhaustive half sweeps are a row that reads their deposited record.** `LC.half.worst_cell`
+reads `tests/data/half-sweep/results.json`, checks the record's counts against 33 orders of each
+format's arguments, checks each ratio against its margin, checks that this gate's sparser grid
+rounds to the `0.999` and `0.9994` the sentence writes and reads below them — the direction the
+document states — and prints the sweep's provenance. The comparison is single entry against single
+entry, because the deposit measured `BoysSingleF16` and `BoysSingleBf16`; the all-orders entries,
+which no deposit covers, are printed beside it and not compared to it. The row does not re-derive
+the 45-digit reference and does not print the record's figure as this run's own.
+
+**Every RESULT line names the book it counts**: the claim book, the route book, the scheme book, the
+packing book, the granularity book, the entry book, the partition book and the far-field book. The
+reserved wording "recorded and not judged" and every count are unchanged.
+
 ## 5.1.1
 
 **The generator's region-B Chebyshev evaluator reads an odd degree's top coefficient.** The

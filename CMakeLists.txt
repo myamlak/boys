@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.1.1 LANGUAGES CXX)
+project(boys VERSION 5.2.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -814,10 +814,22 @@ if (BOYS_BUILD_TESTS)
         # through: the reference line the gate prints is kept in the recorded run, and a record
         # is read by people who do not have the machine it was made on.
         BoysDataDirRelative="tests/data"
+        # The tree the documents live in. The claims book registers each documented sentence
+        # against the file it was read from, and the registration check re-reads that file at
+        # run time rather than trusting a copy: a quote that has drifted from its source fails
+        # the gate instead of passing silently.
+        BoysSourceDir="${CMAKE_CURRENT_SOURCE_DIR}"
         # The content the run was taken from: the stamp's identity is the version the gate
         # prints and this cell, and the checker holds the record to the digests.
         BoysGateInputs="${BOYS_GATE_INPUTS}")
     boys_strict_warnings(boys-accuracy-gate)
+
+    # The claims book quotes the documents verbatim, and the documents are UTF-8: the quotes
+    # carry the middle dot, the multiplication sign, the half and the en dash unchanged. MSVC
+    # says plainly that the source is UTF-8 unless told otherwise.
+    if (MSVC)
+        target_compile_options(boys-accuracy-gate PRIVATE /utf-8)
+    endif()
 
     # The external-row application: when ON, the gate measures Boost.Math's documented Airy
     # sentence as two rows of its own book. Requires Boost >= 1.92; OFF leaves the build unchanged.
