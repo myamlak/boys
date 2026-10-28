@@ -8,12 +8,12 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
-  EXCEEDED (record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
-  EXCEEDED (record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
-  EXCEEDED (record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
-  EXCEEDED (record, not judged) double single / header x<x0  n=0 x=1e-08  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
-  EXCEEDED (record, not judged) double single / header x<x0  n=0 x=1.0000000000000001e-05  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=0.999997 (1e-1)
+verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
+  EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
+  EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
+  EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
+  EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=1e-08  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
+  EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=1.0000000000000001e-05  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=0.999997 (1e-1)
 
 the certified fit routes, measured:
   one row per route and region. 'reported' is the worst error the generator
@@ -110,8 +110,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 5.1.1
-accuracy gate, inputs src=06469da8cf73df9e,include=dfc599d390a40759,gate=6f1de6fc4007f671,grid=970db44ddb6a7da5,cmake=4406b61bd382b197
+accuracy gate, version 5.2.0
+accuracy gate, inputs src=06469da8cf73df9e,include=f77b71aeae641bd4,gate=f47abd3c94888534,grid=970db44ddb6a7da5,cmake=71b4b4140153b643
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -138,7 +138,7 @@ per-lane, per-region: delivered error / documented bound
   bf16 simd-half           A              648      648  3.03e-05 / 3.06e-05      0.988 (n=32, x=0.45898)         0        0
   bf16 simd-half           B             8184     2586  0.000488 / 0.000488      0.999 (n=0, x=17.2242)       5598        0
   bf16 simd-half           C              901        0  3.6e-17 / 1e-07          3.6e-10 (n=32, x=29.1956)      901      735
-  double single            header x<x0    21318    21318  3.11e-15 / 1e-15         3.11 (n=0, x=1e-12)             0        0  record, not judged
+  double single            header x<x0    21318    21318  3.11e-15 / 1e-15         3.11 (n=0, x=1e-12)             0        0  the lane book, record, not judged
   native packed half       C             2134     2134  9.19e-07 / 1.91e-06      0.482 (n=5, x=50.6562)          0        0
   native packed half batch C             2148     2148  9.19e-07 / 1.91e-06      0.482 (n=5, x=50.6562)          0        0
   transform kFp64          A            21318    21318  1.11e-16 / 1e-15         0.111 (n=0, x=0)                0        0
@@ -191,6 +191,7 @@ published cells and ranges, measured:
   float lane's own floor where |F| >= 0.5: worst relative error 8.636e-08 at (n=0, x=2.81804);
     the documented ceiling is about 6e-8, the published figure 2^-22 of the value,
     or its 1.5e-7 floor where that is the larger
+registration: 37 documented claims in 38 entries; every named row is in the book, every book row is reached or marked, and every quote is in the file it names
 
 documented claims, each with one verdict:
   thresholds a claim labels approximate rather than exact - "about x = 16",
@@ -233,13 +234,13 @@ documented claims, each with one verdict:
       include/boys/boys.hpp preamble table (four-region, with the extended-band column)
       worst 0.0311 of budget at (n=0, x=0.00421697): delivered 3.113e-15 against 1e-13. The record of what this row used to test: the same table read as a three-region one - a single region-A cell of 1e-15 with no band row, so 1e-15 across the whole of x < x0 - is not a bound the lane meets anywhere in the band. Measured over the same sweep it is exceeded by 3.11 at (n=0, x=1e-12), delivered 3.109e-15 against that withdrawn 1e-15. The reading is withdrawn and this row's verdict does not count it: the slot is kept, and measured, so the finding stays visible and re-runnable, and it is printed above and in the per-order table under lane "double single", region "header x<x0"
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
-  [verified at this revision] the stored coefficients are correctly rounded and the fit carries 5e-19 of truncation under doubles holding 1e-16 to 2e-16, so no fit goes below that floor
+  [verified at this revision] the stored coefficients are rounded to double precision and hold only the sixteen or so significant digits a double can hold, so nothing below about 1e-16 is reachable however the evaluation is arranged - the fit's own truncation, 5e-19, sits under that floor and is not a second bound
       docs/lane-contract.md, double
       tree command, run by the operator, not by this binary: `python tools/gen_boys_coefficients.py --check`
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
-  [verified at this revision] the ceiling is the format: a 24-bit significand resolves about 6e-8 relative and the published figure is 2^-22 of the value, or its 1.5e-7 floor where that is the larger - the relative arm within a factor of a few of the format's digit
+  [verified at this revision] the ceiling is the format: a 32-bit float carries about seven significant digits, about 6e-8 relative, and the lane's relative arm is 4.0 times that digit (2^-22 / 6e-8), so the two are within a factor of a few of each other; at F_n(x) = 1e-3 the relative arm is 2.4e-10, far below the 1.5e-7 the lane can hold there, and the plain-reciprocal form adds its 1e-7 term to the larger of the two
       docs/lane-contract.md, float
-      measured floor: worst relative error of the float lane where |F| >= 0.5 is 8.64e-08 at (n=0, x=2.81804); the ratio 2^-22 / 6e-8 = 4.0 is the documented 'factor of a few'
+      measured floor: worst relative error of the float lane where |F| >= 0.5 is 8.64e-08 at (n=0, x=2.81804); the ratio 2^-22 / 6e-8 = 3.97 is the documented 'factor of a few', and 2^-22 * 1e-3 = 2.38e-10 is the relative arm at F_n(x) = 1e-3
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] domain: region A - both bands, x < kRegionA1Edge and kRegionA1Edge <= x < kRegionAEnd - every order 0..32, every argument of the band. The band is the entry's precondition rather than a convenience: the coefficient matrix is the band's, so the sweep groups the arguments by band itself and a cell is never measured against the other band's fits
       the region-A transform's fp64 mode: |F_hat - F| <= 1e-15 over region A - the double single lane's region-A budget, both bands, every order, every argument
@@ -272,25 +273,25 @@ documented claims, each with one verdict:
       this gate's grid: worst 1.42895e-07 at (n=0, x=0.284131), inside the published 1.946e-07 by 5.17e-08 and inside the mode's budget 2.5e-07. The published figure is a swept maximum - over the committed reference grid and a dense sweep of the lower band's left end - so this row holds the code to it at every argument of the grid and cannot re-find the maximum that produced it: a regression narrower than the 5.2e-08 between the two would hide from it
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [met over the stated domain] domain: the arguments where |F_n(x)| > 1e-7 + one half-ULP of the returned value, and no others - the base the half lanes' fits are cut for, tighter than the 1.5e-7 the library publishes for them
-      the half lane stays inside its budget at every order tested
-      docs/lane-contract.md, half
+      the half lane stays inside 1e-7 plus one half-ULP at every order tested - the bar the suite asserts, which is tighter than the 1.5e-7 plus one half-ULP those lanes publish
+      docs/lane-contract.md, half; CONTRIBUTING.md, the ground rules
       worst 0.999 of budget at (n=0, x=3.79688): delivered 0.0009761 against 0.0009767
       falsified by: the row fails if a cell inside that domain delivers more than the bound, or if the domain's edge moves down to arguments where the return is the format's floor: the counts are in LC.half.vacuous_floor
-  [verified at this revision] [corrected this revision] the lane's worst cell is not 0.990 of budget at order 0, x = 721 with a margin of 1%: that cell reproduces, but the sweep's own worst cell is within a thousandth of the budget in both formats, so the margin is thousandths of a per cent - a fragility, not a margin of 1%
-      docs/lane-contract.md, half (read before this revision: "a worst cell of 0.990 of budget at order 0, x = 721 - a margin of 1%")
-      measured at the published cell: 0.98993 of budget (delivered 0.03302, reference 0.0330048, bound 1.53588e-05), which reproduces it. The sweep's worst cell is 0.999355 at (n=0, x=9.29688) for fp16 - a margin of 0.06447% of budget - and 0.999441 at (n=0, x=3.79688) for bf16, a margin of 0.05585%. Both are inside the bound and both are within one half-quantum of it: at that distance the 1e-7 base of the budget has been spent to the last digit, and the next representable argument, or a float engine one rounding worse underneath, spends the rest. The published 0.990 understates the worst cell by a factor of a hundred, which is why the sentence now reads as fragility rather than as margin. A denser independent sweep, on its own grid, reaches 0.999225 for fp16 and 0.999915 for bf16 - margins of 0.0775% and 0.0085% - so the numbers here are a lower bound on the worst cell and the two instruments agree on what the sentence must say
-      falsified by: the claim would have to be wrong in the other direction: the row fails if the two measured worst cells are not within a thousandth of their budget, or if the published cell stops reproducing - and it turns red the moment either format's worst ratio reaches 1.0, which is one half-quantum away
-  [verified at this revision] at that magnitude the half-ULP representation term is 99% of the budget
+  [verified at this revision] both formats' worst cells were measured against a 45-digit reference over every argument either format can represent and every order - a 16-bit input is a finite set, so that sweep is exhaustive rather than dense: 0.9993 of the bound for the 16-bit format, a margin of 0.07 per cent, and 0.99992 for the 16-bit brain-float format, a margin of 0.008 per cent; a sparser grid understates them, the committed reference grid reading 0.999 and 0.9994
+      docs/lane-contract.md, half; the deposited sweep tests/data/half-sweep/ (results.json, README.md, NOTE.md; the harness and oracle stay with the deposit)
+      the record read and checked: 31743 binary16 arguments and 32639 bfloat16 arguments, orders 0..32, 2124606 cells in all, against a 45-digit mpmath reference. Worst ratio 0.999299207483 at (n=0, x bits 0x1B82) for binary16 - a margin of 0.0700793 per cent - and 0.999915078150 at (n=0, x bits 0x3FA4) for bfloat16, a margin of 0.00849218 per cent. Each ratio and its margin agree to 1e-6 per cent, and each format's cells are 33 orders times its arguments. This gate's own committed grid, the sparser one the document names, reads 0.999008 at (n=0, x=9.29688) and 0.999441 at (n=0, x=3.79688) at the single entries the deposit measured - rounding to the 0.999 and 0.9994 the sentence writes, and below the exhaustive figures, the direction the document gives a sparser grid. The all-orders entries are measured by this gate and by no deposit: 0.999355 at (n=0, x=9.29688) for binary16 and 0.999441 at (n=0, x=3.79688) for bfloat16, printed beside the comparison and not compared to the sweep, whose object was the single entries. The sweep and its oracle are deposited, not run here: the record was made at v5.1.1, its sweep took 0.96 s and its 45-digit reference 308.1 s on the toolchain the deposit records; this binary neither re-derives the oracle nor spends those minutes in the default suite
+      falsified by: the row fails if the deposited record's own counts or margins stop agreeing with each other, if either worst ratio leaves (0.9992, 0.9994) for binary16 or (0.99990, 0.99993) for bfloat16, or if this gate's sparser grid stops rounding to the 0.999 and 0.9994 the sentence writes at its single entries or stops reading below them - the direction the document states for a sparser grid; a missing record fails the row with the path it looked for
+  [verified at this revision] at the worst cell the representation term is very nearly the whole bound, and the arithmetic term has almost nothing left to spend
       docs/lane-contract.md, half
-      measured 0.9935 at (n=0, x=721)
-      falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
+      measured at the sweep's worst cell of each format: half a quantum of the returned value is 0.999181 of the bound for fp16 at (n=0, x=9.29688), and 0.999898 for bf16 at (n=0, x=3.79688), so the 1e-7 base is 0.0008185 and 0.0001024 of the bound there and the arithmetic has the remainder. The older x = 721 cell the sentence used to name reads 0.993489; it is a magnitude the document no longer states, and the row now reads the worst cell the sweep actually finds
+      falsified by: the row fails if the representation term at either format's worst cell falls below 99%% of the bound, which would mean the 1e-7 arithmetic floor is no longer nearly spent at the place the sweep binds
   [met over the stated domain] domain: the arguments where |F_n(x)| > 1e-7 + one half-ULP of the returned value - the domain a base the half lanes' fits are cut for carves, tighter than the 1.5e-7 the library publishes and so wider than the published claim, and no others
       the half lanes' ceiling is a domain restriction: past it the return is the format's floor, no accuracy is claimed, and the points are counted rather than passed
       docs/lane-contract.md, half; include/boys/boys.hpp, the same paragraph
       the counted side, per lane and region cell. Where the bound exceeds the value: fp16 single 21949 of 47256 swept points, 21949 of those returning no usable value (largest discarded |F| = 1.295e-07 at n=20, x=13); fp16 batch 33994 of 59301, 33994 no value; bf16 single 33657 of 59301, 17791 no value - and the last of those is the difference the two formats' exponent ranges make, since 15866 of bf16's bound-covered points return a normal bf16 and meet the bound by arithmetic. The binding side is the separate row code.half_domain_stop
       falsified by: the row fails if the document ever reads as claiming accuracy past that ceiling - a claim over the whole argument range would make every point past the ceiling a failure, and the counters above are the number of them; it also fails if a point past the ceiling returns a usable value the count does not carry
   [verified at this revision] domain: orders 3 to 32 on region C (x >= kX1), the part of the half lane's argument range where the returns are subnormal or zero
-      from order 3 upward on region C every return is a subnormal half or zero, and from order 6 upward every argument of the branch is past the ceiling, so no accuracy is claimed there. Orders 3, 4 and 5 are inside the range the lane does claim over: they still carry cells whose value exceeds the ceiling
+      from order 3 upward on region C every unscaled return is a subnormal half or zero, and from order 6 upward every argument of the branch is past the ceiling, so no accuracy is claimed there. Orders 3, 4 and 5 are inside the range the lane does claim over: they still carry cells whose value exceeds the ceiling
       docs/lane-contract.md, half
       reference order 3 reaches the half type's normal range nowhere at or above region C's start x=28.9893 (no such argument on the grid; the largest argument of the branch that is normal is 40.0421 at order 2 and 373.003 at order 1), so no argument of the branch is normal unscaled; the lane's largest normal return is x=40.0312 at order 2 and its largest nonzero return x=30.8906 at order 6 (reference 30.8453); at the branch's left edge, fp16(28.9893) = 28.9844, order 3 has 1.268e-05 against the subnormal ceiling 1.298e-07, 4 has 1.531e-06, 5 has 2.376e-07 and 6 has 4.509e-08, so the onset order is 6; delivered worst is 0.999 of budget
       falsified by: the row fails if the onset order is not 6 - that is, if an order below 6 is already entirely past the ceiling, or if one from 6 upward still carries a cell inside it, which is exactly what the whole-branch reading asserts - if an argument of the branch at order 3 or above returns a normal half that the sweep does not account for, or if the reference's own order-3 value becomes normal somewhere on the branch
@@ -320,9 +321,9 @@ documented claims, each with one verdict:
       worst 3.853 ULP at (n=5, x=50.6562), over 2134 cells of the packed entry and 2148 of the count entry (the count entry's own worst is 3.853 ULP); the lane's published worst is 4.243 ULP, a swept maximum and not a proof bound, and this sweep neither upgrades nor contradicts it. Counted apart: 15620 cells of 17754 where the return is a subnormal half and the claim is the ceiling's, not the bound's
       falsified by: the row fails if a cell inside the domain delivers more than its 8 ULP, or if the domain widens: the lane's own suite prints the same per-order maxima, and a region outside C is where the two would disagree
   [met over the stated domain] domain: region C, x >= 28.984375 = fp16(kX1), where the ceiling is what the lane's own scaling reaches
-      the ceiling is a domain restriction and past it the lane claims nothing: the return is a subnormal half, then exactly zero, by design - the crossings are the whole argument range at orders 0 and 1, x ~ 2590 at order 2, and x ~ 359 / 128 / 30 at orders 3 / 4 / 8
+      the ceiling is a domain restriction and past it the lane claims nothing: the return is a subnormal half, then exactly zero, by design - no rescaling reaches past that limit either, because the range the recursion spans grows like x to the power n against a fixed exponent range - and the crossings are the whole argument range at orders 0 and 1, x ~ 2636 at order 2, x ~ 360 / 129 / 70 / 47 / 36 / 30 at orders 3 / 4 / 5 / 6 / 7 / 8, and none at all at orders 9 to 32: the function is already below 2^-29 at the smallest argument the lane accepts, so twenty-four of the thirty-three orders are in that position
       docs/lane-contract.md, packed half - the native lane
-      the largest scaled value the sweep left unclaimed is 6.09145e-05 (at n=3, x=361) against the smallest normal half 6.10352e-05, so every unclaimed cell is a cell where the scaling was meant to run out: 15620 of 17754 cells are past the ceiling and are counted here rather than passed. The crossings this sweep sees: the largest argument whose return is still normal is x=2590 at order 2, 357.25 at order 3, 125.875 at order 4 and 30.1719 at order 8, the smallest past the ceiling being 2668, 361, 129 and 30.2188. 0 cells returned a subnormal half for a value the scaling should have kept normal, which is the one thing this domain must not excuse
+      the largest scaled value the sweep left unclaimed is 6.09145e-05 (at n=3, x=361) against the smallest normal half 6.10352e-05, so every unclaimed cell is a cell where the scaling was meant to run out: 15620 of 17754 cells are past the ceiling and are counted here rather than passed. The crossings this sweep sees, as two measured edges - the largest argument whose return is still normal, and the smallest past the ceiling: x=2590/2668 at order 2, 357.25/361 at order 3, 125.875/129 at order 4, 69.9375/71.4375 at order 5, 46.375/47.75 at order 6, 35.5938/36.6562 at order 7 and 30.1719/30.2188 at order 8. At orders 9 to 32 no swept argument returns a normal half at all (24 of the thirty-three orders), so the document's 'none' is what the sweep sees there, not an absence of cells. The document's approximations (2636, 360, 129, 70, 47, 36) are read against those brackets: each sits at or just past the largest normal argument, which is the direction 'to about' states. 0 cells returned a subnormal half for a value the scaling should have kept normal, which is the one thing this domain must not excuse
       falsified by: the row fails if a cell past the ceiling returns a value the scaling should have kept normal - counted above as nativeExcusedFailures - or if the crossings move much: they are read from the sweep, not assumed
   [met over the stated domain] domain: region C, x >= 28.984375 = fp16(kX1), the only region the lane evaluates in
       the packing is real: every operation is correctly rounded to binary16 once per operation, both halves of one register, with no widening for the sequence as a whole
@@ -354,17 +355,47 @@ documented claims, each with one verdict:
       docs/lane-contract.md, where the numbers come from
       tree command, run by the operator, not by this binary: `ctest --test-dir build --output-on-failure`
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
+  [verified at this revision] domain: the named cell, n = 32 and x = 31, on the committed reference grid, located by the sentence's F_0 and F_32; the lane's whole-domain reading is the README.double.single row
+      in between the bound 1e-13 x F_0(x) permits 4.85 times the value at the worst cell, n = 32, x = 31 - 1e-13 x 0.15917105461020217 = 1.5917105461020217e-14 against the value 3.2822575294956117e-15 - and the delivered error there measured 1.40 times the value, 4.582e-15, 0.288 of the bound
+      docs/mainpage.md, the accuracy contract - the bound's shadow at the worst cell
+      the documented cell is the grid argument x = 31.000000000000004, which prints as 31 at the six significant digits the documents use; it is the argument whose F_0 = 0.15917105461020217 and F_32 = 3.2822575294956117e-15 are the two numbers the sentence writes. The bound 1e-13 F_0 = 1.5917105461020218e-14 permits 4.849438 times the value (document 4.85). BoysSingle(32, x) delivers 7.8634896378733907e-15, an error of 4.58123e-15: 1.395756 times the value (document 1.40) and 0.287818 of the bound (document 0.288). The grid also carries the exact 31.0, a different argument one representable step away, where the same call lands 2.18e-14 of that cell's value from it - the asymptotic form reads differently at the two, and the sentence's own pair of figures names the cell above
+      falsified by: the row fails if the cell's value, its bound-to-value ratio, the delivered error-to-value ratio or the error-to-bound ratio departs from the documented figures - they are the sentence, and this row is their reproduction; a grid that stops carrying the cell the sentence's two figures name fails it too
+  [verified at this revision] domain: region A, x < the band's edge, where a per-order fit is read - the arguments the 1e-15 bar binds; the extended band above that edge carries its own 3e-14 bar
+      the stored fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at 1e-15 under a reachable gain of at most 2.171050
+      docs/lane-contract.md, the double lane - the batch row and region A
+      the default route's region-A seed row measures the per-order fits themselves, piece by piece (RegionAValue<ChebyshevFit<kDefaultEvalScheme, kDefaultFitGranularity>>), at every order and every argument of region A: 21318 cells, worst 2.22045e-16 at (n=0, x=0), which is 0.222 of the 1e-15 bar. The row spans the per-order fits and the extended band together, so its worst bounds the fits' own from above. The document's reachable gain of 2.171050 belongs to the band's 3e-14 bar, which is the route row's own bar and not this fold's
+      falsified by: the row fails if the route's region-A seed row reads above 1e-15 over the fits' own arguments, which would put a per-order fit over the bar it was placed against
+  [met over the stated domain] domain: both store-half formats over the committed grid; the bound is claimed above the threshold and no accuracy below it, and the 16-bit format's descent to a subnormal half and then zero is the sentence's
+      below a certain size the lane returns nothing usable: the bound holds only where the result is larger than 1.5e-7 plus half a representable digit, and the bound is claimed over those larger arguments and over no others - for the 16-bit format the return below that size is a subnormal 16-bit number and then exactly zero, while the brain-float format, whose exponent range is a 32-bit float's, keeps normal returns down to about 1e-38
+      docs/lane-contract.md, half - the ceiling the bound stops at, and the format below it
+      read on the returned value, which is the sentence's object, and at the published 1.5e-7 base, which is not this book's 1e-7 suite bar: fp16 47256 cells, 24897 returns above the threshold (the bound's domain; 6629 of them subnormal yet inside it), 0 of those outside the bound, worst 0.998599 of the bound at (n=0, x=9.29688); 22359 returns at or below it, all the format's zero (20984) or a subnormal half (1375), so the sentence's descent holds there. bf16 59268 cells, 25376 above (worst 0.99939 at n=0, x=3.79688), 0 outside, and 33892 below of which 17362 are the format's zero and 16134 are normal - the brain-float format's exponent range is a 32-bit float's, so a bf16 return under 1.5e-7 is not subnormal, which is the document's own qualification in the paragraph below. Cells whose true value exceeds the threshold while the return falls below it, and so outside the claimed domain: fp16 162 (largest such value 2.083e-07 at n=9, x=16.0156), bf16 0 (largest 0 at n=-1, x=0). The sentence claims the bound over the larger returns and over no others; these cells are the ones the object's wording leaves unclaimed, counted rather than argued away
+      falsified by: the row fails if a return above the threshold lands outside the bound, if no return anywhere is above it (a vacuous pass), or - on the 16-bit format - if a return below the threshold is a normal half rather than a subnormal or zero
+  [met over the stated domain] domain: region C, x >= fp16(kX1) = 28.984375, the only region the lane evaluates in
+      the native half lane is the one lane whose figure is not a fraction of the value: it is stated in ULP of the returned value, <= 8 ULP, measured at a worst of 4.3
+      docs/mainpage.md, the lanes table; docs/lane-contract.md, packed half - the native lane (4.243, rounded to 4.3)
+      the packed lane over region C, x >= 28.984375: this gate's sweep finds 3.853 ULP of the returned value at (n=5, x=50.6562), 0.4816 of the 8 ULP bound, over 17754 cells. The suite's published worst is 4.243 ULP, which the mainpage rounds to 4.3; this grid is the gate's and is not the suite's argument set, so the row reads lower than the published figure and neither upgrades nor contradicts it. What the row does pin is the sentence's shape: the figure is in ULP of the returned value, and the lane stays inside its 8 ULP bound wherever this grid reaches
+      falsified by: the row fails if any measured cell exceeds 8 ULP of its returned value, or if the published 4.243 is overtaken by this sweep - a worst above 4.243 would make the lane's own figure an understatement
+  [met over the stated domain] domain: region C, x >= fp16(kX1) = 28.984375, and the store-half budget's 0.5 ULP representation term
+      the worst cell this lane's own suite finds is 4.243 of those digits against the half-ULP the other lane budgets, which is 8.5 times its representation allowance
+      docs/lane-contract.md, packed half - the native lane
+      on this gate's grid the packed lane's worst cell is 3.853 ULP at (n=5, x=50.6562), 0.4816 of the 8 ULP ceiling and 7.705 times the 0.5 ULP the store-half budget leaves for representing the result. The suite's own worst, 4.243 ULP, is 8.486 times that allowance (8.5 in the document's rounding), so the two instruments agree on the relation and differ in the figure, as a sparser grid must: the row carries the relation - the packed lane spends more than the half-quantum - and prints both readings rather than passing the suite's number off as this sweep's
+      falsified by: the row fails if the packed lane's worst cell lands at or below half a quantum - it would then be as accurate as a store-half lane and the finding would not exist - or if its ratio to that allowance falls below the suite's published 8.5 in some future grid in which the two instruments disagree on the relation itself
+  [verified at this revision] domain: region C below x = 16, the form as coded, at every order and every argument of the committed grid; the two named cells are order 32
+      below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows smoothly there, with no sudden jump - but the size of the error is real, and below that boundary it is stated relative to the function's own value: the largest such error is 5.6e4, at order 32 and x = 14.0468, and at x = 15.936 the same quantity is 5.6e3
+      docs/lane-contract.md, region C - the asymptotic branch below the boundary
+      measured on the form as coded, at the two cells the sentence names: at n=32, x=14.046768954459271 the form reads 0.00117121 against the reference's 2.0739202563682625e-08, a relative error of 56472.4 (the document states 5.6e4); at n=32, x=15.936059260527962 it reads 1.93861e-05 against 3.4476551441187187e-09, a relative error of 5621.97 (document 5.6e3). The largest below-edge relative error this gate's whole sweep finds is 56472.4 at (n=32, x=14.0468), the same cell and figure the sentence calls the largest. Smoothness is the same sweep's other reading: the largest factor between neighbouring arguments below x = 16 is 3.597, well under the order of magnitude a threshold would put between two adjacent arguments - the growth is continuous and the size is real, which is the sentence's two halves
+      falsified by: the row fails if either named cell departs from the document's two-significant-figure reading, if the sweep's largest below-edge error lands at another cell than the one the sentence calls the largest, or if the largest neighbouring factor below the edge reaches an order of magnitude - that would be the jump the sentence denies
 
   cells: 957873 comparison cells across every lane, region and order, of which 428963 (44.8%) carry a bound at least as large as the value itself, so any return in range passes there and the cell cannot discriminate; the no-cell-over-budget statement above is carried by the remaining 528910 (55.2%). This is the vacuous column aggregated, not a separate finding, and it is the number to read before reading the green rows
 
-  RESULT: 32 of 32 claims met at this revision (26 verified outright, 6 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build, 0 recorded and not judged; none of the last five counted as met)
-          of those, 28 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
+  RESULT (the claim book): 38 of 38 claims met at this revision (29 verified outright, 9 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build, 0 recorded and not judged; none of the last five counted as met)
+          of those, 34 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
           carried by the 528910 of 957873 comparison cells (55.2%) that can discriminate: the other 428963 carry a bound at least as large as the value itself, so read the two numbers together
   the floor's share of the claim book: 7985 of the 528910 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - the reading is over the arm the figure alone gives and inside the floor - so the figure alone would have failed them and no row shows it; the other 520925 meet the figure itself
   carried by the floor, by row (4 row(s), 4 worst shown):  float batch / all, orders axis (7310)  float batch / all (335)  float batch / all-n (335)  float single / all (5)
   worst of them: float batch / all  n=0  x=11.150964736938477  err=1.08354e-07 (4.08e-07 of the value)  arm=6.32744e-08  floor=1.5e-07  err/arm=1.71  err/floor=0.722
 
-  the routes are counted apart from the lanes: the lane RESULT above reads 32 of 32
+  the routes are counted apart from the lanes: the lane RESULT above reads 38 of 38
   claims carried by 528910 of 957873 comparison cells, and the route rows and the float lane's
   policy rows contribute 460592 cells of their own, none of them in that total
 
@@ -454,7 +485,7 @@ the certified fit routes, each with one verdict:
   route RESULT below does not cover):
     0 site(s) above; none of them is a row of this book
 
-  RESULT (routes, counted apart from the lanes above): 15 of 15 route claims met at this revision (15 verified outright, 0 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
+  RESULT (the route book, counted apart from the lanes above): 15 of 15 route claims met at this revision (15 verified outright, 0 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build; none of the last four counted as met)
   the floor's share of the route book: 0 of the 391020 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - every cell it carries meets the figure it is judged against - so no part of this book rests on the floor
 
 the evaluation-scheme rows: each scheme's stored fits over the interval each is defined on, and each public entry that names a scheme over the whole reference grid, against the committed reference
@@ -523,7 +554,7 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
         not swept because: src/boys_simd.cpp and the half lanes name their instruction and their budget directly; the multiply-add route and the evaluation scheme are not selections they read, and BoysBackends() is where a caller asks what they run
     3 site(s) above; none of them is a row of this book, and the SCHEME RESULT below
     counts none of them
-  SCHEME RESULT: 29 of 29 scheme rows met at this revision (20 accuracy row(s) and
+  SCHEME RESULT (the scheme book): 29 of 29 scheme rows met at this revision (20 accuracy row(s) and
                  9 carriage row(s), counted together)
                  carried by the 433742 of 698328 scheme cells (62.1%) that can discriminate: the other 264586 carry a bound at least as large as the value itself. These cells are not in the count above and do not move it
   the floor's share of the scheme book: 0 of the 433742 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - every cell it carries meets the figure it is judged against - so no part of this book rests on the floor
@@ -1488,7 +1519,7 @@ argument, and the plane entry, whose call shape has both - against the committed
   horner           narrow cheb pl A         21318 1e-13                  4.80589e-16            0.00481  n=0, x=6.53693         verified at this revision
   horner           narrow cheb pl A..C      59301 1e-13                  1.39576                  0.288  n=32, x=31             verified at this revision
   ----------------------------------------------------------------------------------------------------------------------------------------------------------------
-  PACK RESULT: 24 of 24 packing-axis rows met at this revision
+  PACK RESULT (the packing book): 24 of 24 packing-axis rows met at this revision
                 carried by the 676500 of 967428 axis cells (69.9%) that can discriminate: the other 290928 carry a bound at least as large as the value itself. These cells are not in the counts above and do not move them
   the floor's share of the packing book: 0 of the 676500 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - every cell it carries meets the figure it is judged against - so no part of this book rests on the floor
 
@@ -1535,7 +1566,7 @@ the granularity-axis rows: which partition of the fitted domain a call reads, me
   rational x narrow -               region B seed                      248 2.56906e-14            1.35447e-14              0.527  n=0, x=14.9055         verified at this revision
   rational x narrow -               batch entry, A..C                59301 1e-13                  3.20701e-10               0.79  n=5, x=10.2881         verified at this revision
   -------------------------------------------------------------------------------------------------------------------------------------------------------------
-  GRANULARITY RESULT: 39 of 39 granularity-axis rows met at this revision
+  GRANULARITY RESULT (the granularity book): 39 of 39 granularity-axis rows met at this revision
   the trade the axis names: the shipped partition stores 1345 coefficient(s) in 67 row(s) over both fitted regions and one evaluation reads 19 to 21 of them;
                             the narrow partition stores 3476 in 316 rows and one evaluation reads 11. Naming it buys the smaller read at the larger table and the piece lookup, and is not a saving
                             the same partition on the rational route stores 2650 coefficient(s) in the same 316 row(s), one evaluation reading 6 to 9 of them
@@ -1591,7 +1622,7 @@ absence
     fixed-order entry, rational-minimax, horner, orders, uniform
     the orders axis cannot be formed on this entry: a packed lane keeps four orders of one argument in a register, and this call produces exactly one order at every argument of the array, so there are not four orders here to fill a lane with - the wide dimension it does have is count, and that is the arguments axis (boys_impl.hpp, BoysFixedNImpl, the assertion at :3209)
   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  ENTRY RESULT: 28 of 28 measured entry row(s) met at this revision (0 refused and owed,
+  ENTRY RESULT: the entry book - 28 of 28 measured entry row(s) met at this revision (0 refused and owed,
                 4 not applicable to the entry's shape; the three states add to the 32
                 combination(s) this book crosses)
   the floor's share of the entry book: 0 of the 858028 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - every cell it carries meets the figure it is judged against - so no part of this book rests on the floor
@@ -1614,8 +1645,9 @@ partition's fits.
   per-element tops           30684     15968  yes/yes/yes/yes 3.10862e-15  n=0, x=0.0582832   answers with the grid's own values
   fixed-order entry          59301     31188  yes/yes/yes/yes 4.58123e-15  n=32, x=31         answers with the grid's own values
   ------------------------------------------------------------------------------------------------------------------------------------
-  PARTITION RESULT: 4 of 4 batched entr(ies) answer a policy naming the uniform grid
-                    with a reading the narrow member does not answer with, in every region where
+  PARTITION RESULT (the partition book): 4 of 4 batched entr(ies) answer a policy naming the
+                    uniform grid with a reading the narrow member does not answer with, in every
+                    region where
 the two readings can differ
 
 the uniform grid's carriage on the single-precision entries: each of the two entries the
@@ -1669,7 +1701,7 @@ narrow member's fits.
   plane entry, fp16, rational-minimax, horner, arguments         59301     15509  yes/yes/yes/NO 1.19209e-07  n=0, x=0.422553    answers with the grid's own values
   plane entry, fp16, rational-minimax, horner, orders            59301     23536  yes/yes/yes/NO 1.19209e-07  n=0, x=0.0801394   answers with the grid's own values
   ------------------------------------------------------------------------------------------------------------------------------------------------------
-  PARTITION RESULT: 32 of 32 single-precision entr(ies) answer a policy naming the
+  PARTITION RESULT (the partition book): 32 of 32 single-precision entr(ies) answer a policy naming the
                     uniform grid with a reading the narrow member does not answer with, in every
                     region where the two readings can differ
 
@@ -1716,7 +1748,7 @@ band, kFlatHi to 32, and the table's span end, 116 to 117, which is where it end
   corrected seed         75438 cell(s), 0 differ - the name reaches this arm's own arithmetic
   scaled table           42537 cell(s), 0 differ - the name reaches this arm's own arithmetic
   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  FAR RESULT: 7 of 7 arm row(s) met at this revision, 0 recorded and not judged by
+  FAR RESULT (the far-field book): 7 of 7 arm row(s) met at this revision, 0 recorded and not judged by
               this build; 269629 of 413061 far cell(s) carry a
               bound that can bind, the other 143432 lying outside the figure (a relative figure below
               binary64's smallest normal, or an absolute figure at or above the value)

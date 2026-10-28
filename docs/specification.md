@@ -152,10 +152,10 @@ carrying the run its combination came from where a run stands behind it, and its
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
 transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
 same protocol on this host, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 66.27
-against 263.18 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 273.25
-(`single-batch-narrow-rational-minimax-fp64`). The route and the packing axis carry
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 58.75
+against 250.77 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
+route; the fastest rational-route narrow row is 247.59
+(`single-batch-narrow-rational-minimax-fast-fp64`). The route and the packing axis carry
 the settings the library has always shipped and have not been ranked against a timing. The option
 probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between

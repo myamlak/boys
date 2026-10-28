@@ -623,11 +623,9 @@ inline double RegionCForm(int n, double x) noexcept {
 }
 
 // --- the deposited half sweep's record --------------------------------------
-// The exhaustive sweep is a deposit (tests/data/half-sweep/), not a cost this run pays: its
-// 45-digit reference took five minutes. The gate reads the record it left, checks that the
-// record's own numbers agree with one another and with the document's rounding, and states the
-// provenance. It never re-derives the oracle and never prints the record's number as its own
-// measurement.
+// The sweep is a deposit (tests/data/half-sweep/), not a cost this run pays: its 45-digit
+// reference took five minutes. The gate reads the record, checks its figures, and states its
+// provenance; it never re-derives the oracle and never prints the record's number as its own.
 struct HalfSweepRecord {
     bool present = false;
     bool wellFormed = false;
@@ -7854,11 +7852,9 @@ int main(int argc, char** argv) {
 
 #ifdef BOYS_GATE_FP16
     {
-        // The deposit measured each format's single entry only (BoysSingleF16,
-        // BoysSingleBf16), over every argument that format can represent. The like-for-like
-        // comparison is therefore single entry against single entry: this gate's grid reads
-        // kF16Single and kBf16Single here. The all-orders entries are measured by this gate and
-        // by no deposit; they are printed beside the comparison and kept out of it.
+        // The deposit measured each format's single entry, so the like-for-like reading compares
+        // the same two slots. The all-orders entries have no deposit behind them: they are
+        // printed beside the comparison and not against it.
         const Accum& f16W = f16Single;
         const Accum& bf16W = bf16Single;
         const Accum& f16Batch = Claims()[static_cast<std::size_t>(kF16Orders)];
@@ -7943,8 +7939,8 @@ int main(int argc, char** argv) {
                     "not compared to the sweep, whose object was the single entries. The "
                     "sweep and its oracle are deposited, not run here: the record was made "
                     "at v5.1.1, its sweep took 0.96 s and its 45-digit reference 308.1 s on "
-                    "the toolchain build.txt names; this binary neither re-derives the oracle "
-                    "nor spends those minutes in the default suite",
+                    "the toolchain the deposit records; this binary neither re-derives the "
+                    "oracle nor spends those minutes in the default suite",
                     halfSweep.b16Args,
                     halfSweep.bf16Args,
                     halfSweep.b16Cells + halfSweep.bf16Cells,
@@ -7978,7 +7974,7 @@ int main(int argc, char** argv) {
             "format, a margin of 0.008 per cent; a sparser grid understates them, the "
             "committed reference grid reading 0.999 and 0.9994",
             "docs/lane-contract.md, half; the deposited sweep tests/data/half-sweep/ "
-            "(results.json, README.md, build.txt, half_sweep.cpp, half_sweep_oracle.py)",
+            "(results.json, README.md, NOTE.md; the harness and oracle stay with the deposit)",
             sparserBelow ? Verdict::Verified : Verdict::Exceeded,
             sweepEvidence,
             {},
@@ -8011,10 +8007,9 @@ int main(int argc, char** argv) {
         "claim as one it does not carry rather than passing it");
 #endif // BOYS_GATE_FP16
 
-    // The document's share is the one at the worst cell, and the worst cell is the one the
-    // sweep found - not the older x = 721 reading, which the sentence no longer states. The
-    // share is a property of the bound at that cell: half a quantum of the returned value over
-    // the bound that value is judged against.
+    // The document's share is the one at the worst cell, and the worst cell is the one the sweep
+    // found. The share is a property of the bound at that cell: half a quantum of the returned
+    // value over the bound that value is judged against.
 #ifdef BOYS_GATE_FP16
     {
         const auto worstSlot = [](int a, int b) -> const Accum& {
@@ -8933,22 +8928,16 @@ int main(int argc, char** argv) {
         "`ctest --test-dir build --output-on-failure`");
 
     // ---- the documented claims the rows above do not state -------------------
-    // Six documented sentences name objects no row stated: the per-order fits' own bar, the half
-    // budget's ceiling read on the returned value, the native lane's published worst, the packed
-    // lane's cost against the half-quantum, the asymptotic form's error below its boundary, and
-    // the double lane's worst cell in the bound's shadow. Each row below quotes its sentence's
+    // Six documented sentences name objects no row stated. Each row below quotes its sentence's
     // object and measures it; where this grid delivers a different figure from the document's,
     // the row prints both and does not bend its measurement to the sentence.
 
     // D13 - the double lane's worst cell, where the bound is loosest against the value.
     {
-        // The sentence writes the argument as x = 31 and pins the cell with two numbers: F_0 =
-        // 0.15917105461020217 and F_32 = 3.2822575294956117e-15. The committed grid carries more
-        // than one argument the documents would spell as 31, and the exact 31.0 is one of them,
-        // so the cell is located by the pair rather than by the printed argument. At the exact
-        // 31.0 the same call is accurate to 2.2e-14 of that cell's value; at the cell the two
-        // figures name it delivers 1.40 times the value. The printed argument alone therefore
-        // does not identify the sentence's cell, and the sentence's own figures do.
+        // The sentence pins the cell with two numbers, F_0 = 0.15917105461020217 and
+        // F_32 = 3.2822575294956117e-15, and more than one grid argument spells as 31, so the
+        // cell is located by the pair. At the exact 31.0 the same call is accurate to 2.2e-14 of
+        // that cell's value; at the cell the sentence names it delivers 1.40 times the value.
         std::size_t at = count;
         std::size_t exact31 = count;
 
@@ -8959,11 +8948,9 @@ int main(int argc, char** argv) {
                 exact31 = i;
             }
 
-            // The sentence's two figures are the seventeen-significant-digit spellings of stored
-            // doubles on this grid, so they name the cell that carries both of them exactly;
-            // the neighbouring cell's F_32 differs in the fourth significant digit from the one
-            // the sentence writes, and a tolerance loose enough to admit it would not be the
-            // sentence's cell.
+            // The sentence's two figures are the exact spellings of stored doubles on this grid,
+            // so the cell is the one carrying both; the neighbour's F_32 differs well before the
+            // digit a loose enough tolerance would have to allow.
             if (at == count && ref.v[ref.Index(0, i)] == 0.15917105461020217
                 && ref.v[ref.Index(nmax, i)] == 3.2822575294956117e-15)
             {
@@ -9441,12 +9428,9 @@ int main(int argc, char** argv) {
 #endif // BOYS_GATE_EXTERNAL_BOOST
 
     // ---- the registration table ---------------------------------------------
-    // One entry per documented claim the book carries: the claim id the enumeration uses,
-    // the row that carries it, the file the sentence is in, where in that file, and the
-    // sentence itself, verbatim with whitespace runs collapsed. The check below refuses a run
-    // whose table and book disagree, and refuses a quote that is not in the file it names.
-    // A row of the book that carries no enumerated claim is marked with its treatment below,
-    // so no row can stop being registered without someone writing down that it has.
+    // One entry per documented claim: claim id, the row that carries it, the file the sentence
+    // is in, where in that file, and the sentence verbatim with whitespace runs collapsed. A row
+    // carrying no enumerated claim is marked below, so none stops being registered silently.
     struct Registration {
         const char* claim;
         const char* row;

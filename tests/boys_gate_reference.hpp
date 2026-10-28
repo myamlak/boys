@@ -550,12 +550,10 @@ inline void PrintClaim(const Accum& a, const char* book = nullptr) {
         std::snprintf(delivered, sizeof(delivered), "%.3g / %.3g", a.worstErr, a.worstBound);
     }
 
-    // The trailing field is the one thing a summary row cannot show: whether
-    // the row has a verdict at all. A slot kept for the record has none, and
-    // its ratio can be above 1.0 in a green run, so the row says so rather
-    // than leaving it to be inferred from the RESULT line not counting it. A
-    // caller that names its book prints the name beside the mark, so a
-    // recorded reading can never be attributed to another table.
+    // The trailing field is the one thing a summary row cannot show: whether the row has a
+    // verdict at all. A slot kept for the record has none, and its ratio can be above 1.0 in a
+    // green run, so the row says so. The mark names the row's book, so a recorded reading is
+    // never attributed to another table.
     const std::string mark =
         a.judged ? std::string()
                  : (book == nullptr ? std::string("  record, not judged")
