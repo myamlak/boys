@@ -110,8 +110,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 5.2.1
-accuracy gate, inputs src=06469da8cf73df9e,include=b031944ffd63e9b5,gate=a938a72fbc1ac38f,grid=970db44ddb6a7da5,cmake=6984cf9623c21ed1
+accuracy gate, version 5.2.2
+accuracy gate, inputs src=06469da8cf73df9e,include=754c42f1cf126437,gate=5a799e9b02e5e5f3,grid=970db44ddb6a7da5,cmake=30c345c6e7480528
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -191,7 +191,7 @@ published cells and ranges, measured:
   float lane's own floor where |F| >= 0.5: worst relative error 8.636e-08 at (n=0, x=2.81804);
     the documented ceiling is about 6e-8, the published figure 2^-22 of the value,
     or its 1.5e-7 floor where that is the larger
-registration: 37 documented claims in 38 entries; every named row is in the book, every book row is reached or marked, and every quote is in the file it names
+registration: 37 documented claims in 38 entries; every named row is in the book, every book row is reached or marked, every quote is in the file it names, and every quote lies inside the line range its anchor states
 
 documented claims, each with one verdict:
   thresholds a claim labels approximate rather than exact - "about x = 16",
