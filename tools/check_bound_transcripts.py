@@ -3,7 +3,8 @@
 
 `tests/boys_accuracy_gate.cpp` judges every lane and region of this library against a bound, and
 those bounds are constants in the gate: `kBoundSingleA`, `kBoundSingleBand`, `kBoundSingleB`,
-`kBoundSingleC`, `kBoundDoubleBatch`, `kBoundFloat`, `kNativeUlpBound`. The block they are declared
+`kBoundSingleC`, `kBoundDoubleBatch`, `kBoundFloat`, `kNativeUlpBound`,
+`kHalfPublishedBound`. The block they are declared
 in records where they come from - a document of the tree and `include/boys/boys_decl.hpp` - and
 until this script nothing read the two against each other. A figure edited in a document and not in
 gate leaves the gate certifying its own transcription: the run is green, the claim printed beside it
@@ -480,6 +481,14 @@ TIES = (
     # absolute figure: the number that ties is the 8, and the unit is carried
     # with it so it can never be compared against an absolute cell.
     Tie("kNativeUlpBound", "native half", ("C",), "native half", unit="ulp"),
+    # The store-half lanes publish 1.5e-7 absolutely, the same number the float
+    # lane published as the floor under its relative arm; the gate states it
+    # under a name of its own for the sentence that scopes the half bound, and
+    # this tie holds that name to the half lanes' row. The row's cells state the
+    # 1.5e-7 and the 2.5e-7 the plain reciprocal adds beside it, which the
+    # library's own fp16 row carries.
+    Tie("kHalfPublishedBound", "fp16 / bf16", ("A", "band", "B", "C"), "fp16 / bf16",
+        unit="absolute"),
 )
 
 # The gate's other statements of a tied figure, under a name of their own: a
