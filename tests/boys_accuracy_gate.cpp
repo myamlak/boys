@@ -9726,11 +9726,10 @@ int main(int argc, char** argv) {
             return collapseInto(text, nullptr);
         };
 
-        // A figure is read as the documents write it: a decimal number ("1e-13", "8"), a
-        // power of two ("2^-22"), or a sum of such terms ("1e-15 + 2.5e-7"). Every figure the
-        // table uses converts exactly, so the figure and the row's bound compare to the last
-        // bit; the one-ULP allowance keeps the comparison honest for a decimal spelling that
-        // would not round to the same double as the bound's own literal.
+        // A figure is read as the documents write it: a decimal, a power of two, or a sum
+        // of such terms. Every figure the table uses converts exactly, so the figure and
+        // the row's bound compare to the last bit; one ULP absorbs a decimal spelling that
+        // rounds beside the bound's own literal.
         const auto withinOneUlp = [](double a, double b) {
             const double lo = std::min(a, b);
             const double hi = std::max(a, b);
@@ -9976,12 +9975,10 @@ int main(int argc, char** argv) {
                         anchorLast));
             }
 
-            // A registration that states the sentence's number compares it with the row's own
-            // bound: the number must be in the quote, must read as a number this gate can
-            // parse, and must equal the bound the row's cells are judged against to the last
-            // bit, so a quote and a row that drifted apart fail here rather than in a reader's
-            // head. A registration with no figure is counted apart and reported as one without
-            // a checked figure, rather than passing as if its row had been compared.
+            // A registration that states the sentence's number holds the row's own bound
+            // to it: the number must be in the quote, parse, and equal that bound to the
+            // last bit. A registration with no figure is counted apart, never silently
+            // passed as if its row had been compared.
             if (reg.figure == nullptr)
             {
                 ++figureAbsent;
