@@ -4,6 +4,18 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.2
+
+**Every registration quote is held to the line range its anchor states, and no measured figure
+moves.** The accuracy gate's registration table already named, for each documented claim, the file
+and an anchor for the sentence it quotes; a quote that had drifted to another part of the same file
+still passed, because only the file was checked. Each anchor now carries the line range its quote
+occupies (`lines A-B` and what it names), and a run fails with the claim named, at exit status 2,
+when the quote begins before or ends after that range. An anchor with no range is refused, so a new
+registration cannot be added without one. The 38 anchors were converted from their quotes' own line
+spans; the widest covers eight lines. The recorded gate run and the option probe's report are re-made
+for this release's stamp.
+
 ## 5.2.1
 
 **Two statements the referees found false are corrected, and no measured figure moves.** The
