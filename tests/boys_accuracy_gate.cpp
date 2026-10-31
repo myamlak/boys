@@ -9476,81 +9476,81 @@ int main(int argc, char** argv) {
     };
 
     static constexpr Registration kRegistrations[] = {
-        {"D01", "README.double.single", "README.md", "the bound's first paragraph",
+        {"D01", "README.double.single", "README.md", "lines 274-276, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for."},
-        {"D01", "README.double.batch", "README.md", "the bound's first paragraph",
+        {"D01", "README.double.batch", "README.md", "lines 274-276, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for."},
-        {"F01", "README.float", "README.md", "the float lane's figure",
+        {"F01", "README.float", "README.md", "lines 298-301, the float lane's figure",
          "The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the plain-reciprocal form."},
-        {"H01", "README.half", "docs/mainpage.md", "the lanes table",
+        {"H01", "README.half", "docs/mainpage.md", "lines 211-211, the lanes table",
          "| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is looser than the floor the float lane's figure keeps |"},
-        {"D13", "LC.double.worst_cell", "docs/mainpage.md", "the accuracy contract",
+        {"D13", "LC.double.worst_cell", "docs/mainpage.md", "lines 191-194, the accuracy contract",
          "in between the bound `1e-13 · F_0(x)` permits 4.85 times the value at the worst cell, `n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the value 3.2822575294956117e-15, and the delivered error there measured 1.40 times the value, 4.582e-15, 0.288 of the bound."},
-        {"P02", "native.half.suite_worst", "docs/mainpage.md", "the native half lane",
+        {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 301-302, the native half lane",
          "The native half lane is the one lane whose figure is not a fraction of the value: it is stated in ULP of the returned value, ≤ 8 ULP, measured at a worst of 4.3."},
-        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "the double lane",
+        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 133-135, the double lane",
          "The stored coefficients are rounded to double precision and hold only the sixteen or so significant digits a double can hold, so nothing below about 1e-16 is reachable however the evaluation is arranged."},
-        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "the float lane",
+        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "lines 489-494, the float lane",
          "A 32-bit float carries about seven significant digits, which is about 6e-8 relative. The lane's relative arm is 4.0 times that digit (2^-22 / 6e-8), so the two are within a factor of a few of each other: the arm is the format's own size and not a budget with room in it. What the floor is for is small values: at F_n(x) = 1e-3 the relative arm is 2.4e-10, far below the 1.5e-7 the lane can hold there, and the plain-reciprocal form adds its 1e-7 term to the larger of the two."},
-        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "the double lane, the batch row",
+        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "lines 122-124, the double lane, the batch row",
          "the stored fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at 1e-15 under a reachable gain of at most 2.171050."},
-        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "the transform table",
+        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "lines 572-572, the transform table",
          "| fp64 | 64-bit | 64-bit | 1e-15 |"},
-        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "the transform table",
+        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "lines 576-577, the transform table",
          "The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the product adds nothing measurable to what the coefficients already cost."},
-        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "the transform table",
+        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "lines 573-573, the transform table",
          "| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | 1e-15 + 2.5e-7 |"},
-        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "the transform table",
+        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "lines 574-574, the transform table",
          "| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | 1e-15 + 2.5e-7 |"},
-        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "the transform table",
+        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "lines 577-578, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor."},
-        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "the transform table",
+        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "lines 577-578, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor."},
-        {"H02b", "LC.half.budget", "CONTRIBUTING.md", "the ground rules",
+        {"H02b", "LC.half.budget", "CONTRIBUTING.md", "lines 22-23, the ground rules",
          "1e-7 plus one half-ULP for fp16 and bf16. This is the bar the suite asserts, and it is tighter than the 1.5e-7 plus one half-ULP those lanes publish;"},
-        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "the half lane",
+        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 640-647, the half lane",
          "Both figures below were measured against a 45-digit reference, over every argument either format can represent and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the instrument the two figures rest on. A sparser grid understates them — the committed reference grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are worse. For the 16-bit format the worst case is **0.9993 of the bound**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst case is **0.99992 of the bound**, a margin of 0.008 per cent, against the 16-bit format's 0.07."},
-        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "the half lane",
+        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 647-648, the half lane",
          "At that distance the representation term is very nearly the whole bound, and the arithmetic term has almost nothing left to spend."},
-        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "the half lane",
+        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 656-659, the half lane",
          "**Below a certain size the lane returns nothing usable.** The bound holds only where the result is larger than `1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments and over no others.**"},
-        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "the half lane",
+        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 661-664, the half lane",
          "For 16-bit floats the point where the bound stops being useful is at arguments well inside the usable range, and it moves with the order. Orders 3, 4 and 5 still return usable values across the whole of the large-argument range; **the claim that every argument is past the threshold holds from order 6 upward**."},
-        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "packed half",
+        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 709-710, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one."},
         {"P09", "code.half_simd_budget", "src/boys_simd.cpp", "lines 370-373, the comment above the region kernels",
          "Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their // scalar tails call the half-lane scalar entries; the vector bodies hold the // same documented bound as those entries but are not bit-identical to them (the // bodies run the fp32 fit at full degree where the scalar lane truncates it)."},
-        {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 620-623, the comment above the scalar lane",
+        {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 619-622, the comment above the scalar lane",
          "A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. The region contract stays a sufficient precondition, just not a // required one, and the bodies mirror the scalar tails the x86 entries run for their last // count % 4 elements."},
-        {"P01", "native.half.bound", "docs/lane-contract.md", "packed half",
+        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 670-671, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375."},
-        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1911-1916, the half lanes' comment",
+        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1913-1917, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble."},
-        {"P07", "native.half.ceiling", "docs/lane-contract.md", "packed half, the exponent range",
+        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 710-711, packed half, the exponent range",
          "No rescaling reaches past that limit either, because the range the recursion spans grows like x to the power n, against a fixed exponent range."},
-        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 694-694, packed half, the crossing table",
          "| 0 and 1 | the whole 16-bit range, to 65504 |"},
-        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 695-695, packed half, the crossing table",
          "| 2 | to about 2636 |"},
-        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 696-696, packed half, the crossing table",
          "| 3 | to about 360 |"},
-        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 697-697, packed half, the crossing table",
          "| 4 | to about 129 |"},
-        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 698-698, packed half, the crossing table",
          "| 5 | to about 70 |"},
-        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 699-699, packed half, the crossing table",
          "| 6 | to about 47 |"},
-        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 700-700, packed half, the crossing table",
          "| 7 | to about 36 |"},
-        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table",
+        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 701-701, packed half, the crossing table",
          "| 8 | to about 30 |"},
-        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "packed half, the crossing table and the order count",
+        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 702-706, packed half, the crossing table and the order count",
          "| **9 to 32** | **none** | **Orders 9 and above have no argument at all at which this lane claims its bound**, because the function is already below 2^-29 at the smallest argument the lane accepts. Twenty-four of the thirty-three orders the library supports are in that position."},
-        {"P03", "native.half.packed", "docs/lane-contract.md", "packed half, the arithmetic",
+        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 683-686, packed half, the arithmetic",
          "Each step is evaluated in double precision and rounded once to 16 bits, which gives the same correctly rounded result a native 16-bit instruction would. This library carries no native 16-bit backend, so what the lane delivers is 16-bit arithmetic's *results* rather than its *speed*. **No timing is claimed for it.**"},
-        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "packed half",
+        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 677-679, packed half",
          "the worst cell this lane's own suite finds is 4.243 of those digits against the half-ULP the other lane budgets, which is **8.5 times** its representation allowance."},
-        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "region C, the boundary",
+        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1418-1421, region C, the boundary",
          "Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**."},
     };
 
@@ -9611,12 +9611,21 @@ int main(int argc, char** argv) {
 
         // A quote is looked for exactly as the documents are read: whole file and quote
         // both collapsed, so a sentence the file wraps still matches the table's one line.
-        const auto collapse = [](const std::string& text) {
+        // A document is also collapsed with a line map, so a registration's anchor can be
+        // checked: the quote must lie inside the line range the anchor names.
+        const auto collapseInto = [](const std::string& text,
+                                     std::vector<std::size_t>* lineOf) {
             std::string out;
             bool gap = false;
+            std::size_t line = 1;
 
             for (const char ch : text)
             {
+                if (ch == '\n')
+                {
+                    ++line;
+                }
+
                 if (ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == '\f'
                     || ch == '\v')
                 {
@@ -9626,17 +9635,96 @@ int main(int argc, char** argv) {
                     if (gap && !out.empty())
                     {
                         out.push_back(' ');
+
+                        if (lineOf != nullptr)
+                        {
+                            lineOf->push_back(line);
+                        }
                     }
 
                     gap = false;
                     out.push_back(ch);
+
+                    if (lineOf != nullptr)
+                    {
+                        lineOf->push_back(line);
+                    }
                 }
             }
 
             return out;
         };
 
-        std::map<std::string, std::string> documents;
+        const auto collapse = [&collapseInto](const std::string& text) {
+            return collapseInto(text, nullptr);
+        };
+
+        // The anchor states where in the file the quote lives. An anchor that names no
+        // line range cannot be checked and is refused: every registration carries one.
+        const auto anchorLines = [](const std::string& anchor,
+                                    std::size_t& first,
+                                    std::size_t& last) {
+            const std::string key = "lines";
+            std::size_t pos = anchor.find(key);
+
+            if (pos == std::string::npos)
+            {
+                return false;
+            }
+
+            pos += key.size();
+
+            const auto readNumber = [&anchor, &pos](std::size_t& value) {
+                while (pos < anchor.size() && anchor[pos] == ' ')
+                {
+                    ++pos;
+                }
+
+                value = 0;
+                std::size_t digits = 0;
+
+                while (pos < anchor.size() && anchor[pos] >= '0' && anchor[pos] <= '9')
+                {
+                    value = value * 10 + static_cast<std::size_t>(anchor[pos] - '0');
+                    ++pos;
+                    ++digits;
+                }
+
+                return digits != 0;
+            };
+
+            if (!readNumber(first))
+            {
+                return false;
+            }
+
+            while (pos < anchor.size() && anchor[pos] == ' ')
+            {
+                ++pos;
+            }
+
+            if (pos >= anchor.size() || anchor[pos] != '-')
+            {
+                return false;
+            }
+
+            ++pos;
+
+            if (!readNumber(last))
+            {
+                return false;
+            }
+
+            return last >= first;
+        };
+
+        struct Document
+        {
+            std::string text;
+            std::vector<std::size_t> lineOf;
+        };
+
+        std::map<std::string, Document> documents;
 
         for (const Registration& reg : kRegistrations)
         {
@@ -9659,10 +9747,15 @@ int main(int argc, char** argv) {
 
                 std::ostringstream buffer;
                 buffer << in.rdbuf();
-                document = documents.emplace(reg.source, collapse(buffer.str())).first;
+                Document loaded;
+                loaded.text = collapseInto(buffer.str(), &loaded.lineOf);
+                document = documents.emplace(reg.source, std::move(loaded)).first;
             }
 
-            if (document->second.find(collapse(reg.quote)) == std::string::npos)
+            const std::string quote = collapse(reg.quote);
+            const std::size_t at = document->second.text.find(quote);
+
+            if (at == std::string::npos)
             {
                 registrationFailures.push_back(
                     Fmt("claim %s: the quote is not in %s (%s): \"%s\"",
@@ -9670,6 +9763,40 @@ int main(int argc, char** argv) {
                         reg.source,
                         reg.anchor,
                         reg.quote));
+                continue;
+            }
+
+            std::size_t anchorFirst = 0;
+            std::size_t anchorLast = 0;
+
+            if (reg.anchor == nullptr || reg.anchor[0] == '\0')
+            {
+                registrationFailures.push_back(
+                    Fmt("claim %s: the registration carries no anchor", reg.claim));
+                continue;
+            }
+
+            if (!anchorLines(reg.anchor, anchorFirst, anchorLast))
+            {
+                registrationFailures.push_back(
+                    Fmt("claim %s: the anchor names no line range (%s)", reg.claim, reg.anchor));
+                continue;
+            }
+
+            const std::size_t quoteFirst = document->second.lineOf[at];
+            const std::size_t quoteLast = document->second.lineOf[at + quote.size() - 1];
+
+            if (quoteFirst < anchorFirst || quoteLast > anchorLast)
+            {
+                registrationFailures.push_back(
+                    Fmt("claim %s: the quote spans lines %zu-%zu of %s, outside its "
+                        "anchor's %zu-%zu",
+                        reg.claim,
+                        quoteFirst,
+                        quoteLast,
+                        reg.source,
+                        anchorFirst,
+                        anchorLast));
             }
         }
 
@@ -9696,7 +9823,8 @@ int main(int argc, char** argv) {
         }
 
         std::printf("registration: %zu documented claims in %zu entries; every named row is in the book, "
-                    "every book row is reached or marked, and every quote is in the file it names\n",
+                    "every book row is reached or marked, every quote is in the file it names, "
+                    "and every quote lies inside the line range its anchor states\n",
                     claimsRegistered.size(),
                     sizeof(kRegistrations) / sizeof(kRegistrations[0]));
     }
