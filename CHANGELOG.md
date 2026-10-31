@@ -4,6 +4,19 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.3
+
+**Each registration states the figure its sentence names, and the gate holds the row's bound to
+it to the last bit.** A registration that carries a figure fails the run with the claim named
+when the figure is not in its quote, when it does not read as a number, when the row it names
+carries no bound, or when the row's bound and the figure differ by more than one ULP. The
+registrations whose sentence states no figure the row is judged against - a consistency row, a
+delivered figure, a ceiling table - carry none and are counted apart, so a run reports 13 with a
+checked figure and 25 without rather than letting the unchecked half pass silently. The bounded
+rows expose the constants their bounds were built from, so the comparison reads the bound
+itself rather than a second transcription of it. The recorded gate run and the option probe's
+report are re-made for this release's stamp.
+
 ## 5.2.2
 
 **Every registration quote is held to the line range its anchor states, and no measured figure
