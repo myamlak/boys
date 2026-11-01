@@ -26,7 +26,7 @@ inline constexpr int kVersionMinor = 2;
 inline constexpr int kVersionPatch = 4;
 
 /// The version as a string, "MAJOR.MINOR.PATCH".
-inline constexpr const char* kVersionString = "5.2.3";
+inline constexpr const char* kVersionString = "5.2.4";
 
 /// The library's version, as a caller queries it.
 ///
