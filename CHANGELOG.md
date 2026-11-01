@@ -13,6 +13,11 @@ now gives the larger of `2^-22 · F_n(x)` and `1.5e-7`, plus `1e-7` in the plain
 which is what `README.md` states. No coefficient, bound or delivered figure moves; the recorded
 gate run and the option probe's report are re-made for this release's stamp.
 
+**The Windows CUDA build compiles.** The AVX2 and UTF-8 source flags were applied to CUDA
+translation units without the `-Xcompiler` wrapper, so nvcc read `/arch:AVX2` and `/utf-8` as
+input files and stopped before compiling. Both now reach the host pass in the CUDA spelling, and
+the CPU builds are unchanged.
+
 ## 5.2.3
 
 **Each registration states the figure its sentence names, and the gate holds the row's bound to

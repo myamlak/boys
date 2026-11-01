@@ -47,13 +47,15 @@ tighter regions sit inside its published figure rather than beside it. Every fig
 |---|---|
 | double single | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
 | double batch, whether the top order is the batch's or each argument's | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` |
-| float single / batch | ≤ the larger of `2^-22 · F_n(x)` and `1.5e-7`, plus `1e-7` in the plain-reciprocal form — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
+| float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is the looser of the two figures wherever the float lane's relative figure falls below it |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
 | CUDA fp64 | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the same contract as the CPU double lanes |
 | CUDA fp32, `RegionBExp::kAccurate` (the default) | the same contract as the CPU float lanes, at the lane's own default division form |
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
+
+The float lane's default form is held to the larger of 2^-22 · F_n(x) and 1.5e-7, and the plain-reciprocal form adds 1e-7 to that figure. The row above states each form's term; this sentence states the default form's composite figure, which the README also states.
 
 **Every figure in that table is the shipped build's.** Each row is a claim about the choices
 [boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries, and they are the figures
@@ -719,7 +721,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.2.3**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.2.4**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
