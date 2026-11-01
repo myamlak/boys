@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.2.3 LANGUAGES CXX)
+project(boys VERSION 5.2.4 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -594,7 +594,8 @@ if (BOYS_ARCH_X86_64)
             # AVX2 intrinsics come with /arch:AVX2 (F16C included); no
             # contraction flag is added because MSVC contracts only under
             # /fp:fast, which is not what the measurement above runs under.
-            target_compile_options(boys-tier INTERFACE /arch:AVX2)
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
             # The CUDA language does not take the C++ flag set: nvcc hands its own
             # switches to the host pass, so a translation unit compiled by nvcc
             # would build its shared inline bodies at the scalar tier beside the
@@ -606,14 +607,17 @@ if (BOYS_ARCH_X86_64)
                 $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/arch:AVX2>)
         else()
             # GCC does not imply F16C via -mavx2.
-            target_compile_options(boys-tier INTERFACE -mavx2 -mfma -mf16c)
+            target_compile_options(boys-tier INTERFACE
+                $<$<COMPILE_LANGUAGE:CXX>:-mavx2;-mfma;-mf16c>)
             if (DEFINED BOYS_SCALAR_CONTRACTS)
                 if (BOYS_SCALAR_CONTRACTS)
-                    target_compile_options(boys-tier INTERFACE -ffp-contract=fast)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=fast>)
                     target_compile_options(boys-tier INTERFACE
                         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=fast>)
                 else()
-                    target_compile_options(boys-tier INTERFACE -ffp-contract=off)
+                    target_compile_options(boys-tier INTERFACE
+                        $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
                     target_compile_options(boys-tier INTERFACE
                         $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=-ffp-contract=off>)
                 endif()
@@ -828,7 +832,9 @@ if (BOYS_BUILD_TESTS)
     # carry the middle dot, the multiplication sign, the half and the en dash unchanged. MSVC
     # says plainly that the source is UTF-8 unless told otherwise.
     if (MSVC)
-        target_compile_options(boys-accuracy-gate PRIVATE /utf-8)
+        target_compile_options(boys-accuracy-gate PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:/utf-8>
+            $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/utf-8>)
     endif()
 
     # The external-row application: when ON, the gate measures Boost.Math's documented Airy

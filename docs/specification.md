@@ -55,6 +55,8 @@ tighter regions sit inside its published figure rather than beside it. Every fig
 | CUDA fp32, `RegionBExp::kFast` | ≤ 2^-22 · F_n(x) + 8e-8, or ≤ 1.5e-7 + 8e-8 where that is the larger — the lane's figure plus the corrected seed's own contribution, which is a term of the argument and not of the value |
 | CUDA fp16 | ≤ 1e-7 + ½ ULP, or ≤ 2e-7 + ½ ULP in the plain-reciprocal form — the CUDA surface's own half entries, and not the host half lane's figure |
 
+The float lane's default form is held to the larger of 2^-22 · F_n(x) and 1.5e-7, and the plain-reciprocal form adds 1e-7 to that figure. The row above states each form's term; this sentence states the default form's composite figure, which the README also states.
+
 **Every figure in that table is the shipped build's.** Each row is a claim about the choices
 [boys_build_defaults.hpp](../include/boys/boys_build_defaults.hpp) carries, and they are the figures
 the accuracy gate below judges a default-configure build against. A configure that points
@@ -152,10 +154,10 @@ carrying the run its combination came from where a run stands behind it, and its
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
 transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
 same protocol on this host, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 58.75
-against 250.77 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 247.59
-(`single-batch-narrow-rational-minimax-fast-fp64`). The route and the packing axis carry
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 152.60
+against 389.28 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
+route; the fastest rational-route narrow row is 581.73
+(`single-batch-narrow-rational-minimax-refined-reciprocal-fp64`). The route and the packing axis carry
 the settings the library has always shipped and have not been ranked against a timing. The option
 probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
@@ -719,7 +721,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.2.3**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.2.4**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,

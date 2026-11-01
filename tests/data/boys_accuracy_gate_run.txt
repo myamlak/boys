@@ -8,7 +8,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
+verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
@@ -110,8 +110,8 @@ the certified fit routes, measured:
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 5.2.3
-accuracy gate, inputs src=06469da8cf73df9e,include=cfec940f5dea6f80,gate=76ab07ee837cdf1c,grid=970db44ddb6a7da5,cmake=40dd9cdefb948bda
+accuracy gate, version 5.2.4
+accuracy gate, inputs src=06469da8cf73df9e,include=698a5f5fcc7240cf,gate=76ab07ee837cdf1c,grid=970db44ddb6a7da5,cmake=35ab1bd11fda87e9
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -537,7 +537,7 @@ the evaluation-scheme rows: each scheme's stored fits over the interval each is 
   entry's own body. The lane holds one stored table and one recurrence, so it serves one
   scheme; BoysPackedLaneServes is where the library says which, and this is that
   statement held to the values
-  split-clenshaw         3230 cell(s)     2014 differ  reaches the lane: yes  BoysPackedLaneServes says: yes  met
+  split-clenshaw         3230 cell(s)     2015 differ  reaches the lane: yes  BoysPackedLaneServes says: yes  met
   horner                 3230 cell(s)        0 differ  reaches the lane: no   BoysPackedLaneServes says: no   met
   --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
@@ -1447,11 +1447,11 @@ device lanes : 4 of 4 measured on a card
     lane                       member              cell(s)       worst
     fp64                       accurate           17078688 2.21663e-14
     fp64                       fast               17078688 2.21663e-14
-    fp64                       the two members were compared at 17078688 value(s), and delivered 345310 of
+    fp64                       the two members were compared at 17078688 value(s), and delivered 347570 of
                                them differently
     fp32                       accurate           17078688  1.7514e-07
     fp32                       fast               17078688  1.7514e-07
-    fp32                       the two members were compared at 17078688 value(s), and delivered 0 of
+    fp32                       the two members were compared at 17078688 value(s), and delivered 660 of
                                them differently
     fp16                       accurate           17078688   0.0002438
     fp16                       fast               17078688   0.0002438
@@ -1470,7 +1470,7 @@ device lanes : 4 of 4 measured on a card
   column is zero for every form is a lane the axis selects no arithmetic on: its
   three names reach one body, and one is what it was certified at
     lane                        axis           cell(s)   form(s)    compared plain-reciprocal refined-reciprocal
-    fp64                        arguments     21348360         3    14232240      885100           0
+    fp64                        arguments     21348360         3    14232240      884866           0
     fp32                        arguments     21348360         3    14232240     1925226           0
     fp16                        arguments     21348360         3    14232240        1166           0
     bf16                        arguments     21348360         3    14232240       16320           0
@@ -1486,7 +1486,7 @@ device lanes : 4 of 4 measured on a card
     fp16-device                 orders         2134836         3     1423224          83           0
     bf16-device                 arguments      2134836         3     1423224        1710           0
     bf16-device                 orders         2134836         3     1423224        1710           0
-    total                                                          102472128     5124304           0
+    total                                                          102472128     5124070           0
   OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
