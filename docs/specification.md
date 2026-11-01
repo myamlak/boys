@@ -47,7 +47,7 @@ tighter regions sit inside its published figure rather than beside it. Every fig
 |---|---|
 | double single | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the lane's delivered error is far below the figure over the whole fitted range, and [lane-contract.md](lane-contract.md) states the per-region budgets its fits were cut against |
 | double batch, whether the top order is the batch's or each argument's | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` |
-| float single / batch | ≤ 2^-22 · F_n(x) + 1e-7 in the plain-reciprocal form, or ≤ 1.5e-7 + 1e-7 in that form, whichever is the larger — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
+| float single / batch | ≤ the larger of `2^-22 · F_n(x)` and `1.5e-7`, plus `1e-7` in the plain-reciprocal form — the lane's arithmetic is binary32 and has an absolute floor, so its figure keeps the absolute figure it published before the relative one |
 | fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is the looser of the two figures wherever the float lane's relative figure falls below it |
 | native half, x ≥ 28.984375 | ≤ 8 ULP of the returned value — a bound on the returned value's own last digit, which is what a relative bound is; no table, no constant, and no move |
 | CUDA fp64 | ≤ the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)` — the same contract as the CPU double lanes |

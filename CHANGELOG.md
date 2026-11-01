@@ -4,6 +4,15 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.4
+
+**The specification's float row states the figure a default float caller is held to.** The row
+gave the plain-reciprocal form's figure and an alternative phrased as if the two were separate
+budgets, and it did not state the figure for the refined division form the default call uses. It
+now gives the larger of `2^-22 · F_n(x)` and `1.5e-7`, plus `1e-7` in the plain-reciprocal form,
+which is what `README.md` states. No coefficient, bound or delivered figure moves; the recorded
+gate run and the option probe's report are re-made for this release's stamp.
+
 ## 5.2.3
 
 **Each registration states the figure its sentence names, and the gate holds the row's bound to
