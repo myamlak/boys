@@ -259,6 +259,15 @@ constexpr bool kOneArithmeticAcrossTheLanes =
     FixedNClass::kDivision == SingleClass::kDivision &&
     (!kRegionBExpReachesAValue || FixedNClass::kRegionBExp == SingleClass::kRegionBExp);
 
+// The axes on which the two rows differ, decided where both classes are constant expressions:
+// a seam whose rows agree resolves them to one policy type, and a comparison of two cells of one
+// type in a run-time test is a self-comparison the compiler rejects.
+constexpr bool kRouteDiffers = FixedNClass::kRoute != SingleClass::kRoute;
+constexpr bool kSchemeDiffers = FixedNClass::kScheme != SingleClass::kScheme;
+constexpr bool kGranularityDiffers = FixedNClass::kGranularity != SingleClass::kGranularity;
+constexpr bool kDivisionDiffers = FixedNClass::kDivision != SingleClass::kDivision;
+constexpr bool kRegionBExpDiffers = FixedNClass::kRegionBExp != SingleClass::kRegionBExp;
+
 #if defined(BOYS_BUILD_DEFAULTS_COMMITTED)
 // The committed seam's two rows carry one arithmetic, and holding that here is what keeps the
 // claims below at the whole of what they assert on the seam this tree commits.
@@ -300,30 +309,30 @@ const char* RouteCellName(boys::FitRoute route) {
         text += single;
     };
 
-    if (FixedNClass::kRoute != SingleClass::kRoute)
+    if (kRouteDiffers)
     {
         note("fit route", RouteCellName(FixedNClass::kRoute), RouteCellName(SingleClass::kRoute));
     }
 
-    if (FixedNClass::kScheme != SingleClass::kScheme)
+    if (kSchemeDiffers)
     {
         note("scheme", boys::EvalSchemeName(FixedNClass::kScheme),
              boys::EvalSchemeName(SingleClass::kScheme));
     }
 
-    if (FixedNClass::kGranularity != SingleClass::kGranularity)
+    if (kGranularityDiffers)
     {
         note("partition", boys::GranularityName(FixedNClass::kGranularity),
              boys::GranularityName(SingleClass::kGranularity));
     }
 
-    if (FixedNClass::kDivision != SingleClass::kDivision)
+    if (kDivisionDiffers)
     {
         note("division form", boys::DivisionFormName(FixedNClass::kDivision),
              boys::DivisionFormName(SingleClass::kDivision));
     }
 
-    if (kRegionBExpReachesAValue && FixedNClass::kRegionBExp != SingleClass::kRegionBExp)
+    if (kRegionBExpReachesAValue && kRegionBExpDiffers)
     {
         note("region-B exponential", boys::RegionBExpName(FixedNClass::kRegionBExp),
              boys::RegionBExpName(SingleClass::kRegionBExp));
