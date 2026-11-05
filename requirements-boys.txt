@@ -1,8 +1,18 @@
 # Build-time-only regeneration dependency of tools/gen_boys_coefficients.py
-# (the Chebyshev coefficient tables and the 45-digit reference grid).
+# (the Chebyshev coefficient tables, the region-B rational seed and the 45-digit
+# reference grid).
 # The committed tables were generated with this exact version; the
 # byte-identity gate (--check, the CI legs) only holds against it.
 mpmath==1.4.1
+
+# The independent rational minimax solver behind the region-B rational seed.
+# BRASIL runs in binary64 on numpy and scipy and proposes the support nodes;
+# the generator re-solves them at its own precision, so these pins fix the
+# solver stack the committed bytes were derived with. The provenance record
+# gates all three versions beside mpmath's.
+baryrat==2.1.2
+numpy==2.5.2
+scipy==1.18.1
 
 # The emitted header is clang-format output, so the formatter is part of the
 # regeneration pipeline rather than an optional polish step: the byte-identity

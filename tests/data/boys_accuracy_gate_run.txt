@@ -8,7 +8,7 @@ tiers        : n<=4 1.0855252345349333 | n<=8 2.0152977053351142 | n<=16 4.89787
 AVX2 tier    : present
 muladd route : scalar-fp64 fused (bare product-plus-add does not contract here)
 muladd route : scalar-fp32 fused (bare product-plus-add does not contract here)
-verdict      : strict (a claim this build carries and does not verify at this revision fails the gate; a claim whose subject this build does not carry is named with its reason and fails nothing here)
+verdict      : strict (--strict: the default verdict, stated) - a claim this build carries and cannot verify at this revision fails the gate, while a claim whose subject this build does not carry is named with its reason and fails nothing here
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=4.9406564584124654e-324  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=1e-300  err=2.9976e-15  bound=1e-15  ratio=2.998  ref=1 (1e0)
   EXCEEDED (the lane book, record, not judged) double single / header x<x0  n=0 x=9.9999999999999998e-13  err=3.10862e-15  bound=1e-15  ratio=3.109  ref=1 (1e-1)
@@ -31,7 +31,7 @@ the certified fit routes, measured:
                                         0..32      21318              -              -    4.06627e-16          1e-13
   chebyshev            B      25        F0           319        11.8998    5.09007e-17    5.55112e-17    2.56906e-14
                                         0..32      10527              -              -    2.21466e-16          1e-13
-  rational-minimax     B      13        F0           319        11.8998    1.69146e-14    5.55112e-17    2.56906e-14
+  rational-minimax     B      13        F0           319        11.8998    6.04405e-15    5.55112e-17    2.56906e-14
                                         0..32      10527              -              -    2.92871e-16          1e-13
   cells outside every route's interval that the rational route changed: 0
   cells inside a route's interval that it changed: 30103 of 31845 (94.5%)
@@ -106,12 +106,12 @@ the certified fit routes, measured:
   the floor's share of the float lane's policy rows (the route book's own cells): 0 of the 237260 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - every cell it carries meets the figure it is judged against - so no part of this book rests on the floor
 
   the rational route over the narrow partition, measured against the same reference
-  the route rows are: 59301 cell(s) through the batch entry, 24257 of them a value the
+  the route rows are: 59301 cell(s) through the batch entry, 24226 of them a value the
   shipped partition's route does not answer with (the carriage that makes naming it an
   option rather than a spelling), worst piece value 2.21663e-14 away from the reference.
 
-accuracy gate, version 5.2.4
-accuracy gate, inputs src=06469da8cf73df9e,include=698a5f5fcc7240cf,gate=76ab07ee837cdf1c,grid=970db44ddb6a7da5,cmake=35ab1bd11fda87e9
+accuracy gate, version 5.2.5
+accuracy gate, inputs src=06469da8cf73df9e,include=e50b991c54ab8505,gate=76ab07ee837cdf1c,grid=970db44ddb6a7da5,cmake=51560c50c5a5667e
   reference: tests/data/boys_accuracy_gate_reference.csv (1797 arguments per order, 33 orders, independent of the code under test)
 per-lane, per-region: delivered error / documented bound
   lane                     region      points     real  delivered / claimed      max ratio (n, x)          vacuous no value
@@ -125,9 +125,9 @@ per-lane, per-region: delivered error / documented bound
   double batch             all-n       118602    70114  1.4 / 4.85               0.288 (n=32, x=31)          48488     7608
   double batch             all-n at-orders    89985    54668  1.4 / 4.85               0.288 (n=32, x=31)          35317     4929
   float single             all          59301    25378  8.3e-08 / 2.38e-07       0.325 (n=0, x=2.08827)      33923    17791
-  float batch              all          59301    25378  4.08e-07 / 2.38e-07      0.722 (n=0, x=11.151)       33923    17791
+  float batch              all          59301    25378  8.3e-08 / 2.38e-07       0.325 (n=0, x=2.08827)      33923    17791
   float batch              all, orders axis    59301    25378  1.29e-07 / 2.38e-07      0.543 (n=0, x=1.46214)      33923    17791
-  float batch              all-n        59301    25378  4.08e-07 / 2.38e-07      0.722 (n=0, x=11.151)       33923    17791
+  float batch              all-n        59301    25378  8.3e-08 / 2.38e-07       0.325 (n=0, x=2.08827)      33923    17791
   fp16 store-half          single       47256    25307  0.000122 / 0.000122      0.999 (n=0, x=9.29688)      21949    21949
   fp16 store-half          batch        59301    25307  0.000122 / 0.000122      0.999 (n=0, x=9.29688)      33994    33994
   bf16 store-half          single       59301    25644  0.000976 / 0.000977      0.999 (n=0, x=3.79688)      33657    17791
@@ -223,7 +223,7 @@ documented claims, each with one verdict:
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [verified at this revision] float single and batch: 2^-22 of F_n(x), or its 1.5e-7 floor where that is the larger, in every region, and 1e-7 beside it in the plain-reciprocal form - the lane's own bar, not 1e-13 scaled
       README accuracy contract
-      worst 0.722 of budget at (n=0, x=11.151): delivered 4.083e-07 against 2.384e-07
+      worst 0.543 of budget at (n=0, x=1.46214): delivered 1.294e-07 against 2.384e-07
       falsified by: class falsifier - a measured row: the sweep would have to deliver a cell over its bound (the row prints its cells, its worst cell and its failure count, so a non-zero failure count is what to look for), or cover none of the domain it names; a tree-command row: the named command would have to print a different number; a prose row: the document's wording would have to change to what the measurement contradicts
   [met over the stated domain] domain: the arguments where |F_n(x)| > 1e-7 + one half-ULP of the returned value, and no others - the restriction the half lanes' paragraph in docs/lane-contract.md states. The row judges at that base, which is the region target the half lanes' fits are cut for and is tighter than the 1.5e-7 the library publishes for them, so its domain is wider than the published claim's and a pass here is the stronger result
       fp16 and bf16 store-half lanes: 1.5e-7 + one half-ULP, single and batch - the fp32 engine's arithmetic stated absolutely, which is the arithmetic these lanes run, plus the half-ULP term their store adds
@@ -279,7 +279,7 @@ documented claims, each with one verdict:
       falsified by: the row fails if a cell inside that domain delivers more than the bound, or if the domain's edge moves down to arguments where the return is the format's floor: the counts are in LC.half.vacuous_floor
   [verified at this revision] both formats' worst cells were measured against a 45-digit reference over every argument either format can represent and every order - a 16-bit input is a finite set, so that sweep is exhaustive rather than dense: 0.9993 of the bound for the 16-bit format, a margin of 0.07 per cent, and 0.99992 for the 16-bit brain-float format, a margin of 0.008 per cent; a sparser grid understates them, the committed reference grid reading 0.999 and 0.9994
       docs/lane-contract.md, half; the deposited sweep tests/data/half-sweep/ (results.json, README.md, NOTE.md; the harness and oracle stay with the deposit)
-      the record read and checked: 31743 binary16 arguments and 32639 bfloat16 arguments, orders 0..32, 2124606 cells in all, against a 45-digit mpmath reference. Worst ratio 0.999299207483 at (n=0, x bits 0x1B82) for binary16 - a margin of 0.0700793 per cent - and 0.999915078150 at (n=0, x bits 0x3FA4) for bfloat16, a margin of 0.00849218 per cent. Each ratio and its margin agree to 1e-6 per cent, and each format's cells are 33 orders times its arguments. This gate's own committed grid, the sparser one the document names, reads 0.999008 at (n=0, x=9.29688) and 0.999441 at (n=0, x=3.79688) at the single entries the deposit measured - rounding to the 0.999 and 0.9994 the sentence writes, and below the exhaustive figures, the direction the document gives a sparser grid. The all-orders entries are measured by this gate and by no deposit: 0.999355 at (n=0, x=9.29688) for binary16 and 0.999441 at (n=0, x=3.79688) for bfloat16, printed beside the comparison and not compared to the sweep, whose object was the single entries. The sweep and its oracle are deposited, not run here: the record was made at v5.1.1, its sweep took 0.96 s and its 45-digit reference 308.1 s on the toolchain the deposit records; this binary neither re-derives the oracle nor spends those minutes in the default suite
+      the record read and checked: 31743 binary16 arguments and 32639 bfloat16 arguments, orders 0..32, 2124606 cells in all, against a 45-digit mpmath reference. Worst ratio 0.999299207483 at (n=0, x bits 0x1B82) for binary16 - a margin of 0.0700793 per cent - and 0.999915078150 at (n=0, x bits 0x3FA4) for bfloat16, a margin of 0.00849218 per cent. Each ratio and its margin agree to 1e-6 per cent, and each format's cells are 33 orders times its arguments. This gate's own committed grid, the sparser one the document names, reads 0.999008 at (n=0, x=9.29688) and 0.999441 at (n=0, x=3.79688) at the single entries the deposit measured - rounding to the 0.999 and 0.9994 the sentence writes, and below the exhaustive figures, the direction the document gives a sparser grid. The all-orders entries are measured by this gate and by no deposit: 0.999008 at (n=0, x=9.29688) for binary16 and 0.999441 at (n=0, x=3.79688) for bfloat16, printed beside the comparison and not compared to the sweep, whose object was the single entries. The sweep and its oracle are deposited, not run here: the record was made at v5.1.1, its sweep took 0.96 s and its 45-digit reference 308.1 s on the toolchain the deposit records; this binary neither re-derives the oracle nor spends those minutes in the default suite
       falsified by: the row fails if the deposited record's own counts or margins stop agreeing with each other, if either worst ratio leaves (0.9992, 0.9994) for binary16 or (0.99990, 0.99993) for bfloat16, or if this gate's sparser grid stops rounding to the 0.999 and 0.9994 the sentence writes at its single entries or stops reading below them - the direction the document states for a sparser grid; a missing record fails the row with the path it looked for
   [verified at this revision] at the worst cell the representation term is very nearly the whole bound, and the arithmetic term has almost nothing left to spend
       docs/lane-contract.md, half
@@ -391,9 +391,9 @@ documented claims, each with one verdict:
   RESULT (the claim book): 38 of 38 claims met at this revision (29 verified outright, 9 met over a stated domain, 0 exceeded, 0 vacuous only, 0 evidence absent, 0 not carried by this build, 0 recorded and not judged; none of the last five counted as met)
           of those, 34 are certified by a measurement of this machine's own arithmetic and 4 rest on a software model of an accumulator and are NOT certified: a model is not a card, so a green row of the second kind is no evidence that a card is inside the bound it states
           carried by the 528910 of 957873 comparison cells (55.2%) that can discriminate: the other 428963 carry a bound at least as large as the value itself, so read the two numbers together
-  the floor's share of the claim book: 7985 of the 528910 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - the reading is over the arm the figure alone gives and inside the floor - so the figure alone would have failed them and no row shows it; the other 520925 meet the figure itself
-  carried by the floor, by row (4 row(s), 4 worst shown):  float batch / all, orders axis (7310)  float batch / all (335)  float batch / all-n (335)  float single / all (5)
-  worst of them: float batch / all  n=0  x=11.150964736938477  err=1.08354e-07 (4.08e-07 of the value)  arm=6.32744e-08  floor=1.5e-07  err/arm=1.71  err/floor=0.722
+  the floor's share of the claim book: 7325 of the 528910 discriminating cell(s) this book counts pass only because of the value floor a row states beside its relative figure - the reading is over the arm the figure alone gives and inside the floor - so the figure alone would have failed them and no row shows it; the other 521585 meet the figure itself
+  carried by the floor, by row (4 row(s), 4 worst shown):  float batch / all, orders axis (7310)  float single / all (5)  float batch / all (5)  float batch / all-n (5)
+  worst of them: float batch / all, orders axis  n=31  x=6.238919734954834  err=2.48582e-08 (0.000649 of the value)  arm=9.12709e-12  floor=1.5e-07  err/arm=2.72e+03  err/floor=0.166
 
   the routes are counted apart from the lanes: the lane RESULT above reads 38 of 38
   claims carried by 528910 of 957873 comparison cells, and the route rows and the float lane's
@@ -696,13 +696,13 @@ device lanes : 4 of 4 measured on a card
   fp64-device, chebyshev, horner, narrow, orders             the accessor answers 2.42365e-14, above the 7.49601e-16 the whole call measured
   fp64-device, chebyshev, horner, uniform, arguments         the accessor answers 3.55271e-15, above the 3.10862e-15 the whole call measured
   fp64-device, chebyshev, horner, uniform, orders            the accessor answers 3.55271e-15, above the 3.10862e-15 the whole call measured
-  fp64-device, rational-minimax, split-clenshaw, shipped, arguments the accessor answers 2.45899e-14, above the 1.67089e-14 the whole call measured
+  fp64-device, rational-minimax, split-clenshaw, shipped, arguments the accessor answers 2.45899e-14, above the 7.53217e-15 the whole call measured
   fp64-device, rational-minimax, split-clenshaw, shipped, orders the accessor answers 2.45899e-14, above the 2.25032e-14 the whole call measured
   fp64-device, rational-minimax, split-clenshaw, narrow, arguments the accessor answers 2.45899e-14, above the 1.35447e-14 the whole call measured
   fp64-device, rational-minimax, split-clenshaw, narrow, orders the accessor answers 2.45899e-14, above the 2.21663e-14 the whole call measured
   fp64-device, rational-minimax, split-clenshaw, uniform, arguments the accessor answers 2.45899e-14, above the 2.22045e-16 the whole call measured
   fp64-device, rational-minimax, split-clenshaw, uniform, orders the accessor answers 2.45899e-14, above the 2.22045e-16 the whole call measured
-  fp64-device, rational-minimax, horner, shipped, arguments  the accessor answers 2.45899e-14, above the 1.67089e-14 the whole call measured
+  fp64-device, rational-minimax, horner, shipped, arguments  the accessor answers 2.45899e-14, above the 7.53217e-15 the whole call measured
   fp64-device, rational-minimax, horner, shipped, orders     the accessor answers 2.45899e-14, above the 2.25032e-14 the whole call measured
   fp64-device, rational-minimax, horner, narrow, arguments   the accessor answers 2.45899e-14, above the 1.35447e-14 the whole call measured
   fp64-device, rational-minimax, horner, narrow, orders      the accessor answers 2.45899e-14, above the 2.21663e-14 the whole call measured
@@ -840,13 +840,13 @@ device lanes : 4 of 4 measured on a card
   fp64-device, chebyshev, horner, narrow, orders                177903         0 7.49601e-16   5.5e-14       certified and published
   fp64-device, chebyshev, horner, uniform, arguments            177903         0 3.10862e-15   5.5e-14       certified and published
   fp64-device, chebyshev, horner, uniform, orders               177903         0 3.10862e-15   5.5e-14       certified and published
-  fp64-device, rational-minimax, split-clenshaw, shipped, arguments    177903         0 1.67089e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, split-clenshaw, shipped, arguments    177903         0 7.53217e-15   5.5e-14       certified and published
   fp64-device, rational-minimax, split-clenshaw, shipped, orders    177903         0 2.25032e-14   5.5e-14       certified and published
   fp64-device, rational-minimax, split-clenshaw, narrow, arguments    177903         0 1.35447e-14   5.5e-14       certified and published
   fp64-device, rational-minimax, split-clenshaw, narrow, orders    177903         0 2.21663e-14   5.5e-14       certified and published
   fp64-device, rational-minimax, split-clenshaw, uniform, arguments    177903         0 2.22045e-16   5.5e-14       certified and published
   fp64-device, rational-minimax, split-clenshaw, uniform, orders    177903         0 2.22045e-16   5.5e-14       certified and published
-  fp64-device, rational-minimax, horner, shipped, arguments     177903         0 1.67089e-14   5.5e-14       certified and published
+  fp64-device, rational-minimax, horner, shipped, arguments     177903         0 7.53217e-15   5.5e-14       certified and published
   fp64-device, rational-minimax, horner, shipped, orders        177903         0 2.25032e-14   5.5e-14       certified and published
   fp64-device, rational-minimax, horner, narrow, arguments      177903         0 1.35447e-14   5.5e-14       certified and published
   fp64-device, rational-minimax, horner, narrow, orders         177903         0 2.21663e-14   5.5e-14       certified and published
@@ -1447,7 +1447,7 @@ device lanes : 4 of 4 measured on a card
     lane                       member              cell(s)       worst
     fp64                       accurate           17078688 2.21663e-14
     fp64                       fast               17078688 2.21663e-14
-    fp64                       the two members were compared at 17078688 value(s), and delivered 347570 of
+    fp64                       the two members were compared at 17078688 value(s), and delivered 346750 of
                                them differently
     fp32                       accurate           17078688  1.7514e-07
     fp32                       fast               17078688  1.7514e-07
@@ -1470,23 +1470,23 @@ device lanes : 4 of 4 measured on a card
   column is zero for every form is a lane the axis selects no arithmetic on: its
   three names reach one body, and one is what it was certified at
     lane                        axis           cell(s)   form(s)    compared plain-reciprocal refined-reciprocal
-    fp64                        arguments     21348360         3    14232240      884866           0
+    fp64                        arguments     21348360         3    14232240      886316           0
     fp32                        arguments     21348360         3    14232240     1925226           0
     fp16                        arguments     21348360         3    14232240        1166           0
     bf16                        arguments     21348360         3    14232240       16320           0
-    fp64                        orders        12809016         3     8539344      377634           0
+    fp64                        orders        12809016         3     8539344      378582           0
     fp32                        orders        12809016         3     8539344      943398           0
     fp16                        orders        12809016         3     8539344         642           0
     bf16                        orders        12809016         3     8539344        9792           0
     fp32-device                 arguments      2134836         3     1423224      217676           0
     fp32-device                 orders         2134836         3     1423224      156714           0
-    fp64-device                 arguments      2134836         3     1423224      319539           0
-    fp64-device                 orders         2134836         3     1423224      267495           0
+    fp64-device                 arguments      2134836         3     1423224      319943           0
+    fp64-device                 orders         2134836         3     1423224      267899           0
     fp16-device                 arguments      2134836         3     1423224          99           0
     fp16-device                 orders         2134836         3     1423224          83           0
     bf16-device                 arguments      2134836         3     1423224        1710           0
     bf16-device                 orders         2134836         3     1423224        1710           0
-    total                                                          102472128     5124070           0
+    total                                                          102472128     5127276           0
   OPTION SPACE: 16 of 16 member(s) supported, bounded and reachable
 
 the packing-axis rows: which of a call's values a packed lane carries, measured through the two entries the axis is carried on - the all-orders entry, whose call shape is four orders of one
@@ -1503,13 +1503,13 @@ argument, and the plane entry, whose call shape has both - against the committed
   horner           plane entry, A..C        59301 1e-13                  1.39576                  0.288  n=32, x=31             verified at this revision
   ----------------------------------------------------------------------------------------------------------------------------------------------------------------
   split-clenshaw   rat A                    21318 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
-  split-clenshaw   rat A..C                 59301 1e-13                  6.52731e-14              0.653  n=0, x=11.9857         verified at this revision
+  split-clenshaw   rat A..C                 59301 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
   split-clenshaw   rat pl A                 21318 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
-  split-clenshaw   rat pl A..C              59301 1e-13                  6.52731e-14              0.653  n=0, x=11.9857         verified at this revision
+  split-clenshaw   rat pl A..C              59301 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
   horner           rat A                    21318 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
-  horner           rat A..C                 59301 1e-13                  6.52731e-14              0.653  n=0, x=11.9857         verified at this revision
+  horner           rat A..C                 59301 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
   horner           rat pl A                 21318 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
-  horner           rat pl A..C              59301 1e-13                  6.52731e-14              0.653  n=0, x=11.9857         verified at this revision
+  horner           rat pl A..C              59301 1e-13                  2.16223e-11              0.518  n=5, x=6.01541         verified at this revision
   split-clenshaw   narrow cheb A            21318 1e-13                  5.68258e-16            0.00568  n=0, x=9.14453         verified at this revision
   split-clenshaw   narrow cheb A..C         59301 1e-13                  1.39576                  0.288  n=32, x=31             verified at this revision
   split-clenshaw   narrow cheb pl A         21318 1e-13                  5.68258e-16            0.00568  n=0, x=9.14453         verified at this revision

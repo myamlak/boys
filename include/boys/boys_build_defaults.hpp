@@ -104,11 +104,11 @@
 /// **The host rows are measurements taken on one machine.** Their route, scheme, packing axis,
 /// partition and exponential cells are the option probe's winners for this host - 12 logical
 /// processors, the AVX2+FMA tier present, seed 47, 5 passes of 5 rounds over 16384 arguments to
-/// order 32 - run 2026-10-12, and the figure beside each was that class's time per argument. The
-/// float lane's five rows carry a stated division form in place of the run's; the criterion above
-/// the row list is that cell's source, and it is the one cell of those rows the run did not
-/// decide. A row is a property of the machine it was measured on, so a build on another host has
-/// its own winners and the probe is what finds them.
+/// order 32 - run 2026-11-05, and the figure beside each was that class's time per argument. The
+/// float lane's five rows and four of the half lane's five carry a stated division form in place
+/// of the run's; the criterion above the row list is that cell's source, and it is the one cell
+/// of those rows the run did not decide. A row is a property of the machine it was measured on,
+/// so a build on another host has its own winners and the probe is what finds them.
 ///
 /// **The device rows are runs' own winners.** Every member of the space - the
 /// library's 352 device option rows crossed with its three division forms - was
@@ -139,8 +139,7 @@
 /// re-record, and a row that carried one would describe the tree reading it rather
 /// than the run that produced it. A row's name states the run it came from, and the
 /// probe's committed transcripts are kept under `tests/data/`. The option report
-/// there is a later run of the same protocol on this host, not the host rows' own
-/// transcript.
+/// there is the run the host rows' figures came from.
 ///
 /// The marker above a row is prose and carries the rest: on a measurement, the
 /// figure the class's winner took and how it was reached; on a choice, why the run
@@ -153,8 +152,17 @@
 /// recovers the exact quotient and is bit-identical to exact division, so a row naming it
 /// publishes the lane's 1.5e-7 base, and the model's 1e-7 fit-placement figure plus the
 /// format's half digit is what remains. The five float rows are `RowBasis::kChosen` with no run
-/// behind them: their other cells are the 2026-10-12 run's winners, and the form is this file's
+/// behind them: their other cells are the 2026-11-05 run's winners, and the form is this file's
 /// statement.
+///
+/// **The fp16 lane's plain-reciprocal winners take the same statement.** That lane's plain
+/// reciprocal publishes its own 1e-7 term beside its 1.5e-7 base and the format's half digit,
+/// so its rows carry 2.5e-7 + ½ ULP where the tight form carries 1.5e-7 + ½ ULP. The four rows
+/// whose winner names the plain form keep the refined reciprocal, bit-identical to exact
+/// division, and are `RowBasis::kChosen` with the 2026-11-05 run's other cells; the fifth is the
+/// run's own exact-division winner, which publishes the tight figure, so it carries the run's
+/// combination whole. The bf16 lane's rows carry the plain reciprocal: its 1e-7 term sits below
+/// that format's 2^-8 half digit, so the figure the lane documents does not move.
 ///
 /// Cells are written as enumerator names, bare where the row's own key is what the
 /// enumeration's name means and qualified where an axis is, and the list is
@@ -166,91 +174,99 @@
 /// reason, so a row that leaves either out does not compile either - a row whose
 /// provenance nothing states is the defect this format exists to remove.
 #define BOYS_BUILD_DEFAULT_ROWS(X)\
-    /* measured: 42.08 ns per argument on this host, reached by chosen-among-equals */\
+    /* measured: 37.12 ns per argument on this host, reached by vote */\
     X(kHost, kFp64, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
-       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
-    X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kChosen, "")\
-    /* measured: 165.49 ns per argument on this host, reached by vote */\
-    X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 171.88 ns per argument on this host, reached by ordered */\
-    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 400.46 ns per argument on this host, reached by refined */\
-    X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 50.03 ns per argument on this host, reached by vote through the sorted-arguments call */\
-    X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kExactDivision,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 74.33 ns per argument on this host, reached by refined */\
-    X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
     /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
-       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-11-05 run's */\
+    X(kHost, kFp32, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base plus its half digit where the plain reciprocal
+       publishes 2.5e-7 plus it; the other cells are the 2026-11-05 run's */\
+    X(kHost, kFp16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* measured: 110.33 ns per argument on this host, reached by vote */\
+    X(kHost, kFp64, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kExactDivision,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 264.96 ns per argument on this host, reached by refined */\
+    X(kHost, kFp64, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kExactDivision,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 54.80 ns per argument on this host, reached by vote through the sorted-arguments call */\
+    X(kHost, kFp64, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kOrders, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 95.58 ns per argument on this host, reached by vote */\
+    X(kHost, kFp64, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kExactDivision,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-11-05 run's */\
     X(kHost, kFp32, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
-      RegionBExp::kFast, RowBasis::kChosen, "")\
-    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
-       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
-    X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
-       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-11-05 run's */\
+    X(kHost, kFp32, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-11-05 run's */\
     X(kHost, kFp32, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate, RowBasis::kChosen, "")\
     /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
-       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-10-12 run's */\
-    X(kHost, kFp32, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFloat,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kRefinedReciprocal,\
+       division, publishing the lane's 1.5e-7 base; the other cells are the 2026-11-05 run's */\
+    X(kHost, kFp32, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFloat,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
       RegionBExp::kAccurate, RowBasis::kChosen, "")\
-    /* measured: 330.03 ns per argument on this host, reached by refined */\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base plus its half digit where the plain reciprocal
+       publishes 2.5e-7 plus it; the other cells are the 2026-11-05 run's */\
     X(kHost, kFp16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 755.84 ns per argument on this host, reached by refined */\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base plus its half digit where the plain reciprocal
+       publishes 2.5e-7 plus it; the other cells are the 2026-11-05 run's */\
     X(kHost, kFp16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kFast, RowBasis::kChosen, "")\
+    /* chosen: the form cell is the 1e-7 criterion's - refined reciprocal, bit-identical to exact
+       division, publishing the lane's 1.5e-7 base plus its half digit where the plain reciprocal
+       publishes 2.5e-7 plus it; the other cells are the 2026-11-05 run's */\
+    X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kRefinedReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kChosen, "")\
+    /* measured: 210.34 ns per argument on this host, reached by refined */\
+    X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kExactDivision,\
+      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 86.50 ns per argument on this host, reached by refined */\
+    X(kHost, kBf16, kAllOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 141.99 ns per argument on this host, reached by refined */\
-    X(kHost, kFp16, kAllN, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 167.72 ns per argument on this host, reached by refined */\
-    X(kHost, kFp16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 98.92 ns per argument on this host, reached by vote */\
-    X(kHost, kBf16, kAllOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 240.20 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 153.95 ns per argument on this host, reached by refined */\
     X(kHost, kBf16, kSingle, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kFast, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 554.62 ns per argument on this host, reached by refined */\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 420.00 ns per argument on this host, reached by refined */\
     X(kHost, kBf16, kFixedN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
       PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 102.27 ns per argument on this host, reached by vote */\
-    X(kHost, kBf16, kAllN, FitRoute::kRationalMinimax, EvalScheme::kSplitClenshaw, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
-    /* measured: 115.43 ns per argument on this host, reached by chosen-among-equals */\
-    X(kHost, kBf16, kAllNAtOrders, FitRoute::kRationalMinimax, EvalScheme::kHorner, BoysBudget::kFp16,\
-      PackAxis::kArguments, FitGranularity::kNarrow, DivisionForm::kPlainReciprocal,\
-      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-10-12")\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 82.82 ns per argument on this host, reached by refined */\
+    X(kHost, kBf16, kAllN, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
+    /* measured: 115.25 ns per argument on this host, reached by refined */\
+    X(kHost, kBf16, kAllNAtOrders, FitRoute::kChebyshev, EvalScheme::kHorner, BoysBudget::kFp16,\
+      PackAxis::kArguments, FitGranularity::kUniform, DivisionForm::kPlainReciprocal,\
+      RegionBExp::kAccurate, RowBasis::kMeasured, "host-2026-11-05")\
     /* measured: 'device-single-fp64-fast', in its class's fastest group */\
     X(kDevice, kFp64Device, kSingle, FitRoute::kChebyshev, EvalScheme::kSplitClenshaw, BoysBudget::kFloat,\
       PackAxis::kArguments, FitGranularity::kCoarsest, DivisionForm::kRefinedReciprocal,\

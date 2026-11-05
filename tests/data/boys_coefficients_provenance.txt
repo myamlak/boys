@@ -4,11 +4,11 @@
 # relative to the repository root. `--check` recomputes them; it re-derives
 # the tables themselves only when this record's generator, pins or env cell
 # does not match the tree.
-version 5.1.1
-generator b99277305dc972d1
-pins 3972594217ee8daa
-env mpmath=1.4.1,backend=gmpy,clang-format=18.1.3
-artifact:include/boys/boys_coefficients.hpp d9046acfdbd6d1d6
+version 5.2.5
+generator 4a40b8bf5324a7f6
+pins d510f645cf21c40a
+env mpmath=1.4.1,baryrat=2.1.2,numpy=2.5.2,scipy=1.18.1,backend=gmpy,clang-format=18.1.3
+artifact:include/boys/boys_coefficients.hpp fc12cdd80c0161bb
 artifact:include/boys/boys_coefficients_d_uniform_mono.hpp cdd4e4a9deae8437
 artifact:include/boys/boys_coefficients_d_uniform_cheb.hpp da4004500232d8f4
 artifact:include/boys/boys_coefficients_d_uniform_mono_transposed.hpp 89f9758831b1a4f4
@@ -31,4 +31,4 @@ artifact:include/boys/boys_coefficients_f32_coarse_mono.hpp a5e70180b74c7bf9
 artifact:include/boys/boys_coefficients_f32_coarse_rat.hpp ced79cca594c885e
 artifact:include/boys/boys_coefficients_d_coarse_rat.hpp ba7305ded50594df
 reference 4b31def96d45266e
-manifest 8e0e37df21860464
+manifest c36dd88523bdbf09
