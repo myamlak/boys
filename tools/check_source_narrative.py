@@ -124,9 +124,9 @@ PROSE_DEFECT = ("the fit granularity was the second until this revision, and the
 
 
 # A committed run's own output. A document that quotes a sentence the program prints is quoting,
-# not speaking: "PASS: every documented claim met at this revision" is the gate's verdict, and
-# rewording it in a document would make the document disagree with the run it quotes. A match whose
-# surroundings appear in one of these is a quotation and is not the author's voice.
+# not speaking: "PASS: every claim this gate judges is met at this revision" is the gate's verdict,
+# and rewording it in a document would make the document disagree with the run it quotes. A match
+# whose surroundings appear in one of these is a quotation and is not the author's voice.
 RUN_RECORDS = (
     REPO / "tests" / "data" / "boys_accuracy_gate_run.txt",
     REPO / "tests" / "data" / "boys_device_probe_report.txt",
@@ -261,10 +261,9 @@ def hits(text: str, quoted: list[str]) -> list[tuple[int, str, str, str]]:
 
 
 # What the rule is about: an author's voice talking about the project's own process, which a reader
-# meets in a comment, a docstring or a document. It is NOT about a string the program prints - the
-# gate's own verdict line reads "every documented claim met at this revision", and that sentence is
-# the gate's output and not its author's aside. Policing printed strings would make this checker
-# argue with a run, so a string literal is blanked before the table is applied.
+# meets in a comment, a docstring or a document. It is NOT about a string the program prints: the
+# gate's verdict line reads "every claim this gate judges is met at this revision", and that is the
+# gate's output, not its author's aside. A string literal is blanked before the table is applied.
 CODE_SUFFIXES = (".cpp", ".cc", ".cxx", ".hpp", ".h", ".cu", ".cuh", ".inl", ".py")
 DOCSTRING_SUFFIX = ".py"
 

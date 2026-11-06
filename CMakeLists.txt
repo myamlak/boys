@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.2.5 LANGUAGES CXX)
+project(boys VERSION 5.2.6 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -1479,6 +1479,9 @@ int main() {
     # and named with their reason rather than counted as evidence this revision
     # failed to produce.
     add_test(NAME boys-accuracy-gate COMMAND boys-accuracy-gate --strict)
+    # The gate's own logic, without the sweep: the consistency row's four states and the exact
+    # wording of its last line, which a document quotes. It reads no grid and measures nothing.
+    add_test(NAME boys-accuracy-gate-selftest COMMAND boys-accuracy-gate --self-test)
     # The external-row reading: same binary, its own script; the run must exit non-zero with
     # both rows exceeded.
     if (BOYS_GATE_EXTERNAL_BOOST)

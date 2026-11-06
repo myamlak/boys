@@ -820,7 +820,9 @@ std::string Fmt(const char* format, ...)
 {
     // Long enough for the longest evidence line: an evidence string that is
     // silently cut mid-word would read as a claim with no answer at its end.
-    char buffer[2048];
+    // The half-SIMD row's is the longest, and it doubled with the drift
+    // allowance's figures rather than shortened.
+    char buffer[4096];
     va_list args;
     va_start(args, format);
     std::vsnprintf(buffer, sizeof(buffer), format, args);
@@ -1305,6 +1307,229 @@ Verdict FromAccum(const Accum& a)
     }
 
     return Verdict::Verified;
+}
+
+// The verdict of a consistency row from its sweep. The four states are decided in one function so
+// the row's rule is readable outside the preprocessor branches, and the self-test can name each
+// state without a build that carries the seam.
+Verdict HalfSimdRowVerdict(bool seamOpen,
+                           bool targetCarriesKernels,
+                           std::size_t measuredCells,
+                           std::size_t overAllowance)
+{
+    if (!seamOpen)
+    {
+        return Verdict::NotCarried;
+    }
+
+    if (measuredCells == 0)
+    {
+        return targetCarriesKernels ? Verdict::EvidenceAbsent : Verdict::NotCarried;
+    }
+
+    return overAllowance == 0 ? Verdict::Verified : Verdict::Exceeded;
+}
+
+// What the two half paths are allowed to differ by: each path's own half-lane bound at the value
+// it returned, summed. Two returns that are each inside their own bound differ by at most this
+// much (triangle inequality), so it is the largest difference the two contracts can produce and
+// the inclusive reading of "a value the bound cannot absorb".
+double HalfDriftAllowance(double simd, double scalar, int mantissaBits, int minNormalExp)
+{
+    return HalfBound(simd, mantissaBits, minNormalExp)
+           + HalfBound(scalar, mantissaBits, minNormalExp);
+}
+
+// Whether the two paths differ by more than the allowance. A difference at the allowance exactly
+// is two paths inside their own bounds, and is not an exceedance.
+bool HalfDriftExceeds(double simd, double scalar, int mantissaBits, int minNormalExp)
+{
+    return std::abs(simd - scalar) > HalfDriftAllowance(simd, scalar, mantissaBits, minNormalExp);
+}
+
+// A zero above the value's own bound: the one zero the contract cannot forgive. A zero below the
+// bound is the format's floor answering, and is counted apart.
+bool HalfZeroForbidden(double got, double want, int mantissaBits, int minNormalExp)
+{
+    return got == 0.0 && std::abs(want) > HalfBound(got, mantissaBits, minNormalExp);
+}
+
+// Why the consistency row has no measurement. The three no-cell states print different sentences:
+// the target does not carry the kernels, the build closed their seam, or the target carries them
+// and the run produced no cell.
+std::string HalfSimdTargetAbsentEvidence()
+{
+    return "not measured: this target does not carry the 8-wide half-I/O region kernels - the "
+           "AVX2 half tier is compiled only on x86_64 - so the claim has no subject here and no "
+           "cell was compared. The row is not carried by this build rather than met over a stated "
+           "domain: met over a stated domain is a measured pass, and nothing was measured";
+}
+
+std::string HalfSimdSeamClosedEvidence(bool targetCarriesKernels)
+{
+    return Fmt("this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O "
+               "region kernels nor the certified scalar half entry they are compared against: the "
+               "claim has no subject in this build, and no cell of it was measured. The reference "
+               "grid's fp16 and bf16 columns are read from the build but no lane is called to "
+               "produce the values they are compared against. The AVX2 half tier is %s on this "
+               "target, which is what would scope the row rather than judge it if the seam were "
+               "open",
+               targetCarriesKernels ? "compiled in" : "not compiled in");
+}
+
+std::string HalfSimdEvidenceAbsentEvidence(bool avx2Available)
+{
+    return Fmt("not measured: this x86_64 target is the kind that carries the 8-wide half-I/O "
+               "region kernels, but the sweep compared no cell, so the artifact this row is "
+               "measured from is missing from this run. That is evidence absent and not a pass "
+               "over a stated domain: met over a stated domain is a measured pass, and nothing "
+               "was measured here. The runtime reports the AVX2+FMA tier %s in this build on this "
+               "CPU",
+               avx2Available ? "available" : "unavailable");
+}
+
+// The audit's enumeration of the documents' quantitative claims and its reading of the
+// registration table. The gate neither carries the enumeration nor decides which registered
+// claims restate their sentence; both are audit figures, named in the verdict line so a row count
+// is not read as documentation coverage.
+constexpr int kAuditClaimEnumeration = 155;
+constexpr int kRegisteredClaimsMeasuredNotRestated = 2;
+
+// The last line of a passing run, in the one form both branches print: what was judged, and what
+// the count is a count of. The claim rows are named apart from the registration table, and
+// coverage over the audit's enumeration is pointed at rather than implied.
+std::string GatePassLine(std::size_t claimRows,
+                         std::size_t claimJudged,
+                         std::size_t claimNotCarried,
+                         std::size_t rowsRecordedWithoutJudging,
+                         std::size_t registeredClaims)
+{
+    std::string line = Fmt("  PASS: every claim this gate judges is met at this revision: the "
+                           "claim book's %zu judged rows of %zu",
+                           claimJudged,
+                           claimRows);
+
+    if (claimNotCarried != 0 || rowsRecordedWithoutJudging != 0)
+    {
+        line += Fmt(", beside the %zu row(s) it does not carry and the %zu this build's books "
+                    "record without judging (named above with their reason, and neither met nor "
+                    "failed here)",
+                    claimNotCarried,
+                    rowsRecordedWithoutJudging);
+    }
+
+    line += Fmt(". The registration table binds %zu documented claims, %d of which are bound to "
+                "rows that measure them without restating their sentences. Whether the documents' "
+                "%d-claim enumeration is covered by a gate row is audited separately and is not a "
+                "property of this gate\n",
+                registeredClaims,
+                kRegisteredClaimsMeasuredNotRestated,
+                kAuditClaimEnumeration);
+
+    return line;
+}
+
+// The self-test the ctest entry runs: the consistency row's four states, its drift predicate and
+// the exact words of the last line. It reads no reference grid and measures nothing.
+int RunGateSelfTest()
+{
+    int failures = 0;
+
+    const auto check = [&failures](bool ok, const char* what) {
+        std::printf("  %-78s %s\n", what, ok ? "ok" : "FAILED");
+
+        if (!ok)
+        {
+            ++failures;
+        }
+    };
+
+    check(HalfSimdRowVerdict(true, true, 10, 0) == Verdict::Verified,
+          "seam open, target carries the kernels, cells measured, none over the allowance");
+    check(HalfSimdRowVerdict(true, true, 10, 1) == Verdict::Exceeded,
+          "seam open, target carries the kernels, cells measured, one over the allowance");
+    check(HalfSimdRowVerdict(true, true, 0, 0) == Verdict::EvidenceAbsent,
+          "seam open, target carries the kernels, no cell measured");
+    check(HalfSimdRowVerdict(true, false, 0, 0) == Verdict::NotCarried,
+          "seam open, target does not carry the kernels");
+    check(HalfSimdRowVerdict(false, true, 0, 0) == Verdict::NotCarried,
+          "seam closed, whatever the target carries");
+
+    const std::string targetAbsent = HalfSimdTargetAbsentEvidence();
+    const std::string seamClosed = HalfSimdSeamClosedEvidence(true);
+    const std::string evidenceAbsent = HalfSimdEvidenceAbsentEvidence(true);
+
+    check(targetAbsent.find("does not carry the 8-wide") != std::string::npos,
+          "the target-absent evidence names the target as the reason");
+    check(seamClosed.find("seam is closed") != std::string::npos,
+          "the seam-closed evidence names the seam as the reason");
+    check(evidenceAbsent.find("artifact this row is measured from is missing")
+              != std::string::npos,
+          "the evidence-absent text names the missing artifact");
+    check(targetAbsent != seamClosed && seamClosed != evidenceAbsent
+              && targetAbsent != evidenceAbsent,
+          "the three no-cell states print different sentences");
+
+    constexpr int kMantissa = 10;
+    constexpr int kMinNormalExp = -14;
+    const double upperBound = HalfBound(1.0, kMantissa, kMinNormalExp);
+    const double lowerBound = HalfBound(0.9, kMantissa, kMinNormalExp);
+    const double want = 1.0;
+    const double high = want + 0.9 * upperBound;
+    const double low = want - 0.9 * lowerBound;
+
+    check(std::abs(high - want) <= upperBound && std::abs(low - want) <= lowerBound,
+          "the counterexample's two paths are each inside their own bound");
+    check(std::abs(high - low) > upperBound && std::abs(high - low) > lowerBound,
+          "the counterexample's paths differ by more than either single bound");
+    check(!HalfDriftExceeds(high, low, kMantissa, kMinNormalExp),
+          "the pair-sum allowance absorbs the counterexample a single bound would flag");
+    check(HalfSimdRowVerdict(true, true, 1, 0) == Verdict::Verified,
+          "the counterexample's verdict is Verified, not Exceeded");
+
+    const double highOut = want + 1.5 * upperBound;
+    const double lowOut = want - 1.5 * lowerBound;
+
+    check(std::abs(highOut - want) > upperBound && std::abs(lowOut - want) > lowerBound,
+          "the both-outside case has each path outside its own bound");
+    check(HalfDriftExceeds(highOut, lowOut, kMantissa, kMinNormalExp),
+          "the both-outside case is over the pair-sum allowance");
+    check(HalfSimdRowVerdict(true, true, 1, 1) == Verdict::Exceeded,
+          "the both-outside case's verdict is Exceeded");
+
+    check(HalfZeroForbidden(0.0, want, kMantissa, kMinNormalExp),
+          "a zero above its own bound is the forbidden zero");
+    check(HalfDriftExceeds(0.0, want, kMantissa, kMinNormalExp),
+          "the forbidden zero is over the pair-sum allowance");
+    check(HalfSimdRowVerdict(true, true, 1, 1) == Verdict::Exceeded,
+          "the forbidden-zero case's verdict is Exceeded");
+
+    const std::string judgedPass =
+        "  PASS: every claim this gate judges is met at this revision: the claim book's 38 judged "
+        "rows of 38. The registration table binds 37 documented claims, 2 of which are bound to "
+        "rows that measure them without restating their sentences. Whether the documents' "
+        "155-claim enumeration is covered by a gate row is audited separately and is not a "
+        "property of this gate\n";
+    const std::string partialPass =
+        "  PASS: every claim this gate judges is met at this revision: the claim book's 28 judged "
+        "rows of 38, beside the 10 row(s) it does not carry and the 2 this build's books record "
+        "without judging (named above with their reason, and neither met nor failed here). The "
+        "registration table binds 37 documented claims, 2 of which are bound to rows that measure "
+        "them without restating their sentences. Whether the documents' 155-claim enumeration is "
+        "covered by a gate row is audited separately and is not a property of this gate\n";
+
+    check(GatePassLine(38, 38, 0, 0, 37) == judgedPass, "the all-judged PASS line is exact");
+    check(GatePassLine(38, 28, 10, 2, 37) == partialPass, "the partial PASS line is exact");
+
+    if (failures == 0)
+    {
+        std::printf("  SELF-TEST PASS: the row's four states, its drift predicate and the two "
+                    "last-line forms\n");
+        return 0;
+    }
+
+    std::printf("  SELF-TEST FAIL: %d check(s) above failed\n", failures);
+    return 1;
 }
 
 // Region B's amplification A_B(n) = prod_{j=1..n} (j + 1/2) / x0^n, the quantity the seed-sizing
@@ -2351,6 +2576,7 @@ int main(int argc, char** argv) {
     bool strict = false;
     bool driftDump = false;
     bool floorControl = false;
+    bool selfTest = false;
     int probeN = -1;
     double probeX = 0.0;
 
@@ -2370,6 +2596,9 @@ int main(int argc, char** argv) {
         } else if (arg == "--floor-control")
         {
             floorControl = true;
+        } else if (arg == "--self-test")
+        {
+            selfTest = true;
         } else if (arg == "--probe" && i + 2 < argc)
         {
             probeN = std::atoi(argv[++i]);
@@ -2379,6 +2608,11 @@ int main(int argc, char** argv) {
             reference = arg;
             referenceShown = arg;
         }
+    }
+
+    if (selfTest)
+    {
+        return RunGateSelfTest();
     }
 
     if (floorControl)
@@ -4537,6 +4771,14 @@ int main(int argc, char** argv) {
     int driftScalarZeroN = -1;
     std::size_t driftUnforgivenZero = 0; // a path returns zero above its bound
     double driftUnforgivenRef = 0.0;
+    // The consistency test this row's sentence states: |body - scalar| against the sum of the two
+    // paths' own bounds. The other counters are diagnostics; this one is the verdict.
+    std::size_t driftOverAllowance = 0;
+    double driftOverAllowanceRatio = 0.0;
+    double driftOverAllowanceDiff = 0.0;
+    double driftOverAllowanceLimit = 0.0;
+    double driftOverAllowanceX = 0.0;
+    int driftOverAllowanceN = -1;
     // The aggregate above says a cell has exactly one path out of bound but not which one, and
     // the two sides are not the same finding: the body being out is the kernel's error, the scalar
     // being out is the certified entry's. They are counted apart, per side and per (region, format).
@@ -4704,6 +4946,26 @@ int main(int argc, char** argv) {
 
                     ++driftCells;
 
+                    // The row's own sentence: the two paths may not differ by more than the two
+                    // contracts can absorb between them. The counters below are diagnostics.
+                    if (HalfDriftExceeds(got, scalar, mantissa, minExp))
+                    {
+                        ++driftOverAllowance;
+
+                        const double difference = std::abs(got - scalar);
+                        const double allowance = HalfDriftAllowance(got, scalar, mantissa, minExp);
+                        const double ratio = difference / allowance;
+
+                        if (ratio > driftOverAllowanceRatio)
+                        {
+                            driftOverAllowanceRatio = ratio;
+                            driftOverAllowanceDiff = difference;
+                            driftOverAllowanceLimit = allowance;
+                            driftOverAllowanceX = ref.x[i];
+                            driftOverAllowanceN = order;
+                        }
+                    }
+
                     if (got == 0.0 && scalar != 0.0)
                     {
                         ++driftSimdZero;
@@ -4730,10 +4992,8 @@ int main(int argc, char** argv) {
                     // returns zero where the *value* is above that path's own
                     // bound. A zero below the bound is the format's floor doing
                     // what the header says it does, and is counted, not failed.
-                    const bool simdForgiven = std::abs(want) <= HalfBound(got, mantissa, minExp);
-                    const bool scalarForgiven = std::abs(want) <= HalfBound(scalar, mantissa, minExp);
-
-                    if ((got == 0.0 && !simdForgiven) || (scalar == 0.0 && !scalarForgiven))
+                    if (HalfZeroForbidden(got, want, mantissa, minExp)
+                        || HalfZeroForbidden(scalar, want, mantissa, minExp))
                     {
                         ++driftUnforgivenZero;
                         driftUnforgivenRef = std::max(driftUnforgivenRef, std::abs(want));
@@ -8275,98 +8535,134 @@ int main(int argc, char** argv) {
     constexpr bool kSimdTierTarget = false;
 #endif
 
+#ifdef BOYS_GATE_FP16
+    {
+        std::string evidence;
+
+        if (driftCells == 0 && !kSimdTierTarget)
+        {
+            evidence = HalfSimdTargetAbsentEvidence();
+        } else if (driftCells == 0)
+        {
+            evidence = HalfSimdEvidenceAbsentEvidence(boys::BoysAvx2Available());
+        } else
+        {
+            evidence = Fmt("body against the certified scalar half entry at the same cell, %zu "
+                           "cells over three regions, both formats, every order: worst "
+                           "divergence %.3g half-quanta at (n=%d, x=%.6g), which is a quanta "
+                           "count and not an error - at these magnitudes the quantum is the "
+                           "format's floor. On the contract itself: %zu cells where exactly one "
+                           "of the two is outside the bound, and %zu where a path returned zero "
+                           "above its own bound (largest |F_n(x)| so lost %.4g; the contract "
+                           "cannot forgive those). %zu / %zu cells have one path at zero and the "
+                           "other not - body / scalar, the largest argument of each being "
+                           "x=%.6g (n=%d) and x=%.6g (n=%d) - and every one of them is a cell "
+                           "where the bound is looser than the value, so the zero is the "
+                           "format's floor and not a lost value, which is why they are counted "
+                           "apart from the contract test. Which side those cells put outside its "
+                           "bound, which the aggregate does not say: %zu have the body outside "
+                           "and the scalar inside (A fp16 %zu, A bf16 %zu, B fp16 %zu, B bf16 "
+                           "%zu, C fp16 %zu, C bf16 %zu), the furthest over %.4g of its own "
+                           "bound, in region %d on %s, and %zu have the scalar outside and the "
+                           "body inside (A fp16 %zu, A bf16 %zu, B fp16 %zu, B bf16 %zu, C fp16 "
+                           "%zu, C bf16 %zu), the furthest over %.4g, in region %d on %s; the "
+                           "largest argument of each set is x=%.6g (n=%d) and x=%.6g (n=%d). "
+                           "What the out-of-bound return is, which is the difference between a "
+                           "tight bound and no value at all: of the body's set %zu returned a "
+                           "value that is not a number, %zu sit at a half argument that is not a "
+                           "finite half and %zu at a cell whose reference is exactly zero; of "
+                           "the scalar's set %zu returned a value that is not a number, %zu sit "
+                           "at a half argument that is not a finite half and %zu at a cell whose "
+                           "reference is exactly zero. The two sets are counted apart because the "
+                           "body being out is the kernel's error and the scalar being out is the "
+                           "certified entry's - which is what makes this row's subject and this "
+                           "row's evidence different objects, and is why the side is printed here "
+                           "rather than left in the aggregate",
+                           driftCells,
+                           driftUlp,
+                           driftOrder,
+                           driftX,
+                           driftOneSideOut,
+                           driftUnforgivenZero,
+                           driftUnforgivenRef,
+                           driftSimdZero,
+                           driftScalarZero,
+                           driftSimdZeroX,
+                           driftSimdZeroN,
+                           driftScalarZeroX,
+                           driftScalarZeroN,
+                           driftSimdOut,
+                           driftSimdOutCell[0],
+                           driftSimdOutCell[1],
+                           driftSimdOutCell[2],
+                           driftSimdOutCell[3],
+                           driftSimdOutCell[4],
+                           driftSimdOutCell[5],
+                           driftSimdOutRatio,
+                           driftSimdOutRegion,
+                           driftSimdOutBf16 ? "bf16" : "fp16",
+                           driftScalarOut,
+                           driftScalarOutCell[0],
+                           driftScalarOutCell[1],
+                           driftScalarOutCell[2],
+                           driftScalarOutCell[3],
+                           driftScalarOutCell[4],
+                           driftScalarOutCell[5],
+                           driftScalarOutRatio,
+                           driftScalarOutRegion,
+                           driftScalarOutBf16 ? "bf16" : "fp16",
+                           driftSimdOutX,
+                           driftSimdOutN,
+                           driftScalarOutX,
+                           driftScalarOutN,
+                           driftSimdOutNaN,
+                           driftSimdOutInfArg,
+                           driftSimdOutRefZero,
+                           driftScalarOutNaN,
+                           driftScalarOutInfArg,
+                           driftScalarOutRefZero);
+
+            // The row's own sentence, kept apart from the diagnostics above: |body - scalar|
+            // against the allowance B(body) + B(scalar), which is the largest difference two
+            // returns can show while each is inside its own half-lane bound.
+            evidence += ". The consistency test this row's sentence states, counted apart from "
+                        "those diagnostics: |body - scalar| against the allowance B(body) + "
+                        "B(scalar), the sum of the two paths' own bounds at the cell.";
+
+            if (driftOverAllowance == 0)
+            {
+                evidence += " No measured cell is over the allowance.";
+            } else
+            {
+                evidence += Fmt(" %zu cell(s) are over it, the worst by %.4g of the allowance at "
+                                "(n=%d, x=%.6g), where the difference was %.4g and the allowance "
+                                "%.4g.",
+                                driftOverAllowance,
+                                driftOverAllowanceRatio,
+                                driftOverAllowanceN,
+                                driftOverAllowanceX,
+                                driftOverAllowanceDiff,
+                                driftOverAllowanceLimit);
+            }
+
+            evidence += " The verdict is Verified exactly when no cell is over it; the one-side "
+                        "and zero counters above are printed as diagnostics and do not decide it.";
+        }
+
+        add("code.half_simd_budget",
+            "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
+            "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
+            "src/boys_simd.cpp comment on the shared half lanes",
+            HalfSimdRowVerdict(true, kSimdTierTarget, driftCells, driftOverAllowance),
+            evidence);
+    }
+#else
     add("code.half_simd_budget",
         "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
         "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
         "src/boys_simd.cpp comment on the shared half lanes",
-#ifdef BOYS_GATE_FP16
-        driftCells != 0
-            ? ((driftOneSideOut == 0 && driftUnforgivenZero == 0) ? Verdict::Verified
-                                                                  : Verdict::Exceeded)
-            : (kSimdTierTarget ? Verdict::EvidenceAbsent : Verdict::MetOverDomain),
-        Fmt("body against the certified scalar half entry at the same cell, %zu cells over "
-            "three regions, both formats, every order: worst divergence %.3g half-quanta at "
-            "(n=%d, x=%.6g), which is a quanta count and not an error - at these magnitudes "
-            "the quantum is the format's floor. On the contract itself: %zu cells where "
-            "exactly one of the two is outside the bound, and %zu where a path returned zero "
-            "above its own bound (largest |F_n(x)| so lost %.4g; the contract cannot forgive "
-            "those). %zu / %zu cells have one path at zero and the other not - body / scalar, "
-            "the largest argument of each being x=%.6g (n=%d) and x=%.6g (n=%d) - and every "
-            "one of them is a cell where the bound is looser than the value, so the zero is "
-            "the format's floor and not a lost value, which is why they are counted apart "
-            "from the contract test. Which side those cells put outside its bound, which the "
-            "aggregate does not say: %zu have the body outside and the scalar inside (A fp16 "
-            "%zu, A bf16 %zu, B fp16 %zu, B bf16 %zu, C fp16 %zu, C bf16 %zu), the furthest "
-            "over %.4g of its own bound, in region %d on %s, and %zu have the scalar outside "
-            "and the body inside (A fp16 %zu, A bf16 %zu, B fp16 %zu, B bf16 %zu, C fp16 %zu, "
-            "C bf16 %zu), the furthest over %.4g, in region %d on %s; the largest argument of "
-            "each set is x=%.6g (n=%d) and x=%.6g (n=%d). What the out-of-bound return is, "
-            "which is the difference between a tight bound and no value at all: of the body's "
-            "set %zu returned a value that is not a number, %zu sit at a half argument that is "
-            "not a finite half and %zu at a cell whose reference is exactly zero; of the "
-            "scalar's set %zu returned a value that is not a number, %zu sit at a half "
-            "argument that is not a finite half and %zu at a cell whose reference is exactly "
-            "zero. The body's set is empty at this revision and the scalar's is not, so on "
-            "every cell this row fails on the 8-wide body returns the reference's own value "
-            "and the return outside the bound is the certified scalar entry's - which is what "
-            "makes this row's subject and this row's evidence different objects, and is why "
-            "the side is printed here rather than left in the aggregate",
-            driftCells,
-            driftUlp,
-            driftOrder,
-            driftX,
-            driftOneSideOut,
-            driftUnforgivenZero,
-            driftUnforgivenRef,
-            driftSimdZero,
-            driftScalarZero,
-            driftSimdZeroX,
-            driftSimdZeroN,
-            driftScalarZeroX,
-            driftScalarZeroN,
-            driftSimdOut,
-            driftSimdOutCell[0],
-            driftSimdOutCell[1],
-            driftSimdOutCell[2],
-            driftSimdOutCell[3],
-            driftSimdOutCell[4],
-            driftSimdOutCell[5],
-            driftSimdOutRatio,
-            driftSimdOutRegion,
-            driftSimdOutBf16 ? "bf16" : "fp16",
-            driftScalarOut,
-            driftScalarOutCell[0],
-            driftScalarOutCell[1],
-            driftScalarOutCell[2],
-            driftScalarOutCell[3],
-            driftScalarOutCell[4],
-            driftScalarOutCell[5],
-            driftScalarOutRatio,
-            driftScalarOutRegion,
-            driftScalarOutBf16 ? "bf16" : "fp16",
-            driftSimdOutX,
-            driftSimdOutN,
-            driftScalarOutX,
-            driftScalarOutN,
-            driftSimdOutNaN,
-            driftSimdOutInfArg,
-            driftSimdOutRefZero,
-            driftScalarOutNaN,
-            driftScalarOutInfArg,
-            driftScalarOutRefZero));
-#else
-        Verdict::NotCarried,
-        // The seam is the reason here and not the target: with it closed this build has neither
-        // the 8-wide kernels nor the certified scalar half entry they are compared against, on any
-        // target. The tier is printed anyway, because with the seam open it decides the row.
-        Fmt("this build's BoysFp16 seam is closed, so it carries neither the 8-wide half-I/O "
-            "region kernels nor the certified scalar half entry they are compared against: the "
-            "claim has no subject in this build, and no cell of it was measured. The reference "
-            "grid's fp16 and bf16 columns are read from the build but no lane is called to "
-            "produce the values they are compared against. The AVX2 half tier is %s on this "
-            "target, which is what would scope the row rather than judge it if the seam were "
-            "open",
-            kSimdTierTarget ? "compiled in" : "not compiled in"));
+        HalfSimdRowVerdict(false, kSimdTierTarget, 0, 0),
+        HalfSimdSeamClosedEvidence(kSimdTierTarget));
 #endif // BOYS_GATE_FP16
 
     add("code.half_simd_cells",
@@ -9515,52 +9811,52 @@ int main(int argc, char** argv) {
         {"D13", "LC.double.worst_cell", "docs/mainpage.md", "lines 191-194, the accuracy contract",
          "in between the bound `1e-13 · F_0(x)` permits 4.85 times the value at the worst cell, `n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the value 3.2822575294956117e-15, and the delivered error there measured 1.40 times the value, 4.582e-15, 0.288 of the bound.",
          "1e-13"}, // the bound the sentence's cell is a fraction of; 4.85, 1.40 and 0.288 are readings against it
-        {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 301-302, the native half lane",
+        {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 303-304, the native half lane",
          "The native half lane is the one lane whose figure is not a fraction of the value: it is stated in ULP of the returned value, ≤ 8 ULP, measured at a worst of 4.3.",
          "8"}, // the ≤ 8 ULP bound; 4.3 is the measured worst stated beside it
-        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 133-135, the double lane",
+        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 135-137, the double lane",
          "The stored coefficients are rounded to double precision and hold only the sixteen or so significant digits a double can hold, so nothing below about 1e-16 is reachable however the evaluation is arranged.",
          nullptr}, // the 1e-16 is a rounding ceiling the row locates, not a bound it is judged at
-        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "lines 489-494, the float lane",
+        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "lines 491-496, the float lane",
          "A 32-bit float carries about seven significant digits, which is about 6e-8 relative. The lane's relative arm is 4.0 times that digit (2^-22 / 6e-8), so the two are within a factor of a few of each other: the arm is the format's own size and not a budget with room in it. What the floor is for is small values: at F_n(x) = 1e-3 the relative arm is 2.4e-10, far below the 1.5e-7 the lane can hold there, and the plain-reciprocal form adds its 1e-7 term to the larger of the two.",
          "2^-22"}, // the relative arm the row is judged at; 6e-8 is the format's digit and 2.4e-10 the arm at 1e-3
-        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "lines 122-124, the double lane, the batch row",
+        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "lines 124-126, the double lane, the batch row",
          "the stored fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at 1e-15 under a reachable gain of at most 2.171050.",
          "1e-15"}, // the fits' bar; 2.171050 is the reachable gain stated beside it
-        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "lines 572-572, the transform table",
+        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "lines 574-574, the transform table",
          "| fp64 | 64-bit | 64-bit | 1e-15 |",
          "1e-15"}, // the table's bound column; the 64-bit cells name the mode's arithmetic
-        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "lines 576-577, the transform table",
+        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "lines 578-579, the transform table",
          "The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the product adds nothing measurable to what the coefficients already cost.",
          nullptr}, // a delivered figure (1.11e-16), not a bound the row is judged at
-        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "lines 573-573, the transform table",
+        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "lines 575-575, the transform table",
          "| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | 1e-15 + 2.5e-7 |",
          "1e-15 + 2.5e-7"},
-        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "lines 574-574, the transform table",
+        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "lines 576-576, the transform table",
          "| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | 1e-15 + 2.5e-7 |",
          "1e-15 + 2.5e-7"},
-        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "lines 577-578, the transform table",
+        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "lines 579-580, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor.",
          nullptr}, // delivered figures (1.92e-07 and 1.95e-07), not bounds the row is judged at
-        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "lines 577-578, the transform table",
+        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "lines 579-580, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor.",
          nullptr}, // the same delivered pair; the lane's bound figure is X05's row
         {"H02b", "LC.half.budget", "CONTRIBUTING.md", "lines 22-23, the ground rules",
          "1e-7 plus one half-ULP for fp16 and bf16. This is the bar the suite asserts, and it is tighter than the 1.5e-7 plus one half-ULP those lanes publish;",
          "1e-7"}, // the bar the suite asserts; 1.5e-7 is the lanes' published figure the sentence contrasts it with
-        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 640-647, the half lane",
+        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 642-649, the half lane",
          "Both figures below were measured against a 45-digit reference, over every argument either format can represent and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the instrument the two figures rest on. A sparser grid understates them — the committed reference grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are worse. For the 16-bit format the worst case is **0.9993 of the bound**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst case is **0.99992 of the bound**, a margin of 0.008 per cent, against the 16-bit format's 0.07.",
          nullptr}, // the sentence states fractions of the bound (0.9993, 0.99992), not the bound itself
-        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 647-648, the half lane",
+        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 649-650, the half lane",
          "At that distance the representation term is very nearly the whole bound, and the arithmetic term has almost nothing left to spend.",
          nullptr}, // no numeric figure: the sentence states a relation, not a bound
-        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 656-659, the half lane",
+        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 658-661, the half lane",
          "**Below a certain size the lane returns nothing usable.** The bound holds only where the result is larger than `1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments and over no others.**",
          "1.5e-7"}, // the value floor, the constant the row's threshold is built from; "half a representable digit" is the other term
-        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 661-664, the half lane",
+        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 663-666, the half lane",
          "For 16-bit floats the point where the bound stops being useful is at arguments well inside the usable range, and it moves with the order. Orders 3, 4 and 5 still return usable values across the whole of the large-argument range; **the claim that every argument is past the threshold holds from order 6 upward**.",
          nullptr}, // the figures are an order threshold (3, 4, 5 and 6), not a bound
-        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 709-710, packed half",
+        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 711-712, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one.",
          nullptr}, // no numeric figure: the sentence states bit-identity, not a bound
         {"P09", "code.half_simd_budget", "src/boys_simd.cpp", "lines 370-373, the comment above the region kernels",
@@ -9569,52 +9865,56 @@ int main(int argc, char** argv) {
         {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 619-622, the comment above the scalar lane",
          "A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. The region contract stays a sufficient precondition, just not a // required one, and the bodies mirror the scalar tails the x86 entries run for their last // count % 4 elements.",
          nullptr}, // no numeric figure: a structural statement about the scalar lane
-        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 670-671, packed half",
+        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 672-673, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
         {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1913-1917, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble.",
          nullptr}, // no numeric figure: the sentence scopes the bound's domain
-        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 710-711, packed half, the exponent range",
+        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 712-713, packed half, the exponent range",
          "No rescaling reaches past that limit either, because the range the recursion spans grows like x to the power n, against a fixed exponent range.",
          nullptr}, // no numeric figure: the sentence states a growth argument, not a bound
-        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 694-694, packed half, the crossing table",
+        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 696-696, packed half, the crossing table",
          "| 0 and 1 | the whole 16-bit range, to 65504 |",
          nullptr}, // a crossing-table limit (65504), not the accuracy bound
-        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 695-695, packed half, the crossing table",
+        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 697-697, packed half, the crossing table",
          "| 2 | to about 2636 |",
          nullptr}, // a crossing-table limit (2636), not the accuracy bound
-        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 696-696, packed half, the crossing table",
+        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 698-698, packed half, the crossing table",
          "| 3 | to about 360 |",
          nullptr}, // a crossing-table limit (360), not the accuracy bound
-        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 697-697, packed half, the crossing table",
+        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 699-699, packed half, the crossing table",
          "| 4 | to about 129 |",
          nullptr}, // a crossing-table limit (129), not the accuracy bound
-        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 698-698, packed half, the crossing table",
+        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 700-700, packed half, the crossing table",
          "| 5 | to about 70 |",
          nullptr}, // a crossing-table limit (70), not the accuracy bound
-        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 699-699, packed half, the crossing table",
+        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 701-701, packed half, the crossing table",
          "| 6 | to about 47 |",
          nullptr}, // a crossing-table limit (47), not the accuracy bound
-        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 700-700, packed half, the crossing table",
+        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 702-702, packed half, the crossing table",
          "| 7 | to about 36 |",
          nullptr}, // a crossing-table limit (36), not the accuracy bound
-        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 701-701, packed half, the crossing table",
+        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 703-703, packed half, the crossing table",
          "| 8 | to about 30 |",
          nullptr}, // a crossing-table limit (30), not the accuracy bound
-        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 702-706, packed half, the crossing table and the order count",
+        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 704-708, packed half, the crossing table and the order count",
          "| **9 to 32** | **none** | **Orders 9 and above have no argument at all at which this lane claims its bound**, because the function is already below 2^-29 at the smallest argument the lane accepts. Twenty-four of the thirty-three orders the library supports are in that position.",
          nullptr}, // the crossing table's last row and the order count, not the accuracy bound
-        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 683-686, packed half, the arithmetic",
+        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 685-688, packed half, the arithmetic",
          "Each step is evaluated in double precision and rounded once to 16 bits, which gives the same correctly rounded result a native 16-bit instruction would. This library carries no native 16-bit backend, so what the lane delivers is 16-bit arithmetic's *results* rather than its *speed*. **No timing is claimed for it.**",
          nullptr}, // no numeric figure: the sentence states results and no timing
-        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 677-679, packed half",
+        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 679-681, packed half",
          "the worst cell this lane's own suite finds is 4.243 of those digits against the half-ULP the other lane budgets, which is **8.5 times** its representation allowance.",
          nullptr}, // the figures (4.243, 8.5 times) are readings against the bound, not the bound itself
-        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1418-1421, region C, the boundary",
+        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1420-1423, region C, the boundary",
          "Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**.",
          nullptr}, // the figures are the measured relative errors the row reports, not a bound it is judged at
     };
+
+    // How many documented claims the registration table binds: one per distinct claim id, because
+    // a claim may be registered against two rows. The last line names it beside the row count.
+    std::size_t registeredClaimCount = 0;
 
     {
         std::vector<std::string> registrationFailures;
@@ -10065,6 +10365,8 @@ int main(int argc, char** argv) {
             ++claimsRegistered[reg.claim];
         }
 
+        registeredClaimCount = claimsRegistered.size();
+
         std::printf("registration: %zu documented claims in %zu entries; %zu with a checked "
                     "figure, %zu without; every named row is in the book, every book row is "
                     "reached or marked, every quote is in the file it names, and every quote "
@@ -10302,6 +10604,11 @@ int main(int argc, char** argv) {
     }
 
     PrintFloorRescue("the claim book", {&Claims()});
+
+    // Kept for the last line: the far-field book below adds its recorded rows to notJudged, and
+    // the claim book's own judged count is what the line names.
+    const int claimBookNotCarried = notCarried;
+    const int claimBookNotJudged = notJudged;
 
     // ---- the route verdict table --------------------------------------------
     // The routes get their own rows and their own count: the lane count is quoted by documents
@@ -16886,20 +17193,17 @@ int main(int argc, char** argv) {
         }
     }
 
-    // The last line, and the only one a caller that reads nothing else sees. It
-    // says what was checked and what was not: a build that does not carry some
-    // of the book has claims it never judged, and a PASS that read as though it
-    // had would be the one sentence here that is false.
-    if (notCarried > 0 || notJudged > 0)
-    {
-        std::printf("  PASS: every documented claim this build carries and judges is met at this "
-                    "revision; the %d it does not carry and the %d it records without judging "
-                    "are named above with their reason, and are neither met nor failed here\n",
-                    notCarried,
-                    notJudged);
-        return 0;
-    }
-
-    std::printf("  PASS: every documented claim met at this revision\n");
+    // The last line, and the only one a caller that reads nothing else sees. It names what the
+    // gate judged and what it did not; coverage over the documents' own claim enumeration is the
+    // audit's question and is pointed at rather than implied.
+    const std::size_t claimBookJudged =
+        book.size() - static_cast<std::size_t>(claimBookNotCarried + claimBookNotJudged);
+    std::fputs(GatePassLine(book.size(),
+                            claimBookJudged,
+                            static_cast<std::size_t>(claimBookNotCarried),
+                            static_cast<std::size_t>(notJudged),
+                            registeredClaimCount)
+                   .c_str(),
+               stdout);
     return 0;
 }

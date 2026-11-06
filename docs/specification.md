@@ -154,13 +154,13 @@ carrying the run its combination came from where a run stands behind it, and its
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
 transcript is the file it wrote under `tests/data/`: the option report there is the run the host
 rows' figures came from, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 102.58
-against 276.78 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 408.14
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 115.89
+against 309.92 ns per argument for the fastest narrow row, which is on the committed Chebyshev
+route; the fastest rational-route narrow row is 447.03
 (`single-batch-narrow-rational-minimax-plain-reciprocal-fast-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the
-arguments packing axis in eighteen of the twenty, and four host rows moved their route cell and one
-its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
+arguments packing axis in seventeen of the twenty, and no host row moves its route cell while one
+moves its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
 two accuracies**, so a version that moves one costs no accuracy at any call site that names
 nothing. The exception is the float and fp16 lanes' division forms, and they move the figure the
@@ -364,8 +364,10 @@ the header's table so the reason it was withdrawn stays visible: the lane does n
 in the band, and no verdict counts the lines. [lane-contract.md](lane-contract.md) says what the
 reading was.
 
-The run ends with a verdict line and an exit status: `PASS: every documented claim met at this
-revision`, or the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
+The run ends with a verdict line and an exit status:
+`PASS: every claim this gate judges is met at this revision`, with the counts the line names beside
+it (the claim rows judged, the registered claims, and where documentation coverage is audited), or
+the numbers of the claims that did not hold, with a non-zero status. `ctest` runs this
 binary as one of its tests, but a passing `ctest` prints only how long the test took — the table is
 in this binary's own output. CI runs this gate on every platform below and fails the build if a claim
 does not hold. The contract table above is held against the gate: `tools/check_bound_transcripts.py`,
@@ -401,7 +403,8 @@ carried it:
 | fp16 store-half | single | 0.000122 | 0.000122 |
 | bf16 store-half | single | 0.000976 | 0.000977 |
 
-and ended `PASS: every documented claim met at this revision`.
+and ended `PASS: every claim this gate judges is met at this revision`, with the counts the line
+names beside it.
 
 The gate's region labels are the ones above: `A` is the part of the double lane's range below
 x = 1.0855252345349333, `band` is the rest of the range below x = 11.899848152108484, and `B` and
@@ -724,7 +727,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.2.5**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.2.6**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,

@@ -280,8 +280,10 @@ the option again:
 
 It sweeps the documented entries over the committed reference grid (33 orders × 1797 arguments,
 59,301 points) and prints, lane by lane and region by region, the worst error the lane delivered
-beside the bound it claims. The run ends in `PASS: every documented claim met at this revision`, or
-in the numbers of the claims that did not hold and a non-zero status. `--per-order` extends the
+beside the bound it claims. The run ends in `PASS: every claim this gate judges is met at this
+revision`, with the counts the line names beside it (the claim rows judged, the registered claims,
+and where documentation coverage is audited), or in the numbers of the claims that did not hold and
+a non-zero status. `--per-order` extends the
 comparison to every order, and `--probe n x` prints one cell from every lane for one argument.
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
