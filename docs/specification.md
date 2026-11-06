@@ -154,13 +154,13 @@ carrying the run its combination came from where a run stands behind it, and its
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
 transcript is the file it wrote under `tests/data/`: the option report there is the run the host
 rows' figures came from, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 102.58
-against 276.78 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 408.14
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 115.89
+against 309.92 ns per argument for the fastest narrow row, which is on the committed Chebyshev
+route; the fastest rational-route narrow row is 447.03
 (`single-batch-narrow-rational-minimax-plain-reciprocal-fast-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the
-arguments packing axis in eighteen of the twenty, and four host rows moved their route cell and one
-its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
+arguments packing axis in seventeen of the twenty, and no host row moves its route cell while one
+moves its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
 two accuracies**, so a version that moves one costs no accuracy at any call site that names
 nothing. The exception is the float and fp16 lanes' division forms, and they move the figure the

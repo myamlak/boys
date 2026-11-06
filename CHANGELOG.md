@@ -19,7 +19,8 @@ over a stated domain, which now means only a measured pass over a stated domain;
 carries the kernels but produced no cell stays evidence absent. A `--self-test` mode asserts the
 four states, the drift predicate and the exact last-line wording, and `ctest` runs it as
 `boys-accuracy-gate-selftest`. No lane, bound or returned value changes; the recorded gate run is
-re-made for this release's stamp.
+re-made for this release's stamp. The recorded option probe is re-made at the same stamp, and the
+figures `docs/getting-started.md` quotes are re-transcribed from it.
 
 ## 5.2.5
 
@@ -286,10 +287,11 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 
 ### What certifies a build of it
 
-- `boys-accuracy-gate --strict` ends in its `PASS: every claim this gate judges is met at this
-  revision` line, with the claim rows judged and the registered claims named beside it, and the run
-  it records is `tests/data/boys_accuracy_gate_run.txt`: 33 orders over 1797
-  arguments, whose double lane's worst cell sits at `0.288` of the bound, at `n = 32, x = 31`.
+- `boys-accuracy-gate --strict` ends in its `PASS: every documented claim met at this revision`
+  line at this release, and the run it records is `tests/data/boys_accuracy_gate_run.txt`: 33
+  orders over 1797 arguments, whose double lane's worst cell sits at `0.288` of the bound, at
+  `n = 32, x = 31`. (From 5.2.6 the line names the claim rows it judged and the registered
+  claims.)
 - `boys-cuda-accuracy-gate` answers for the device lane against the same committed reference grid,
   and the option probe and the device probe measure their whole spaces
   (`tests/data/boys_option_probe_report.txt`, `tests/data/boys_device_probe_report.txt`).
