@@ -3,7 +3,9 @@
 
 Reproduces include/boys/boys_coefficients.hpp (double and float lanes) and
 tests/data/boys_reference.csv from scratch, validating every fit
-against a 30-digit mpmath reference. Requires: `pip install mpmath`.
+against a 30-digit mpmath reference. Requires: `pip install mpmath`; the
+region-B rational route additionally requires the baryrat stack pinned in
+requirements-boys.txt.
 
 The two outputs carry two different precisions, deliberately: the fitted
 tables are validated at 30 digits (their bar is a 5e-14 fit tolerance), while
@@ -35,14 +37,15 @@ Method (the formula sources are keyed to CITATION.bib):
     is VikhamarSandberg2026, Eqs. 25/13.
   - Float lane: same structure, tolerance 1e-7, degree cap 10.
   - Region B carries a second, certified route beside the Chebyshev one: a
-    rational minimax fit, P(t)/Q(t), fitted by the Remez exchange
-    ([Remez1934]) over the
-    same interval and in the same mapped argument, and cross-checked against
-    Lawson's algorithm ([Lawson1964], with the Sanathanan-Koerner denominator
-    weight, [SanathananKoerner1963]). The
-    region-B routes' stored counts and delivered errors are measured in the
-    kernel's double arithmetic against the same reference the fits are
-    validated against, and emitted beside the tables.
+    rational minimax fit, P(t)/Q(t), over the same interval and in the same
+    mapped argument. Three independent solvers are run - the Remez exchange
+    ([Remez1934]), Lawson's algorithm ([Lawson1964], with the
+    Sanathanan-Koerner denominator weight, [SanathananKoerner1963]), and
+    BRASIL (the baryrat package, the independent solver) - and the smallest
+    stored count whose binary64 coefficients hold the bar on the kernel's own
+    evaluation route ships. The region-B routes' stored counts and delivered
+    errors are emitted beside the tables, the rational figures read from the
+    stored coefficients at both multiply-add routes.
 
 The DCT normalization is the standard one: c_0 gets 1/(deg+1), all other
 coefficients - including the top one - get 2/(deg+1). Halving c_deg as well
@@ -52,7 +55,10 @@ configuration.
 """
 import argparse
 import concurrent.futures
+import contextlib
+import importlib.metadata
 import importlib.util
+import io
 import math
 import multiprocessing
 import os
@@ -3748,16 +3754,16 @@ def fit_extended_band(b_cheb=None):
 # receives, and the gap between the two is the whole reason this section
 # re-implements the kernel's evaluation below.
 #
-# Two textbook routes are run. The Remez exchange ([Remez1934]) solves the
-# linearized
-# equioscillation problem on a reference set and moves the set to the error's
-# extrema; Lawson's algorithm ([Lawson1964]) reaches the same linear problem
-# through
-# iteratively reweighted least squares with the Sanathanan-Koerner denominator
-# weight ([SanathananKoerner1963]). They share no machinery, so agreement
-# between them is evidence the
-# error is near the best for that degree pair, and disagreement is not - the
-# exchange result is what ships, and the second is printed beside it.
+# Three independent routes are run. The Remez exchange ([Remez1934]) solves the
+# linearized equioscillation problem on a reference set and moves the set to
+# the error's extrema; Lawson's algorithm ([Lawson1964]) reaches the same
+# linear problem through iteratively reweighted least squares with the
+# Sanathanan-Koerner denominator weight ([SanathananKoerner1963]); BRASIL, in
+# the baryrat package, is an independent rational minimax solver that shares
+# neither the reference set nor the reweighting. All three are offered for every
+# degree pair and the smallest relative reading ships, so agreement is evidence
+# the pair is near its best and disagreement is not - the measured reading
+# decides, not the solver's name.
 #
 # The fits are made in t = 2(x - X0)/(top - X0) - 1 over the band's own top, the
 # same mapped argument the Chebyshev region-B fit uses: an affine change maps the
@@ -3771,6 +3777,18 @@ def fit_extended_band(b_cheb=None):
 RAT_DPS = 60
 RAT_TAIL_FLOOR = mpf("1e-55")
 RAT_TERMS = 900
+
+# The independent solver's two settings: baryrat's own defaults and a
+# tightened retry. Both run at every pair, because a target at the fit's own
+# floor can sit between the two readings and the retry is what reaches it. The
+# solver is binary64 on numpy and scipy and its support nodes move the stored
+# coefficients, so the provenance record gates those versions beside mpmath's.
+BARYRAT_SETTINGS = (
+    ("BRASIL (default)", {"tol": 1e-4, "maxiter": 1000, "npi": -30,
+                          "init_steps": 100, "max_step_size": 0.1}),
+    ("BRASIL (tightened)", {"tol": 1e-8, "maxiter": 5000, "npi": -40,
+                            "init_steps": 300, "max_step_size": 0.05}),
+)
 
 # The degree pairs the scan visits: every numerator/denominator split whose
 # stored count is at most RAT_SCAN_MAX, and never more than RAT_K_MAX
@@ -3805,19 +3823,6 @@ def rat_b_bound():
     whole band; this figure is what the rows publish and the consumers read."""
     with mp.workdps(RAT_DPS):
         return RAT_B_REL * boys_ref(0, X0, RAT_TAIL_FLOOR, RAT_TERMS)
-
-
-def rat_b_ratio_on(p, q, indices, xs, ref):
-    """The worst delivered/arm ratio, working precision, the wide seed's own
-    reading."""
-    worst = mpf(0)
-    at = None
-    for i in indices:
-        r = ref[i]
-        e = abs(mpf(region_b_seed_rational(p, q, xs[i])) - r) / r
-        if e > worst:
-            worst, at = e, xs[i]
-    return worst, at
 
 
 def rat_kernel_ratio_both(p, q, ts, ref, indices):
@@ -4112,15 +4117,38 @@ def rat_lawson(m, k, indices, ts, fs, ws=None, outer=300):
     return last
 
 
-def rat_delivered_error(p, q, xs, ref, fused=True):
-    """The route's delivered worst |F0 - fit|, as the kernel evaluates it."""
-    worst = mpf(0)
-    at = None
-    for x, f in zip(xs, ref):
-        e = abs(mpf(region_b_seed_rational(p, q, x, fused)) - f)
-        if e > worst:
-            worst, at = e, x
-    return worst, at
+def rat_kernel_readings(p, q, indices, xs, ref):
+    """The route's two figures in the arithmetic the kernel runs.
+
+    `p` and `q` are the solved pairs as stored - each coefficient printed the
+    way the header prints it and parsed back to binary64, which is the value
+    the kernel reads - and the argument is mapped the way
+    `region_b_seed_rational` maps it. Both multiply-add routes are read and the
+    worse is taken: a build runs one of them, so a pair is accepted only where
+    it holds whichever one the build in force selected.
+
+    Returns the worst absolute error and its argument, then the worst relative
+    error and its argument. The relative figure is what the acceptance reads;
+    the absolute one is what the header publishes as the route's delivered error.
+    """
+    # The header emits each coefficient as fmt(c) and the compiler parses that
+    # literal to binary64; float(c) need not land on the same double, because
+    # rounding the exact value to the emitted digits and then to binary64 can
+    # double-round. Measuring float(fmt(c)) measures what the kernel reads.
+    pd = [float(fmt(c)) for c in p]
+    qd = [float(fmt(c)) for c in q]
+    worst_abs, abs_at = mpf(0), None
+    worst_rel, rel_at = mpf(0), None
+    for fused in (True, False):
+        for i in indices:
+            x = xs[i]
+            e = abs(mpf(region_b_seed_rational(pd, qd, x, fused)) - ref[i])
+            if e > worst_abs:
+                worst_abs, abs_at = e, x
+            r = e / ref[i]
+            if r > worst_rel:
+                worst_rel, rel_at = r, x
+    return worst_abs, abs_at, worst_rel, rel_at
 
 
 def cheb_delivered_error(cs, xs, ref):
@@ -4133,65 +4161,104 @@ def cheb_delivered_error(cs, xs, ref):
     return worst, at
 
 
-def rat_delivered_on(p, q, indices, xs, ref):
-    """The route's delivered worst |F0 - fit| over `indices`."""
-    worst = mpf(0)
-    at = None
-    for i in indices:
-        e = abs(mpf(region_b_seed_rational(p, q, xs[i])) - ref[i])
-        if e > worst:
-            worst, at = e, xs[i]
-    return worst, at
+def rat_type_interpolant(nodes, a, b, m, k):
+    """The exact type-(m,k) p/q through the given t nodes, at RAT_DPS.
 
-
-def rat_kernel_delivered_on(p, q, indices, xs, ref, fused):
-    """The same figure in the arithmetic the kernel runs, at one route.
-
-    `p` and `q` are the solved pairs as stored - every coefficient rounded to
-    binary64 before it is read - and the argument is mapped the way
-    `region_b_seed_rational` maps it. The region-B acceptance above measures
-    the solved pair at the working precision instead; that reading is what its
-    own table was certified on and this one does not disturb it, but a bound
-    taken from it is not a bound on the evaluation the kernel performs, so the
-    narrow table's acceptance reads this one at both routes and takes the worse.
+    The independent solver returns a barycentric rational on max(m,k)+1 primary
+    nodes; for m != k its common-denominator monomial form is degree max(m,k)
+    in the denominator too, and the coefficients above t^k are rounding noise
+    rather than zero. What the kernel stores is type (m,k), so the candidate is
+    re-solved here as the square interpolation system at the solver's final
+    support nodes: p(t_i) - f_i * sum_j q_j t_i^j = f_i, q_0 held at 1.
     """
-    pd = [float(c) for c in p]
-    qd = [float(c) for c in q]
-    worst = mpf(0)
-    at = None
-    for i in indices:
-        x = xs[i]
-        t = 2.0 * (float(x) - float(X0)) / (float(region_b_top()) - float(X0)) - 1.0
-        e = abs(mpf(rat_eval_double(pd, qd, t, fused)) - ref[i])
-        if e > worst:
-            worst, at = e, x
-    return worst, at
+    n = m + k + 1
+    with mp.workdps(RAT_DPS):
+        ts = [mpf(float(z)) for z in nodes]
+        xs = [a + (b - a) * (t + 1) / 2 for t in ts]
+        fs = [boys_ref(0, x, RAT_TAIL_FLOOR, RAT_TERMS) for x in xs]
+        system = mp.matrix(n, n)
+        rhs = mp.matrix(n, 1)
+        for i in range(n):
+            for j in range(m + 1):
+                system[i, j] = ts[i] ** j
+            for j in range(1, k + 1):
+                system[i, m + j] = -fs[i] * ts[i] ** j
+            rhs[i] = fs[i]
+        sol = mp.lu_solve(system, rhs)
+        p = [sol[j] for j in range(m + 1)]
+        q = [sol[m + j] for j in range(1, k + 1)]
+    return p, q
+
+
+def bary_rat_candidates(m, k, a, b):
+    """BRASIL's candidates for one degree pair, as exact type-(m,k) forms.
+
+    BRASIL is an independent rational minimax solver. It shares neither the
+    exchange's reference set nor Lawson's reweighting and has no weight vector,
+    so it is offered only to an unweighted problem: region A and the narrow
+    partition are weighted and keep their own solvers.
+
+    The solver runs in binary64 on numpy and scipy, which is why the pins beside
+    this file name all three versions. A solver or interpolation failure at one
+    pair is that pair having no candidate, not the run failing; the caller keeps
+    the best of whatever came back.
+    """
+    try:
+        import numpy as np
+        from baryrat import brasil
+        from scipy.special import erf as scipy_erf
+    except ImportError as error:
+        raise RuntimeError(
+            "the rational region-B fit needs the baryrat stack pinned in "
+            "requirements-boys.txt") from error
+
+    af, bf = float(a), float(b)
+
+    def f(t):
+        t = np.asarray(t, dtype=float)
+        x = af + (bf - af) * (t + 1.0) / 2.0
+        return np.sqrt(np.pi) / (2.0 * np.sqrt(x)) * scipy_erf(np.sqrt(x))
+
+    out = []
+    for name, settings in BARYRAT_SETTINGS:
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                r, info = brasil(f, (-1.0, 1.0), (m, k), info=True, **settings)
+            p, q = rat_type_interpolant(info.nodes, a, b, m, k)
+        except Exception:  # noqa: BLE001 - one pair without a candidate is not a failed run
+            continue
+        out.append((name, p, q))
+    return out
 
 
 def rat_best(m, k, indices, ts, xs, ref, ws=None):
-    """Both routes to the same problem: the better fit, and every figure.
+    """Every route to one degree pair: the best fit, and every reading.
 
-    The exchange and Lawson share no machinery - the exchange solves the
-    equioscillation system on an alternating reference, Lawson reweights a
-    linear least-squares problem and iterates - and either can stall on a
-    given degree pair. So both run, both are reported, and the better fit is
-    the one offered for that pair. Returns (best, found), each found entry a
-    tuple of the route's name, its delivered error, the argument, and p, q.
+    The exchange, Lawson and, on the unweighted problem, BRASIL share no
+    machinery, and any of them can stall on a given degree pair. So all run,
+    all are reported, and the fit with the smallest relative reading is offered
+    for that pair - the figure the acceptance reads. Returns (best, found),
+    each entry a tuple of the route's name, its absolute delivered error, the
+    argument, its relative error, the relative argument, and p, q.
     """
     found = []
+
+    def offer(name, p, q):
+        d, dat, ratio, rat = rat_kernel_readings(p, q, indices, xs, ref)
+        found.append((name, d, dat, ratio, rat, p, q))
+
     r = rat_remez(m, k, indices, ts, ref, ws)
     if r is not None:
-        _, p, q = r
-        d, at = rat_delivered_on(p, q, indices, xs, ref)
-        found.append(("Remez exchange", d, at, p, q))
+        offer("Remez exchange", *r[1:])
     l = rat_lawson(m, k, indices, ts, ref, ws)
     if l is not None:
-        _, p, q = l
-        d, at = rat_delivered_on(p, q, indices, xs, ref)
-        found.append(("Lawson/SK", d, at, p, q))
+        offer("Lawson/SK", *l[1:])
+    if ws is None:
+        for name, p, q in bary_rat_candidates(m, k, xs[0], xs[-1]):
+            offer(name, p, q)
     if not found:
         return None, []
-    return min(found, key=lambda f: f[1]), found
+    return min(found, key=lambda entry: entry[3]), found
 
 
 def fit_region_b_rational(b_cheb):
@@ -4211,8 +4278,8 @@ def _fit_region_b_rational(b_cheb):
     ref = rat_reference(xs)
     coarse = list(range(0, RAT_NODES + 1, RAT_STRIDE))
 
-    print(f"fitting the rational region-B route (both routes, {RAT_DPS} dps, "
-          f"accept {mp.nstr(RAT_B_ACCEPT, 2)} x F_0) ...")
+    print(f"fitting the rational region-B route (Remez, Lawson and BRASIL, "
+          f"{RAT_DPS} dps, accept {mp.nstr(RAT_B_ACCEPT, 2)} x F_0) ...")
     reaching = None
     for stored in range(RAT_SCAN_MIN, RAT_SCAN_MAX + 1):
         row = []
@@ -4224,8 +4291,7 @@ def _fit_region_b_rational(b_cheb):
             if best is None:
                 row.append(f"[{m}/{k}]-")
                 continue
-            _, _d, _, p, q = best
-            ratio, _rat = rat_b_ratio_on(p, q, coarse, xs, ref)
+            _, _d, _, ratio, _rat, p, q = best
             row.append(f"[{m}/{k}]{mp.nstr(ratio, 3)}")
             if ratio <= RAT_B_ACCEPT and (reaching is None or stored < reaching[0]):
                 reaching = (stored, m, k)
@@ -4242,13 +4308,15 @@ def _fit_region_b_rational(b_cheb):
                            f"[{mp.nstr(X0, 17)}, {mp.nstr(region_b_top(), 17)}]")
 
     stored, m, k = reaching
-    # The pairs at the reaching count, and the best pair one count below it,
+    # The pairs at the reaching count, and every pair one count below it,
     # refined on the certifying grid. The one-below row is the knee itself: it
     # is what says the count above is the smallest that reaches rather than the
-    # first the scan happened to try.
+    # first the scan happened to try. The scan is coarse, so its reading at the
+    # count below is not the certifying one; refining that count is what holds
+    # the knee to the same grid the shipped pair is accepted on.
     candidates = [(stored, stored - 1 - kk, kk)
                   for kk in range(1, min(RAT_K_MAX, stored - 2) + 1)]
-    below = min(RAT_SCAN_MIN, stored - 1)
+    below = stored - 1
     candidates += [(below, below - 1 - kk, kk)
                    for kk in range(1, min(RAT_K_MAX, below - 2) + 1)]
     full = list(range(RAT_NODES + 1))
@@ -4263,14 +4331,13 @@ def _fit_region_b_rational(b_cheb):
         if best is None:
             continue
         seen[(mm, kk)] = (best, _both)
-        who, d, at, p, q = best
-        ratio, rat = rat_b_ratio_on(p, q, full, xs, ref)
+        who, _d, _dat, ratio, rat, p, q = best
         rows.append((total, mm, kk, ratio, rat, p, q, who))
     if not rows:
         raise RuntimeError("rational route: the refined fit never converged")
 
     print(f"  refined on {RAT_NODES + 1} nodes against boys_ref at {RAT_DPS} digits, "
-          f"the better of the two routes taken per pair:")
+          f"the smallest relative reading taken per pair:")
     for total, mm, kk, ratio, at, _, _, who in sorted(rows, key=lambda r: (r[0], r[3])):
         print(f"    [{mm}/{kk}] {total} stored via {who}: ratio {mp.nstr(ratio, 6)} at "
               f"x = {mp.nstr(at, 12)}"
@@ -4285,17 +4352,18 @@ def _fit_region_b_rational(b_cheb):
                            f"holds {mp.nstr(RAT_B_ACCEPT, 2)} x F_0, so the scan's knee is wrong")
     total, m, k, ratio, at, p, q, who = min(ok, key=lambda r: r[3])
     delivered = seen[(m, k)][0][1]
+    delivered_at = seen[(m, k)][0][2]
 
-    # The two routes' figures at the pair that ships, either one of which may
-    # be the one offered above: the gap is what says how close to the best fit
-    # for this pair the shipped one is, and a wide gap is a reason to distrust
-    # the pair rather than the route that won it. Both routes at this pair were
-    # run as one of the candidates above, so the second run of the same job
-    # would return the same numbers: the batch's own result is read back.
+    # Every route's reading at the pair that ships, either one of which may be
+    # the one offered above: the gap is what says how close to the best fit for
+    # this pair the shipped one is, and a wide gap is a reason to distrust the
+    # pair rather than the route that won it. Every route at this pair was run
+    # as one of the candidates above, so a second run of the same job would
+    # return the same numbers: the batch's own result is read back.
     _, both = seen[(m, k)]
-    print(f"  both routes at the shipped pair [{m}/{k}]:")
-    for name, d, a, _, _ in both:
-        print(f"    {name:<16}: delivered {mp.nstr(d, 6)} at x = {mp.nstr(a, 12)}"
+    print(f"  every route at the shipped pair [{m}/{k}]:")
+    for name, d, a, _r, _ra, _, _ in both:
+        print(f"    {name:<20}: delivered {mp.nstr(d, 6)} at x = {mp.nstr(a, 12)}"
               f"{'   <- shipped' if name == who else ''}")
 
     bcs = b_cheb[1]
@@ -4304,7 +4372,7 @@ def _fit_region_b_rational(b_cheb):
     print(f"    Chebyshev deg {b_cheb[0]} : {len(bcs):>2} stored, delivered "
           f"{mp.nstr(cheb_delivered, 6)} at x = {mp.nstr(cheb_at, 12)}")
     print(f"    rational [{m}/{k}]  : {total:>2} stored, delivered "
-          f"{mp.nstr(delivered, 6)} at x = {mp.nstr(at, 12)}")
+          f"{mp.nstr(delivered, 6)} at x = {mp.nstr(delivered_at, 12)}")
 
     return {
         "m": m, "k": k, "p": p, "q": q, "stored": total,
@@ -7746,7 +7814,9 @@ PROVENANCE_GROUPS = (
 # gated: it is an accelerator mpmath picks from what is installed, CI installs
 # none and a developer's host may carry gmpy2, and refusing a record over which
 # one was present would refuse a record that is nonetheless this derivation's.
-GATED_ENVIRONMENT = ("mpmath", "clang-format")
+# The four packages are gated because each moves the output: the rational route
+# reads the solver stack's own nodes, not only mpmath's digits.
+GATED_ENVIRONMENT = ("mpmath", "baryrat", "numpy", "scipy", "clang-format")
 
 
 def repository_root():
@@ -7791,15 +7861,32 @@ def formatter_version():
     return words[words.index("version") + 1] if "version" in words else "unknown"
 
 
+def package_version(name):
+    """The installed version of a pinned package, or `absent`.
+
+    Read from the distribution metadata rather than by importing it: the
+    independent solver is imported only where a fit runs, and a check of an
+    unchanged record must not pay for numpy and scipy.
+    """
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return "absent"
+
+
 def environment_cell():
     """What produced the bytes and is not a file: the interpreter's own stack.
 
-    The mpmath version and the formatter version both move the output and both
-    are named in requirements-boys.txt, so a derivation on a host carrying other
-    ones is visible here rather than only in a diff nobody reads.
+    The mpmath, baryrat, numpy and scipy versions and the formatter version all
+    move the output and all are named in requirements-boys.txt, so a derivation
+    on a host carrying other ones is visible here rather than only in a diff
+    nobody reads.
     """
     return stamp_module().cell({
         "mpmath": mpmath.__version__,
+        "baryrat": package_version("baryrat"),
+        "numpy": package_version("numpy"),
+        "scipy": package_version("scipy"),
         "backend": str(getattr(mpmath.libmp, "BACKEND", "unknown")),
         "clang-format": formatter_version(),
     })

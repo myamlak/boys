@@ -4,6 +4,20 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.5
+
+**The region-B rational seed's coefficients come from the independent solver.** The generator now
+runs the Remez exchange and Lawson's algorithm at every rational degree pair, and BRASIL (the
+baryrat package) on the unweighted problem, which is the region-B scan, with both BRASIL settings.
+It ships the smallest stored count whose binary64 coefficients hold the bar on the kernel's own
+evaluation route. The seed stays at 13 stored coefficients; its delivered error falls from
+1.69e-14 to 6.04e-15. The generator gains a pinned baryrat/numpy/scipy dependency; no API or
+contract changes. The host default rows move: all twenty are re-made from a new option-probe run,
+eighteen change at least one cell, the route cell moves in four classes and the packing axis in one,
+and the fp16 rows whose winner names the plain reciprocal take the refined division form instead, so
+their published figure is 1.5e-7 + ½ ULP rather than the 2.5e-7 + ½ ULP the plain form publishes. The
+recorded gate run and the option probe's report are re-made for this release's stamp.
+
 ## 5.2.4
 
 **The specification's float row states the figure a default float caller is held to.** The row

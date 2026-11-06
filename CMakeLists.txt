@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.2.4 LANGUAGES CXX)
+project(boys VERSION 5.2.5 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -1448,8 +1448,10 @@ int main() {
     # the instrument the region-B Chebyshev route's delivered error is measured
     # with, held at both parities, because an odd degree's top coefficient is
     # the term a mis-seeded odd part drops while still returning a plausible
-    # number. It reads the generator's pinned mpmath; a machine without it skips
-    # with 77, the generator's own answer to a missing dependency.
+    # number. It reads the generator's pinned mpmath and not the rational route's
+    # baryrat stack, which the generator imports only where a fit runs; a machine
+    # without mpmath skips with 77, the generator's own answer to a missing
+    # dependency.
     if (Python3_FOUND)
         add_test(NAME boys-generator-clenshaw-split
             COMMAND ${Python3_EXECUTABLE}
@@ -2101,8 +2103,9 @@ endif()
 # against the committed files whenever that record's generator, pins or
 # environment does not match the tree (default paths: include/boys/
 # boys_coefficients.hpp and tests/data/boys_reference.csv — spelled out here and
-# in CI). The generator is deterministic (mpmath pinned in
-# requirements-boys.txt), so the byte comparison over the committed files is the
+# in CI). The generator is deterministic (its whole pin set is in
+# requirements-boys.txt: mpmath, the baryrat stack's three packages and
+# clang-format), so the byte comparison over the committed files is the
 # identity proof and the record is what says when it still applies. A
 # regeneration writes the committed files and is local-only, which CONTRIBUTING.md
 # states as a rule; CI runs the checks and never the writes.
@@ -2114,7 +2117,7 @@ if (BOYS_TOP_LEVEL)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tools/gen_boys_coefficients.py --check
                 --header ${CMAKE_CURRENT_SOURCE_DIR}/include/boys/boys_coefficients.hpp
                 --reference ${CMAKE_CURRENT_SOURCE_DIR}/tests/data/boys_reference.csv
-            COMMENT "Boys table/reference consistency check (needs mpmath)"
+            COMMENT "Boys table/reference consistency check (needs the pins in requirements-boys.txt)"
             VERBATIM)
     endif()
 endif()

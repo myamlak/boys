@@ -152,7 +152,7 @@ to deliver against the committed reference; and the bar it is certified against.
 | chebyshev (default) | A | 0 | 0 | 1320 | 1.74e-16 | 3e-14 |
 | rational minimax | A | 0 | 1.0855252345349333 | 891 | 2.46e-14 | 3e-14 |
 | chebyshev (default) | B | 11.899848152108484 | 11.899848152108484 | 25 | 5.09e-17 | 2.57e-14 |
-| rational minimax | B | 11.899848152108484 | 11.899848152108484 | 13 | 1.69e-14 | 2.57e-14 |
+| rational minimax | B | 11.899848152108484 | 11.899848152108484 | 13 | 6.04e-15 | 2.57e-14 |
 
 Region A's rows count the whole per-order table: one piece for each order over each of the region's
 two bands, so 66 pieces, and "stored" is their coefficients summed. Region B's rows are the one seed
@@ -426,7 +426,7 @@ partitions, and the last is the bound the gate's row promises, stated in the bas
 | batch and plane entry, band and below | 5.55227e-09 (n=32, x=10.7836) | 5.55227e-09 (n=32, x=10.7836) | contract: 1e-13 · F_n, 1e-13 · F_0 |
 | single, fixed-order and plane entry, whole grid | 1.39576 (n=32, x=31) | 1.39576 (n=32, x=31) | per region (B_region) |
 | rational route, region-A pieces | 2.46e-14 (shipped cover, published) | 2.21663e-14 (n=2, x=9.88955) | absolute: 3e-14 |
-| rational route, region-B seed | 1.69e-14 (shipped seed, published) | 1.35447e-14 (n=0, x=14.9055) | absolute: 2.57e-14 (contract band max) |
+| rational route, region-B seed | 6.04e-15 (shipped seed) | 1.35447e-14 (n=0, x=14.9055) | absolute: 2.57e-14 (contract band max) |
 | rational route, batch entry | — | 3.20701e-10 (n=5, x=10.2881) | contract: 1e-13 · F_n, 1e-13 · F_0 |
 
 **The bar column is not one scale, and each row states the basis it was judged on.** The six
@@ -445,7 +445,7 @@ printed for the two region-B rows.
 **The rows are met.** The last three rows are the rational route's own fits, judged against the
 route's published bars rather than the Chebyshev rows' figures: the shipped cover of region A
 delivers 2.46e-14 and the narrow pieces 2.21663e-14 against the route's absolute 3e-14 bar, the
-shipped seed of region B delivers 1.69e-14 and the five narrow seed pieces 1.35447e-14 against the
+shipped seed of region B delivers 6.04e-15 and the five narrow seed pieces 1.35447e-14 against the
 region's 2.57e-14 band maximum, and the batch entry read through the narrow route lands at
 3.20701e-10 at n = 5, x = 10.2881 against the contract's 1e-13. The block is counted apart from the
 lane book and from the scheme rows, and those read what they read at that run's own revision: 32 of
@@ -1692,19 +1692,20 @@ selects and the bound it carries.
 **A class's default is its own row, and the seam's seven are stated choices.** A class's row carries
 the combination its entries compile when the call site names no policy; the marker above the row
 says how its winner was reached, and its last two cells say whether a run ranked the combination or
-the file chose a cell. On this host the measured cells are the 2026-10-12 run's winners, and the
-float lane's division form is the file's own stated choice (the row says so). **The seam's seven
-names (`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking of an
-axis**: their scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and a
-class's row may differ from them. The committed transcript of the full protocol is
-`tests/data/boys_option_probe_report.txt`, a later run of the same protocol on this host: it ranks
-the whole space, its tables carry every member of the scheme and partition axes, and on it the
-uniform partition leads the fp64 single class — 152.60 against 389.28 ns per argument for the fastest
-narrow row, which is on the shipped Chebyshev route; the fastest rational-route narrow row is 581.73
-(`single-batch-narrow-rational-minimax-refined-reciprocal-fp64`). The route and the packing axis carry
-the settings the library has always shipped and have not been ranked against a timing. Which member
-is faster is a property of the host, its flags
-and its card, and the probe is what a consumer runs where they deploy. Setting
+the file chose a cell. On this host the measured cells are the 2026-11-05 run's winners, and the
+float and fp16 lanes' division forms are the file's own stated choice (the row says so). **The
+seam's seven names (`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking
+of an axis**: their scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and
+a class's row may differ from them. The committed transcript of the full protocol is
+`tests/data/boys_option_probe_report.txt`, the run the host rows' figures came from: it ranks the
+whole space, its tables carry every member of the six axes it crosses, and on it the uniform
+partition leads the fp64 single class — 102.58 against 276.78 ns per argument for the fastest narrow
+row, which is on the shipped Chebyshev route; the fastest rational-route narrow row is 408.14
+(`single-batch-narrow-rational-minimax-plain-reciprocal-fast-fp64`). The route and the packing axis
+are ranked by it too: the run's winners name the Chebyshev route in every host class and the
+arguments packing axis in eighteen of the twenty, and four host rows moved their route cell and one
+its packing cell. Which member is faster is a property of the host, its flags and its card, and the
+probe is what a consumer runs where they deploy. Setting
 any of them from a run is one line
 per name in `include/boys/boys_build_defaults.hpp`, the file a build's defaults are read from: a
 build replaces that file with its own seven rather than editing the tree, which is what lets a

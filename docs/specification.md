@@ -152,20 +152,23 @@ seam names the narrow partition.
 `include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each
 carrying the run its combination came from where a run stands behind it, and its stated basis
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
-transcript is the file it wrote under `tests/data/`: the option report there is a later run of the
-same protocol on this host, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 152.60
-against 389.28 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
-route; the fastest rational-route narrow row is 581.73
-(`single-batch-narrow-rational-minimax-refined-reciprocal-fp64`). The route and the packing axis carry
-the settings the library has always shipped and have not been ranked against a timing. The option
-probe below is what ranks any of them, on the machine it is run on.
+transcript is the file it wrote under `tests/data/`: the option report there is the run the host
+rows' figures came from, and it ranks the whole space — its tables carry every member of the
+scheme and partition axes, and on it the uniform partition leads the fp64 single class, 102.58
+against 276.78 ns per argument for the fastest narrow row, which is on the shipped Chebyshev
+route; the fastest rational-route narrow row is 408.14
+(`single-batch-narrow-rational-minimax-plain-reciprocal-fast-fp64`). The route and the packing axis
+are ranked by it too: the run's winners name the Chebyshev route in every host class and the
+arguments packing axis in eighteen of the twenty, and four host rows moved their route cell and one
+its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
 **A default's move is normally a choice between two ways of computing one answer and not between
 two accuracies**, so a version that moves one costs no accuracy at any call site that names
-nothing. The exception is the float lane's division form, and it moves the figure the better way:
-the plain reciprocal publishes its own 1e-7 term beside the lane's 1.5e-7 base, so the committed
-rows name the refined reciprocal, which is bit-identical to exact division and publishes the base
-alone — the tighter figure the certified-bound model's 1e-7 fit placement assumes.
+nothing. The exception is the float and fp16 lanes' division forms, and they move the figure the
+better way: the plain reciprocal publishes its own 1e-7 term beside the lane's 1.5e-7 base, so the
+committed rows name the refined reciprocal, which is bit-identical to exact division and publishes
+the base alone — the tighter figure the certified-bound model's 1e-7 fit placement assumes. The
+bf16 rows carry the plain reciprocal, whose 1e-7 term sits below that format's 2^-8 half digit, so
+the figure those rows publish does not move.
 
 The rows above are bounds, and a bound is not the figure a lane delivers. Two rows are delivered at a
 different figure depending on which multiply-add the lane evaluates — one rounding or two — and the
@@ -721,7 +724,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.2.4**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.2.5**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
@@ -756,7 +759,7 @@ unit and take yours: the `With*` helpers all derive from `SeamPolicy<>`, whose p
 arguments one, so a call written through them is compiled where it is called. What moves a value is
 FMA being available together with contraction being permitted; where it moves, it moves by less than
 the absolute bound the lane publishes, and largest in relative terms at the smallest values the lane
-returns. Bits do not travel across platforms either: fifteen of the twenty host rows read
+returns. Bits do not travel across platforms either: seventeen of the twenty host rows read
 `RegionBExp::kAccurate`, which is the platform's `exp`. What a pinned tag does give is one library
 binary answering the same bits on any x86-64 tier, with or without AVX2.
 
@@ -1064,8 +1067,9 @@ mistyped name cannot block every pull request.
 
 - `tests/data/boys_reference.csv` — the committed 45-digit reference grid.
 - `tools/gen_boys_coefficients.py` — regenerates the generated coefficient set (the master and its
-  twenty-one group headers) and the grid from the cited formulas, using a pinned public `mpmath`,
-  and writes beside them a record of what produced them,
+  twenty-one group headers) and the grid from the cited formulas, using a pinned public `mpmath`
+  and the pinned baryrat/numpy/scipy stack the region-B rational route's independent solver runs
+  on, and writes beside them a record of what produced them,
   `tests/data/boys_coefficients_provenance.txt`: a digest of its own source, one of
   `requirements-boys.txt`, the versions those pins name, a digest of each artefact and a manifest
   digest over the artifact set. One CI leg runs its `--check`: the linux-x86 gcc Release leg, in

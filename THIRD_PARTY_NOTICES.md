@@ -10,6 +10,9 @@ consumes, so the notices must travel with any redistribution.
 | GoogleTest | 1.17.0 (vendored) | test harness | BSD-3-Clause | `third_party/googletest/LICENSE` |
 | Google Benchmark | 1.9.5 (vendored, optional build flag) | scaling benchmarks | Apache-2.0 | `third_party/benchmark/LICENSE` |
 | mpmath (Python) | pinned in `requirements-boys.txt` | build-time-only regeneration of the coefficient tables and reference grid (`tools/gen_boys_coefficients.py`) | BSD-3-Clause | pip package metadata (not redistributed) |
+| baryrat (Python) | 2.1.2 (pinned in `requirements-boys.txt`) | build-time-only regeneration: the BRASIL rational solver behind the region-B seed (`tools/gen_boys_coefficients.py`) | BSD-2-Clause | pip package metadata (not redistributed) |
+| numpy (Python) | 2.5.2 (pinned in `requirements-boys.txt`) | build-time-only regeneration: the array stack BRASIL runs on (`tools/gen_boys_coefficients.py`) | BSD-3-Clause (bundled parts under 0BSD, MIT, Zlib and CC0-1.0) | pip package metadata (not redistributed) |
+| scipy (Python) | 1.18.1 (pinned in `requirements-boys.txt`) | build-time-only regeneration: the `erf` the region-B integrand is built from (`tools/gen_boys_coefficients.py`) | BSD-3-Clause | pip package metadata (not redistributed) |
 | CUDA toolkit | optional build flag | CUDA lane (kernel sources and host wrapper) | NVIDIA toolkit license | NVIDIA package (not redistributed) |
 
 GoogleTest and Google Benchmark are **vendored**: their sources are
@@ -18,9 +21,9 @@ repository has no `.gitmodules` and no gitlink — so a plain clone already
 contains them. Each carries its own LICENSE file in place; the full texts
 are not duplicated here. They are the only vendored code.
 
-mpmath and the CUDA toolkit are build-time-only tools and are not
-redistributed with any release; their licenses apply only if the tooling
-itself is shipped.
+mpmath, baryrat, numpy, scipy and the CUDA toolkit are build-time-only
+tools and are not redistributed with any release; their licenses apply only
+if the tooling itself is shipped.
 
 ## Data provenance
 

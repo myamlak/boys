@@ -1138,22 +1138,22 @@ static_assert(kRatARouteLo == kTierThresholds[0],
 // interval and in the same mapped argument t as kBcoeffs above.
 // q is stored as q_1..q_k with its constant term held at 1.
 inline constexpr auto kRatBnum = std::to_array<double>({
-    1.91351583719160612e-01,
-    2.83228934251048032e-01,
-    1.55532441843893001e-01,
-    3.63205097638950599e-02,
-    2.93417502959235449e-03,
+    1.91351583719164753e-01,
+    2.82489411749273594e-01,
+    1.54644537509771465e-01,
+    3.59868507875268877e-02,
+    2.89527837080617347e-03,
 });
 inline constexpr int kRatBnumDeg = 4;
 inline constexpr auto kRatBden = std::to_array<double>({
-    1.70276269244142140e+00,
-    1.11753237827406548e+00,
-    3.39592940159666748e-01,
-    4.40777547641827512e-02,
-    1.40025501613686688e-03,
-    -3.22122659180452484e-05,
-    1.48712387439610807e-06,
-    -5.88598965060028244e-08,
+    1.69889796089654477e+00,
+    1.11203186532841169e+00,
+    3.36912041851823503e-01,
+    4.35799695901025322e-02,
+    1.37854642890363665e-03,
+    -3.15200636244852424e-05,
+    1.43985986751343017e-06,
+    -5.57404447690176375e-08,
 });
 inline constexpr int kRatBdenDeg = 8;
 
@@ -1165,7 +1165,7 @@ inline constexpr double kRegionBFitBar = 2.56905715673095443e-14;
 inline constexpr int kRegionBFitChebStored = 25;
 inline constexpr double kRegionBFitChebDelivered = 5.09007263401236458e-17;
 inline constexpr int kRegionBFitRatStored = 13;
-inline constexpr double kRegionBFitRatDelivered = 1.69145631228896759e-14;
+inline constexpr double kRegionBFitRatDelivered = 6.04405276991530667e-15;
 
 // The two region-A routes as the generator measures them, over the domain the
 // two tables cover - every order's pieces, from zero to kX0 - swept on a
