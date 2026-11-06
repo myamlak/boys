@@ -4,6 +4,23 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.2.6
+
+**The gate's last line states what it judged, and the 8-wide half consistency row tests its own
+sentence.** The `PASS` line no longer says "every documented claim": it names the claim book's
+judged rows (38 in the default build), the registration table's 37 claims, the two of those bound
+to rows that measure them without restating their sentences, and says that coverage of the
+documents' 155-claim enumeration is audited separately rather than by the gate. The consistency row
+now measures `|body - scalar|` at every cell against `B(body) + B(scalar)`, the sum of the two
+paths' own half-lane bounds and the largest difference consistent with both being individually in
+bound, and is `Verified` only when no cell is over that allowance; the one-side and zero counters
+stay printed as diagnostics. A build with no SIMD target reports the row as not carried rather than met
+over a stated domain, which now means only a measured pass over a stated domain; a target that
+carries the kernels but produced no cell stays evidence absent. A `--self-test` mode asserts the
+four states, the drift predicate and the exact last-line wording, and `ctest` runs it as
+`boys-accuracy-gate-selftest`. No lane, bound or returned value changes; the recorded gate run is
+re-made for this release's stamp.
+
 ## 5.2.5
 
 **The region-B rational seed's coefficients come from the independent solver.** The generator now
@@ -269,8 +286,9 @@ the option probe, and the CUDA device lane (`BUILD_CUDA=ON`).
 
 ### What certifies a build of it
 
-- `boys-accuracy-gate --strict` ends in its `PASS: every documented claim met at this revision`
-  line, and the run it records is `tests/data/boys_accuracy_gate_run.txt`: 33 orders over 1797
+- `boys-accuracy-gate --strict` ends in its `PASS: every claim this gate judges is met at this
+  revision` line, with the claim rows judged and the registered claims named beside it, and the run
+  it records is `tests/data/boys_accuracy_gate_run.txt`: 33 orders over 1797
   arguments, whose double lane's worst cell sits at `0.288` of the bound, at `n = 32, x = 31`.
 - `boys-cuda-accuracy-gate` answers for the device lane against the same committed reference grid,
   and the option probe and the device probe measure their whole spaces
