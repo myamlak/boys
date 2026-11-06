@@ -39,8 +39,10 @@ with:
 
 It sweeps the documented entries over the committed reference grid and prints, lane by lane and
 region by region, the worst error the lane delivered beside the bound claimed, ending in
-`PASS: every documented claim met at this revision` or in the numbers of the claims that did not hold
-and a non-zero status. `--per-order` extends it to every order and `--probe n x` to a single cell.
+`PASS: every claim this gate judges is met at this revision` (the rest of the line names the claim
+rows judged, the registered claims and where documentation coverage is audited) or in the numbers of
+the claims that did not hold and a non-zero status. `--per-order` extends it to every order and
+`--probe n x` to a single cell.
 `ctest` runs the same binary as one of its tests, but a passing `ctest` prints only how long the test
 took.
 
@@ -1235,7 +1237,7 @@ worst cell at `n = 0, x = 0.684828`. The batch entry's own row over the same cel
 arguments axis and not this one, delivers 1.08e-07 on both builds, so naming this axis moves which
 lane evaluates and not the figure the entry meets. The float route book is not red on either build:
 the gate reports 0 of its 4 rows short by more than a tenth of the bar, the worst by 0.0915 of it, and
-exits 0 with every documented claim met on both.
+exits 0 on both.
 
 **Outside region A the axis is not what is running.** Past `x = 11.8998` the entry answers from the
 certified scalar single lane at the policy the caller named, one order at a time, which is the same
