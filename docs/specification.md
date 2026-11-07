@@ -727,7 +727,7 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.2.6**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.3.0**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
@@ -764,7 +764,68 @@ FMA being available together with contraction being permitted; where it moves, i
 the absolute bound the lane publishes, and largest in relative terms at the smallest values the lane
 returns. Bits do not travel across platforms either: seventeen of the twenty host rows read
 `RegionBExp::kAccurate`, which is the platform's `exp`. What a pinned tag does give is one library
-binary answering the same bits on any x86-64 tier, with or without AVX2.
+binary answering the same bits on any x86-64 tier, with or without AVX2. The paragraph above
+describes `BOYS_ISA_DISPATCH=0`, the default; the section below states the mode where one library
+carries both x86-64 tiers and selects one at run time.
+
+## Runtime ISA dispatch
+
+`BOYS_ISA_DISPATCH=ON` is a build mode on x86-64. One image carries the baseline and the AVX2+FMA
+tiers: the default entries are declarations in the headers and are defined once in the library as
+forwards to the selected tier; each tier's entries are defined in that tier's own unit, compiled at
+that tier's flags with the contraction pin restated after the vector flags. The dispatcher selects a
+tier on the first call — from the CPUID answer, checking that the image carries the tier it selected
+— and caches it in a function-local static. Every later entry call is one load, one compare and one
+call into that tier: there is no per-order and no per-argument cost, and no function pointer.
+
+**Who may choose a tier.** In this mode the selection is the library's. Every translation unit a
+consumer compiles is a client at the baseline tier; a client that announces the vector tier is
+refused at start-up with both profiles, because accepting it would put vector code in the caller's
+own policy instantiations and leave two selection points in the program. The carried-tier units
+announce their tier as carried; the dispatcher's first call refuses an image whose selected tier is
+not carried, and one whose dispatcher unit did not register. `BoysActiveTier()` reports the
+selected tier, the carried set and the machine's capability as three separate answers;
+`BoysAvx2Available()` is true when the tier is carried and the machine exposes AVX2 and FMA with
+OSXSAVE. `boys::boys-tier` still hands a unit the inline entries of `BOYS_ISA_DISPATCH=0`, so the
+header-only consumer keeps working; the archive is a dispatch program's one selection point. The
+mode refuses `-DBUILD_CUDA=ON`, because the device lane does not take the host's flag set and would
+be a client at a tier of its own, and it refuses a non-x86-64 target, where the second tier it
+carries does not exist yet.
+
+**The cross-tier contract is bit identity at a fixed multiply-add route.** The Boys evaluation is
+element-wise and order-preserving: both tiers implement the fused route as one correctly rounded
+fusion and the separate route as two roundings, and no reduction's order can differ between them.
+The same inputs through either carried tier therefore return the same bits, and the library holds
+itself to that with one digest over every default entry
+(`tests/entry_digest.hpp`, `entry_digest::Bits()`): the `BoysDispatch` tests force each carried tier
+in turn and compare the two digests, and a difference is a failure rather than a bound to state.
+Where a consumer's own reduction changes order with the tier — a contraction, a summation — the
+contract there is that consumer's documented bound and not this library's bit identity.
+
+**Mangled names carry an internal token, and its value differs per tier.** Each tier's bodies live
+in an inline namespace — `boys::isa_baseline` or `boys::isa_avx2`, named by
+`BOYS_DETAIL_ISA_NAMESPACE` and derived per translation unit from `BOYS_ISA_AVX2_FMA` — so that a
+name both tiers define would be two symbols rather than the linker's choice of one. The namespace is
+inline, so the public spelling is unchanged: `boys::BoysSingle` still names the entry, and no
+installed header names a tier namespace. `BOYS_DETAIL_ISA_TOKEN` overrides the derivation for a unit
+that states its token directly; it is internal, like the token. The mangled names of the tier bodies
+inside the archive differ from the 5.2.x names, so a 5.3.0 dispatch archive is not patch-compatible
+with a 5.2.x one: a program links the headers and the archive of one release together. The
+`boys-tier-symbols` check reads the two tier object sets' symbol tables and asserts that the set of
+first-party function names they share equals one literal allowlist — the public `F16` and `Bf16`
+wrapper members, whose class identity is the API and whose bodies are exact integer bit
+manipulation. A new shared name fails the check, and so does an allowlist entry whose type is
+compiled and is no longer shared. The two tiers' coefficient tables are tier-independent data and
+are reported rather than asserted: both copies come from one header and hold the same bytes.
+
+**What the mode does not move.** `BOYS_ISA_DISPATCH` off is the compile-time mode exactly as it was:
+the headers define the entries inline, every unit of a program carries one tier, and the guard
+refuses a mixed program at start-up. The dispatch mode's tier-forcing hook,
+`BoysForceTier()`/`BoysClearForcedTier()`, is compiled only where the build asks for it and is a
+test instrument rather than part of the consumer surface. The flag-independence check is not built
+on MSVC, whose compiler takes none of its four flag spellings; in a dispatch build on a GNU or Clang
+host it keeps the two caller-optimizer readings, `-O2` and `-O3`, and drops the two that name
+vector features, which a client unit is refused at.
 
 ## Building and consuming
 

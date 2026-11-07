@@ -20,13 +20,13 @@ namespace boys {
 inline constexpr int kVersionMajor = 5;
 
 /// Minor version: a compatible change, which may change bitwise outputs.
-inline constexpr int kVersionMinor = 2;
+inline constexpr int kVersionMinor = 3;
 
 /// Patch version: a compatible change that does not.
-inline constexpr int kVersionPatch = 6;
+inline constexpr int kVersionPatch = 0;
 
 /// The version as a string, "MAJOR.MINOR.PATCH".
-inline constexpr const char* kVersionString = "5.2.6";
+inline constexpr const char* kVersionString = "5.3.0";
 
 /// The library's version, as a caller queries it.
 ///

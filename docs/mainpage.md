@@ -169,6 +169,14 @@ without the flag set compiles the certified scalar lanes, whose values are the v
 bit. The predicate's own question is the machine's — whether the processor carries the instruction
 set — and the two answers may differ in either direction.
 
+A library built with `BOYS_ISA_DISPATCH=ON` carries both x86-64 tiers in one image and answers the
+two questions together: the dispatcher selects a tier on the first call from the processor's CPUID
+answer, so \ref boys::BoysAvx2Available is true when the vector tier is carried *and* the machine
+exposes it. Every caller unit is a client at the baseline tier in that mode, and a unit that
+announces the vector tier is refused at start-up rather than run beside the dispatcher's own
+selection. The tiers are equal bit for bit at a fixed multiply-add route, and the suite's
+`BoysDispatch` tests hold the carried tiers to one digest over every default entry.
+
 The region kernels themselves are internal. A caller that reached them directly would have to
 partition its arguments by region first, the work \ref boys::BoysAllN exists to do. The entries
 above are the surface.

@@ -10,7 +10,7 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
-This tree is **version 5.2.6**. The number is written down once, in the top-level `CMakeLists.txt`'s
+This tree is **version 5.3.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
 `project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
 CMake: `boys::VersionString()` answers it.
 
@@ -89,7 +89,7 @@ What a translation unit needs, by what it is for:
 |---|---|---|
 | declares a wrapper, names a type, or holds an entry as a value | `boys/boys_decl.hpp` | every declaration - the types, the entries, the accuracy queries, the table a report reads - and no arithmetic |
 | calls an entry the default table answers for | `boys/boys.hpp` | the declarations, plus each default entry's own body inline at the row this build's table carries for its class: nothing else is needed, and no archive on the link line |
-| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state |
+| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state. In a library built with `BOYS_ISA_DISPATCH=ON` the library carries both x86-64 tiers and selects one at run time; see [Run-time tier selection](#run-time-tier-selection) |
 | wants everything this library carries | `boys/boys_all.hpp` | the front door, plus the `std::span` overloads, the region-A transform lane and the option probe |
 | is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
 | is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
@@ -198,7 +198,7 @@ Installed, from a top-level build:
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
 `boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
-build carried the device lane; the version file accepts any `5.x` package for a request of `5.2.6`.
+build carried the device lane; the version file accepts any `5.x` package for a request of `5.3.0`.
 The install rules are written at the top level only, so a consumer that adds this tree as a
 subdirectory already has the targets and needs no package:
 
@@ -215,6 +215,7 @@ with `-DBOYS_BUILD_TESTS=OFF` as the first recipe does.
 Each optional, named one at a time:
 
     cmake -S . -B build -DBOYS_ISA_AVX2=OFF                          # the portable scalar tier
+    cmake -S . -B build -DBOYS_ISA_DISPATCH=ON                       # both x86-64 tiers, chosen at run time
     cmake -S . -B build -DBOYS_FP16_SEAM=OFF -DBOYS_BUILD_TESTS=OFF  # no half/bfloat entries
     cmake -S . -B build -DBOYS_MULADD_SEPARATE=ON                    # the two-rounding multiply-add route
     cmake -S . -B build -DBOYS_BUILD_C_API=ON                        # the C linkage surface, in the archive
@@ -238,6 +239,53 @@ program the headers refuse at start-up in a program that links the archive, and 
 against the headers alone.
 
     c++ -std=c++20 -DBoysFp16=1 -I include try.cpp -o try     # the headers alone, no archive
+
+### Run-time tier selection
+
+On x86-64, `-DBOYS_ISA_DISPATCH=ON` compiles the baseline and the AVX2+FMA tiers into one library
+instead of choosing one at compile time. The public entries become declarations defined once in the
+library; each tier's bodies are compiled in that tier's own unit at its own flags; and the
+dispatcher selects one on the first call from the processor's CPUID answer and caches it. A later
+call is one load, one compare and one call into the selected tier — nothing per order and nothing
+per argument. `boys::BoysActiveTier()` reports the selected tier, the tiers the image carries and
+the machine's capability, kept apart because they answer different questions; and
+`boys::BoysAvx2Available()` answers whether this program can execute the AVX2 body, which in this
+mode is the machine's capability *and* the tier being carried.
+
+The selection is the library's, not the caller's: every unit you compile is a client at the
+baseline tier, and a unit compiled with the vector flags is refused at start-up rather than run
+beside a second selection point. The archive is the program's one selection point. `boys::boys-tier`
+still hands a unit the entries inline from the headers — that unit sees the mode off — for a caller
+that wants the compile-time choice. A dispatch configure refuses `-DBUILD_CUDA=ON`, because the
+device lane is compiled at its own flags and is not part of this axis, and refuses a non-x86-64
+target, where the second tier this mode carries does not exist.
+
+**What the two tiers agree on.** At a fixed multiply-add route the Boys evaluation is element-wise
+and order-preserving, so the two tiers return identical bits. That is the cross-tier contract, and
+the suite checks it rather than trusting it: the `BoysDispatch` tests force each carried tier in
+turn and compare one digest over every default entry, which is the same digest the flag-independence
+program prints. Nothing in this library reduces in an order that could change between the tiers, so
+the contract is bit identity and needs no bound. (A consumer's own contractions, where an order can
+change, carry their documented bounds in the consumer's tree.)
+
+**Mangled names carry an internal token.** Each tier's bodies live in an inline namespace whose name
+is part of every symbol it defines — `boys::isa_baseline` or `boys::isa_avx2` — so the linker cannot
+merge the two tiers' definitions; a unit that states `BOYS_DETAIL_ISA_TOKEN` directly overrides the
+derivation, an internal hook and not part of the public interface. The public spelling is
+unchanged: you name `boys::BoysSingle`, and no installed header names a tier namespace. What
+differs is the mangled names inside the archive, so a 5.3.0 dispatch archive is not patch-compatible
+with a 5.2.x one, and a program links the headers and the archive of one release together.
+
+**The forcing hook belongs to a test build.** With the test suite on, the dispatcher also carries
+`boys::BoysForceTier()` and `boys::BoysClearForcedTier()`, which pin a carried tier so the same
+inputs can run through each in one process. A package build has the suite off, and its header does
+not declare them.
+
+**The MSVC leg does not build the flag-independence check**, because its variants are GCC and Clang
+spellings — `-O2`, `-O3`, `-O3 -march=native` and the AVX2 flag set. In a dispatch build the check
+keeps the two caller-optimizer readings and drops the two that name vector features, which a client
+unit is refused at; on a GNU or Clang host it compares one digest across `-O2` and `-O3`.
+`docs/build-facts.md` records which arithmetic the MSVC leg compiles.
 
 ## Which entry do I call?
 

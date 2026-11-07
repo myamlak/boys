@@ -4,6 +4,43 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.3.0
+
+**One library carries both x86-64 tiers and the processor selects one at run time.** The new
+`-DBOYS_ISA_DISPATCH=ON` build mode compiles the baseline and the AVX2+FMA tiers into one image: the
+default entries become declarations defined once in `src/boys_dispatch.cpp`, each carried tier's
+entries are defined in its own unit (`src/boys_tier_baseline.cpp`, `src/boys_tier_avx2.cpp`) at its
+own flags with the contraction pin restated, and the dispatcher selects a tier on the first call
+from the CPUID answer and caches it. A later call is one load, one compare and one call into the
+selected tier. `BoysActiveTier()` is new and reports the selected tier, the carried set and the
+machine's capability; `BoysAvx2Available()` in this mode answers for the machine's capability and
+the tier being carried together. The mode refuses `BUILD_CUDA` and a non-x86-64 target with a
+stated reason. `BOYS_ISA_DISPATCH=OFF` is the compile-time mode unchanged: the entries stay inline
+in the headers, and the figures the accuracy gate records are those of 5.2.6.
+
+**The tiers are bit-equal at a fixed multiply-add route, and each tier's bodies carry an internal
+token in their symbols.** The default entries are element-wise and order-preserving, so the same
+input through either carried tier returns the same bits; the suite forces each tier in turn and
+compares one digest over every default entry (`tests/boys_dispatch_test.cpp`). The tier bodies live
+in an inline namespace, `boys::isa_baseline` or `boys::isa_avx2`, so both tiers can sit in one image
+without the linker merging their definitions; the public spelling is unchanged and no installed
+header names the token. The token changes the mangled names inside the archive, so a 5.3.0 dispatch
+archive is not patch-compatible with a 5.2.x one. The guard is reworked rather than removed: a
+dispatch client must be at the baseline tier, a tier unit registers its tier as carried, and the
+dispatcher's first call refuses an image that cannot run what it selected; a compile-time build
+keeps the one-tier rule exactly. `BoysForceTier()` and `BoysClearForcedTier()` are the test-only
+forcing hook, compiled under `BOYS_ISA_TIER_FORCING`.
+
+**A new check asserts that the two tier object sets share no function name.**
+`tools/check_tier_symbols.py` reads each tier's symbol table and fails when a first-party function
+name is defined by both; the observed shared set must equal a literal allowlist — the public `F16`
+and `Bf16` wrapper members, which are class-identity API and exact integer bit manipulation — so a
+new shared name and a stale entry are both loud. `ctest` runs it as `boys-tier-symbols` in a
+dispatch build. The flag-independence matrix loses its two vector-flag readings in a dispatch build,
+where a client unit at the vector tier is refused, and keeps `-O2` and `-O3`. The recorded gate run
+and the option probe's report are re-made for this release's stamp; the gate's last line is
+unchanged.
+
 ## 5.2.6
 
 **The gate's last line states what it judged, and the 8-wide half consistency row tests its own
