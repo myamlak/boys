@@ -19,7 +19,9 @@
 
 namespace boys {
 
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The rational minimax route: a numerator/denominator pair per piece, read by Horner
 // in the same mapped argument, the denominator stored as q_1..q_k with q_0 held at
@@ -301,7 +303,9 @@ inline double RationalSeedAtCut(int numDeg, int denDeg, double t) noexcept {
     return num / backend::ScalarFp64::MulAdd(den, t, 1.0);
 }
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

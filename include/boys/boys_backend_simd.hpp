@@ -12,7 +12,11 @@
 
 #include <immintrin.h>
 
-namespace boys::backend {
+namespace boys {
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace arith {
 
 /// The 4-wide double arithmetic of the AVX2 + FMA tier, at one multiply-add
 /// route.
@@ -137,6 +141,10 @@ inline bool Avx2Fp32<Route>::Contracts() noexcept {
     return detail::MeasureContraction<float>();
 }
 
-} // namespace boys::backend
+} // namespace arith
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #endif // BOYS_ISA_AVX2_FMA

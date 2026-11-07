@@ -22,7 +22,9 @@
 
 namespace boys {
 
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The Chebyshev route, at the scheme its coefficients are summed in: the shipped family, holding
 // both stored forms - the Chebyshev table the split Clenshaw reads and the monomial table Horner
@@ -472,7 +474,9 @@ inline double NarrowRegionBSeedWithDegrees(double x, int degree) noexcept {
     }
 }
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

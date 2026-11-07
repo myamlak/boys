@@ -38,6 +38,11 @@
 /// build's client units are compiled at the baseline tier (the guard refuses any other), so the
 /// only token a client sees is \c isa_baseline.
 ///
+/// The guard's functions carry the token too: they are inline in this header, because a program
+/// that includes only the headers links the announcement it makes and has no library unit to
+/// call, and each tier's copy is its own symbol. The registry they announce to is one object
+/// outside the token, shared by every translation unit and every tier of one image.
+///
 /// ## What no flags means
 ///
 /// No flags is the scalar tier, and it is a supported, portable default rather than a
@@ -286,13 +291,41 @@ struct Registry {
 #endif
 };
 
-/// The one registry in the program: the function is inline, so its function-local static is the
-/// same object in every translation unit.
+/// The program's one registry: inline, so every translation unit and every tier of one image
+/// reads and writes the same object. Constant-initialised, so no announcement can run ahead of
+/// its construction.
 ///
-/// \returns the program's one registry
+/// This is the one first-party object the two tier object sets both define, and it is meant to
+/// be: a program has one registry, and each tier announces itself to it.
+inline Registry kTierRegistry;
+
+} // namespace tier_guard
+
+} // namespace boys::detail
+
+namespace boys {
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
+
+/// The guard, compiled by each translation unit at its own flags. The functions are not a tier
+/// choice - they read and write the one registry above - but they are inline in this header: a
+/// program that includes only the headers links the announcement it makes and has no library
+/// unit to call. The token keeps each tier's copies distinct symbols, so the linker never
+/// chooses between two tier objects; the one object they all name is `kTierRegistry`, outside
+/// the token.
+namespace tier_guard {
+
+/// The registry and its type, named here so the bodies below read them unqualified.
+using ::boys::detail::tier_guard::kTierRegistry;
+using ::boys::detail::tier_guard::Registry;
+
+/// The program's one registry.
+///
+/// \returns the registry every translation unit and every tier of this image shares
 inline Registry& Announced() noexcept {
-    static Registry registry;
-    return registry;
+    return kTierRegistry;
 }
 
 /// The AVX2 + FMA tier's profile as its own flag set spells it.
@@ -391,10 +424,10 @@ inline void RegisterTier(int isa, int fp16, int role) noexcept {
     Registry& registry = Announced();
 
 #if BOYS_ISA_DISPATCH
-    if (role == kRoleCarried)
+    if (role == ::boys::detail::tier_guard::kRoleCarried)
     {
         registry.carried |= 1 << isa;
-    } else if (role == kRoleDispatcher)
+    } else if (role == ::boys::detail::tier_guard::kRoleDispatcher)
     {
         if (isa != 0)
         {
@@ -426,6 +459,28 @@ inline void RegisterTier(int isa, int fp16, int role) noexcept {
         MixedTiers("the fp16 seam", Fp16Profile(fp16), Fp16Profile(registry.fp16));
     }
 }
+
+} // namespace tier_guard
+
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
+
+namespace boys::detail {
+
+namespace tier_guard {
+
+/// The spelling the rest of the library already uses: `detail::tier_guard::RegisterTier` and the
+/// refusals name this translation unit's copy, the one its own flags compiled. These
+/// declarations add no definition; they make that spelling reach the token-qualified one.
+using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::Announced;
+using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::RegisterTier;
+#if BOYS_ISA_DISPATCH
+using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::NoDispatcher;
+using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::SelectedNotCarried;
+#endif
 
 /// One translation unit's announcement, made before main: the tier this unit's flags name, in a
 /// variable of its own - internal linkage, so every translation unit has one and every one of

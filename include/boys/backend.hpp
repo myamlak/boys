@@ -42,6 +42,7 @@
 /// \ingroup boys
 
 #include "boys/accuracy.hpp"
+#include "boys/isa_tiers.hpp"
 
 #include <cmath>
 #include <concepts>
@@ -95,6 +96,24 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept {
 
     return "unknown";
 }
+
+} // namespace backend
+
+// The arithmetic that can differ by instruction-set tier: the scalar backend's multiply-add,
+// its contraction measurement, and the route it delivers. The token (isa_tiers.hpp) is part of
+// every symbol these bodies define, so the baseline and vector tiers carry their own copies in
+// one image instead of colliding in the linker. The report types above stay outside it: a caller
+// reads one MulAddRoute and one BackendInfo whatever tier computed the number.
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+/// The tier's arithmetic. Named apart from `backend` because the token namespace is inline: a
+/// member of it named `backend` would be injected beside `boys::backend` and make every
+/// unqualified `backend::` in the tree ambiguous (measured: MSVC C2872 in boys_transform.hpp and
+/// the option probe).
+namespace arith {
+
+/// The tier-independent names this namespace's bodies read: MulAddRoute, and the report types.
+using namespace ::boys::backend;
 
 namespace detail {
 
@@ -352,6 +371,28 @@ template <typename T>
 bool Scalar<T>::Contracts() noexcept {
     return detail::MeasureContraction<T>();
 }
+
+} // namespace arith
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+namespace backend {
+
+/// The public spelling the sources and tests already use: `backend::Scalar<double>` and
+/// `backend::Avx2Fp64<>` name this translation unit's tier, whose bodies live in the token
+/// namespace above.
+using namespace BOYS_DETAIL_ISA_NAMESPACE::arith;
+
+namespace detail {
+
+/// The internal arithmetic spelling the sources and tests already use:
+/// `backend::detail::Fused`, `backend::detail::kSelectedRoute` and the rest resolve here, to this
+/// translation unit's tier. The one tier-independent name declared here is the packed-backend
+/// report helper (src/boys_backend_registry.hpp), which is compiled into the one tier that owns
+/// the packed arithmetic and is read by the tier-independent report.
+using namespace BOYS_DETAIL_ISA_NAMESPACE::arith::detail;
+
+} // namespace detail
 
 /// One arithmetic backend as a report states it.
 struct BackendInfo {

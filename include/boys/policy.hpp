@@ -122,7 +122,9 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
 /// the parts of a call that route's fits do not serve - so every pair of the two
 /// enumerations is carried, and the only value rejected here is one outside the
 /// route enumeration.
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit;
@@ -241,7 +243,9 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
     using Type = RationalFitNarrow;
 };
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 /// Everything a call site selects about how an evaluation is performed: the fit
 /// route, the scheme the fit's coefficients are summed in, the budget a
