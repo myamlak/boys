@@ -12,7 +12,11 @@ files and fails when a first-party function name is defined by both.
 What is compared, and why the scope is stated rather than assumed:
 
   * first-party function names are the assertion. A function carries executable instructions, and
-    one the linker can choose between is the failure section 2.2 of the design measured;
+    one the linker can choose between is the failure section 2.2 of the design measured. The one
+    sharing accepted is the literal allowlist below: members of the public half-format wrapper
+    classes, whose mangled name carries their class and whose class is the API. The observed
+    shared set must equal that allowlist, filtered by the wrapper types this build compiles, so
+    a new shared name fails and so does an entry that is no longer shared;
   * first-party data names are reported but not asserted. The coefficient tables are
     tier-independent: both copies come from the same header and hold the same bytes, so the
     linker's choice between them changes nothing that executes, and token-namespacing them would
@@ -40,8 +44,9 @@ class is defined, a function is the `()`-marked record, and an `UNDEF` record is
 not a definition. `nm` runs `<tool> --defined-only -g`: an uppercase type is a definition, `T`/`W`
 are functions and `D`/`B`/`R`/`S`/`G`/`V`/`C` are data.
 
-Exit status: 0 when no first-party function name is defined by both tiers, or when --check was
-not asked for; 1 when one is, and 1 when an object cannot be read or holds no symbols.
+Exit status: 0 when the shared first-party function names equal the allowlist below, or when
+--check was not asked for; 1 when they do not, and 1 when an object cannot be read or holds no
+symbols.
 """
 
 from __future__ import annotations
@@ -64,6 +69,50 @@ NM_SYMBOL = re.compile(r"^\s*(?:[0-9A-Fa-f]+)?\s*([A-Za-z?])\s+(\S+)\s*$")
 
 NM_FUNCTIONS = "TW"
 NM_DATA = "DBRSGVC"
+
+# The first-party functions this check accepts as defined by both tiers, and why each cannot be
+# given the tier token. Every one is a member of the public F16 or Bf16 wrapper class: its
+# mangled name carries the class, and the class is the public type, so tokenizing the member
+# would make boys::F16 two types, one per tier. The definitions are constexpr members of a class
+# defined in a header, and a constexpr member must be defined wherever it is constant-evaluated,
+# so they cannot move to one tier-independent unit either. Tier flags cannot change what they
+# compute: every body is integer bit manipulation (bit_cast, masks, shifts, integer compares)
+# with exact, rounding-free semantics, and the forced-tier digest covers the half lanes
+# (tests/entry_digest.hpp, SweepHalf).
+#
+# The set is asserted by equality, not by membership: the observed shared set must equal the
+# entries whose wrapper type this build compiles. A type is compiled when a symbol carrying its
+# class name is defined by either tier set; a toolchain with std::float16_t has no wrapper class
+# and so expects no entry. An entry whose type is compiled but is no longer shared is a stale
+# allowlist and fails the same way a new shared name does.
+HALF_MEMBERS = {
+    "??0F16@boys@@QEAA@M@Z": (
+        "F16", "F16(float): integer masks and shifts through FloatToHalf; no FP operation"),
+    "??0F16@boys@@QEAA@XZ": (
+        "F16", "F16(): value-initialises the bit pattern; no arithmetic"),
+    "??BF16@boys@@QEBAMXZ": (
+        "F16", "operator float: HalfToFloat builds the float bits and bit_casts; exact"),
+    "?FloatToHalf@F16@boys@@CAGM@Z": (
+        "F16", "FloatToHalf: bit_cast, masks, shifts, integer compares; no FP rounding"),
+    "?HalfToFloat@F16@boys@@CAMG@Z": (
+        "F16", "HalfToFloat: integer shifts into a float bit pattern, bit_cast; exact"),
+    "??0Bf16@boys@@QEAA@M@Z": (
+        "Bf16", "Bf16(float): integer rounding and masks through FloatToBf16; no FP operation"),
+    "??0Bf16@boys@@QEAA@XZ": (
+        "Bf16", "Bf16(): value-initialises the bit pattern; no arithmetic"),
+    "??BBf16@boys@@QEBAMXZ": (
+        "Bf16", "operator float: Bf16ToFloat shifts the bits and bit_casts; exact"),
+    "?FloatToBf16@Bf16@boys@@CAGM@Z": (
+        "Bf16", "FloatToBf16: mantissa rounded with integer arithmetic and masks; no FP operation"),
+    "?Bf16ToFloat@Bf16@boys@@CAMG@Z": (
+        "Bf16", "Bf16ToFloat: one shift into a float bit pattern, bit_cast; exact"),
+}
+
+# How a compiled wrapper type is recognised: its class name inside a mangled boys symbol. The
+# names above are the MSVC manglings; a non-MSVC toolchain that compiles the wrapper (it has no
+# std::float16_t) spells them differently, so the check fails rather than passing silently, and
+# its spellings belong here once such a build registers the test.
+HALF_TYPE_MARKERS = {"F16": "F16@boys@@", "Bf16": "Bf16@boys@@"}
 
 
 class Symbols:
@@ -192,23 +241,50 @@ def main() -> int:
                           - set(shared_functions) - set(shared_data))
 
     print(f"check_tier_symbols: {len(shared_data)} first-party data names are defined by both "
-          "tiers (intended: the tables are tier-independent and identical)")
+          "tiers (reported, not asserted: the tier-independent tables hold identical bytes, and "
+          "the one guard registry is an inline object the linker merges)")
     print(f"check_tier_symbols: {len(shared_other)} standard-library names are defined by both "
           "tiers (outside this project's token, reported and not asserted)")
 
-    if not shared_functions:
+    # The allowlist is the assertion, not a filter: the observed set must equal the entries whose
+    # wrapper type this build compiles, so a new shared name and a stale entry are both loud.
+    every_name = baseline.names() | vector.names()
+    compiled_types = {type_name for type_name, marker in HALF_TYPE_MARKERS.items()
+                      if any(marker in name for name in every_name)}
+    expected = {name for name, (type_name, _) in HALF_MEMBERS.items()
+                if type_name in compiled_types}
+
+    observed = set(shared_functions)
+    shared_allowed = sorted(observed & set(HALF_MEMBERS))
+    unexpected = sorted(observed - set(HALF_MEMBERS))
+    stale = sorted(expected - observed)
+
+    if shared_allowed:
+        print(f"check_tier_symbols: {len(shared_allowed)} first-party function names are shared "
+              "by both tiers and allowlisted (the public half-format wrappers)")
+        for name in shared_allowed:
+            print(f"  allowlisted: {name} - {HALF_MEMBERS[name][1]}")
+
+    if unexpected or stale:
+        for name in unexpected:
+            print(f"  unexpected shared function: {name}")
+        for name in stale:
+            print(f"  stale allowlist entry: {name} - its wrapper type is compiled in this "
+                  "build but the two tiers no longer share this definition")
+        print(f"FAIL: the shared first-party function set does not equal the allowlist "
+              f"({len(observed)} shared, {len(expected)} expected); a shared name the linker can "
+              "choose between is the failure the token exists to prevent, and an allowlist that "
+              "has drifted is a check that no longer checks")
+        return 1 if arguments.check else 0
+
+    if not observed:
         print(f"PASS: the tiers share no first-party function name "
               f"({len(baseline.functions)} against {len(vector.functions)} defined functions)")
         return 0
 
-    print(f"check_tier_symbols: {len(shared_functions)} first-party function names are defined "
-          "by both tiers")
-    for name in shared_functions:
-        print(f"  shared function: {name}")
-    print(f"FAIL: {len(shared_functions)} first-party function names are defined by both tier "
-          "object sets; the linker keeps one definition for the image, so which tier's "
-          "instructions run is the link order's answer rather than the dispatcher's")
-    return 1 if arguments.check else 0
+    print(f"PASS: the shared first-party function set equals the allowlist "
+          f"({len(shared_allowed)} shared, every one a public half-wrapper member)")
+    return 0
 
 
 if __name__ == "__main__":
