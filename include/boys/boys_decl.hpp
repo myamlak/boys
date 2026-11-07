@@ -1213,6 +1213,8 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 ///                written whatever route is named
 ///
 /// \ingroup boys
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 template <FitRoute kRoute>
 void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept;
 
@@ -1239,6 +1241,8 @@ void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept;
 template <FitRoute kRoute>
 void BoysAllOrdersWithRoute(
     EvalScheme scheme, int nmax, double x, double* out) noexcept;
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 /// F_0(x)..F_nmax(x) in double precision at a representation of the far region the
 /// caller names where the call is compiled - the batch entry's contract, with the
@@ -1281,8 +1285,12 @@ void BoysAllOrdersWithRoute(
 ///             whatever representation is named
 ///
 /// \ingroup boys
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 template <FarRepresentation kFar = kDefaultFarRepresentation>
 void BoysAllOrdersWithFarRepresentation(int nmax, double x, double* out) noexcept;
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 
 
@@ -1854,8 +1862,12 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 /// \returns       F_n(x)
 ///
 /// \ingroup boys
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 template <FitRoute kRoute>
 float BoysSingleF32WithRoute(int n, float x) noexcept;
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 
 /// The certified fit routes this build carries for the single-precision lane, one
@@ -2132,7 +2144,11 @@ inline constexpr int kHalfNativeScaleExponent = 15;
 ///              F_k(x.high))
 ///
 /// \ingroup boys
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 /// The native half lane over an argument array: region C's ladder in packed half,
 /// two arguments to a register, same bound and range as BoysAllOrdersHalf2 per
@@ -2148,7 +2164,11 @@ void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
 ///      and must not overlap
 ///
 /// \ingroup boys
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 #endif // BoysFp16
 

@@ -21,7 +21,9 @@
 
 namespace boys {
 
-namespace detail {
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The uniform route: one fixed grid over the fitted domain, every order fitted independently, no
 // order built from another - no serial dependency chain to shorten. The table is interval-major
@@ -341,7 +343,9 @@ double FlatSingleOrder(int n, double x) noexcept {
 #endif
 }
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

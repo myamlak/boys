@@ -44,7 +44,11 @@
 #if BOYS_SIMD_X86 && BOYS_ISA_AVX2_FMA
 
 #include <immintrin.h>
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The closure these entries sum from - the coefficient fetch, the group geometry, the region-A
 // bodies, the zero in closed form, the fallback past the fits' interval and the lane at a division
@@ -85,7 +89,11 @@ void BoysAllOrdersF32SimdComposed(
     }
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #else // BOYS_SIMD_X86 && BOYS_ISA_AVX2_FMA
 
@@ -93,7 +101,11 @@ void BoysAllOrdersF32SimdComposed(
 // scalar lanes, exactly as the region entries of boys_simd.cpp are. The tier is a question about
 // the flags and not about the processor, so this arm serves a non-x86 target and an x86 one built
 // without -mavx2 -mfma alike.
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 void BoysAllOrdersSimd(
     OrdersScheme scheme, int nmax, double x, double* out, std::size_t stride) noexcept {
@@ -138,11 +150,19 @@ void BoysAllOrdersF32SimdComposed(
     BoysAllOrdersF32Simd(scheme, route, nmax, x, out);
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #endif // BOYS_SIMD_X86 && BOYS_ISA_AVX2_FMA
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The far region's two ladders at the fused leg: this unit is licensed for the fused instruction
 // set, ClenshawSplit's multiply-add being the fused one at every form. The leg is in the name
@@ -162,4 +182,8 @@ template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kFusedL
 template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kFusedLeg>(
     int, double, double*) noexcept;
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys

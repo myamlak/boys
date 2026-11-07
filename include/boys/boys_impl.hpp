@@ -42,7 +42,11 @@
 
 namespace boys {
 
-namespace detail {
+// The token namespace (isa_tiers.hpp): one tier's bodies are not another tier's, and the token
+// in their symbol names is what stops the linker merging them.
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 constexpr double kBoysHalfSqrtPi = 0.886226925452758014; // sqrt(pi)/2
 constexpr float kBoysHalfSqrtPiF32 = 0.88622693f; // sqrt(pi)/2, single lane
@@ -1979,7 +1983,9 @@ void BoysFarLadderRun(int nmax,
 
 // The namespaces close around the includes and reopen after them, which is not a style: a
 // standard header read inside a namespace is a different standard library.
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 
@@ -1991,7 +1997,9 @@ void BoysFarLadderRun(int nmax,
 
 namespace boys {
 
-namespace detail {
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 /// The ungrouped kernel: one argument at a time over the run, the path's body per argument.
 ///
@@ -2609,7 +2617,7 @@ void BoysAllNAtOrdersImpl(const int* n, const double* x, double* out, std::size_
 
 
 
-} // namespace detail
+} // namespace kernel
 
 // ---------------------------------------------------------------------------
 // The public template entries (declared in boys/boys.hpp)
@@ -3177,7 +3185,7 @@ void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t co
 // arithmetic is half2.hpp's, one correctly rounded operation at a time, and the entry the front
 // door declares is defined here so that a consumer naming the lane compiles it.
 
-namespace detail {
+namespace kernel {
 
 // Region C's asymptotic ladder in packed correctly rounded half arithmetic: a square root and a
 // divide for the seed, then a packed multiply and divide per order. The roundings are relative,
@@ -3219,7 +3227,7 @@ inline void HalfNativeLadder(int nmax, Half2 x, Half2* out) noexcept {
     }
 }
 
-} // namespace detail
+} // namespace kernel
 
 // Defined here rather than in a shipped unit, at the header that declares it: the entry is part
 // of the front door's surface and takes the header's own packed type, so a consumer that names it
@@ -3264,6 +3272,8 @@ inline void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t coun
 }
 
 #endif // BoysFp16
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

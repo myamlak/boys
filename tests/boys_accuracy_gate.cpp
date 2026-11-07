@@ -9859,16 +9859,16 @@ int main(int argc, char** argv) {
         {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 711-712, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one.",
          nullptr}, // no numeric figure: the sentence states bit-identity, not a bound
-        {"P09", "code.half_simd_budget", "src/boys_simd.cpp", "lines 370-373, the comment above the region kernels",
+        {"P09", "code.half_simd_budget", "src/boys_simd.cpp", "lines 374-377, the comment above the region kernels",
          "Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their // scalar tails call the half-lane scalar entries; the vector bodies hold the // same documented bound as those entries but are not bit-identical to them (the // bodies run the fp32 fit at full degree where the scalar lane truncates it).",
          nullptr}, // no numeric figure: the sentence states shared bounds without a number
-        {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 619-622, the comment above the scalar lane",
+        {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 627-630, the comment above the scalar lane",
          "A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. The region contract stays a sufficient precondition, just not a // required one, and the bodies mirror the scalar tails the x86 entries run for their last // count % 4 elements.",
          nullptr}, // no numeric figure: a structural statement about the scalar lane
         {"P01", "native.half.bound", "docs/lane-contract.md", "lines 672-673, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
-        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1913-1917, the half lanes' comment",
+        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1925-1929, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble.",
          nullptr}, // no numeric figure: the sentence scopes the bound's domain
         {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 712-713, packed half, the exponent range",

@@ -27,7 +27,11 @@
 
 #include <immintrin.h>
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The lanes below pack four arguments of one order. The vector body is split Clenshaw; the tail
 // calls the scalar body's Horner chain. The accuracy gate books count = 1 and count = 4 as
@@ -413,7 +417,11 @@ inline void BoysFarLadderRun(int nmax,
     }
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #else // BOYS_ISA_AVX2_FMA
 
@@ -422,7 +430,11 @@ inline void BoysFarLadderRun(int nmax,
 // this build, so it is not what a lane here rests on. The bodies mirror the scalar tails the
 // vector entries above run for their last count % 4 elements, and are all a non-x86 target has.
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 /// The region-A lane at the scalar tier: the per-argument body, one argument at a time - the
 /// body the vector tier's tails run and all a non-x86 target has.
@@ -519,6 +531,10 @@ inline void BoysFarLadderRun(int nmax,
     }
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #endif // BOYS_ISA_AVX2_FMA

@@ -27,7 +27,11 @@
 #include <iterator>
 #include <type_traits>
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 /// How the across-orders lane sums a stored fit.
 ///
@@ -52,13 +56,21 @@ enum class OrdersScheme {
     kCount,
 };
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #if BOYS_ISA_AVX2_FMA
 
 #include <immintrin.h>
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // The closure the packed cells are summed from: the coefficient fetches, the four summations of
 // one stored fit, the order lanes' three partitions and the scalar single lane every fallback
@@ -2497,7 +2509,11 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     }
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #else // BOYS_ISA_AVX2_FMA
 
@@ -2505,7 +2521,11 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
 // is no vector engine in this translation unit to hand an order to and no closure to walk, so a
 // cell here is the reference reading of the lane, one order at a time.
 
-namespace boys::detail {
+namespace boys {
+
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 /// The orders axis's float entry on a target without the vector tier: the same certified
 /// scalar single lane the packed bodies fall back to, at the policy the axis names. The
@@ -2548,6 +2568,10 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
     }
 }
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #endif // BOYS_ISA_AVX2_FMA

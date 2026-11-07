@@ -1,42 +1,59 @@
 #pragma once
 
 /// \file isa_tiers.hpp
-/// The instruction-set tier a translation unit is compiled at, and the guard that refuses a
-/// program assembled from more than one.
+/// The instruction-set tier a translation unit is compiled at, the token that gives each tier's
+/// bodies their own symbol names, and the guard that keeps a program's tiers consistent.
 ///
-/// The tier is chosen at compile time, from the flags the translation unit itself carries, and
-/// never from the host's processor: a body selected at run time has to be present in the binary
-/// twice, which is a library behind an entry and not a header-only one. Every consumer-reachable
-/// lane therefore has one body per tier, chosen by the preprocessor, and MSVC's `/arch:AVX2` and
-/// GCC's and Clang's `-mavx2 -mfma -mf16c` are the two spellings of the same choice.
+/// ## The two ways a tier is chosen
 ///
-/// ## The macros
+/// A program compiled with \c BOYS_ISA_DISPATCH=0 (the default) chooses its tier once, from the
+/// flags each translation unit carries, and never from the host's processor. That is today's
+/// shape: a body selected at run time would have to be present in the binary twice, which is a
+/// library behind an entry and not a header-only one.
 ///
-/// \c BOYS_ISA_AVX2_FMA is 0 or 1 and is derived from the compiler's own predefines. A consumer
-/// may define it before including any header of this library to answer it directly, which is what
-/// a test that wants the other tier of a build asks for.
+/// A program compiled with \c BOYS_ISA_DISPATCH=1 carries every tier the target can build, in one
+/// image, and a dispatcher selects among them on the first call. The default entries become
+/// declarations in the header and are defined once in \c boys_dispatch.cpp; each carried tier's
+/// entries are defined in that tier's own unit, compiled at that tier's flags. The selection is
+/// one cached branch in the dispatcher, not a function pointer and not a per-order choice.
+///
+/// ## The token
+///
+/// The two tiers instantiate the same header templates with different bodies, so the linker must
+/// not be allowed to pick one of them: each tier's bodies live in a namespace whose name is part
+/// of every symbol it defines. \c BOYS_DETAIL_ISA_NAMESPACE is that token, derived here from the
+/// tier macro in force:
+///
+/// - \c isa_avx2 when \c BOYS_ISA_AVX2_FMA is 1,
+/// - \c isa_baseline otherwise,
+/// - or \c BOYS_DETAIL_ISA_TOKEN when a unit states the token directly.
+///
+/// The token namespace is inline (the standard library's \c std::__cxx11 pattern): the public
+/// spelling \c boys::BoysSingle is unchanged, while the mangled name carries the token and two
+/// tiers' bodies are two symbols. The tier bodies sit one level further in,
+/// \c boys::isa_avx2::kernel, so that the tier-independent coefficient tables keep their
+/// \c boys::detail spelling and a body's own \c detail::kX0 keeps naming those tables.
+///
+/// The token is internal: a client names \c boys::BoysSingle, never a token namespace. A dispatch
+/// build's client units are compiled at the baseline tier (the guard refuses any other), so the
+/// only token a client sees is \c isa_baseline.
 ///
 /// ## What no flags means
 ///
 /// No flags is the scalar tier, and it is a supported, portable default rather than a
 /// degradation: every entry the library declares has a body that compiles without a single
 /// intrinsic, and those bodies are the certified lane the rest of the library is measured
-/// against. A build that wants the vector tier says so once, for the whole program.
+/// against.
 ///
-/// ## One flag set per program
+/// ## One flag set per program, or a dispatcher
 ///
-/// **Every translation unit of a program must be compiled with the same flag set**, the
-/// library's own included. It is not a suggestion: the two tiers' bodies are two definitions of
-/// the same inline function, and a program that carries both has one of them and no way to say
-/// which - the linker would pick, silently. What this header does about that is refuse: a small
-/// registry records the tier each translation unit announces, and the first program state where
-/// two of them disagree prints the two flag profiles and aborts, before any entry runs. The
-/// registry is one object across the whole program (an inline function's function-local static)
-/// and the announcement is one internal-linkage object per translation unit, so the check costs
-/// a comparison at start-up and no call at all afterwards.
-///
-/// Being one flag set is what lets a consumer's translation unit define the same inline entry
-/// the library does and get the same arithmetic from it.
+/// With dispatch off, **every translation unit of a program must be compiled with the same flag
+/// set**, the library's own included: the two tiers' bodies would be two definitions of one
+/// inline function, and a program that carries both has one of them and no way to say which. The
+/// registry below records the tier each translation unit announces and aborts with both profiles
+/// on the first disagreement. With dispatch on the rule is different, not absent: a client
+/// registers as a dispatch client and must be at the baseline tier; a tier unit registers its
+/// tier as carried; the dispatcher's first call asserts the selected tier is in the carried set.
 
 #include <cstdio>
 #include <cstdlib>
@@ -69,6 +86,52 @@
 #error "BOYS_ISA_AVX2_FMA is 0 or 1; a consumer overriding it states which"
 #endif
 
+// The build mode. A dispatch build states it once for the whole target; every translation unit of
+// the program, the library's and the consumer's, reads the same answer. A unit that defines
+// BOYS_ISA_TIER_UNIT is one of the carried tiers; the one unit that defines
+// BOYS_ISA_DISPATCH_DEFINE is the dispatcher.
+
+/// This translation unit's build mode: \c 1 when the library carries every tier, \c 0 for the
+/// compile-time choice.
+#if !defined(BOYS_ISA_DISPATCH)
+#define BOYS_ISA_DISPATCH 0
+#endif
+
+#if (BOYS_ISA_DISPATCH != 0 && BOYS_ISA_DISPATCH != 1)
+#error "BOYS_ISA_DISPATCH is 0 or 1; a build states which shape it has"
+#endif
+
+/// This unit is one carried tier of a dispatch build.
+#if defined(BOYS_ISA_TIER_UNIT) && BOYS_ISA_DISPATCH == 0
+#error "BOYS_ISA_TIER_UNIT names a carried tier and exists only in a dispatch build"
+#endif
+
+/// This unit is the dispatcher of a dispatch build.
+#if defined(BOYS_ISA_DISPATCH_DEFINE) && BOYS_ISA_DISPATCH == 0
+#error "BOYS_ISA_DISPATCH_DEFINE defines the dispatcher and exists only in a dispatch build"
+#endif
+
+// The token: the namespace whose name is part of every tier-varying symbol. Derived here rather
+// than written by configure because one dispatch configure compiles both tiers and a configure
+// step has one answer, not two.
+
+/// The token namespace of this translation unit's tier: \c isa_avx2 or \c isa_baseline.
+#if defined(BOYS_DETAIL_ISA_TOKEN)
+#define BOYS_DETAIL_ISA_NAMESPACE BOYS_DETAIL_ISA_TOKEN
+#elif BOYS_ISA_AVX2_FMA
+#define BOYS_DETAIL_ISA_NAMESPACE isa_avx2
+#else
+#define BOYS_DETAIL_ISA_NAMESPACE isa_baseline
+#endif
+
+/// A function the compiler is asked not to inline: the dispatcher's tier entries, so that each
+/// stays in the unit compiled at its own tier.
+#if defined(_MSC_VER)
+#define BOYS_NOINLINE __declspec(noinline)
+#else
+#define BOYS_NOINLINE __attribute__((noinline))
+#endif
+
 // The fp16 seam is the same kind of per-translation-unit choice as an ISA tier - the entries it
 // gates are added to the surface, not switched at run time - so it is registered beside them
 // and a program that carries both readings of it is refused for the same reason.
@@ -79,6 +142,55 @@
 #else
 #define BOYS_FP16_AXIS 0
 #endif
+
+namespace boys {
+
+/// The tier-independent internals: the coefficient tables and the machinery every tier shares.
+/// Declared before the token because the token's bodies name it; the headers that carry it add
+/// their content to this namespace.
+namespace detail {}
+
+/// The token namespace, marked inline at its first definition here so that every later reopening
+/// (one per header that carries tier-varying bodies) is an ordinary namespace definition.
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+/// The tier-varying bodies: the kernel implementations, the lanes and the packed entries. The
+/// public templates sit in the token itself; this inner namespace keeps the body names out of the
+/// public lookup path while keeping their symbols token-qualified.
+namespace kernel {
+
+/// These two namespaces were one before the tier split: a body moved into the token still writes
+/// the tables' names unqualified, exactly as it did when both lived in `boys::detail`. One
+/// directive restores that spelling; it does not merge the symbols, which is the whole point of
+/// the split.
+using namespace detail;
+
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+namespace detail {
+
+/// The internal spelling the bodies and the tests already use: `boys::detail::X` names this
+/// translation unit's own tier body, and, when no tier body of that name exists, the
+/// tier-independent tables that live here. One directive, so neither spelling has to change at
+/// the call site.
+using namespace BOYS_DETAIL_ISA_NAMESPACE::kernel;
+
+} // namespace detail
+
+namespace dispatch {
+
+/// The tiers a dispatcher selects among. The values are stable: the registry's carried set is a
+/// bit per value.
+enum IsaTier {
+    kIsaBaseline = 0, ///< the portable scalar tier
+    kIsaAvx2 = 1      ///< the AVX2 + FMA tier
+};
+
+} // namespace dispatch
+
+} // namespace boys
 
 namespace boys::detail {
 
@@ -154,6 +266,13 @@ inline bool Avx2Available() noexcept {
 /// anything here.
 namespace tier_guard {
 
+/// What a translation unit is, so that the registry can apply the right rule to it.
+enum TierRole {
+    kRoleClient = 0,     ///< an ordinary unit, including the library's own non-tier units
+    kRoleCarried = 1,    ///< one carried tier of a dispatch build
+    kRoleDispatcher = 2  ///< the dispatcher itself
+};
+
 /// One program's announced tiers, one field per axis. A field left at kUnannounced has heard
 /// from no translation unit yet.
 struct Registry {
@@ -161,6 +280,10 @@ struct Registry {
 
     int isa = kUnannounced; ///< BOYS_ISA_AVX2_FMA, as a translation unit announced it
     int fp16 = kUnannounced; ///< the fp16 seam, as a translation unit announced it
+#if BOYS_ISA_DISPATCH
+    int carried = 0; ///< the carried tiers, one bit per dispatch::IsaTier
+    bool dispatcher = false; ///< the dispatcher unit has announced itself
+#endif
 };
 
 /// The one registry in the program: the function is inline, so its function-local static is the
@@ -208,14 +331,83 @@ inline const char* Fp16Profile(int seam) noexcept {
     std::abort();
 }
 
+#if BOYS_ISA_DISPATCH
+/// Refuses a client unit compiled at a non-baseline tier in a dispatch build: the vector tier is
+/// the library's, and a client that carried it would put vector code into its own policy
+/// instantiations.
+///
+/// \param tier the tier the client announced
+[[noreturn]] inline void RefusedClientTier(int tier) noexcept {
+    std::fprintf(stderr,
+                 "boys: this translation unit was compiled at %s in a dispatch build, where every "
+                 "unit that is not one of the library's tier units must be compiled at %s; the "
+                 "vector tier is selected at run time by the library's dispatcher\n",
+                 IsaProfile(tier), IsaProfile(0));
+    std::fflush(stderr);
+    std::abort();
+}
+
+/// Refuses a dispatcher that ran before its own unit announced itself: the selection must not
+/// run in an image that does not contain the dispatcher.
+[[noreturn]] inline void NoDispatcher() noexcept {
+    std::fprintf(stderr,
+                 "boys: a default entry ran before the dispatcher was registered in this image; "
+                 "the dispatcher unit (boys_dispatch.cpp) is missing or its initialisation did "
+                 "not run\n");
+    std::fflush(stderr);
+    std::abort();
+}
+
+/// Refuses a selected tier that this image does not carry: the selection and the carried set
+/// disagree, which is the failure a missing or mis-flagged tier unit produces.
+///
+/// \param selected the tier the dispatcher selected
+/// \param carried  the carried set, one bit per dispatch::IsaTier
+[[noreturn]] inline void SelectedNotCarried(int selected, int carried) noexcept {
+    const bool baseline = (carried & (1 << dispatch::kIsaBaseline)) != 0;
+    const bool avx2 = (carried & (1 << dispatch::kIsaAvx2)) != 0;
+    std::fprintf(stderr,
+                 "boys: the dispatcher selected %s, which this image does not carry (carried: "
+                 "%s%s%s); every carried tier must be linked from its own tier unit\n",
+                 IsaProfile(selected), baseline ? "scalar" : "",
+                 (baseline && avx2) ? " and " : "", avx2 ? "AVX2+FMA" : "");
+    std::fflush(stderr);
+    std::abort();
+}
+#endif
+
 /// Announces this translation unit's two axes, refusing a program that announced both readings
 /// of either. Announcing a value that is already registered is the common case - a program's
 /// translation units are compiled alike - and costs a comparison.
 ///
+/// With dispatch on the isa rule is the role's: a carried tier records itself, the dispatcher
+/// records itself, and a client must be at the baseline tier. The fp16 axis is one seam across
+/// the program either way.
+///
 /// \param isa  this unit's \c BOYS_ISA_AVX2_FMA value
 /// \param fp16 this unit's fp16 seam value
-inline void RegisterTier(int isa, int fp16) noexcept {
+/// \param role what this unit is
+inline void RegisterTier(int isa, int fp16, int role) noexcept {
     Registry& registry = Announced();
+
+#if BOYS_ISA_DISPATCH
+    if (role == kRoleCarried)
+    {
+        registry.carried |= 1 << isa;
+    } else if (role == kRoleDispatcher)
+    {
+        if (isa != 0)
+        {
+            RefusedClientTier(isa);
+        }
+        registry.dispatcher = true;
+    } else if (isa != 0)
+    {
+        RefusedClientTier(isa);
+    }
+    static_cast<void>(registry.isa);
+#else
+    static_cast<void>(role);
 
     if (registry.isa == Registry::kUnannounced)
     {
@@ -224,6 +416,7 @@ inline void RegisterTier(int isa, int fp16) noexcept {
     {
         MixedTiers("the instruction-set tier", IsaProfile(isa), IsaProfile(registry.isa));
     }
+#endif
 
     if (registry.fp16 == Registry::kUnannounced)
     {
@@ -240,15 +433,50 @@ inline void RegisterTier(int isa, int fp16) noexcept {
 ///
 /// \tparam kIsaTier  \c BOYS_ISA_AVX2_FMA as this unit reads it
 /// \tparam kFp16Seam \c BOYS_FP16_AXIS as this unit reads it
-template <int kIsaTier, int kFp16Seam>
+/// \tparam kTierRole what this unit is, in a dispatch build
+template <int kIsaTier, int kFp16Seam, int kTierRole = kRoleClient>
 struct TierProbe {
     /// Announces this translation unit's two axes once, before main.
-    TierProbe() noexcept { RegisterTier(kIsaTier, kFp16Seam); }
+    TierProbe() noexcept { RegisterTier(kIsaTier, kFp16Seam, kTierRole); }
 };
 
+/// What this translation unit is: a carried tier only where the build says so, the dispatcher
+/// only in the unit that defines it, and a client everywhere else - including every unit of a
+/// non-dispatch build, where the role is not read.
+#if BOYS_ISA_DISPATCH && defined(BOYS_ISA_TIER_UNIT)
+constexpr int kTierRole = kRoleCarried;
+#elif BOYS_ISA_DISPATCH && defined(BOYS_ISA_DISPATCH_DEFINE)
+constexpr int kTierRole = kRoleDispatcher;
+#else
+constexpr int kTierRole = kRoleClient;
+#endif
+
 /// The probe itself, one per translation unit that includes this header.
-[[maybe_unused]] const TierProbe<BOYS_ISA_AVX2_FMA, BOYS_FP16_AXIS> kTierProbe;
+[[maybe_unused]] const TierProbe<BOYS_ISA_AVX2_FMA, BOYS_FP16_AXIS, kTierRole> kTierProbe;
 
 } // namespace tier_guard
 
 } // namespace boys::detail
+
+namespace boys::dispatch {
+
+/// The machine's cached AVX2 + FMA answer, for the dispatcher's selection.
+///
+/// \returns \c true when the processor carries AVX2, FMA and the OS state that enables them
+inline bool CpuHasAvx2Fma() noexcept { return detail::Avx2Available(); }
+
+#if BOYS_ISA_DISPATCH
+/// The selected tier, fixed on the first call by the dispatcher. Defined in
+/// \c boys_dispatch.cpp: one function-local static across the program, so the branch is a load
+/// and a compare and the CPUID cache is populated once.
+///
+/// \returns \c kIsaAvx2 or \c kIsaBaseline
+int ActiveIsa() noexcept;
+#else
+/// The compiled tier, the only one this program carries.
+///
+/// \returns \c kIsaAvx2 or \c kIsaBaseline
+constexpr int ActiveIsa() noexcept { return BOYS_ISA_AVX2_FMA; }
+#endif
+
+} // namespace boys::dispatch

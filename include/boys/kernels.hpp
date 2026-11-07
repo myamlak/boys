@@ -22,6 +22,10 @@
 
 namespace boys {
 
+// The public templates live in the tier token (isa_tiers.hpp): a specialization a unit names is
+// compiled at that unit's tier, and two tiers' specializations are two symbols.
+namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 /// The front door's \c BoysSingle at a policy the caller names.
 ///
 /// \tparam Policy the evaluation policy (\c SeamPolicy): the fit route, the
@@ -445,6 +449,8 @@ template <EvalPolicyLike Policy = DefaultPolicy<Precision::kBf16, Shape::kAllNAt
 void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t count) noexcept;
 #endif // BoysFp16
 
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
 } // namespace boys
 
 // The kernel behind the entries above, shipped as a header so that every policy a caller names
@@ -461,6 +467,8 @@ void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t co
 /// \cond
 namespace boys {
 inline namespace BOYS_DETAIL_SEAM_NAMESPACE {
+
+#if !BOYS_ISA_DISPATCH
 
 inline double BoysSingle(int n, double x) noexcept {
     return boys::BoysSingle<DefaultPolicy<Precision::kFp64, Shape::kSingle>>(n, x);
@@ -612,6 +620,8 @@ inline void BoysAllNAtOrdersBf16(
 }
 
 #endif // BoysFp16
+
+#endif // !BOYS_ISA_DISPATCH
 
 } // namespace BOYS_DETAIL_SEAM_NAMESPACE
 } // namespace boys
