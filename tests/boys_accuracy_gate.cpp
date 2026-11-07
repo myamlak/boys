@@ -9868,7 +9868,7 @@ int main(int argc, char** argv) {
         {"P01", "native.half.bound", "docs/lane-contract.md", "lines 672-673, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
-        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1925-1929, the half lanes' comment",
+        {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1992-1996, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble.",
          nullptr}, // no numeric figure: the sentence scopes the bound's domain
         {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 712-713, packed half, the exponent range",

@@ -57,6 +57,16 @@ const boys::backend::BackendInfo* ReportedEntry(const char* name) noexcept {
     return nullptr;
 }
 
+/// Whether this translation unit's own tier is the vector tier: the flag set the unit was compiled
+/// with, not the machine's scope and not the dispatcher's selection.
+///
+/// The private bodies a case names through \c boys::detail are this unit's tier's
+/// (include/boys/isa_tiers.hpp: \c BOYS_DETAIL_ISA_NAMESPACE), and a policy named at the call site
+/// compiles the template here rather than behind the dispatcher. In a dispatch build every client
+/// unit is baseline and may not name the vector body at all, so a case holding a vector body is one
+/// that build cannot run; the compile-time AVX2 configuration is where it runs.
+bool UnitIsVectorTier() noexcept { return BOYS_ISA_AVX2_FMA != 0; }
+
 // --- The counted row ---------------------------------------------------------
 
 /// What one sweep measured. The counts are what the assertions read, and they
@@ -373,10 +383,11 @@ double ArgumentsLaneFitAtRoute(int order, double x) {
 }
 
 TEST(BoysMulAddRouteArguments, RegionABodyDeliversTheReportedRoute) {
-    if (!boys::BoysAvx2Available())
+    if (!UnitIsVectorTier())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this host: the lane's body is not the "
-                        "one this test holds";
+        GTEST_SKIP() << "this translation unit's boys::detail bodies are the baseline tier's: the "
+                        "lane body this case holds is the vector tier's, which a dispatch build's "
+                        "baseline client unit cannot name";
     }
 
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp64");
@@ -645,10 +656,11 @@ void SweepOrdersEntry(const char* family,
 }
 
 TEST(BoysMulAddRouteOrders, DoubleEntriesDeliverTheReportedRoute) {
-    if (!boys::BoysAvx2Available())
+    if (!UnitIsVectorTier())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this host: the lane's body is not the "
-                        "one this test holds";
+        GTEST_SKIP() << "this translation unit's boys::detail bodies are the baseline tier's: the "
+                        "lane body this case holds is the vector tier's, which a dispatch build's "
+                        "baseline client unit cannot name";
     }
 
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp64");
@@ -703,6 +715,17 @@ TEST(BoysMulAddRouteOrders, TheAvailabilityGuardStatesWhichBodyIsBuilt) {
     EXPECT_EQ(listed, boys::BoysAvx2Available() ? std::size_t{4} : std::size_t{2})
         << "the packed pair is listed exactly where the tier is available, so a guard reading "
            "BoysAvx2Available() reads the fact this build's own report prints";
+
+    // The sweep below holds the private entry this unit names to the body the availability answer
+    // describes, which is one compiled body only where this unit is the vector tier. A dispatch
+    // build's client units are baseline and may not name the vector body at all; the report check
+    // above still runs there, and the private-body premise is the compile-time AVX2 build's.
+    if (!UnitIsVectorTier())
+    {
+        GTEST_SKIP() << "this translation unit's boys::detail body is the baseline tier's; the "
+                        "guard's premise - that the entry name this unit reaches is the vector "
+                        "body the availability answer describes - is a compile-time build's";
+    }
 
     // Which arithmetic this entry runs has three answers, not two: the group lane's value at the
     // reported route, at the other route (the silent substitution), and neither - a different
@@ -866,10 +889,11 @@ RouteRow SweepF32Orders(boys::detail::OrdersScheme scheme,
 }
 
 TEST(BoysMulAddRouteOrders, F32EntryDeliversTheReportedRoute) {
-    if (!boys::BoysAvx2Available())
+    if (!UnitIsVectorTier())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this host: the single-precision "
-                        "lane's body is not the one this test holds";
+        GTEST_SKIP() << "this translation unit's boys::detail bodies are the baseline tier's: the "
+                        "single-precision lane body this case holds is the vector tier's, which a "
+                        "dispatch build's baseline client unit cannot name";
     }
 
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp32");
@@ -1552,11 +1576,11 @@ void HoldPackedF32Budget(const char* budget_name, MulAddRoute reported, bool con
 }
 
 TEST(BoysMulAddRouteOrders, PackedEntryDeliversTheReportedRoute) {
-    if (!boys::BoysAvx2Available())
+    if (!UnitIsVectorTier())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this host: every cell of these entries "
-                        "is the certified scalar single lane here, and this sweep holds the "
-                        "vector bodies";
+        GTEST_SKIP() << "this translation unit's bodies are the baseline tier's: a policy named at "
+                        "the call site compiles the packed entry here, where the baseline arm is "
+                        "the certified scalar single lane, and this sweep holds the vector bodies";
     }
 
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp64");
@@ -1597,11 +1621,11 @@ TEST(BoysMulAddRouteOrders, PackedEntryDeliversTheReportedRoute) {
 }
 
 TEST(BoysMulAddRouteOrders, PackedF32EntryDeliversTheReportedRoute) {
-    if (!boys::BoysAvx2Available())
+    if (!UnitIsVectorTier())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this host: every cell of these entries "
-                        "is the certified scalar single lane here, and this sweep holds the "
-                        "vector bodies";
+        GTEST_SKIP() << "this translation unit's bodies are the baseline tier's: a policy named at "
+                        "the call site compiles the packed entry here, where the baseline arm is "
+                        "the certified scalar single lane, and this sweep holds the vector bodies";
     }
 
     const boys::backend::BackendInfo* reported = ReportedEntry("scalar-fp32");

@@ -197,6 +197,17 @@ bool VectorTier() {
     return boys::BoysAvx2Available();
 }
 
+// This translation unit's own tier, which is a different question from the one above: the flag set
+// the unit was compiled with, not the machine's scope and not the dispatcher's selection. A case
+// that names a private body through boys::detail, or a policy at the call site - which compiles the
+// template here rather than behind the dispatcher - holds one compiled body on both sides only
+// where this unit is the vector tier. In a dispatch build every client unit is baseline and may not
+// name the vector body at all (include/boys/isa_tiers.hpp: RefusedClientTier), so those cases are
+// this build's to skip, and the compile-time AVX2 configuration is where they run.
+bool VectorTierInThisUnit() {
+    return BOYS_ISA_AVX2_FMA != 0;
+}
+
 // The worst absolute error one scheme reaches on the reference grid, and where.
 struct WorstError {
     double error = 0.0;
@@ -554,9 +565,11 @@ static_assert(OrdersPolicy<boys::EvalScheme::kSplitClenshaw>::kPack == boys::Pac
               "the orders policy does not name the orders axis");
 
 TEST(BoysAcrossOrders, ThePublicAxisIsThePackedLane) {
-    if (!VectorTier())
+    if (!VectorTierInThisUnit())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+        GTEST_SKIP() << "this translation unit's bodies are the baseline tier's; the case holds the "
+                        "public policy entry and the private packed lane to one compiled body, "
+                        "which a dispatch build's baseline client unit cannot name";
     }
 
     const std::vector<double> grid = RegionAGrid();
@@ -726,9 +739,11 @@ TEST(BoysAcrossOrders, TheRationalRouteOnTheAxisIsTheRoutesOwnReading) {
 // `2 (x - a) / (b - a) - 1` against the packed `fma(x - a, 2 / (b - a), -1)`, the same number up to
 // those roundings. Which table the lane read is a second measurement against the shipped-table axis.
 TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
-    if (!VectorTier())
+    if (!VectorTierInThisUnit())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+        GTEST_SKIP() << "this translation unit's bodies are the baseline tier's; the case holds the "
+                        "public policy entry and the private narrow lane to one compiled body, "
+                        "which a dispatch build's baseline client unit cannot name";
     }
 
     const std::vector<double> grid = RegionAGrid();
@@ -815,9 +830,11 @@ TEST(BoysAcrossOrders, TheNarrowPartitionOnTheAxisIsTheNarrowLanesOwnReading) {
 // asserted between two lanes. Each cell is judged at its own lane's figure - the axis at the orders
 // lane's 1e-15 over region A, the per-order lane at 1e-15 below the extended band and 3e-14 inside it.
 TEST(BoysAcrossOrders, WhereTheNarrowAxisPartsFromThePerOrderLaneTheReferenceIsOnTheAxis) {
-    if (!VectorTier())
+    if (!VectorTierInThisUnit())
     {
-        GTEST_SKIP() << "the AVX2 tier is not available on this target";
+        GTEST_SKIP() << "this translation unit's bodies are the baseline tier's; the case holds the "
+                        "public policy entry and the private narrow lane to one compiled body, "
+                        "which a dispatch build's baseline client unit cannot name";
     }
 
     const std::vector<ReferenceCell> cells = RegionAReference();

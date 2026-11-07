@@ -1683,17 +1683,23 @@ BoysStatus BoysAllNAtOrdersChecked(const int* n, const double* x, double* out, s
 /// that takes a policy, and the packed lane is an implementation of region A that
 /// serves one of them.
 ///
+/// The answer is this translation unit's tier, because a call that names a policy
+/// compiles the template here rather than behind a dispatcher: a unit compiled at
+/// the scalar tier has no packed lane, so its region-A runs are the scalar body's
+/// under every scheme. A dispatch build's client units are compiled at the scalar
+/// tier (the tier guard refuses any other), so a policy-named call from one does
+/// not reach the lane; which tier the library's own default entries run on is the
+/// dispatcher's answer and is reported by \c BoysActiveTier, not here.
+///
 /// \param scheme the evaluation scheme a call names
 ///
-/// \returns true if the packed region-A lane serves that scheme
+/// \returns true if the packed region-A lane serves that scheme in this unit
 ///
 /// \ingroup boys
 constexpr bool BoysPackedLaneServes(EvalScheme scheme) noexcept
 {
     // The scheme the lane's own recurrence is, named and not read from the default
-    // - the lane serves one summation - and the tier this build carries: a unit at
-    // the scalar tier has no packed lane, so its region-A runs are the scalar
-    // body's under every scheme.
+    // - the lane serves one summation - and the tier this unit is compiled at.
     return BOYS_ISA_AVX2_FMA != 0 && scheme == EvalScheme::kSplitClenshaw;
 }
 
@@ -1910,6 +1916,67 @@ std::span<const FitRouteInfo> BoysFitRoutesF32() noexcept;
 /// \ingroup boys
 bool BoysAvx2Available() noexcept;
 
+/// The instruction-set tiers a build can carry.
+///
+/// A compile-time build carries the one its flags compile; a dispatch build carries every tier in
+/// one image and selects between them at run time. The values are stable: the carried set is a bit
+/// per value.
+///
+/// \ingroup boys
+enum class BoysIsaTier {
+    kBaseline = 0, ///< the portable scalar tier
+    kAvx2 = 1      ///< the AVX2 + FMA tier
+};
+
+/// What this program carries and what it is running: the selected tier, the carried set, and the
+/// machine's capability, kept apart because they answer three different questions.
+///
+/// In a compile-time build the carried set is the one tier the flags compile, so a build reports
+/// exactly one of \c carriesBaseline and \c carriesAvx2, and the selected tier is that one. In a
+/// dispatch build both are carried and the selected tier is the machine's when it exposes AVX2
+/// and FMA, the baseline tier otherwise; the selection is made once, on the first call, and does
+/// not change. \c machineAvx2 is the processor's answer and is allowed to disagree with the
+/// carried set in either direction.
+///
+/// \ingroup boys
+struct BoysTierReport {
+    BoysIsaTier selected;  ///< the tier this program's entries run on
+    bool carriesBaseline;  ///< the scalar tier is in this image
+    bool carriesAvx2;      ///< the AVX2 + FMA tier is in this image
+    bool machineAvx2;      ///< the processor exposes AVX2 and FMA with OSXSAVE
+};
+
+/// Reports the selected tier, the carried set and the machine's capability.
+///
+/// In a dispatch build the first call performs the selection's start-up check: a carried tier
+/// missing from the image, or a program whose dispatcher unit did not register, is refused then
+/// rather than returning a report. The value is cached, so later calls answer one load.
+///
+/// \returns the program's tier report
+///
+/// \ingroup boys
+BoysTierReport BoysActiveTier() noexcept;
+
+#if BOYS_ISA_DISPATCH && BOYS_ISA_TIER_FORCING
+/// Selects a carried tier for the dispatcher to run, for the tier-forcing gate: the same inputs
+/// through every carried tier in one process.
+///
+/// Test-only, and compiled into the library only where the build asks for it
+/// (\c BOYS_ISA_TIER_FORCING). A tier this image does not carry, or a program whose dispatcher did
+/// not register, is refused with \c false and the selection is unchanged. The forced tier stays in
+/// force until \c BoysClearForcedTier.
+///
+/// \param tier the tier to run every default entry on
+/// \returns true when the tier is carried and the selection was changed
+///
+/// \ingroup boys
+bool BoysForceTier(BoysIsaTier tier) noexcept;
+
+/// Returns the dispatcher to its own selection, undoing \c BoysForceTier.
+///
+/// \ingroup boys
+void BoysClearForcedTier() noexcept;
+#endif
 
 #if BoysFp16
 

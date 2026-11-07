@@ -31,10 +31,28 @@ const char* BuildDefaultsSeamIdentity() noexcept {
 
 // The tier predicate, defined out of line because the entry is the library's: a consumer that
 // links the library reaches this copy, and the library's own callers read the inline detail one.
-// The answer is this build's tier AND the machine's, as the entry's contract states - the tier
-// is the compiling unit's own flags, one flag set per program.
+// The answer is this build's tier AND the machine's, as the entry's contract states. A dispatch
+// build carries the vector tier in the image, so its half of the answer is true and the machine's
+// is the only one left to read; a compile-time build's half is the compiling unit's flags, one
+// flag set per program.
 bool BoysAvx2Available() noexcept {
-    return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
+    return (BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA != 0) && detail::Avx2Available();
+}
+
+// The report's three answers, kept apart: the tier the entries run on, the tiers the image
+// carries, and the machine's capability. The selected tier is the dispatcher's in a dispatch
+// build and the compiled tier in a compile-time build - one expression, because the non-dispatch
+// ActiveIsa is the compiled tier's constant.
+BoysTierReport BoysActiveTier() noexcept {
+    BoysTierReport report{};
+
+    report.selected = dispatch::ActiveIsa() == dispatch::kIsaAvx2 ? BoysIsaTier::kAvx2
+                                                                 : BoysIsaTier::kBaseline;
+    report.carriesAvx2 = BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA != 0;
+    report.carriesBaseline = BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA == 0;
+    report.machineAvx2 = detail::Avx2Available();
+
+    return report;
 }
 
 template float BoysSingleF32<SeamPolicy<>>(int n, float x) noexcept;
