@@ -319,6 +319,7 @@ namespace tier_guard {
 
 /// The registry and its type, named here so the bodies below read them unqualified.
 using ::boys::detail::tier_guard::kTierRegistry;
+/// The announced-tier registry type, imported so the signatures below name it unqualified.
 using ::boys::detail::tier_guard::Registry;
 
 /// The program's one registry.
@@ -472,6 +473,7 @@ namespace boys::detail {
 
 namespace tier_guard {
 
+/// \cond
 /// The spelling the rest of the library already uses: `detail::tier_guard::RegisterTier` and the
 /// refusals name this translation unit's copy, the one its own flags compiled. These
 /// declarations add no definition; they make that spelling reach the token-qualified one.
@@ -481,6 +483,7 @@ using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::RegisterTier;
 using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::NoDispatcher;
 using ::boys::BOYS_DETAIL_ISA_NAMESPACE::kernel::tier_guard::SelectedNotCarried;
 #endif
+/// \endcond
 
 /// One translation unit's announcement, made before main: the tier this unit's flags name, in a
 /// variable of its own - internal linkage, so every translation unit has one and every one of

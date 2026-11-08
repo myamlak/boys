@@ -1181,6 +1181,8 @@ struct FitRouteInfo {
 /// \ingroup boys
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 /// F_0(x)..F_nmax(x) in double precision at a fit route the caller names where
 /// the call is compiled - the batch entry's contract (the \c "double batch" row
 /// of the table in the file preamble: |F - F_n(x)| <= the larger of 1e-13 · F_n(x)
@@ -1213,8 +1215,6 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 ///                written whatever route is named
 ///
 /// \ingroup boys
-inline namespace BOYS_DETAIL_ISA_NAMESPACE {
-
 template <FitRoute kRoute>
 void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept;
 
@@ -1243,6 +1243,8 @@ void BoysAllOrdersWithRoute(
     EvalScheme scheme, int nmax, double x, double* out) noexcept;
 
 } // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 /// F_0(x)..F_nmax(x) in double precision at a representation of the far region the
 /// caller names where the call is compiled - the batch entry's contract, with the
@@ -1285,8 +1287,6 @@ void BoysAllOrdersWithRoute(
 ///             whatever representation is named
 ///
 /// \ingroup boys
-inline namespace BOYS_DETAIL_ISA_NAMESPACE {
-
 template <FarRepresentation kFar = kDefaultFarRepresentation>
 void BoysAllOrdersWithFarRepresentation(int nmax, double x, double* out) noexcept;
 
@@ -1830,6 +1830,8 @@ void BoysFixedNF32(
 void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t count) noexcept;
 } // namespace BOYS_DETAIL_SEAM_NAMESPACE
 
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 /// F_n(x) in single precision at a fit route the caller names where the call is
 /// compiled - the
 /// single-precision single entry's contract (|F - F_n(x)| <= 2^-22 · F_n(x), or <= 1.5e-7
@@ -1868,8 +1870,6 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 /// \returns       F_n(x)
 ///
 /// \ingroup boys
-inline namespace BOYS_DETAIL_ISA_NAMESPACE {
-
 template <FitRoute kRoute>
 float BoysSingleF32WithRoute(int n, float x) noexcept;
 
@@ -2167,6 +2167,8 @@ void BoysAllNAtOrdersBf16(const int* n, const Bf16* x, Bf16* out, std::size_t co
 /// 2^kHalfNativeScaleExponent.
 inline constexpr int kHalfNativeScaleExponent = 15;
 
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
 /// F_0(x)..F_nmax(x) for a packed pair of arguments, evaluated in packed half
 /// arithmetic - the native half lane.
 ///
@@ -2211,11 +2213,11 @@ inline constexpr int kHalfNativeScaleExponent = 15;
 ///              F_k(x.high))
 ///
 /// \ingroup boys
-inline namespace BOYS_DETAIL_ISA_NAMESPACE {
-
 void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
 
 } // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 /// The native half lane over an argument array: region C's ladder in packed half,
 /// two arguments to a register, same bound and range as BoysAllOrdersHalf2 per
@@ -2231,8 +2233,6 @@ void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
 ///      and must not overlap
 ///
 /// \ingroup boys
-inline namespace BOYS_DETAIL_ISA_NAMESPACE {
-
 void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
 
 } // namespace BOYS_DETAIL_ISA_NAMESPACE

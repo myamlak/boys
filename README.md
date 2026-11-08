@@ -89,7 +89,7 @@ What a translation unit needs, by what it is for:
 |---|---|---|
 | declares a wrapper, names a type, or holds an entry as a value | `boys/boys_decl.hpp` | every declaration - the types, the entries, the accuracy queries, the table a report reads - and no arithmetic |
 | calls an entry the default table answers for | `boys/boys.hpp` | the declarations, plus each default entry's own body inline at the row this build's table carries for its class: nothing else is needed, and no archive on the link line |
-| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state. In a library built with `BOYS_ISA_DISPATCH=ON` the library carries both x86-64 tiers and selects one at run time; see [Run-time tier selection](#run-time-tier-selection) |
+| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state. In a library built with `BOYS_ISA_DISPATCH=ON` the library carries both x86-64 tiers and selects one at run time; see Run-time tier selection below |
 | wants everything this library carries | `boys/boys_all.hpp` | the front door, plus the `std::span` overloads, the region-A transform lane and the option probe |
 | is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
 | is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
