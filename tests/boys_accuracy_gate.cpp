@@ -1301,7 +1301,15 @@ Verdict FromAccum(const Accum& a)
         return Verdict::Exceeded;
     }
 
-    if (a.points > 0 && a.points == a.vacuous)
+    // A slot with no measured point is evidence absent. A row with no
+    // subject says so through its own explicit Verdict::NotCarried; it must
+    // not arrive here, because Verified is reserved for a measured pass.
+    if (a.points == 0)
+    {
+        return Verdict::EvidenceAbsent;
+    }
+
+    if (a.points == a.vacuous)
     {
         return Verdict::Vacuous;
     }
@@ -1393,7 +1401,7 @@ std::string HalfSimdEvidenceAbsentEvidence(bool avx2Available)
 // claims restate their sentence; both are audit figures, named in the verdict line so a row count
 // is not read as documentation coverage.
 constexpr int kAuditClaimEnumeration = 155;
-constexpr int kRegisteredClaimsMeasuredNotRestated = 2;
+constexpr int kRegisteredClaimsMeasuredNotRestated = 1;
 
 // The last line of a passing run, in the one form both branches print: what was judged, and what
 // the count is a count of. The claim rows are named apart from the registration table, and
@@ -1497,6 +1505,19 @@ int RunGateSelfTest()
     check(HalfSimdRowVerdict(true, true, 1, 1) == Verdict::Exceeded,
           "the both-outside case's verdict is Exceeded");
 
+    check(FromAccum(Accum{}) == Verdict::EvidenceAbsent,
+          "a slot with no measured point is evidence absent, not verified");
+
+    // The pair-sum is a consistency check, not the individual bound: two
+    // paths that agree on a common-mode error pass it while each is outside
+    // its own bound. The individual packed-half row is the one that judges
+    // the common-mode error.
+    const double bothHigh = want + 1.5 * upperBound;
+    check(std::abs(bothHigh - want) > upperBound,
+          "the common-mode counterexample has the path outside its own bound");
+    check(!HalfDriftExceeds(bothHigh, bothHigh, kMantissa, kMinNormalExp),
+          "the pair-sum is blind to a common-mode error");
+
     check(HalfZeroForbidden(0.0, want, kMantissa, kMinNormalExp),
           "a zero above its own bound is the forbidden zero");
     check(HalfDriftExceeds(0.0, want, kMantissa, kMinNormalExp),
@@ -1506,7 +1527,7 @@ int RunGateSelfTest()
 
     const std::string judgedPass =
         "  PASS: every claim this gate judges is met at this revision: the claim book's 38 judged "
-        "rows of 38. The registration table binds 37 documented claims, 2 of which are bound to "
+        "rows of 38. The registration table binds 36 documented claims, 1 of which are bound to "
         "rows that measure them without restating their sentences. Whether the documents' "
         "155-claim enumeration is covered by a gate row is audited separately and is not a "
         "property of this gate\n";
@@ -1514,12 +1535,12 @@ int RunGateSelfTest()
         "  PASS: every claim this gate judges is met at this revision: the claim book's 28 judged "
         "rows of 38, beside the 10 row(s) it does not carry and the 2 this build's books record "
         "without judging (named above with their reason, and neither met nor failed here). The "
-        "registration table binds 37 documented claims, 2 of which are bound to rows that measure "
+        "registration table binds 36 documented claims, 1 of which are bound to rows that measure "
         "them without restating their sentences. Whether the documents' 155-claim enumeration is "
         "covered by a gate row is audited separately and is not a property of this gate\n";
 
-    check(GatePassLine(38, 38, 0, 0, 37) == judgedPass, "the all-judged PASS line is exact");
-    check(GatePassLine(38, 28, 10, 2, 37) == partialPass, "the partial PASS line is exact");
+    check(GatePassLine(38, 38, 0, 0, 36) == judgedPass, "the all-judged PASS line is exact");
+    check(GatePassLine(38, 28, 10, 2, 36) == partialPass, "the partial PASS line is exact");
 
     if (failures == 0)
     {
@@ -2707,12 +2728,15 @@ int main(int argc, char** argv) {
     const int kF16Orders = AddClaim("fp16 store-half", "batch", kBoundHalfBase);
     const int kBf16Single = AddClaim("bf16 store-half", "single", kBoundHalfBase);
     const int kBf16Orders = AddClaim("bf16 store-half", "batch", kBoundHalfBase);
-    const int kF16PackedA = AddClaim("fp16 simd-half", "A", kBoundHalfBase);
-    const int kF16PackedB = AddClaim("fp16 simd-half", "B", kBoundHalfBase);
-    const int kF16PackedC = AddClaim("fp16 simd-half", "C", kBoundHalfBase);
-    const int kBf16PackedA = AddClaim("bf16 simd-half", "A", kBoundHalfBase);
-    const int kBf16PackedB = AddClaim("bf16 simd-half", "B", kBoundHalfBase);
-    const int kBf16PackedC = AddClaim("bf16 simd-half", "C", kBoundHalfBase);
+    // The packed-half individual row carries P09's published-bound sentence,
+    // so its slots use the published 1.5e-7 + half-ULP base, not the tighter
+    // internal 1e-7 fit budget the other half rows use.
+    const int kF16PackedA = AddClaim("fp16 simd-half", "A", kBoundHalfPublic);
+    const int kF16PackedB = AddClaim("fp16 simd-half", "B", kBoundHalfPublic);
+    const int kF16PackedC = AddClaim("fp16 simd-half", "C", kBoundHalfPublic);
+    const int kBf16PackedA = AddClaim("bf16 simd-half", "A", kBoundHalfPublic);
+    const int kBf16PackedB = AddClaim("bf16 simd-half", "B", kBoundHalfPublic);
+    const int kBf16PackedC = AddClaim("bf16 simd-half", "C", kBoundHalfPublic);
     // The withdrawn header claim ("1e-15 across every x < x0"), measured for the record and not
     // judged: the last argument keeps its slots out of the report's verdicts.
     const int kHeaderA = AddClaim("double single", "header x<x0", kWithdrawnHeaderABound, false);
@@ -8539,7 +8563,7 @@ int main(int argc, char** argv) {
     {
         std::string evidence;
 
-        if (driftCells == 0 && !kSimdTierTarget)
+        if (driftCells == 0 && !(kSimdTierTarget && boys::BoysAvx2Available()))
         {
             evidence = HalfSimdTargetAbsentEvidence();
         } else if (driftCells == 0)
@@ -8627,7 +8651,7 @@ int main(int argc, char** argv) {
             // returns can show while each is inside its own half-lane bound.
             evidence += ". The consistency test this row's sentence states, counted apart from "
                         "those diagnostics: |body - scalar| against the allowance B(body) + "
-                        "B(scalar), the sum of the two paths' own bounds at the cell.";
+                        "B(scalar), the sum of the two paths' internal 1e-7 fit budgets at the cell.";
 
             if (driftOverAllowance == 0)
             {
@@ -8651,27 +8675,36 @@ int main(int argc, char** argv) {
 
         add("code.half_simd_budget",
             "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
-            "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
+            "by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64 targets that "
+            "carry those kernels",
             "src/boys_simd.cpp comment on the shared half lanes",
-            HalfSimdRowVerdict(true, kSimdTierTarget, driftCells, driftOverAllowance),
+            HalfSimdRowVerdict(true, kSimdTierTarget && boys::BoysAvx2Available(),
+                               driftCells, driftOverAllowance),
             evidence);
     }
 #else
     add("code.half_simd_budget",
         "the 8-wide half-I/O region kernels never drift from the certified scalar half lane "
-        "by a value the bound cannot absorb, on the x86_64 targets that carry those kernels",
+        "by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64 targets that "
+        "carry those kernels",
         "src/boys_simd.cpp comment on the shared half lanes",
         HalfSimdRowVerdict(false, kSimdTierTarget, 0, 0),
         HalfSimdSeamClosedEvidence(kSimdTierTarget));
 #endif // BOYS_GATE_FP16
 
     add("code.half_simd_cells",
-        "the 8-wide half-I/O region kernels hold the half lane's budget on the region each "
-        "documents as its precondition",
+        "the 8-wide half-I/O region kernels hold the published half-lane budget "
+        "(1.5e-7 plus one half-ULP) on the region each documents as its precondition",
         "src/boys_simd.cpp, region-partitioned kernels",
 #ifdef BOYS_GATE_FP16
-        verdictOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}),
-        worstOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC}));
+        (kSimdTierTarget && boys::BoysAvx2Available())
+            ? verdictOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC})
+            : Verdict::NotCarried,
+        (kSimdTierTarget && boys::BoysAvx2Available())
+            ? worstOf({kF16PackedA, kF16PackedB, kF16PackedC, kBf16PackedA, kBf16PackedB, kBf16PackedC})
+            : std::string("not measured: this target does not carry the 8-wide half-I/O region "
+                          "kernels - the AVX2 half tier is absent - so the claim has no subject "
+                          "here rather than a cell that passed"));
 #else
         Verdict::NotCarried,
         "not measured: the six cells are the 8-wide half-I/O kernels' own, and this build "
@@ -9781,6 +9814,9 @@ int main(int argc, char** argv) {
          "the coverage count is the row's own; no enumerated claim states it"},
         {"LC.evidence.ctest", "retained",
          "the ctest re-checkability sentence is the row's own; no enumerated claim states it"},
+        {"code.half_simd_budget", "retained",
+         "the row is the pairwise-consistency check on the internal 1e-7 fit budgets; P09's "
+         "individual claim is carried by code.half_simd_cells"},
         {"header.double.region_A_and_band", "supporting",
          "the lane's composed bound, which no enumerated claim states; D02's row is placed against the 1e-15 fit bar beside it"},
         {"LC.half.vacuous_floor", "supporting",
@@ -9859,12 +9895,12 @@ int main(int argc, char** argv) {
         {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 711-712, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one.",
          nullptr}, // no numeric figure: the sentence states bit-identity, not a bound
-        {"P09", "code.half_simd_budget", "src/boys_simd.cpp", "lines 374-377, the comment above the region kernels",
+        {"P09", "code.half_simd_cells", "src/boys_simd.cpp", "lines 374-377, the comment above the region kernels",
          "Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their // scalar tails call the half-lane scalar entries; the vector bodies hold the // same documented bound as those entries but are not bit-identical to them (the // bodies run the fp32 fit at full degree where the scalar lane truncates it).",
          nullptr}, // no numeric figure: the sentence states shared bounds without a number
-        {"P10", "code.half_simd_cells", "src/boys_simd.cpp", "lines 627-630, the comment above the scalar lane",
-         "A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. The region contract stays a sufficient precondition, just not a // required one, and the bodies mirror the scalar tails the x86 entries run for their last // count % 4 elements.",
-         nullptr}, // no numeric figure: a structural statement about the scalar lane
+        // P10 is the no-vector scalar fallback. No x86_64 gate row measures it: the
+        // packed sweep runs only on the AVX2 vector bodies. The claim is not
+        // registered here; the enumeration records it in the none class.
         {"P01", "native.half.bound", "docs/lane-contract.md", "lines 672-673, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
