@@ -22,11 +22,10 @@ namespace boys_gate {
 
 // --- the bound the narrow formats are measured in --------------------------
 
-// The internal fit budget the gate's half rows have always used. It is
-// tighter than the published fp16/bf16 contract (1.5e-7 + one half-ULP,
-// include/boys/boys_decl.hpp and the contract table); a pass at this base
-// implies a pass at the published one. A row that carries the published
-// claim uses kBoundHalfPublic below and says so.
+// The internal fit budget the gate's half rows have always used; tighter
+// than the published fp16/bf16 contract (1.5e-7 + one half-ULP), so a pass
+// here implies a pass there. A row carrying the published claim uses
+// kBoundHalfPublic below.
 constexpr double kBoundHalfBase = 1e-7;
 
 // The published fp16/bf16 base: 1.5e-7 plus one half-ULP, the bound in the
