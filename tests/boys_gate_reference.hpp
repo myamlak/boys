@@ -22,8 +22,15 @@ namespace boys_gate {
 
 // --- the bound the narrow formats are measured in --------------------------
 
-// README and header: the fp16 and bf16 lanes, every region.
+// The internal fit budget the gate's half rows have always used; tighter
+// than the published fp16/bf16 contract (1.5e-7 + one half-ULP), so a pass
+// here implies a pass there. A row carrying the published claim uses
+// kBoundHalfPublic below.
 constexpr double kBoundHalfBase = 1e-7;
+
+// The published fp16/bf16 base: 1.5e-7 plus one half-ULP, the bound in the
+// header's contract table. P09's individual-accuracy row uses this.
+constexpr double kBoundHalfPublic = 1.5e-7;
 
 // IEEE-754 binary16: 10 stored mantissa bits, smallest normal exponent -14.
 constexpr int kF16MantissaBits = 10;

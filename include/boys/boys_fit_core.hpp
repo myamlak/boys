@@ -20,7 +20,9 @@
 
 namespace boys {
 
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // Every derived family here (Chebyshev, the rational route's derived members, both stored forms)
 // reads any granularity but the shipped one as the narrow; the grid's two members carry the grid
@@ -471,7 +473,9 @@ inline double ShippedRegionBSeed(double x) noexcept {
     }
 }
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

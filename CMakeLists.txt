@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.2.6 LANGUAGES CXX)
+project(boys VERSION 5.3.0 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -182,17 +182,50 @@ option(BOYS_FP16_SEAM
 the whole tree and refuses a build that also asks for the test suite, which names those entries"
     ON)
 
+# --- Runtime ISA dispatch ----------------------------------------------------
+# OFF is the compile-time choice: every translation unit of the program is compiled at the tier
+# BOYS_ISA_AVX2 names, and a program that mixes two tiers is refused by the guard in
+# include/boys/isa_tiers.hpp. ON carries the baseline and AVX2+FMA tiers in ONE image: the default
+# entries become declarations defined once in src/boys_dispatch.cpp, each carried tier's entries
+# are defined in its own unit at its own flags, and the dispatcher selects one on the first call
+# and caches the answer. The processor decides which tier runs; the caller's flags no longer do.
+option(BOYS_ISA_DISPATCH
+    "Carry the baseline and AVX2+FMA tiers in one library and select one at run time; OFF \
+compiles the whole program at the tier BOYS_ISA_AVX2 names"
+    OFF)
+
+# The device lane is not part of the dispatch axis: it is compiled by nvcc, which does not take
+# the host's flag set, and the guard would refuse the mixed program at start-up. The design's
+# ruling is a refusal with the reason, not a silent fallback, and this is the same ruling at this
+# tree's own option.
+if (BOYS_ISA_DISPATCH AND BUILD_CUDA)
+    message(FATAL_ERROR "boys: BOYS_ISA_DISPATCH=1 carries the host tiers once and selects one "
+        "for the whole program; the CUDA lane is not part of that axis and would be a client at "
+        "a tier of its own. Set BUILD_CUDA=OFF, or BOYS_ISA_DISPATCH=OFF.")
+endif()
+
 # The library's members, with the two optional units behind their options. One list, because a
 # source cannot be taken back out of a target once it has been named in it.
+#
+# The dispatch split is the design's source classification: the vector support units are compiled
+# once per carried tier rather than into the library, and the dispatcher takes their place in the
+# library. The option probe is compiled once, inside the AVX2 tier unit, because what it measures
+# is the vector option space; the C surface forwards to the public entries and stays with the
+# dispatcher.
 set(boysLibrarySources
     src/boys.cpp
-    src/boys_defaults.cpp
-    src/boys_orders_simd.cpp
-    src/boys_simd.cpp)
+    src/boys_defaults.cpp)
+if (BOYS_ISA_DISPATCH)
+    list(APPEND boysLibrarySources src/boys_dispatch.cpp)
+else()
+    list(APPEND boysLibrarySources
+        src/boys_orders_simd.cpp
+        src/boys_simd.cpp)
+endif()
 if (BOYS_BUILD_C_API)
     list(APPEND boysLibrarySources src/boys_c.cpp)
 endif()
-if (BOYS_BUILD_PROBE)
+if (BOYS_BUILD_PROBE AND NOT BOYS_ISA_DISPATCH)
     list(APPEND boysLibrarySources src/boys_probe.cpp)
 endif()
 add_library(boys ${boysLibrarySources})
@@ -589,7 +622,15 @@ if (BOYS_ARCH_X86_64)
     # (466 of 466 identical). A consumer that re-spells the flags itself, header
     # only, owns that same pairing - docs/build-facts.md states the profile the
     # figures belong to.
-    if (BOYS_ISA_AVX2)
+    # The dispatch build names its own tier split: the library target compiles baseline (the
+    # dispatcher and the tier-independent units), and each carried tier is an object library
+    # below with its own flags. BOYS_ISA_AVX2 is the compile-time choice's option and is not read
+    # here, because one dispatch image carries both tiers and no single value would describe it.
+    if (BOYS_ISA_DISPATCH)
+        message(STATUS "boys: BOYS_ISA_DISPATCH=1 - the library carries the baseline and "
+            "AVX2+FMA tiers and selects one at run time; BOYS_ISA_AVX2 is not used in this mode "
+            "and every client unit compiles at the baseline tier")
+    elseif (BOYS_ISA_AVX2)
         if (MSVC)
             # AVX2 intrinsics come with /arch:AVX2 (F16C included); no
             # contraction flag is added because MSVC contracts only under
@@ -632,9 +673,93 @@ if (BOYS_ARCH_X86_64)
     endif()
 else()
     target_compile_definitions(boys PRIVATE BOYS_SIMD_X86=0)
+    if (BOYS_ISA_DISPATCH)
+        message(FATAL_ERROR "boys: BOYS_ISA_DISPATCH=1 carries the AVX2+FMA tier beside the "
+            "baseline one, and this target is not x86_64. The dispatch build's second tier "
+            "arrives with the NEON hook; until then set BOYS_ISA_DISPATCH=OFF on this target.")
+    endif()
     message(STATUS "boys: non-x86_64 target — the AVX2 tier is not built; the "
         "region kernels fall back to the certified scalar lanes and "
         "BoysAvx2Available() reports false.")
+endif()
+
+# --- The carried tiers (dispatch builds only) --------------------------------
+# One object library per tier, compiled at that tier's own flags and announced to the guard as a
+# carried tier. The objects are added to `boys` with target_sources rather than linked: an object
+# library linked to a target also hands that target its usage requirements, and BOYS_ISA_TIER_UNIT
+# must reach no unit but the tier's own. This tree has no PCH, so the design's no-PCH requirement
+# for the tier units is met by construction.
+#
+# The AVX2 unit restates the contraction pin after its vector flags, for the reason the compile-time
+# tier states it: -mfma is a licence to fuse a bare product-plus-add, and that licence is not this
+# flag set's to spend. The baseline unit inherits the program-wide pin from CMAKE_CXX_FLAGS and
+# from boys-tier.
+if (BOYS_ISA_DISPATCH)
+    target_compile_definitions(boys PUBLIC BOYS_ISA_DISPATCH=1)
+
+    set(_boys_tier_support src/boys_simd.cpp src/boys_orders_simd.cpp)
+
+    add_library(boys-tier-baseline OBJECT
+        src/boys_tier_baseline.cpp
+        ${_boys_tier_support})
+    target_link_libraries(boys-tier-baseline PRIVATE boys-tier)
+    target_include_directories(boys-tier-baseline PRIVATE src)
+    target_compile_definitions(boys-tier-baseline PRIVATE
+        BOYS_ISA_DISPATCH=1
+        BOYS_ISA_TIER_UNIT=1
+        BOYS_SIMD_X86=1)
+    target_compile_features(boys-tier-baseline PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-tier-baseline)
+
+    add_library(boys-tier-avx2 OBJECT
+        src/boys_tier_avx2.cpp
+        ${_boys_tier_support})
+    target_link_libraries(boys-tier-avx2 PRIVATE boys-tier)
+    target_include_directories(boys-tier-avx2 PRIVATE src)
+    target_compile_definitions(boys-tier-avx2 PRIVATE
+        BOYS_ISA_DISPATCH=1
+        BOYS_ISA_TIER_UNIT=1
+        BOYS_SIMD_X86=1)
+    target_compile_features(boys-tier-avx2 PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-tier-avx2)
+    if (MSVC)
+        target_compile_options(boys-tier-avx2 PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:/arch:AVX2>)
+    else()
+        target_compile_options(boys-tier-avx2 PRIVATE
+            $<$<COMPILE_LANGUAGE:CXX>:-mavx2;-mfma;-mf16c>)
+        if (DEFINED BOYS_SCALAR_CONTRACTS)
+            if (BOYS_SCALAR_CONTRACTS)
+                target_compile_options(boys-tier-avx2 PRIVATE
+                    $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=fast>)
+            else()
+                target_compile_options(boys-tier-avx2 PRIVATE
+                    $<$<COMPILE_LANGUAGE:CXX>:-ffp-contract=off>)
+            endif()
+        endif()
+    endif()
+    # The option probe measures the vector option space, so it is compiled once, inside the AVX2
+    # unit (the design's source classification); it names the public entries, which in a dispatch
+    # build are the dispatcher's, and the AVX2 body this unit carries where it names a policy.
+    if (BOYS_BUILD_PROBE)
+        target_sources(boys-tier-avx2 PRIVATE src/boys_probe.cpp)
+    endif()
+
+    target_sources(boys PRIVATE
+        $<TARGET_OBJECTS:boys-tier-baseline>
+        $<TARGET_OBJECTS:boys-tier-avx2>)
+
+    unset(_boys_tier_support)
+
+    # The test-only forcing hook (the Q-360 gate): the same input set through every carried tier.
+    # A package build has BOYS_BUILD_TESTS=OFF, so a consumer's surface does not carry it; a test
+    # build does, and the header declares it only when this definition is present.
+    option(BOYS_ISA_TIER_FORCING
+        "Build the test-only tier-forcing hook (BoysForceTier/BoysClearForcedTier) into the dispatcher"
+        ${BOYS_BUILD_TESTS})
+    if (BOYS_ISA_TIER_FORCING)
+        target_compile_definitions(boys PUBLIC BOYS_ISA_TIER_FORCING=1)
+    endif()
 endif()
 
 # The content a record's stamp carries: every file the program reads from, hashed at configure
@@ -741,7 +866,6 @@ if (BOYS_BUILD_TESTS)
         # library's own summations at a named route (the reference arithmetic is
         # tests/boys_muladd_route_reference.hpp, shared by the two).
         tests/boys_muladd_route_test.cpp
-        tests/boys_muladd_route_simd_test.cpp
         tests/boys_fixture_pins_test.cpp
         tests/boys_probe_test.cpp
         tests/boys_build_defaults_test.cpp
@@ -759,7 +883,13 @@ if (BOYS_BUILD_TESTS)
         # about, and every member of the device option space, held to the reason
         # its own field documents. The device arm of this file is compiled in by
         # the CUDA lane's target below; this is the host arm.
-        tests/boys_refusal_reason_test.cpp)
+        tests/boys_refusal_reason_test.cpp
+        # The dispatch build's own gate: both tiers carried, the processor's
+        # selection, and one forced-tier digest over every default entry
+        # (tests/entry_digest.hpp, shared with the flag-independence program). The
+        # file compiles a single skip into a build without the forcing hook, so it
+        # is part of the suite in every build.
+        tests/boys_dispatch_test.cpp)
     target_link_libraries(boys-tests PRIVATE boys gtest gtest_main)
     target_include_directories(boys-tests PRIVATE src)
     target_compile_features(boys-tests PRIVATE cxx_std_23)
@@ -770,12 +900,23 @@ if (BOYS_BUILD_TESTS)
     boys_strict_warnings(boys-tests)
 
     # tests/boys_muladd_route_simd_test.cpp includes the private header the
-    # packed backends are declared in, so this unit carries the intrinsics' flag
-    # set the way src/boys_simd.cpp does - the same set and the same pinning of
-    # the measured contraction answer, and for the same reason: the reference
-    # arithmetic it holds those backends to has to be the build's arithmetic,
-    # not this unit's own reading of a bare product-plus-add.
-    if (BOYS_ARCH_X86_64)
+    # packed backends are declared in and is compiled at the vector tier in its
+    # own right, so it is a client at that tier - which a dispatch build refuses
+    # at start-up, because the vector tier is the library's there and the
+    # dispatcher is the one selection point. The file's arms are guarded by
+    # BOYS_ISA_AVX2_FMA and would compile empty at baseline, so in a dispatch
+    # build it is left out and the packed lane is exercised through the public
+    # entries, which the dispatcher serves at the tier it selected.
+    if (BOYS_ARCH_X86_64 AND NOT BOYS_ISA_DISPATCH)
+        target_sources(boys-tests PRIVATE tests/boys_muladd_route_simd_test.cpp)
+    endif()
+
+    # That unit carries the intrinsics' flag set the way src/boys_simd.cpp does
+    # - the same set and the same pinning of the measured contraction answer, and
+    # for the same reason: the reference arithmetic it holds those backends to
+    # has to be the build's arithmetic, not this unit's own reading of a bare
+    # product-plus-add.
+    if (BOYS_ARCH_X86_64 AND NOT BOYS_ISA_DISPATCH)
         if (MSVC)
             set_source_files_properties(tests/boys_muladd_route_simd_test.cpp PROPERTIES
                 COMPILE_OPTIONS "/arch:AVX2")
@@ -1257,6 +1398,7 @@ int main() {
     # pins one digest across the four profiles, the seam check each probe's own seam and rows.
     if (BOYS_BUILD_TESTS)
         unset(BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL CACHE)
+        unset(BOYS_FRONT_DOOR_LINKS_WITHOUT_ARCHIVE CACHE)
         unset(BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL CACHE)
         set(_boys_gate_type "${CMAKE_TRY_COMPILE_TARGET_TYPE}")
         set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
@@ -1265,9 +1407,26 @@ int main() {
         if (MSVC)
             set(_boys_gate_std "/std:c++20 /EHsc")
         endif()
+        # The probes compile from the headers alone, so they must be told the build's mode the
+        # way a consumer is: without this a dispatch build's probe would read the default
+        # BOYS_ISA_DISPATCH=0 and measure the compile-time contract instead.
+        if (BOYS_ISA_DISPATCH)
+            if (MSVC)
+                string(APPEND _boys_gate_std " /DBOYS_ISA_DISPATCH=1")
+            else()
+                string(APPEND _boys_gate_std " -DBOYS_ISA_DISPATCH=1")
+            endif()
+        endif()
 
         set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
-        check_cxx_source_compiles("
+        if (BOYS_ISA_DISPATCH)
+            # The contract flips in a dispatch build: the default entries are the dispatcher's, so
+            # a default call must COMPILE from the front door and must NOT link without the
+            # library. Both halves are measured rather than assumed - a header that still defined
+            # the entries inline would link and fail the second, while a declaration the library
+            # cannot satisfy fails the consumer targets at build time.
+            set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+            check_cxx_source_compiles("
 #include <boys/boys.hpp>
 int main() {
     double out[33] = {};
@@ -1275,6 +1434,25 @@ int main() {
     return out[0] == 0.0;
 }
 " BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
+            set(CMAKE_TRY_COMPILE_TARGET_TYPE EXECUTABLE)
+            check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    boys::BoysAllOrders(0, 1.0, out);
+    return out[0] == 0.0;
+}
+" BOYS_FRONT_DOOR_LINKS_WITHOUT_ARCHIVE)
+        else()
+            check_cxx_source_compiles("
+#include <boys/boys.hpp>
+int main() {
+    double out[33] = {};
+    boys::BoysAllOrders(0, 1.0, out);
+    return out[0] == 0.0;
+}
+" BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL)
+        endif()
 
         set(CMAKE_REQUIRED_FLAGS "${_boys_gate_std}")
         check_cxx_source_compiles("
@@ -1299,7 +1477,31 @@ int main() {
         else()
             set(_boys_kernels "false")
         endif()
-        if(NOT BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
+        if (BOYS_ISA_DISPATCH)
+            if(BOYS_FRONT_DOOR_LINKS_WITHOUT_ARCHIVE)
+                set(_boys_front_door_links "links")
+            else()
+                set(_boys_front_door_links "does not link")
+            endif()
+            if(NOT BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
+                    OR BOYS_FRONT_DOOR_LINKS_WITHOUT_ARCHIVE
+                    OR NOT BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
+                message(FATAL_ERROR
+                    "boys: with BOYS_ISA_DISPATCH=1 the default entries are the dispatcher's: a "
+                    "consumer that includes only boys/boys.hpp must compile a default call from "
+                    "the headers and must NOT link it without the library. Building "
+                    "boys::BoysAllOrders(0, 1.0, out) from boys/boys.hpp alone compiled = "
+                    "${_boys_front_door} and without an archive it ${_boys_front_door_links}; "
+                    "building the named-policy call from boys/kernels.hpp compiled = "
+                    "${_boys_kernels}. The first must be true, the second must be 'does not "
+                    "link', and the third must be true.")
+            endif()
+            unset(_boys_front_door_links)
+            message(STATUS "boys: BOYS_ISA_DISPATCH=1 - a default call compiles from "
+                "boys/boys.hpp alone and does not link without the library's dispatcher, and a "
+                "call naming a policy compiles from boys/kernels.hpp, measured by building both; "
+                "the consumer targets link the archive and reach the dispatcher")
+        elseif(NOT BOYS_FRONT_DOOR_COMPILES_A_DEFAULT_CALL
                 OR NOT BOYS_KERNELS_HEADER_COMPILES_A_NAMED_CALL)
             message(FATAL_ERROR
                 "boys: a consumer that includes only boys/boys.hpp must compile AND link a "
@@ -1312,9 +1514,11 @@ int main() {
         endif()
         unset(_boys_front_door)
         unset(_boys_kernels)
-        message(STATUS "boys: a default call compiles and links from boys/boys.hpp alone, with no "
-            "archive on the link line, and a call naming a policy compiles from boys/kernels.hpp, "
-            "measured by building both")
+        if (NOT BOYS_ISA_DISPATCH)
+            message(STATUS "boys: a default call compiles and links from boys/boys.hpp alone, with no "
+                "archive on the link line, and a call naming a policy compiles from boys/kernels.hpp, "
+                "measured by building both")
+        endif()
 
         unset(CMAKE_REQUIRED_FLAGS)
         unset(CMAKE_REQUIRED_INCLUDES)
@@ -1330,13 +1534,25 @@ int main() {
                 "registration below.")
         else()
             find_package(Python3 COMPONENTS Interpreter QUIET)
-            set(_boys_flag_variants o2 o3 native)
-            if (BOYS_ARCH_X86_64)
-                # The fourth reading is the SIMD flag set, and -mavx2 -mfma -mf16c are x86
-                # spells: a non-x86 host has no such variant to build rather than a broken one
-                # to skip. The checker compares whatever it is given, so three readings are a
-                # check.
-                list(APPEND _boys_flag_variants avx2)
+            set(_boys_flag_variants o2 o3)
+            if (BOYS_ISA_DISPATCH)
+                # A dispatch build's caller cannot raise its own tier: the guard refuses a client
+                # unit at the vector tier, and the selection is the dispatcher's. So the two
+                # caller-flag readings that name vector features are not variants of this build;
+                # what the check reads here is that the caller's optimizer level does not move
+                # the library's entries, which are out of line and selected once.
+                message(STATUS "boys: the flag-independence matrix keeps the -O2 and -O3 caller "
+                    "readings; -march=native and -mavx2 are refused as client tiers of a "
+                    "dispatch build, where the vector tier is the dispatcher's to select")
+            else()
+                list(APPEND _boys_flag_variants native)
+                if (BOYS_ARCH_X86_64)
+                    # The fourth reading is the SIMD flag set, and -mavx2 -mfma -mf16c are x86
+                    # spells: a non-x86 host has no such variant to build rather than a broken one
+                    # to skip. The checker compares whatever it is given, so three readings are a
+                    # check.
+                    list(APPEND _boys_flag_variants avx2)
+                endif()
             endif()
             set(_boys_flag_programs "")
             foreach (variant IN LISTS _boys_flag_variants)
@@ -1470,6 +1686,43 @@ int main() {
     add_test(NAME boys-consumer-defaults COMMAND boys-consumer-defaults)
     add_test(NAME boys-consumer-defaults-match-docs COMMAND boys-consumer-defaults-match-docs)
     add_test(NAME boys-consumer-option-space COMMAND boys-consumer-option-space)
+
+    # The two carried tiers are compiled into one image, and a name both tier object sets define
+    # is one symbol in that image: the linker keeps whichever definition it met first, so a
+    # function the tiers share is one whose instructions the dispatcher's selection does not
+    # choose. The tool reads each tier's symbol table and asserts that no first-party function
+    # name is defined by both; it reports the data names and the standard-library names it finds
+    # in common without asserting on them, and its own text says why. It is registered only in a
+    # dispatch build, where there are two tier object sets, and needs an interpreter and a
+    # symbol-table reader.
+    if (BOYS_ISA_DISPATCH)
+        if (MSVC)
+            set(_boys_tier_symbol_mode "msvc-dump")
+            set(_boys_tier_symbol_tool "${CMAKE_LINKER}")
+        else()
+            find_program(BOYS_TIER_SYMBOL_READER NAMES llvm-nm nm)
+            if (BOYS_TIER_SYMBOL_READER)
+                set(_boys_tier_symbol_mode "nm")
+                set(_boys_tier_symbol_tool "${BOYS_TIER_SYMBOL_READER}")
+            endif()
+        endif()
+        if (Python3_FOUND AND _boys_tier_symbol_tool)
+            add_test(NAME boys-tier-symbols
+                COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tools/check_tier_symbols.py" --check
+                    --mode ${_boys_tier_symbol_mode}
+                    "--tool=${_boys_tier_symbol_tool}"
+                    --baseline $<TARGET_OBJECTS:boys-tier-baseline>
+                    --avx2 $<TARGET_OBJECTS:boys-tier-avx2>)
+        else()
+            message(STATUS "boys: the tier-symbol check is not registered — it reads two object "
+                "sets' symbol tables, which needs a Python interpreter and a symbol-table reader "
+                "this configure did not find")
+        endif()
+        unset(_boys_tier_symbol_mode)
+        unset(_boys_tier_symbol_tool)
+    endif()
+
     # --strict: the gate fails on a claim whose evidence is not in the tree as
     # well as on one it measures exceeded, so a green ctest never means "every
     # documented claim is met at this revision" while a claim rest on a
@@ -2022,7 +2275,7 @@ if (BUILD_BENCHMARKS)
     # a local-only target (never a CI leg), so on a non-x86_64 host it is
     # reported and skipped rather than half-built: the measured numbers would
     # be the scalar lanes' under a SIMD name.
-    if (BOYS_ARCH_X86_64)
+    if (BOYS_ARCH_X86_64 AND NOT BOYS_ISA_DISPATCH)
         add_executable(boys-unsorted-simd-benchmark
             benchmarks/boys_unsorted_simd_benchmark.cpp)
         target_link_libraries(boys-unsorted-simd-benchmark PRIVATE boys)
@@ -2040,6 +2293,14 @@ if (BUILD_BENCHMARKS)
             set_source_files_properties(benchmarks/boys_unsorted_simd_benchmark.cpp
                 PROPERTIES COMPILE_OPTIONS "-mavx2;-mfma;-mf16c")
         endif()
+    elseif (BOYS_ISA_DISPATCH)
+        # The harness is compiled at the vector tier in its own unit, which a dispatch build
+        # refuses as a client (the guard aborts at start-up, by design). The packed lane is
+        # measured through the dispatch entries there, and the timing harness belongs to the
+        # compile-time tier it measures.
+        message(STATUS "boys: skipping boys-unsorted-simd-benchmark — it is a client at the "
+            "vector tier, which a dispatch build refuses; its measurements belong to the "
+            "compile-time AVX2 build")
     else()
         message(STATUS "boys: skipping boys-unsorted-simd-benchmark — its AVX2 "
             "kernels are x86_64-only (this is a local-only target)")

@@ -50,7 +50,11 @@
 // and the across-orders packed lane on the installed path instead (boys/boys_arguments_lanes.hpp,
 // boys/boys_orders_lanes.hpp), the caller's flags; the option probe measures it against this.
 
-namespace boys::detail {
+namespace boys {
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 namespace {
 
@@ -612,7 +616,11 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 }
 #endif // BoysFp16
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #else // BOYS_SIMD_X86
 
@@ -620,7 +628,11 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // certified scalar lanes. The region contract stays a sufficient precondition, just not a
 // required one, and the bodies mirror the scalar tails the x86 entries run for their last
 // count % 4 elements.
-namespace boys::detail {
+namespace boys {
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // No entry point calls this lane here either, and it takes no policy, so wiring it is a
 // signature change. It forms no reciprocal of its own:
@@ -725,10 +737,17 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 }
 #endif // BoysFp16
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys
 
 #endif // BOYS_SIMD_X86
 
+// One copy of the backend table's packed half. In a dispatch build only the AVX2 tier's copy of
+// this unit defines it; the baseline copy's entries are not in the table.
+#if !BOYS_ISA_DISPATCH || BOYS_ISA_AVX2_FMA
 
 // The packed half of the backend table: this unit's flags are what make its contraction answer
 // differ from the scalar one, so the pair is measured here, and it is listed only where the tier
@@ -755,3 +774,5 @@ std::size_t AppendPackedBackends(BackendInfo* out) noexcept {
 
 } // namespace detail
 } // namespace boys::backend
+
+#endif // !BOYS_ISA_DISPATCH || BOYS_ISA_AVX2_FMA

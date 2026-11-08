@@ -20,7 +20,11 @@
 
 #include <cstddef>
 
-namespace boys::detail {
+namespace boys {
+
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 /// Fills out[l * stride] with F_l(x) for l = 0..nmax, by the named scheme.
 ///
@@ -102,4 +106,8 @@ void BoysAllOrdersF32SimdComposed(
 // partition reaches the same lane through the pair the public orders axis dispatches to:
 // boys_orders_lanes.hpp's BoysAllOrdersPacked and BoysAllOrdersF32Packed.
 
-} // namespace boys::detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
+
+} // namespace boys

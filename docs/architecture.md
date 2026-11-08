@@ -16,6 +16,29 @@ benchmark target. The public headers are under `include/boys/`, the translation 
 and generators under `tools/`, the CI workflow under `.github/workflows/ci.yml`, and the two
 vendored dependencies under `third_party/`. `docs/` holds the published pages.
 
+## Runtime ISA dispatch
+
+`BOYS_ISA_DISPATCH=OFF` is the compile-time mode and the default: the default entries are inline in
+the headers, `src/boys.cpp` holds the reporting queries and the seam identity, and the vector
+support units `src/boys_simd.cpp` and `src/boys_orders_simd.cpp` are members of the archive.
+
+`BOYS_ISA_DISPATCH=ON` (x86-64 only) carries the baseline and the AVX2+FMA tiers in one image and
+splits the sources by tier. Tier-independent are `src/boys.cpp` (the selection, the seam identity,
+the reporting queries), `src/boys_defaults.cpp`, `src/boys_c.cpp` (the C surface forwards to the
+public entries) and `src/boys_dispatch.cpp` (the default entries, defined once as forwards to the
+selected tier, and the selection itself). Per tier are `src/boys_tier_baseline.cpp` and
+`src/boys_tier_avx2.cpp`, each compiled at its own flags with the contraction pin restated after
+them, and each taking its own compiled copy of `src/boys_simd.cpp` and `src/boys_orders_simd.cpp`.
+`src/boys_probe.cpp` is compiled once, inside the AVX2 tier unit, because what it measures is the
+vector option space. The tier bodies are given distinct symbol names by the inline namespace
+`boys::isa_baseline` or `boys::isa_avx2`; the tier-independent tables stay in `boys::detail`, and the
+tier guard's registry is one inline object outside the token. The checks that hold the split are
+`boys-tier-symbols` (`tools/check_tier_symbols.py`, one literal allowlist of necessarily-shared
+functions with a reason each), the `BoysDispatch` tests (both tiers carried, the processor's
+selection, and one digest over every default entry at each forced tier, `tests/entry_digest.hpp`),
+and the flag-independence row, which in this mode keeps only the `-O2` and `-O3` caller readings.
+The mode refuses `BUILD_CUDA` and a non-x86-64 target in CMake, with the reason in the message.
+
 ## The three regions
 
 The argument line is cut into regions — intervals of x — and each is evaluated differently. The
@@ -261,6 +284,7 @@ registered.
 | The consumer checks | that a translation unit including only `<boys/boys.hpp>` reaches the whole documented surface, that one naming a policy outside the build's default rows links nothing, that the defaults a call naming nothing compiles are the documented ones, that every combination the space serves has a name a caller can write | `boys-consumer-umbrella`, `boys-consumer-header-only`, `boys-consumer-defaults`, `boys-consumer-defaults-match-docs`, `boys-consumer-option-space` |
 | The defaults report | what this build's unnamed calls resolve to, class by class, read from the table the build carries | `boys-defaults` |
 | The dispatch assertion | that `BoysAvx2Available()` reports what the architecture requires, so a wrong CPUID bit cannot leave the vector tier silently dead behind a green run | `boys-avx2-probe` (built only when `BOYS_EXPECT_AVX2` is supplied) |
+| The carried tiers | that the two tier object sets share no first-party function name outside the literal allowlist, and that each forced carried tier returns one digest over every default entry | `boys-tier-symbols`, `boys-tests` (the `BoysDispatch` tests) |
 | The build facts | this build's own row, against the row `docs/build-facts.md` records for the leg | `boys-build-facts` |
 | The examples | every program under `examples/`, run rather than only built | `boys-example-<name>` |
 | The documents against the programs | that the runs `README.md` and `docs/getting-started.md` quote are what the examples print | `boys-example-transcripts` (registered only on an MSVC build with the committed defaults and the fused route, with a Python3 interpreter found) |

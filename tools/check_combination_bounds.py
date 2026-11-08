@@ -309,6 +309,17 @@ def library_sources(tree: pathlib.Path) -> list[str]:
         for appended in LIBRARY_APPEND.finditer(text):
             sources += appended.group(1).split()
 
+        # The append list names both arms of the dispatch split. This check
+        # builds the default configuration, in which BOYS_ISA_DISPATCH is OFF:
+        # the library carries the two vector units and not the dispatcher. The
+        # driver is compiled under one flag set, the scalar tier, so a
+        # dispatcher unit would be compiled outside the build that defines its
+        # registry. A dispatch-configured build selects a tier at run time and
+        # is exercised by its own target, tests/boys_dispatch_test.cpp.
+        sources = [
+            source for source in sources if source != "src/boys_dispatch.cpp"
+        ]
+
     if not sources:
         raise SystemExit("check_combination_bounds: `add_library(boys ...)` names no source")
 

@@ -152,6 +152,12 @@ UNARMED = {
         "the seam it read. It is listed here rather than armed as a step because a step that ran "
         "before the build would read nothing"
     ),
+    "check_tier_symbols.py": (
+        "its input is a dispatch build's two tier object sets, and no leg of the workflow "
+        "configures BOYS_ISA_DISPATCH: a leg that armed it would have to carry that configure and "
+        "run its Test step. It is registered as a ctest test (boys-tier-symbols) by "
+        "CMakeLists.txt, so the Test step of a dispatch leg is where it runs"
+    ),
 }
 
 

@@ -21,7 +21,9 @@
 
 namespace boys {
 
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 // Float-lane piece lookup; see FindPiece.
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters): (order, x) reads naturally.
@@ -1136,7 +1138,9 @@ struct RationalFit32 {
     }
 };
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 } // namespace boys
 

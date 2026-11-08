@@ -29,12 +29,28 @@ const char* BuildDefaultsSeamIdentity() noexcept {
 #endif
 }
 
-// The tier predicate, defined out of line because the entry is the library's: a consumer that
-// links the library reaches this copy, and the library's own callers read the inline detail one.
-// The answer is this build's tier AND the machine's, as the entry's contract states - the tier
-// is the compiling unit's own flags, one flag set per program.
+// The tier predicate, out of line because the entry is the library's: a consumer that links the
+// library reaches this copy; the library's own callers read the inline detail one. The answer is
+// this build's tier AND the machine's, as the entry's contract states - in a dispatch build the
+// carried half is true and the machine's is the only one left to read.
 bool BoysAvx2Available() noexcept {
-    return BOYS_ISA_AVX2_FMA != 0 && detail::Avx2Available();
+    return (BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA != 0) && detail::Avx2Available();
+}
+
+// The report's three answers, kept apart: the tier the entries run on, the tiers the image
+// carries, and the machine's capability. The selected tier is the dispatcher's in a dispatch
+// build and the compiled tier in a compile-time build - one expression, because the non-dispatch
+// ActiveIsa is the compiled tier's constant.
+BoysTierReport BoysActiveTier() noexcept {
+    BoysTierReport report{};
+
+    report.selected = dispatch::ActiveIsa() == dispatch::kIsaAvx2 ? BoysIsaTier::kAvx2
+                                                                 : BoysIsaTier::kBaseline;
+    report.carriesAvx2 = BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA != 0;
+    report.carriesBaseline = BOYS_ISA_DISPATCH != 0 || BOYS_ISA_AVX2_FMA == 0;
+    report.machineAvx2 = detail::Avx2Available();
+
+    return report;
 }
 
 template float BoysSingleF32<SeamPolicy<>>(int n, float x) noexcept;
@@ -47,21 +63,25 @@ template void BoysAllNF32<SeamPolicy<>>(
 // here because this unit carries no fused flag. A unit that names the leg compiles its own copy at
 // its own flags, which is what keeps the fused arm off a host that has not licensed it; the fused
 // leg's prebuilt copies are boys_orders_simd.cpp's. See LadderLeg.
-template void detail::CorrectedSeedLadder<DivisionForm::kExactDivision, detail::LadderLeg::kAskingLeg>(
-    int, double, double*) noexcept;
-template void detail::CorrectedSeedLadder<DivisionForm::kPlainReciprocal,
-                                          detail::LadderLeg::kAskingLeg>(int, double,
-                                                                         double*) noexcept;
-template void detail::CorrectedSeedLadder<DivisionForm::kRefinedReciprocal,
-                                          detail::LadderLeg::kAskingLeg>(int, double,
-                                                                         double*) noexcept;
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+namespace kernel {
 
-template void detail::ScaledFarLadder<DivisionForm::kExactDivision, detail::LadderLeg::kAskingLeg>(
+template void CorrectedSeedLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
     int, double, double*) noexcept;
-template void detail::ScaledFarLadder<DivisionForm::kPlainReciprocal,
-                                      detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
-template void detail::ScaledFarLadder<DivisionForm::kRefinedReciprocal,
-                                      detail::LadderLeg::kAskingLeg>(int, double, double*) noexcept;
+template void CorrectedSeedLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+template void CorrectedSeedLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+
+template void ScaledFarLadder<DivisionForm::kExactDivision, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+template void ScaledFarLadder<DivisionForm::kPlainReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+template void ScaledFarLadder<DivisionForm::kRefinedReciprocal, LadderLeg::kAskingLeg>(
+    int, double, double*) noexcept;
+
+} // namespace kernel
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 std::span<const FitRouteInfo> BoysFitRoutes() noexcept {
     // The rows are the generated header's own measured figures rather than numbers repeated here,

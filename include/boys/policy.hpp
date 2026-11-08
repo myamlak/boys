@@ -42,11 +42,31 @@
 /// \ingroup boys
 
 #include "boys/accuracy.hpp"
+#include "boys/isa_tiers.hpp"
 
 #include <concepts>
 #include <cstdint>
 
 namespace boys {
+
+/// The uniform fit's name carries the tier token (isa_tiers.hpp): its body is one of the
+/// headers a dispatch build compiles once per tier, so the declaration and the definition must
+/// name the same namespace. A policy is a compile-time type of the unit that instantiates it, so
+/// its fit belongs to that unit's tier like the body the policy selects.
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
+
+template <EvalScheme kScheme>
+struct UniformFit;
+
+/// The rational member over the uniform grid, defined in boys_fit_uniform.hpp beside the table
+/// it reads.
+struct RationalFitUniform;
+
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 /// The region-A partition a fit reads: which piece of the region an argument falls
 /// in and what that piece is.
@@ -102,21 +122,22 @@ concept FitPolicy = requires(std::size_t index, double t, double x, int l) {
 /// the parts of a call that route's fits do not serve - so every pair of the two
 /// enumerations is carried, and the only value rejected here is one outside the
 /// route enumeration.
-namespace detail {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
+
+namespace kernel {
 
 template <EvalScheme kScheme, FitGranularity kGranularity>
 struct ChebyshevFit;
 
-/// The uniform table's fit; see boys_impl.hpp. A family of its own rather than a
-/// third branch of ChebyshevFit, because it is read at a partition that is not a
-/// cut of either derived one: the grid is fixed and its table is laid out
-/// interval-major, so every branch that asks a Chebyshev fit to choose between two
-/// derived partitions has no third answer to give it.
-template <EvalScheme kScheme>
-struct UniformFit;
+/// The uniform table's fit; declared above in the tier token and defined in
+/// boys_fit_uniform.hpp. A family of its own rather than a third branch of
+/// ChebyshevFit, because it is read at a partition that is not a cut of either
+/// derived one: the grid is fixed and its table is laid out interval-major, so
+/// every branch that asks a Chebyshev fit to choose between two derived partitions
+/// has no third answer to give it.
 
-/// The rational member over the uniform grid; defined in boys_impl.hpp beside the
-/// table it reads.
+/// The rational member over the uniform grid; declared in the tier token above and
+/// defined in boys_fit_uniform.hpp beside the table it reads.
 ///
 /// The rational family fits a numerator/denominator pair over an interval, and a
 /// partition's pieces are what it cuts, so the fixed grid is a partition its fits
@@ -148,8 +169,6 @@ struct UniformFit;
 /// produce rather than with another partition's fits, exactly as \c UniformFit's do:
 /// they complete the contract, and a body that reaches one refuses the partition
 /// where it is named.
-struct RationalFitUniform;
-
 struct RationalFit;
 
 /// The rational family over the narrow partition; see the specialization below.
@@ -224,7 +243,9 @@ struct RouteFit<FitRoute::kRationalMinimax, kScheme, FitGranularity::kNarrow> {
     using Type = RationalFitNarrow;
 };
 
-} // namespace detail
+} // namespace kernel
+
+} // namespace BOYS_DETAIL_ISA_NAMESPACE
 
 /// Everything a call site selects about how an evaluation is performed: the fit
 /// route, the scheme the fit's coefficients are summed in, the budget a
