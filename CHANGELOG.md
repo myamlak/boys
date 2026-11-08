@@ -4,6 +4,12 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
 in a sentence, and `boys::VersionString()` answers it at run time.
 
+## 5.3.1
+
+**The record of the 5.3.0 accuracy-gate registration is corrected, and no bound, figure or returned value moves.** At 5.3.0 the gate's registration table binds 36 documented claims in 37 entries; one of those entries, P11, is bound to a row that measures its claim without restating its sentence. The 5.2.6 note's "37 claims, two measured without restating" and the 5.3.0 note's "the gate's last line is unchanged" describe the earlier state: the 5.3.0 gate removed P10 from the registration, rebound P09 to `code.half_simd_cells`, and changed the measured-only count from two to one. The recorded gate run is re-made for this release's stamp, and the option probe's report is stamped for it with its measured values and the guide figures carried unchanged.
+
+**The documents state this release only.** The README and the guides no longer compare the figures or the archive's compatibility against earlier releases; each states the current contract and the current archive's rule. The comment above the option probe's driver no longer cites a commit id that is not an object in this repository.
+
 ## 5.3.0
 
 **One library carries both x86-64 tiers and the processor selects one at run time.** The new

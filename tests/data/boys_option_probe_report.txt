@@ -1,4 +1,4 @@
-boys option probe | started 2026-11-08T12:35:55Z | finished 2026-11-08T12:44:56Z | seed 47 | version 5.3.0 | inputs src=7e5c43b4919f7f4e,include=eca5a96b4d79ed44,driver=7c21432eb4bc8106,cmake=27f3dc4c26518651 | verdict RECOMMEND
+boys option probe | started 2026-11-08T12:35:55Z | finished 2026-11-08T12:44:56Z | seed 47 | version 5.3.1 | inputs src=7e5c43b4919f7f4e,include=a5115e4cc203c6df,driver=7c21432eb4bc8106,cmake=02a9ac36190a748e | verdict RECOMMEND
 default batch-plain-reciprocal-fp64 | reached by vote
 boys option probe — this result is about this machine, this build and this process.
   machine: 12 logical processors | AVX2+FMA tier: present

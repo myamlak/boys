@@ -10,9 +10,9 @@ defined on the documentation's landing page, together with the full API referenc
 
 The bound at a cell on the double lanes is **`1e-13 · F_0(x)`**, for every supported n and x: the
 ladder's first rung, `F_0(x)`, scaled by `1e-13`. Since F is decreasing in the order, the `1e-13 · F_n(x)` arm of
-the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. Until
-4.0.0 the bound instead carried a constant floor, `5.5e-14`, which the ladder-scaled figure
-replaces: the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
+the pair is never the wider one, so the `max` of the two is the `F_0(x)` arm at every cell. The bound
+carries the ladder-scaled floor, not a constant `5.5e-14`: the ladder-scaled figure
+is the same kind of rescue, scaled by the ladder's own first value rather than by a fixed
 number.
 
 **B is a fraction of the ladder's first rung, so read against the value it is not uniform.** The form
@@ -152,12 +152,12 @@ seam names the narrow partition.
 `include/boys/boys_build_defaults.hpp`, one row per precision, shape and device class, each
 carrying the run its combination came from where a run stands behind it, and its stated basis
 where the file's own criterion chose a cell. A run's name is `<machine>-<date>`, and the probe's
-transcript is the file it wrote under `tests/data/`: the option report there is the run the host
-rows' figures came from, and it ranks the whole space — its tables carry every member of the
-scheme and partition axes, and on it the uniform partition leads the fp64 single class, 105.39
-against 290.77 ns per argument for the fastest narrow row, which is on the committed Chebyshev
-route; the fastest rational-route narrow row is 437.84
-(`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
+transcript is the file it wrote under `tests/data/`. The option report there is the release's
+full-protocol measurement; the default rows' own records name the runs their figures came from.
+It ranks the whole space — its tables carry every member of the scheme and partition axes, and on
+it the uniform partition leads the fp64 single class, 105.39 against 290.77 ns per argument for
+the fastest narrow row, which is on the committed Chebyshev route; the fastest rational-route
+narrow row is 437.84 (`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the
 arguments packing axis in seventeen of the twenty, and no host row moves its route cell while one
 moves its packing cell. The option probe below is what ranks any of them, on the machine it is run on.
@@ -413,8 +413,8 @@ each row against at that revision: the double lane's published figure, the large
 and `1e-13 · F_0(x)`, the float lane's `2^-22 · F_n(x)` floored at `1.5e-7`, and the half lanes'
 `1.5e-7` plus one half-ULP. The per-region budgets the lane's fits were placed against
 (`≤ 1e-15` on the per-order fits' own arguments, `≤ 3e-14` on `band`, `≤ 5.5e-14` on `C`) are
-measurements kept in [lane-contract.md](lane-contract.md), and they are cut against the absolute
-figures the lanes published before 4.0.0. Region `B` is the exception: its seed was placed against
+measurements kept in [lane-contract.md](lane-contract.md), and the budgets are absolute figures in
+their own right. Region `B` is the exception: its seed was placed against
 the release contract itself, and its bar is the contract's band maximum, `2.57e-14`, which is what
 `kRegionBFitBar` states. The contract above states the one figure the lane holds to over all four,
 in the ladder-scaled form.
@@ -727,24 +727,24 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.3.0**. That number is written down once, in `CMakeLists.txt`'s
+This tree is **version 5.3.1**. That number is written down once, in `CMakeLists.txt`'s
 `project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
 disagrees with it. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).
 
-**The accuracy promise is why 4.0.0 is a major one.** A lane's bound is stated as a multiple
-of a value the call returns - the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, in
-`lane-contract.md` - where the lane carried a constant floor of its own, the absolute 5.5e-14,
-before it. The change is what one promise means in another currency. The second arm is the one the
-floor becomes: both rescue a cell whose own order's value has fallen below the figure, and the
-ladder's first rung scales that rescue to the cell rather than fixing it, so the two agree where
-`F_0(x)` is 0.55, at x about 2.46, and the ladder-scaled form is the stricter of the two beyond it.
-Read against the relative arm rather than the floor, the ladder-scaled form is the looser of the
-two wherever the ladder's first rung exceeds the cell's own value, and near the top of the range,
-where the value is close to 1, it permits about twice the absolute error the constant did. A
-published guarantee that a consumer pinned on changed, which is a break, and the version carries it.
+**The accuracy promise is stated as a multiple of a value the call returns.** A lane's bound is
+the larger of `1e-13 · F_n(x)` and `1e-13 · F_0(x)`, in `lane-contract.md`, rather than a
+constant floor of the lane's own. The second arm is the rescue a constant floor would state: both
+rescue a cell whose own order's value has fallen below the figure, and the ladder's first rung
+scales that rescue to the cell rather than fixing it, so the two agree where `F_0(x)` is 0.55,
+at x about 2.46, and the ladder-scaled form is the stricter of the two beyond it. Read against
+the relative arm rather than the floor, the ladder-scaled form is the looser of the two wherever
+the ladder's first rung exceeds the cell's own value, and near the top of the range, where the
+value is close to 1, it permits about twice the absolute error a constant floor did. The
+published guarantee is the one a consumer pins on; a change to it is a break, and the version
+carries it.
 
 The version badge at the top of the README shows the latest *release tag*. It names the same version
 when a release is cut, and can be older than the tree you are reading.
@@ -809,8 +809,8 @@ name both tiers define would be two symbols rather than the linker's choice of o
 inline, so the public spelling is unchanged: `boys::BoysSingle` still names the entry, and no
 installed header names a tier namespace. `BOYS_DETAIL_ISA_TOKEN` overrides the derivation for a unit
 that states its token directly; it is internal, like the token. The mangled names of the tier bodies
-inside the archive differ from the 5.2.x names, so a 5.3.0 dispatch archive is not patch-compatible
-with a 5.2.x one: a program links the headers and the archive of one release together. The
+inside the archive carry the tier token, so a dispatch archive is not patch-compatible
+with an archive built from another release: a program links the headers and the archive of one release together. The
 `boys-tier-symbols` check reads the two tier object sets' symbol tables and asserts that the set of
 first-party function names they share equals one literal allowlist — the public `F16` and `Bf16`
 wrapper members, whose class identity is the API and whose bodies are exact integer bit

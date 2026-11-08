@@ -10,7 +10,7 @@ program evaluates at every order a shell quartet can ask for. This is a C++ libr
 it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
 the C++ standard library and the optional CUDA toolkit.
 
-This tree is **version 5.3.0**. The number is written down once, in the top-level `CMakeLists.txt`'s
+This tree is **version 5.3.1**. The number is written down once, in the top-level `CMakeLists.txt`'s
 `project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
 CMake: `boys::VersionString()` answers it.
 
@@ -198,7 +198,7 @@ Installed, from a top-level build:
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
 `boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
-build carried the device lane; the version file accepts any `5.x` package for a request of `5.3.0`.
+build carried the device lane; the version file accepts any `5.x` package for a request of `5.3.1`.
 The install rules are written at the top level only, so a consumer that adds this tree as a
 subdirectory already has the targets and needs no package:
 
@@ -273,8 +273,8 @@ is part of every symbol it defines — `boys::isa_baseline` or `boys::isa_avx2` 
 merge the two tiers' definitions; a unit that states `BOYS_DETAIL_ISA_TOKEN` directly overrides the
 derivation, an internal hook and not part of the public interface. The public spelling is
 unchanged: you name `boys::BoysSingle`, and no installed header names a tier namespace. What
-differs is the mangled names inside the archive, so a 5.3.0 dispatch archive is not patch-compatible
-with a 5.2.x one, and a program links the headers and the archive of one release together.
+differs is the mangled names inside the archive, so a dispatch archive is not patch-compatible
+with an archive built from another release, and a program links the headers and the archive of one release together.
 
 **The forcing hook belongs to a test build.** With the test suite on, the dispatcher also carries
 `boys::BoysForceTier()` and `boys::BoysClearForcedTier()`, which pin a carried tier so the same
@@ -329,10 +329,10 @@ region-C boundary, `x = 28.98933773882074`, and at `n = 32` it is under `1e-13` 
 above `x ≈ 93`; in between, the bound costs the value accuracy, and at the worst cell there,
 `n = 32, x = 31`, the returned value is wrong by 140 % of its own. The bound holds above the lane
 format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is subnormal
-or zero and no accuracy is claimed. Until 4.0.0 the guarantee instead carried a constant
-floor, `5.5e-14`, and where F is small the two figures disagree: at
-`n = 32, x = 29`, F is 1.93e-14 and the lane returned 6.87e-14 — an error of 4.94e-14, inside the
-5.5e-14 floor those releases carried, and **2.55 times the true value** read relative to F. That
+or zero and no accuracy is claimed. The guarantee is the ladder-scaled floor, not a constant one:
+where F is small the two forms disagree. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned
+6.87e-14 — an error of 4.94e-14, inside the constant `5.5e-14` floor and **2.55 times the true
+value** read relative to F. That
 argument is served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is
 `kFlatHi`, 31.0 in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of
 the bound at worst.
