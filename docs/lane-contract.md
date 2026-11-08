@@ -110,11 +110,11 @@ verdict, and `boys-tests` takes the same reading of its far-representation bars.
 
 The per-region budgets the fits were placed against are measurements, and they are absolute figures
 on a different scale from the one above: 1e-15 over the per-order fits' own arguments, 3e-14 over
-the extended band, 5.5e-14 for region C — that last one being the absolute figure the lane published
-before 4.0.0, and the figure its row still carries in `BoysLaneContracts()` below. Region B is the
+the extended band, 5.5e-14 for region C — that last one being the absolute figure the lane
+states, and the figure its row still carries in `BoysLaneContracts()` below. Region B is the
 exception: its seed is placed against the release contract itself, and its bar is 2.57e-14, the band
 maximum of `1e-13 · F_0(x)` at x = 11.899848152108484, which is what `kRegionBFitBar` states. The
-5e-14 earlier revisions printed for the region-B seed is a pre-release absolute figure and is not
+5e-14 absolute figure bounds no part of the region-B seed and is not
 this tree's bar. The route table below prints each bar beside what its route delivers.
 
 **The batch row is the lane's own figure and not a per-region reading of it**, and region A is where
@@ -163,8 +163,8 @@ each route evaluates there, carried to higher orders by the region's own upward 
 **The bar column states two bases.** Region A's 3e-14 is the absolute budget the fits there were
 placed against. Region B's 2.57e-14 is not an absolute budget: it is the band maximum of the
 release's `1e-13 · F_0(x)` contract, reached at the region's left end x = 11.899848152108484. The
-two figures are therefore not on one scale, and neither of them is the pre-release absolute 5e-14
-that earlier revisions printed for the two region-B rows.
+two figures are therefore not on one scale, and neither of them is the absolute 5e-14
+the region-B rows are not judged at.
 
 **The rational route in region A does not take over from zero, and it takes over per order.** Its
 pieces span the same intervals as the Chebyshev ones, but the lane stops reading an order from that
@@ -258,7 +258,7 @@ extended-band seed holds 5.98e-18, and the region-B seed holds 1.67e-17 over
 `[11.899848152108484, 31)` — all far inside the target. The bound covers the region-B seed at this
 revision: the degree-24 fit's proved truncation bound is 1.67e-17, and the gate's certified run
 measures 5.09e-17 against the 2.57e-14 bar. The 1.36e-13 bound and the 9.92e-15 delivered figure
-that earlier revisions printed belong to the degree-18 seed and are not this tree's.
+are a degree-18 seed's and belong to no row this tree carries.
 
 **Region A's pieces are held to a second reading, and it is not the bound above.** A region-A piece
 is read two ways. The single-order lane reads it at its own size, where region A is documented at
@@ -441,8 +441,8 @@ whole-grid row is the one the gate books as `per region (B_region)`, and region 
 the 2.57e-14 band maximum. The rational route's two piece rows are absolute figures on the other
 scale — 3e-14 for region A and 2.57e-14, the band maximum of the scaled contract, for the region-B
 seed — and their delivered figures are absolute beside them, while its batch row is judged against
-the contract again. Neither 3e-14 nor 2.57e-14 is the pre-release absolute 5e-14 an earlier revision
-printed for the two region-B rows.
+the contract again. Neither 3e-14 nor 2.57e-14 is the absolute 5e-14
+the region-B rows are not judged at.
 
 **The rows are met.** The last three rows are the rational route's own fits, judged against the
 route's published bars rather than the Chebyshev rows' figures: the shipped cover of region A
@@ -481,7 +481,7 @@ numbers as narrow ones.
 plain-reciprocal form.** The value-proportional figure is this lane's own bar — 2^-22, about
 2.38e-7 — and not the double lane's 1e-13 scaled down for the format. The lane's arithmetic is
 binary32 and has an absolute floor, so the figure the lane publishes is the larger of its relative
-arm and that floor: the 1.5e-7 it published as an absolute bound until 4.0.0 stays as the
+arm and that floor: the 1.5e-7 absolute bound stays as the
 floor under the relative one. A call answered by the plain reciprocal rather than by an exact
 division adds 1e-7 to the error of the returned value, and the two forms are certified separately.
 
@@ -1699,11 +1699,11 @@ float and fp16 lanes' division forms are the file's own stated choice (the row s
 seam's seven names (`SeamPolicy<>`) are the fallback a class with no row resolves to, not a ranking
 of an axis**: their scheme and partition members are fixed in the header (`kHorner`, `kNarrow`), and
 a class's row may differ from them. The committed transcript of the full protocol is
-`tests/data/boys_option_probe_report.txt`, the run the host rows' figures came from: it ranks the
-whole space, its tables carry every member of the six axes it crosses, and on it the uniform
-partition leads the fp64 single class — 105.39 against 290.77 ns per argument for the fastest narrow
-row, which is on the committed Chebyshev route; the fastest rational-route narrow row is 437.84
-(`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
+`tests/data/boys_option_probe_report.txt`: it ranks the whole space, while the default rows' own
+records name the runs their figures came from. Its tables carry every member of the six axes it
+crosses, and on it the uniform partition leads the fp64 single class — 105.39 against 290.77 ns
+per argument for the fastest narrow row, which is on the committed Chebyshev route; the fastest
+rational-route narrow row is 437.84 (`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the
 arguments packing axis in seventeen of the twenty, and no host row moves its route cell while one
 moves its packing cell. Which member is faster is a property of the host, its flags and its card, and the

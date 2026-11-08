@@ -20,7 +20,7 @@ cmake_minimum_required(VERSION 3.25)
 # gtest/benchmark tree is a warning — not a FATAL — when the feature
 # that needs it is OFF. See README.md, "Consuming as a submodule".
 
-project(boys VERSION 5.3.0 LANGUAGES CXX)
+project(boys VERSION 5.3.1 LANGUAGES CXX)
 
 if (CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
     set(BOYS_TOP_LEVEL ON)
@@ -1820,9 +1820,9 @@ int main() {
     target_compile_features(boys-option-probe PRIVATE cxx_std_20)
     # The content the report was taken from, read at configure time: a report read months later
     # is otherwise attributable to nothing, and nothing can hold one to the tree it describes.
-    # 9688c97 renamed every option cell and the committed report did not follow, because it
-    # named no revision for a check to disagree with. The driver prints the library's own
-    # version beside this digest, read from the header it compiles against.
+    # An earlier change renamed every option cell and the committed report did not follow,
+    # because it named no revision for a check to disagree with. The driver prints the library's
+    # own version beside this digest, read from the header it compiles against.
     target_compile_definitions(boys-option-probe PRIVATE
         BoysProbeInputs="${BOYS_PROBE_INPUTS}")
     boys_strict_warnings(boys-option-probe)
