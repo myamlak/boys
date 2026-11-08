@@ -1,12 +1,7 @@
 // The baseline tier of a dispatch build: every default entry, compiled at the portable scalar
-// tier and named by this tier's token.
-//
-// CMake compiles this unit without the vector tier's flags and defines BOYS_ISA_TIER_UNIT, so the
-// token derives to isa_baseline and the guard registers the tier as carried. Each entry is one
-// call to the public template at the documented default row: the body is therefore the same body
-// the header defines for a compile-time build, instantiated here at this tier's flags and given
-// this tier's symbol name. BOYS_NOINLINE keeps it a real function in this unit rather than a
-// candidate the compiler may fold into its neighbour.
+// tier and named by its token. CMake compiles this unit without the vector flags and defines
+// BOYS_ISA_TIER_UNIT; each entry is one call to the public template at the documented default
+// row, instantiated here at this tier's flags, and BOYS_NOINLINE keeps it a real function.
 
 #include "boys/boys.hpp"
 
@@ -14,7 +9,7 @@
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -24,7 +19,7 @@ namespace kernel {
         return boys::NAME<DefaultPolicy<PRECISION, SHAPE>> ARGS;      \
     }
 
-#include "boys/detail/isa_tier_entries.hpp"
+#include "boys_tier_entries.hpp"
 
 } // namespace kernel
 

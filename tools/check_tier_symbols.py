@@ -16,7 +16,7 @@ What is compared, and why the scope is stated rather than assumed:
     sharing accepted is the literal allowlist below: members of the public half-format wrapper
     classes, whose mangled name carries their class and whose class is the API. The observed
     shared set must equal that allowlist, filtered by the wrapper types this build compiles, so
-    a new shared name fails and so does an entry that is no longer shared;
+    a new shared name fails and so does an entry the tiers do not share;
   * first-party data names are reported but not asserted. The coefficient tables are
     tier-independent: both copies come from the same header and hold the same bytes, so the
     linker's choice between them changes nothing that executes, and token-namespacing them would
@@ -83,8 +83,8 @@ NM_DATA = "DBRSGVC"
 # The set is asserted by equality, not by membership: the observed shared set must equal the
 # entries whose wrapper type this build compiles. A type is compiled when a symbol carrying its
 # class name is defined by either tier set; a toolchain with std::float16_t has no wrapper class
-# and so expects no entry. An entry whose type is compiled but is no longer shared is a stale
-# allowlist and fails the same way a new shared name does.
+# and so expects no entry. An entry whose type is compiled while the name is not shared is a
+# stale allowlist and fails the same way a new shared name does.
 HALF_MEMBERS = {
     "??0F16@boys@@QEAA@M@Z": (
         "F16", "F16(float): integer masks and shifts through FloatToHalf; no FP operation"),

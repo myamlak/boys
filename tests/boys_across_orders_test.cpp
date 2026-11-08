@@ -197,13 +197,10 @@ bool VectorTier() {
     return boys::BoysAvx2Available();
 }
 
-// This translation unit's own tier, which is a different question from the one above: the flag set
-// the unit was compiled with, not the machine's scope and not the dispatcher's selection. A case
-// that names a private body through boys::detail, or a policy at the call site - which compiles the
-// template here rather than behind the dispatcher - holds one compiled body on both sides only
-// where this unit is the vector tier. In a dispatch build every client unit is baseline and may not
-// name the vector body at all (include/boys/isa_tiers.hpp: RefusedClientTier), so those cases are
-// this build's to skip, and the compile-time AVX2 configuration is where they run.
+// This translation unit's own tier, a different question from the machine's: the flags it was
+// compiled with. A case that names a private body, or a policy at the call site, holds one body
+// on both sides only where this unit is the vector tier; in a dispatch build every client unit is
+// baseline and may not name it (isa_tiers.hpp: RefusedClientTier), so those cases are skipped.
 bool VectorTierInThisUnit() {
     return BOYS_ISA_AVX2_FMA != 0;
 }

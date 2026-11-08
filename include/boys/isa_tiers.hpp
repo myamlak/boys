@@ -155,8 +155,8 @@ namespace boys {
 /// their content to this namespace.
 namespace detail {}
 
-/// The token namespace, marked inline at its first definition here so that every later reopening
-/// (one per header that carries tier-varying bodies) is an ordinary namespace definition.
+/// The token namespace, marked inline here and at every later reopening (one per header that
+/// carries tier-varying bodies), so a consumer's Clang build sees no reopened-noninline warning.
 inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 /// The tier-varying bodies: the kernel implementations, the lanes and the packed entries. The

@@ -22,7 +22,7 @@
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 

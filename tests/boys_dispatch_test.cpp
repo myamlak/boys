@@ -1,14 +1,7 @@
-// The dispatch build's own gate: both tiers are in the image, the processor selects one, and the
-// same default entries return the same bits through either tier once the forcing hook pins it.
-//
-// The comparison is entry_digest::Bits(), the sweep tests/boys_flag_independence.cpp also prints,
-// so the tiers are held to one measured value rather than to two hand-copied ones. The forcing hook
-// is compiled only where the build asks for it (BOYS_ISA_TIER_FORCING), so this file is part of the
-// suite in every build and answers one test in the ones that carry the hook.
-//
-// On a processor without AVX2 the across-tier comparison is skipped rather than attempted: the
-// carried AVX2 tier cannot be executed there, and the baseline-emulation leg's subject is instead
-// that the dispatcher selects the baseline tier and runs with no illegal instruction.
+// The dispatch build's gate: both tiers are in the image, the processor selects one, and the same
+// default entries return the same bits through either tier once the forcing hook pins it. The
+// comparison is entry_digest::Bits(), the sweep the flag-independence test also prints. Where the
+// processor lacks AVX2 the across-tier comparison is skipped; the image still selects baseline.
 
 #include <gtest/gtest.h>
 

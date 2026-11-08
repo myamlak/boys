@@ -9796,22 +9796,22 @@ int main(int argc, char** argv) {
     };
 
     static constexpr Registration kRegistrations[] = {
-        {"D01", "README.double.single", "README.md", "lines 274-276, the bound's first paragraph",
+        {"D01", "README.double.single", "README.md", "lines 322-324, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for.",
          "1e-13"},
-        {"D01", "README.double.batch", "README.md", "lines 274-276, the bound's first paragraph",
+        {"D01", "README.double.batch", "README.md", "lines 322-324, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for.",
          "1e-13"},
-        {"F01", "README.float", "README.md", "lines 298-301, the float lane's figure",
+        {"F01", "README.float", "README.md", "lines 346-349, the float lane's figure",
          "The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the plain-reciprocal form.",
          "2^-22"}, // the base bound the row is judged at; 1.5e-7 is the value floor and 1e-7 the plain-reciprocal term beside it
-        {"H01", "README.half", "docs/mainpage.md", "lines 211-211, the lanes table",
+        {"H01", "README.half", "docs/mainpage.md", "lines 219-219, the lanes table",
          "| fp16 / bf16 | ≤ 1.5e-7 + ½ ULP, or ≤ 2.5e-7 + ½ ULP in the plain-reciprocal form — this lane's figure is the fp32 engine's arithmetic stated absolutely, and it is left as it was: it is already a term of the value's own digit beside a floor, and it is looser than the floor the float lane's figure keeps |",
          nullptr}, // the sentence publishes 1.5e-7, but the suite asserts the tighter 1e-7 bar, so the row is not judged at the quoted figure
-        {"D13", "LC.double.worst_cell", "docs/mainpage.md", "lines 191-194, the accuracy contract",
+        {"D13", "LC.double.worst_cell", "docs/mainpage.md", "lines 199-202, the accuracy contract",
          "in between the bound `1e-13 · F_0(x)` permits 4.85 times the value at the worst cell, `n = 32, x = 31`: 1e-13 · 0.15917105461020217 = 1.5917105461020217e-14 against the value 3.2822575294956117e-15, and the delivered error there measured 1.40 times the value, 4.582e-15, 0.288 of the bound.",
          "1e-13"}, // the bound the sentence's cell is a fraction of; 4.85, 1.40 and 0.288 are readings against it
-        {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 303-304, the native half lane",
+        {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 311-312, the native half lane",
          "The native half lane is the one lane whose figure is not a fraction of the value: it is stated in ULP of the returned value, ≤ 8 ULP, measured at a worst of 4.3.",
          "8"}, // the ≤ 8 ULP bound; 4.3 is the measured worst stated beside it
         {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 135-137, the double lane",

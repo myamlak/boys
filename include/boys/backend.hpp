@@ -99,10 +99,9 @@ inline const char* MulAddRouteName(MulAddRoute route) noexcept {
 
 } // namespace backend
 
-// The arithmetic that can differ by instruction-set tier: the scalar backend's multiply-add,
-// its contraction measurement, and the route it delivers. The token (isa_tiers.hpp) is part of
-// every symbol these bodies define, so the baseline and vector tiers carry their own copies in
-// one image instead of colliding in the linker. The report types above stay outside it: a caller
+// The arithmetic that differs by instruction-set tier: the scalar backend's multiply-add, its
+// contraction measurement and the route it delivers. The token is part of every symbol here, so
+// the tiers carry their own copies in one image. The report types above stay outside it: a caller
 // reads one MulAddRoute and one BackendInfo whatever tier computed the number.
 inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 

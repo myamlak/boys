@@ -1213,7 +1213,7 @@ std::span<const FitRouteInfo> BoysFitRoutes() noexcept;
 ///                written whatever route is named
 ///
 /// \ingroup boys
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 template <FitRoute kRoute>
 void BoysAllOrdersWithRoute(int nmax, double x, double* out) noexcept;
@@ -1285,7 +1285,7 @@ void BoysAllOrdersWithRoute(
 ///             whatever representation is named
 ///
 /// \ingroup boys
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 template <FarRepresentation kFar = kDefaultFarRepresentation>
 void BoysAllOrdersWithFarRepresentation(int nmax, double x, double* out) noexcept;
@@ -1868,7 +1868,7 @@ void BoysAllNAtOrdersF32(const int* n, const float* x, float* out, std::size_t c
 /// \returns       F_n(x)
 ///
 /// \ingroup boys
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 template <FitRoute kRoute>
 float BoysSingleF32WithRoute(int n, float x) noexcept;
@@ -2211,7 +2211,7 @@ inline constexpr int kHalfNativeScaleExponent = 15;
 ///              F_k(x.high))
 ///
 /// \ingroup boys
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
 
@@ -2231,7 +2231,7 @@ void BoysAllOrdersHalf2(int nmax, Half2 x, Half2* out) noexcept;
 ///      and must not overlap
 ///
 /// \ingroup boys
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 void BoysAllNF16Native(int nmax, const F16* x, F16* out, std::size_t count) noexcept;
 

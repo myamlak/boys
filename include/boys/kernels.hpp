@@ -24,7 +24,7 @@ namespace boys {
 
 // The public templates live in the tier token (isa_tiers.hpp): a specialization a unit names is
 // compiled at that unit's tier, and two tiers' specializations are two symbols.
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 /// The front door's \c BoysSingle at a policy the caller names.
 ///

@@ -1,11 +1,9 @@
 #pragma once
 
 // One digest of every default entry's bits, shared by the two programs that compare builds or
-// tiers: tests/boys_flag_independence.cpp prints it from several sets of caller flags, and
-// tests/boys_dispatch_test.cpp holds the carried tiers to one digest through the forcing hook.
-// Values are mixed as bits and not as numbers: a digest over rounded decimals would report
-// agreement between two arithmetics that differ in the last bit, which is the difference both
-// comparisons exist to find.
+// tiers: tests/boys_flag_independence.cpp prints it from several caller flag sets, and
+// tests/boys_dispatch_test.cpp holds the carried tiers to it through the forcing hook. Values
+// are mixed as bits: a digest over rounded decimals would hide a last-bit disagreement.
 
 #include <boys/boys.hpp>
 

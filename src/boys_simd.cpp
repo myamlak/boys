@@ -52,7 +52,7 @@
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -630,7 +630,7 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 // count % 4 elements.
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 

@@ -1,27 +1,10 @@
-// The carried tiers' entry list: one row per front-door entry the dispatcher serves.
-//
-// The file is included more than once in one translation unit - the dispatcher includes it three
-// times, once per namespace it expands into - so it carries NO include guard: a guard would leave
-// the second and third expansions empty. The BOYS_TIER_ENTRY check below refuses an include that
-// forgot to define the macro, and the file undefines it at the end so the next include starts from
-// a stated state.
-//
-// A dispatch build compiles the same entry once per tier and forwards to the selected one. The
-// rows are written here once and expanded three ways - the dispatcher's forwarding definitions and
-// each tier unit's noinline definitions - so a new entry cannot leave one of the three out.
-//
-// The header is internal: it is not included by boys/boys.hpp and is not part of the public API.
-// A unit includes it inside a namespace it has already opened, with BOYS_TIER_ENTRY defined:
-//
-//     BOYS_TIER_ENTRY(RET, NAME, PARAMS, ARGS, PRECISION, SHAPE)
-//
-// PARAMS is the parameter list as a definition spells it (types and names, no defaults; a
-// declaration that carried a default is already visible), ARGS the argument names in the same
-// order. PRECISION and SHAPE are the two axes the entry's default policy names, so a tier unit's
-// definition is one call to the public template at the documented default row.
+// The carried tiers' entry list: one row per front-door entry the dispatcher serves. Included
+// several times in one unit, so it carries no include guard; BOYS_TIER_ENTRY is required and
+// undefined at the end. PARAMS and ARGS spell a definition's parameter and argument names;
+// PRECISION and SHAPE name the default row, so a tier unit's body is one call to the template.
 
 #if !defined(BOYS_TIER_ENTRY)
-#error "boys/detail/isa_tier_entries.hpp is an X-macro list: define BOYS_TIER_ENTRY(RET, NAME, \
+#error "boys_tier_entries.hpp is an X-macro list: define BOYS_TIER_ENTRY(RET, NAME, \
 PARAMS, ARGS, PRECISION, SHAPE) before including it"
 #endif
 

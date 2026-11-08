@@ -1701,9 +1701,9 @@ of an axis**: their scheme and partition members are fixed in the header (`kHorn
 a class's row may differ from them. The committed transcript of the full protocol is
 `tests/data/boys_option_probe_report.txt`, the run the host rows' figures came from: it ranks the
 whole space, its tables carry every member of the six axes it crosses, and on it the uniform
-partition leads the fp64 single class — 115.89 against 309.92 ns per argument for the fastest narrow
-row, which is on the committed Chebyshev route; the fastest rational-route narrow row is 447.03
-(`single-batch-narrow-rational-minimax-plain-reciprocal-fast-fp64`). The route and the packing axis
+partition leads the fp64 single class — 109.89 against 281.88 ns per argument for the fastest narrow
+row, which is on the committed Chebyshev route; the fastest rational-route narrow row is 412.21
+(`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the
 arguments packing axis in seventeen of the twenty, and no host row moves its route cell while one
 moves its packing cell. Which member is faster is a property of the host, its flags and its card, and the

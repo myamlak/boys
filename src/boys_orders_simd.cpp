@@ -46,7 +46,7 @@
 #include <immintrin.h>
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -103,7 +103,7 @@ void BoysAllOrdersF32SimdComposed(
 // without -mavx2 -mfma alike.
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -160,7 +160,7 @@ void BoysAllOrdersF32SimdComposed(
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 

@@ -29,7 +29,7 @@
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -68,7 +68,7 @@ enum class OrdersScheme {
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -2523,7 +2523,7 @@ void BoysAllOrdersPacked(int nmax, double x, double* out) noexcept {
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 

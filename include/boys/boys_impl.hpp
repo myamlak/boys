@@ -44,7 +44,7 @@ namespace boys {
 
 // The token namespace (isa_tiers.hpp): one tier's bodies are not another tier's, and the token
 // in their symbol names is what stops the linker merging them.
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
@@ -1997,7 +1997,7 @@ void BoysFarLadderRun(int nmax,
 
 namespace boys {
 
-namespace BOYS_DETAIL_ISA_NAMESPACE {
+inline namespace BOYS_DETAIL_ISA_NAMESPACE {
 
 namespace kernel {
 
