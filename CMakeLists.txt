@@ -855,6 +855,10 @@ if (BOYS_BUILD_TESTS)
         tests/boys_fixed_n_test.cpp
         tests/boys_all_n_test.cpp
         tests/boys_across_orders_test.cpp
+        # The family's own shape: positivity, order monotonicity, the adjacent-order
+        # recurrence and log-convexity, over the reference grid, every piece and route
+        # boundary, every precision lane and both packing axes.
+        tests/boys_structural_invariants_test.cpp
         tests/boys_orders_f32_test.cpp
         tests/boys_c_test.cpp
         tests/f16_test.cpp
