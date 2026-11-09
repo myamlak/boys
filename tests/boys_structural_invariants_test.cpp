@@ -1,51 +1,12 @@
-// Structural invariants of the Boys family, tested on the shipped entries rather than against the
-// reference grid alone. A pointwise accuracy test can pass at every sampled cell while the returned
-// family loses a property every exact F_n has: an order inversion, a fitted piece that crosses
-// a recurrence that holds only where the same body computes both sides. The properties below are
-// exact for
-//
-//   F_n(x) = the integral of t^(2n) e^(-x t^2) over t in [0, 1],  n >= 0,  x >= 0:
-//
-//   1. positivity: F_n(x) > 0;
-//   2. order monotonicity: F_(n+1)(x) < F_n(x);
-//   3. the adjacent-order recurrence: (2n+1) F_n(x) - 2x F_(n+1)(x) - e^(-x) = 0, with
-//      F_n(0) = 1/(2n+1);
-//   4. log-convexity in order: F_(n+1)(x)^2 <= F_n(x) F_(n+2)(x).
-//
-// The recurrence is also the derivative identity 2x F_n'(x) + (2n+1) F_n(x) = e^(-x), because
-// differentiating the integral gives F_n'(x) = -F_(n+1)(x); the residual tested here is the
-// algebraic form of that identity and needs no finite-difference step.
-//
-// Every assertion is rounding-aware, in one of two ways, and neither is a hand-tuned epsilon:
-//
-//  - The lane's own published bound gives the interval each returned value sits in, and the
-//    invariant is asserted on the intervals. Order monotonicity is a + B_n + B_(n+1) >= b, and
-//    log-convexity is max(b - B_b, 0)^2 <= (a + B_a)(c + B_c); both follow from the exact
-//    inequality and |returned - exact| <= B. The recurrence residual is compared with the
-//    bound's contribution to the three terms plus the rounding of the test's own arithmetic.
-//  - Where the reference grid fixes the exact values and the bound is small enough that the
-//    strict inequality is certified, the strict form is asserted too. A strict inequality that a
-//    half format's quantum or a bound wider than the value may legitimately lose is not demanded
-//    cell by cell; the cells where it is demanded are counted, so the coverage of the strict form
-//    is visible rather than assumed.
-//
-// The claimed domain is the one the contract states: n in [0, 32] and x >= 0, with the accuracy
-// claim above the lane format's smallest normal. Below that floor a return is subnormal or zero by
-// design and no accuracy is claimed. A second restriction is the contract's own absolute figure: a
-// value at or below 1e-13 F_0 (or the float lanes' 1.5e-7) is inside the error interval, so a zero
-// is within the figure and positivity is not forced there either. Those cells are counted apart
-// from the floor-limited ones and asserted only finite and nonnegative. F_n is positive for every
-// finite x; the two limits are properties of the representation and of the absolute figure, not of
-// the function.
-//
-// Coverage. The committed reference grid fixes the exact values, and its arguments include the
-// region boundaries, the partition's tier thresholds and their neighbours. Over it the default
-// double, float, fp16 and bf16 entries and the native half lane are read. A second sweep runs on a
-// designed argument list through every piece boundary of the double and float partitions, every
-// region and route boundary, the uniform grid's edges, the region-B exponential's cut, and a
-// logarithmic interior sweep; there the policy matrix exercises both fit routes, both evaluation
-// schemes, all three partitions, both packing axes and all three division forms. The same sweep
-// compares the arguments axis with the orders axis, which is the scalar/SIMD boundary.
+// Structural invariants of the Boys family: positivity, order monotonicity, the adjacent-order
+// recurrence (2n+1) F_n - 2x F_(n+1) - e^(-x) = 0 and log-convexity F_(n+1)^2 <= F_n F_(n+2),
+// tested on the shipped entries. All four are exact for
+//   F_n(x) = integral of t^(2n) e^(-x t^2) over [0, 1],  n >= 0,  x >= 0.
+
+// Each is asserted on the interval the lane's published bound gives the returned value, and the
+// strict form only where the exact values and those intervals certify it. The reference grid fixes
+// the exact values; the designed sweep crosses every piece, route, lane and packing axis, with the
+// suite's twofold two-rounding allowance. Floor-limited and bound-limited cells are counted apart.
 
 // The all-groups umbrella opens every coefficient group before the front door: the policy sweep
 // below names fits from all three partitions and both routes, and a group header has to precede
@@ -85,12 +46,9 @@ constexpr double kFloatFloor = std::numeric_limits<float>::min();
 constexpr double kHalfFloor = 6.103515625e-05; // 2^-14
 constexpr double kBf16Floor = 1.1754943508222875e-38; // 2^-126
 
-// The published lane figures are the fused multiply-add route's. A two-rounding build is a
-// different arithmetic, and the suite's own comparisons on that build use a twofold budget
-// (tests/boys_across_orders_test.cpp); these structural checks carry the same allowance so they
-// are not read as a second accuracy gate. The allowance is a route allowance and not a rounding
-// one: a misread fit or a wrong order is far outside it, and the accuracy gate remains the
-// measurement of each route's delivered figure. On the fused build the allowance is 1.0.
+// The published figures are the fused route's; the two-rounding build is another arithmetic and
+// the suite's own comparisons there use a twofold budget. These structural checks carry the same
+// route allowance, not a second accuracy claim: the gate remains the measured figure.
 #if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
 constexpr double kRouteAllowance = 2.0;
 #else
@@ -163,10 +121,10 @@ double HalfBound(double observed, bool bf16, bool plain) noexcept {
 }
 
 // --- The committed reference grid -------------------------------------------
-//
-// Columns 0..12 are n, x, value, log10abs, xf, valuef, log10_f, x16, value16, log10_16, xb,
-// valueb, log10_b. The value columns are the exact F_n at the argument in the column before them,
-// so each lane is compared at the argument its own type holds rather than at the double argument.
+
+// Columns 0..12 are n, x, value, ..., xf, valuef, ..., x16, value16, ..., xb, valueb, ...; each
+// value column is the exact F_n at the argument before it, so a lane is compared at the argument
+// its own type holds rather than at the double argument.
 
 struct LaneTruth {
     double argument = 0.0;
@@ -378,12 +336,9 @@ Invariants CheckLadder(const LadderView& view) {
             ++tally.negative;
         }
 
-        // The contract's figure is absolute, so a value inside the lane's own error interval may
-        // legitimately return zero: a zero is within the figure wherever the exact value is at or
-        // below it. Positivity is asserted only where the exact value is above both the format
-        // floor and the lane's figure, which is the domain where the bound itself forces a
-        // positive return. The two restrictions are counted apart because they have different
-        // causes - the format's range and the contract's absolute figure.
+        // The figure is absolute, so a zero is within it wherever the exact value is at or below.
+        // Positivity is asserted only where the exact value is above both the format floor and the
+        // figure; the two restrictions are counted apart.
         const bool aboveFloor = view.truth != nullptr ? (view.truth[n] >= view.floor)
                                                       : (v >= view.floor);
         const bool aboveBound = view.truth != nullptr ? (view.truth[n] > view.bound[n])
@@ -630,11 +585,10 @@ void ExpectClean(const Invariants& tally) {
 
 // --- The designed boundary list ---------------------------------------------
 
-// Every boundary the implementation dispatches on, with both sides of it: the region boundaries,
-// the partition's piece edges, the route selector's per-order thresholds, the uniform grid's
-// edges, the region-B exponential's cut, a logarithmic interior sweep, and arguments far enough
-// out that each lane crosses its format floor. A boundary is a handover between two bodies; a
-// property that holds in each body can still fail at the join, so the neighbours are sampled too.
+// Every boundary the implementation dispatches on: region boundaries, partition piece edges, the
+// route selector's thresholds, the uniform grid's edges, the region-B exponential's cut, a
+// logarithmic interior sweep, and arguments past each format floor. Both sides are sampled: a
+// property that holds in each body can still fail at the join.
 const std::vector<double>& Boundaries() {
     static const std::vector<double> xs = [] {
         std::vector<double> list;
@@ -1066,11 +1020,11 @@ Invariants SweepHalfPolicy(const char* label, bool bf16) {
 
 #endif // BoysFp16
 
-// --- The policy names --------------------------------------------------------
-//
-// The cells the sweep names: both routes, both schemes, all three partitions, both packing axes,
-// and all three division forms. They are the axes whose bodies the entries dispatch between; the
-// precision lanes are swept beside them.
+// --- The policy names -------------------------------------------------------
+
+// The sweep names both routes, both schemes, all three partitions, both packing axes and all
+// three division forms - the axes whose bodies the entries dispatch between. The precision lanes
+// are swept beside them.
 
 using DoubleCoarseSplitArgs =
     boys::SeamPolicy<boys::FitRoute::kChebyshev, boys::EvalScheme::kSplitClenshaw,
@@ -1545,12 +1499,10 @@ TEST(BoysStructuralInvariants, ReducedPrecisionFloorsAreClassified) {
         GTEST_SKIP() << "the committed reference grid is not present in this tree";
     }
 
-    // The floor is the format's range boundary; the bound is the contract's absolute figure. A
-    // positive return is asserted only where the exact value is above both: above the floor the
-    // value is representable, and above the bound a zero would violate the figure. Between the
-    // two the value is representable but inside the error interval, so the contract permits a
-    // zero and the cell is counted as bound-limited rather than judged. The counts make both
-    // restrictions visible, and the zero counts show how much of the grid each restriction takes.
+    // The floor is the format's range boundary; the bound is the contract's absolute figure.
+    // Positivity is asserted only where the exact value is above both: above the floor it is
+    // representable, and above the bound a zero would violate the figure. Between them a zero is
+    // permitted and the cell is counted as bound-limited; the zero counts show the split.
     struct ZeroExample {
         double x = 0.0;
         int n = 0;
