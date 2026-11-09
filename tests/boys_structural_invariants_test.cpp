@@ -85,6 +85,18 @@ constexpr double kFloatFloor = std::numeric_limits<float>::min();
 constexpr double kHalfFloor = 6.103515625e-05; // 2^-14
 constexpr double kBf16Floor = 1.1754943508222875e-38; // 2^-126
 
+// The published lane figures are the fused multiply-add route's. A two-rounding build is a
+// different arithmetic, and the suite's own comparisons on that build use a twofold budget
+// (tests/boys_across_orders_test.cpp); these structural checks carry the same allowance so they
+// are not read as a second accuracy gate. The allowance is a route allowance and not a rounding
+// one: a misread fit or a wrong order is far outside it, and the accuracy gate remains the
+// measurement of each route's delivered figure. On the fused build the allowance is 1.0.
+#if defined(BOYS_MULADD_SEPARATE) && BOYS_MULADD_SEPARATE
+constexpr double kRouteAllowance = 2.0;
+#else
+constexpr double kRouteAllowance = 1.0;
+#endif
+
 constexpr double kEpsilon = std::numeric_limits<double>::epsilon();
 
 // F_0 from its closed form, in double: the scale of the published bound, not a reference value.
@@ -109,7 +121,7 @@ double F0Closed(double x) noexcept {
 // The published double lane's figure: 1e-13 * F_0(x), the wider arm of the pair. F falls with the
 // order, so the F_n arm never binds.
 double DoubleBound(double x) noexcept {
-    return 1e-13 * F0Closed(x);
+    return kRouteAllowance * 1e-13 * F0Closed(x);
 }
 
 // The binary16 quantum at a magnitude: 2^(e-10) normal, 2^-24 at or below the smallest normal.
@@ -138,7 +150,8 @@ double Bf16Quantum(double magnitude) noexcept {
 double FloatBound(int n, double x, bool plain) noexcept {
     const double fn = std::fabs(boys::BoysSingle(n, x));
 
-    return std::max(std::ldexp(1.0, -22) * fn, 1.5e-7) + (plain ? 1e-7 : 0.0);
+    return kRouteAllowance * (std::max(std::ldexp(1.0, -22) * fn, 1.5e-7) +
+                              (plain ? 1e-7 : 0.0));
 }
 
 // The half lanes' figure: the fp32 engine stated absolutely, plus the format's own half digit.
@@ -146,7 +159,7 @@ double FloatBound(int n, double x, bool plain) noexcept {
 double HalfBound(double observed, bool bf16, bool plain) noexcept {
     const double quantum = bf16 ? Bf16Quantum(observed) : HalfQuantum(observed);
 
-    return 1.5e-7 + (plain ? 1e-7 : 0.0) + 0.5 * quantum;
+    return kRouteAllowance * (1.5e-7 + (plain ? 1e-7 : 0.0) + 0.5 * quantum);
 }
 
 // --- The committed reference grid -------------------------------------------
@@ -281,6 +294,11 @@ struct Invariants {
     double worstRecurrenceFraction = 0.0;
     int worstRecurrenceN = 0;
     double worstRecurrenceX = 0.0;
+    const char* worstRecurrenceLane = "";
+    double worstViolationFraction = 0.0;
+    int violationN = 0;
+    double violationX = 0.0;
+    const char* violationLane = "";
 };
 
 void Merge(Invariants& into, const Invariants& from) {
@@ -315,6 +333,14 @@ void Merge(Invariants& into, const Invariants& from) {
         into.worstRecurrenceFraction = from.worstRecurrenceFraction;
         into.worstRecurrenceN = from.worstRecurrenceN;
         into.worstRecurrenceX = from.worstRecurrenceX;
+    }
+
+    if (from.worstViolationFraction > into.worstViolationFraction)
+    {
+        into.worstViolationFraction = from.worstViolationFraction;
+        into.violationN = from.violationN;
+        into.violationX = from.violationX;
+        into.violationLane = from.violationLane;
     }
 }
 
@@ -539,6 +565,14 @@ Invariants CheckLadder(const LadderView& view) {
         if (residual > tolerance * denominator)
         {
             ++tally.recurrenceViolations;
+
+            if (fraction > tally.worstViolationFraction)
+            {
+                tally.worstViolationFraction = fraction;
+                tally.violationN = n;
+                tally.violationX = view.x;
+                tally.violationLane = view.lane;
+            }
         }
     }
 
@@ -570,6 +604,15 @@ void Report(const char* label, const Invariants& tally) {
                 tally.worstRecurrenceFraction,
                 tally.worstRecurrenceN,
                 tally.worstRecurrenceX);
+
+    if (tally.recurrenceViolations > 0)
+    {
+        std::printf("    recurrence violation: %s, n = %d, x = %.17g, %.6f of tolerance\n",
+                    tally.violationLane,
+                    tally.violationN,
+                    tally.violationX,
+                    tally.worstViolationFraction);
+    }
 }
 
 void ExpectClean(const Invariants& tally) {
@@ -699,7 +742,7 @@ Invariants CheckDefaultDouble() {
 
         for (int n = 0; n <= kNmax; ++n)
         {
-            bound[n] = 1e-13 * truth[0];
+            bound[n] = kRouteAllowance * 1e-13 * truth[0];
         }
 
         Merge(total, CheckLadder({"double, reference grid",
@@ -732,8 +775,9 @@ Invariants CheckDefaultFloat() {
         for (int n = 0; n <= kNmax; ++n)
         {
             value[n] = static_cast<double>(valuef[n]);
-            bound[n] = std::max(std::ldexp(1.0, -22) * truth.value[n], 1.5e-7) +
-                       (kPlain ? 1e-7 : 0.0);
+            bound[n] = kRouteAllowance *
+                       (std::max(std::ldexp(1.0, -22) * truth.value[n], 1.5e-7) +
+                        (kPlain ? 1e-7 : 0.0));
         }
 
         Merge(total, CheckLadder({"float, reference grid",
@@ -840,7 +884,7 @@ Invariants CheckNativeHalf() {
         {
             value[n] = static_cast<double>(raw[n].Low());
             scaledTruth[n] = kScale * truth.value[n];
-            bound[n] = 8.0 * HalfQuantum(value[n]);
+            bound[n] = kRouteAllowance * 8.0 * HalfQuantum(value[n]);
         }
 
         Merge(total, CheckLadder({"native half, reference grid",
@@ -1638,7 +1682,7 @@ TEST(BoysStructuralInvariants, ReducedPrecisionFloorsAreClassified) {
 
         for (int n = 0; n <= kNmax; ++n)
         {
-            bound[n] = 1e-13 * truth[0];
+            bound[n] = kRouteAllowance * 1e-13 * truth[0];
         }
 
         accumulate(doubleTally, x, truth, bound, value, kDoubleFloor);
@@ -1663,8 +1707,9 @@ TEST(BoysStructuralInvariants, ReducedPrecisionFloorsAreClassified) {
         {
             const std::size_t at = static_cast<std::size_t>(n);
             value[at] = static_cast<double>(raw[at]);
-            bound[at] = std::max(std::ldexp(1.0, -22) * truth.value[at], 1.5e-7) +
-                        (kFloatPlain ? 1e-7 : 0.0);
+            bound[at] = kRouteAllowance *
+                        (std::max(std::ldexp(1.0, -22) * truth.value[at], 1.5e-7) +
+                         (kFloatPlain ? 1e-7 : 0.0));
         }
 
         accumulate(floatTally, truth.argument, truth.value, bound, value, kFloatFloor);
