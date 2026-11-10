@@ -138,8 +138,9 @@ that form's rounding leaves the base — 1e-7 + 1e-7 = 2e-7.
 
 "ULP" is the last representable digit of the result in the format concerned.
 
-**Choosing nothing.** A caller that has picked a precision and no axis writes one name: each precision
-has a named default, and so does the device lane. [lane-contract.md](lane-contract.md#the-default-policy-per-precision-and-per-device)
+**Choosing nothing.** A caller that has picked a precision and a shape and no axis writes one name:
+a default belongs to a class — one device, one precision and one shape of question — and each class
+has a named default. [lane-contract.md](lane-contract.md#the-default-policy-per-device-precision-and-shape-class)
 states what each selects, the bound it carries, and the command that prints the name and the in-force
 default as numbers. **A class's default is its own row in the defaults header, and the row states
 where its cells came from**: the marker above it says how the winner was reached, and its last two
@@ -727,9 +728,9 @@ gives misses a 1e-14 target: at that width the target needs degree 10, not degre
 
 ## Version
 
-This tree is **version 5.3.1**. That number is written down once, in `CMakeLists.txt`'s
-`project(boys VERSION ...)`, and the test suite and the version-site check fail if anything else
-disagrees with it. A caller
+The version is declared once, in `CMakeLists.txt`'s `project(boys VERSION ...)`, and
+`boys/version.hpp` carries it; a test fails if the two disagree, and the version-site check fails if
+the citation note names another release. A caller
 reads it at run time through `boys::VersionString()`, or as the constants `boys::kVersionMajor`,
 `boys::kVersionMinor` and `boys::kVersionPatch`, in `boys/version.hpp` (included by
 `boys/boys.hpp`).

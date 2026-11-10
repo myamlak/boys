@@ -24,6 +24,15 @@ tree. A squash carries the same bytes, so a digest survives the merge that a com
 The accuracy gate's record was the last carrier of a commit id beside its content; that line
 was retired in 2026-10, and the record's identity is now its version and these digests.
 
+**A version is metadata, and a version-only bump leaves a record true.** `include/boys/version.hpp`
+holds `kVersionString` and the three numbers and nothing a run computes with, so a release that
+moves that header and no other input is the same code with a later name. A record naming the
+earlier release still describes the tree, and `differs_only_in_version_header` is what proves it:
+the record names version X, so tag `vX` is the tree it was taken from, and the difference is the
+header alone only where git shows the header to be the one gated input that moved and the
+record's digests to be the tag's own. With no repository or no tag there is nothing to prove it
+with, and the difference is refused rather than assumed harmless.
+
 **The bytes are read with CRLF folded to LF, and the reason is a false finding.** The
 repository is LF and `.gitattributes` says so, while an editor on one host can write CRLF into
 the working tree; git normalizes such a file on its way into the index, so `git status` reports
@@ -52,6 +61,7 @@ import argparse
 import hashlib
 import pathlib
 import re
+import subprocess
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
@@ -100,6 +110,15 @@ INPUTS: dict[str, dict[str, tuple[str, ...]]] = {
 # A group no finding is raised for, whatever its digest says.
 NOT_GATED = frozenset({"cmake"})
 
+# The prefix a release tag carries. A record names version `5.3.1`, and tag `v5.3.1` is the tree
+# that release published, so the tag is what a record's own version line can be held to.
+TAG_PREFIX = "v"
+
+# The files a record's input groups name that carry release metadata rather than an arithmetic
+# input: `version.hpp` states the version string and the three numbers, and no figure a run
+# prints is computed from them. A record whose own release moved only here describes this code.
+VERSION_METADATA = frozenset({VERSION_HEADER})
+
 
 class StampError(Exception):
     """A stamp that could not be read from the tree it was asked about."""
@@ -134,14 +153,24 @@ def files(root: pathlib.Path, paths: tuple[str, ...]) -> list[str]:
     return sorted(set(found))
 
 
-def digest(root: pathlib.Path, paths: tuple[str, ...]) -> str:
-    """One group's digest: its files, their content, in sorted path order."""
+def digest(root: pathlib.Path, paths: tuple[str, ...],
+           content: dict[str, bytes] | None = None) -> str:
+    """One group's digest: its files, their content, in sorted path order.
+
+    A file named in `content` is hashed from those bytes instead of from the tree, which is how a
+    group is read as a release tag holds it: the tag's version header is read from git, and every
+    other file of the group is read from the tree a diff has certified unchanged since the tag.
+    """
+    overrides = content or {}
     accumulator = hashlib.sha256()
     for relative in files(root, paths):
-        content = (root / relative).read_bytes().replace(b"\r\n", b"\n")
+        data = overrides.get(relative)
+        if data is None:
+            data = (root / relative).read_bytes()
+        data = data.replace(b"\r\n", b"\n")
         accumulator.update(relative.encode("utf-8"))
         accumulator.update(b"\n")
-        accumulator.update(hashlib.sha256(content).hexdigest().encode("ascii"))
+        accumulator.update(hashlib.sha256(data).hexdigest().encode("ascii"))
         accumulator.update(b"\n")
     return accumulator.hexdigest()[:DIGEST_CHARS]
 
@@ -154,6 +183,129 @@ def digests(root: pathlib.Path, record: str) -> dict[str, str]:
 def gated(record: str) -> tuple[str, ...]:
     """The groups of a record a finding may be raised for."""
     return tuple(name for name in INPUTS[record] if name not in NOT_GATED)
+
+
+def metadata_groups(record: str) -> tuple[str, ...]:
+    """The groups of a record whose file list carries version metadata."""
+    return tuple(
+        name for name, paths in INPUTS[record].items()
+        if any(metadata == entry.rstrip("/")
+               or metadata.startswith(entry.rstrip("/") + "/")
+               for entry in paths for metadata in VERSION_METADATA)
+    )
+
+
+def _git(root: pathlib.Path, *args: str) -> tuple[int, str, str]:
+    """git at `root`, as (exit status, stdout, stderr). stdout is not trimmed."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True)
+    except OSError as error:
+        return 127, "", f"git could not be run: {error}"
+    return proc.returncode, proc.stdout, proc.stderr.strip()
+
+
+def _git_blob(root: pathlib.Path, name: str) -> tuple[int, bytes, str]:
+    """One git object's bytes, as the object store holds them."""
+    try:
+        proc = subprocess.run(["git", "-C", str(root), "show", name], capture_output=True)
+    except OSError as error:
+        return 127, b"", f"git could not be run: {error}"
+    return proc.returncode, proc.stdout, proc.stderr.decode("utf-8", "replace").strip()
+
+
+def differs_only_in_version_header(root: pathlib.Path, named: str, record: str,
+                                   recorded: dict[str, str]) -> tuple[bool, str]:
+    """Whether the tree at `root` is tag `v<named>`'s code with the version header alone moved.
+
+    A record names a release, and the tag `v` plus that version is the tree it was taken from.
+    A later tree that has moved only in `include/boys/version.hpp` carries the same arithmetic
+    with a later release string, so the record still describes it.
+
+    The answer is proved, not assumed. The tag must resolve; the diff of the tree against it over
+    the record's gated groups must name the version header and nothing else, untracked files
+    included; and the record's own digests must be the tag's, with the header's content at the tag
+    hashed in place of the tree's. A group that does not match is a record of another tree and not
+    a version difference.
+
+    Returns (True, "") when the difference is the version header alone, and (False, why) with a
+    sentence a caller's finding can carry otherwise. A missing repository or tag is a failure and
+    not a pass: without the tag there is no tree to hold the record to, and the difference is
+    refused rather than assumed harmless. `cmake` is not read, for the reason the checkers gate
+    the other groups and not it: a digest does not say which of a flag and a target list a change
+    to it was.
+    """
+    status, _, error = _git(root, "rev-parse", "--git-dir")
+    if status != 0:
+        return False, (
+            f"This is not a git repository that can be read ({error or f'git exited {status}'}), "
+            f"so the difference between version {named} and this tree cannot be verified as the "
+            f"version header alone, and this check fails closed")
+
+    tag = TAG_PREFIX + named
+    status, _, error = _git(root, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}")
+    if status != 0:
+        return False, (
+            f"The record's own tag `{tag}` is not in this repository ({error or 'no such tag'}), "
+            f"so the difference between version {named} and this tree cannot be verified as the "
+            f"version header alone, and this check fails closed")
+
+    paths = tuple(path for name in gated(record) for path in INPUTS[record][name])
+    status, stdout, error = _git(root, "diff", "--name-only", tag, "--", *paths)
+    if status != 0:
+        return False, (
+            f"`git diff {tag}` over the record's inputs could not be read "
+            f"({error or f'git exited {status}'}), so the difference between version {named} and "
+            f"this tree cannot be verified as the version header alone, and this check fails "
+            f"closed")
+
+    moved = {line.strip() for line in stdout.splitlines() if line.strip()}
+    status, stdout, error = _git(root, "ls-files", "--others", "--exclude-standard", "--", *paths)
+    if status != 0:
+        return False, (
+            f"the untracked files under the record's inputs could not be listed "
+            f"({error or f'git exited {status}'}), so the difference between version {named} and "
+            f"this tree cannot be verified as the version header alone, and this check fails "
+            f"closed")
+    moved.update(line.strip() for line in stdout.splitlines() if line.strip())
+
+    beyond = sorted(moved - VERSION_METADATA)
+    if beyond:
+        return False, (
+            f"The tree has moved from tag `{tag}` in {len(beyond)} file(s) the record reads beside "
+            f"the version header: {', '.join(beyond[:6])}"
+            + (", ..." if len(beyond) > 6 else "")
+            + f", so the record's code has moved since the release it names")
+
+    if VERSION_HEADER not in moved or not moved <= VERSION_METADATA:
+        return False, (
+            f"The tree reads the same content as tag `{tag}` over every file the record reads, so "
+            f"the version header is not what moved; the record names version {named}, this tree "
+            f"states another, and the two cannot be reconciled")
+
+    status, header, error = _git_blob(root, f"{tag}:{VERSION_HEADER}")
+    if status != 0:
+        return False, (
+            f"`{VERSION_HEADER}` at tag `{tag}` could not be read "
+            f"({error or f'git exited {status}'}), so the record cannot be held to the release it "
+            f"names, and this check fails closed")
+
+    metadata = metadata_groups(record)
+    for name in gated(record):
+        expected = digest(
+            root, INPUTS[record][name],
+            {VERSION_HEADER: header} if name in metadata else None)
+        stated = recorded.get(name, "")
+        if not stated:
+            return False, (
+                f"The record's inputs hold no {name} group, so there is no content of that group "
+                f"to compare against tag `{tag}` and the version difference cannot be verified")
+        if stated != expected:
+            return False, (
+                f"The record's {name} content ({stated}) is not the content tag `{tag}` holds "
+                f"({expected}), so the record is an account of a tree that release is not, "
+                f"whatever its version line says")
+
+    return True, ""
 
 
 def cell(values: dict[str, str]) -> str:

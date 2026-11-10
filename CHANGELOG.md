@@ -1,8 +1,23 @@
 # Changelog
 
 What changed between released versions of this library, newest first. The version this tree carries
-lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `docs/specification.md` says it
-in a sentence, and `boys::VersionString()` answers it at run time.
+lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `boys::VersionString()` answers it
+at run time.
+
+## 5.3.2
+
+**The public documentation states the surface and the guarantee the code carries.** The README no
+longer restates the version; its quick start builds the library before the first call, names CMake
+3.25 and the Release build type, states the `BOYS_BUILD_C_API` default, describes the installed
+package by its `SameMajorVersion` rule, and lists the complete bf16 and native-half entries. The
+precision surface in the opening and the API table now names fp16 and bfloat16 storage and the
+native half lane. The 5.5e-14 figure is presented as the measured worst and not the guarantee.
+`docs/consumer-perspective.md` separates fp16's 2^-11 from bfloat16's 2^-8, states the native-half
+lane's orders 0 to 32 and its `F_k(x) >= 2^-29` normal-return domain, drops the unsupported
+bottleneck and accuracy-ranking claims, qualifies the compile-time-axes sentence for the run-time
+`EvalScheme` entry, and names `QueryCombination` and `DefaultGuarantee`. The default policy is
+stated per device, precision and shape class. The accuracy gate's README line anchors follow the
+moved paragraphs; no bound, figure, table or returned value moves.
 
 ## 5.3.1
 

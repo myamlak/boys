@@ -4,20 +4,14 @@
 The version is written down once, in `CMakeLists.txt`'s `project(boys VERSION ...)` line, and
 `include/boys/version.hpp` carries it to a program built without CMake. Both of those are held:
 `tests/consumer_umbrella.cpp` fails when the header and the project disagree, and the two committed
-runs are held by `check_recorded_run.py` and `check_probe_run.py`. The prose is not: `README.md`
-states the version twice (the tree's number and the installed package file's compatibility), and
-`docs/specification.md` and `CITATION.bib` each state it once. A release bump that moved the project
-number and missed one of them would leave the front page or the citation describing another
-release, and nothing would go red.
+runs are held by `check_recorded_run.py` and `check_probe_run.py`. The public prose sites do not
+restate it: `README.md` and `docs/specification.md` name the declaration instead. The citation note
+does name the release, because a citation places the software it cites.
 
 This check reads the version from `include/boys/version.hpp` through `tools/record_stamp.py` (the
 same reader the recorded-run checks use; that header and `CMakeLists.txt`'s `project(...)` line are
-held to each other by `tests/consumer_umbrella.cpp`) and holds these sites to it:
+held to each other by `tests/consumer_umbrella.cpp`) and holds this site to it:
 
-  * README.md             "This tree is **version X.Y.Z**."
-  * README.md             "accepts any `X.x` package for a request of `X.Y.Z`" - both numbers, and
-                          the package file is major-version compatible by construction
-  * docs/specification.md "This tree is **version X.Y.Z**."
   * CITATION.bib          "version X.Y.Z, BSD-3-Clause"
 
 A site whose sentence stops matching its pattern is a finding too: a checker that cannot find
@@ -39,14 +33,9 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 
-TREE = re.compile(r"This tree is \*\*version (\d+\.\d+\.\d+)\*\*")
-PACKAGE = re.compile(r"accepts any `(\d+)\.x` package for a request of `(\d+\.\d+\.\d+)`")
 CITATION = re.compile(r"version (\d+\.\d+\.\d+), BSD-3-Clause")
 
 SITES = (
-    ("README.md", TREE, "the tree's version sentence"),
-    ("README.md", PACKAGE, "the installed package file's compatibility sentence"),
-    ("docs/specification.md", TREE, "the tree's version sentence"),
     ("CITATION.bib", CITATION, "the citation note's version"),
 )
 
@@ -87,7 +76,6 @@ def main() -> int:
         print(f"\nSTALE: the project's version {version!r} is not X.Y.Z, so no site can be held "
               f"to it")
         return 1
-    major = int(version_match.group(1))
 
     for rel, pattern, what in SITES:
         path = root / rel
@@ -105,21 +93,13 @@ def main() -> int:
             continue
 
         for match in matches:
-            if isinstance(match, tuple):
-                stated_major, stated = match
-                agree = int(stated_major) == major and stated == version
-                stated = f"{stated_major}.x / {stated}"
-            else:
-                stated = match
-                agree = match == version
-
-            if agree:
+            if match == version:
                 print(f"  {rel}: {what} agrees")
             else:
                 findings.append(
-                    f"{rel}: {what} states {stated!r} and the project states {version}. A release "
+                    f"{rel}: {what} states {match!r} and the project states {version}. A release "
                     f"that moved the project's number and left this site behind would ship a "
-                    f"front page or a citation describing another release")
+                    f"citation describing another release")
 
     if findings:
         print("\nSTALE: the prose version sites disagree with the project")

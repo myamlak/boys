@@ -7,12 +7,34 @@
 
 F_n(x) = ∫₀¹ t^(2n) exp(−x t²) dt, for n = 0..32 and x ≥ 0 — the integral an electronic-structure
 program evaluates at every order a shell quartet can ask for. This is a C++ library that evaluates
-it, in double and single precision, on the CPU and optionally on a GPU. It depends on nothing outside
-the C++ standard library and the optional CUDA toolkit.
+it in double and single precision, at 16-bit storage precision (fp16 and bfloat16 around the
+single-precision engine) and in native half arithmetic, on the CPU and optionally on a CUDA GPU. It
+depends on nothing outside the C++ standard library and the optional CUDA toolkit.
 
-This tree is **version 5.3.1**. The number is written down once, in the top-level `CMakeLists.txt`'s
-`project(boys VERSION ...)` line, and `boys/version.hpp` carries it to a program built without
-CMake: `boys::VersionString()` answers it.
+The version is declared once, in the top-level `CMakeLists.txt`'s `project(boys VERSION ...)` line,
+and `boys/version.hpp` carries it to a program built without CMake: `boys::VersionString()` answers
+it. A release is named by its tag, and the tagged tree's own declaration carries that number.
+
+## Build the library
+
+CMake 3.25 or newer is required.
+
+    git clone https://github.com/myamlak/boys.git && cd boys
+    cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
+    cmake --build build --config Release
+
+`--config Release` names the build type for a multi-config generator such as Visual Studio; a
+single-config generator takes it at configure time — `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release`
+with the same `-D` options.
+
+The three `OFF`s are there so this builds the library and nothing else — the option probe and the C
+linkage surface are units of the archive itself and not targets beside it — which needs no compiler
+past C++20: the suite and the benchmark drivers are the targets that want C++23, and each is behind
+one of those flags. Drop them to build all three as well; that is the contributor's build. This
+build carries no test target, so the accuracy gate and the option probe are not in it:
+`cmake -S . -B build -DBOYS_BUILD_TESTS=ON` on the directory you have is what adds them, and *Check
+the figures yourself* in [the specification](docs/specification.md#accuracy-contract) gives the
+command that then runs the gate.
 
 ## Your first call
 
@@ -89,9 +111,9 @@ What a translation unit needs, by what it is for:
 |---|---|---|
 | declares a wrapper, names a type, or holds an entry as a value | `boys/boys_decl.hpp` | every declaration - the types, the entries, the accuracy queries, the table a report reads - and no arithmetic |
 | calls an entry the default table answers for | `boys/boys.hpp` | the declarations, plus each default entry's own body inline at the row this build's table carries for its class: nothing else is needed, and no archive on the link line |
-| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state. In a library built with `BOYS_ISA_DISPATCH=ON` the library carries both x86-64 tiers and selects one at run time; see Run-time tier selection below |
+| names a policy, `BoysAllOrders<Policy>` rather than `BoysAllOrders` | `boys/boys.hpp` | the same header; the flags the unit is compiled with choose the ISA tier, and no flags is the scalar tier. One flag set per program is the contract the headers state. [The specification's *Runtime ISA dispatch*](docs/specification.md#runtime-isa-dispatch) states the optional mode in which one library carries both x86-64 tiers and selects one at run time |
 | wants everything this library carries | `boys/boys_all.hpp` | the front door, plus the `std::span` overloads, the region-A transform lane and the option probe |
-| is C | `boys/boys_c.h` | the C linkage surface; it is built in the archive, so link it |
+| is C | `boys/boys_c.h` | the C linkage surface; its `BOYS_BUILD_C_API` option defaults to `${BOYS_TOP_LEVEL}` — on in a top-level build, off as a submodule — so a consumer that needs it configures `-DBOYS_BUILD_C_API=ON` and links the archive |
 | is CUDA | `boys/boys_cuda.hpp`, `boys/boys_cuda_device.hpp` | device calls that upload their tables on first use, or the same arithmetic written into your own kernel |
 
 The archive is still needed for two things, and neither is computing F. One is the **reporting
@@ -110,11 +132,7 @@ at the `(n, x)` a calculation asks about — `max(1e-13·F_n(x), 1e-13·F_0(x))`
 and that accessor is one of the archive's. Read the header as what this build measured, and the
 accessor as what a calculation is promised.
 
-    git clone https://github.com/myamlak/boys.git && cd boys
-    cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
-    cmake --build build --config Release
-
-or, against a tree you have already built:
+With the library built, compile the program against it:
 
     c++ -std=c++20 -DBoysFp16=1 -mavx2 -mfma -mf16c -ffp-contract=off \
         -I include try.cpp -L build -lboys -o try     # -I and -L as your build laid them out
@@ -153,15 +171,6 @@ F_0(30)    = 0.16180215937964007
 F_6(30)    = 3.6049669032736188e-08
 ```
 
-The three `OFF`s are there so this builds the library and nothing else — the option probe and the C
-linkage surface are units of the archive itself and not targets beside it — which needs no compiler
-past C++20: the suite and the benchmark drivers are the targets that want C++23, and each is behind
-one of those flags. Drop them to build all three as well; that is the contributor's build. This
-build carries no test target, so the accuracy gate and the option probe are not in it:
-`cmake -S . -B build -DBOYS_BUILD_TESTS=ON` on the directory you have is what adds them, and *Check
-the figures yourself* in [the specification](docs/specification.md#accuracy-contract) gives the
-command that then runs the gate.
-
 On Windows with the Visual Studio generator the library lands in `build/Release/`. This program is
 [`examples/00_first_call.cpp`](examples/00_first_call.cpp); the contributor's build compiles it and
 `ctest` runs it, along with every other program this README and the guide quote, so the transcript
@@ -198,7 +207,9 @@ Installed, from a top-level build:
 That writes the headers to `<prefix>/include/boys`, the archive to `<prefix>/lib`, and the package
 below to `<prefix>/lib/cmake/boys`, as `boysConfig.cmake` and its version file beside
 `boysTargets.cmake`. It exports `boys::boys` and `boys::boys-tier`, and `boys::boys-cuda` when the
-build carried the device lane; the version file accepts any `5.x` package for a request of `5.3.1`.
+build carried the device lane. The version file is written with `COMPATIBILITY SameMajorVersion`:
+a request for any `5.x` release is answered by the installed `5.x` package, and a request for
+another major version is refused.
 The install rules are written at the top level only, so a consumer that adds this tree as a
 subdirectory already has the targets and needs no package:
 
@@ -226,6 +237,10 @@ Each optional, named one at a time:
     cmake -S . -B build -DBUILD_CUDA=ON                              # the device lane
     cmake -S . -B build -DBOYS_BUILD_TESTS=OFF -DBUILD_EXAMPLES=OFF -DBUILD_BENCHMARKS=OFF
 
+The dispatch mode is a developer build on x86-64; [the specification's *Runtime ISA
+dispatch*](docs/specification.md#runtime-isa-dispatch) states the image it carries, how the tier is
+selected and the checks that hold it.
+
 `BOYS_FP16_SEAM=OFF` closes the seam across the whole tree, which is why its line drops the test
 suite too: the suite's accuracy gate names the half entries through a policy on an unguarded path,
 so a configure that asks for both is refused rather than half-built. In a submodule, the same
@@ -239,53 +254,6 @@ program the headers refuse at start-up in a program that links the archive, and 
 against the headers alone.
 
     c++ -std=c++20 -DBoysFp16=1 -I include try.cpp -o try     # the headers alone, no archive
-
-### Run-time tier selection
-
-On x86-64, `-DBOYS_ISA_DISPATCH=ON` compiles the baseline and the AVX2+FMA tiers into one library
-instead of choosing one at compile time. The public entries become declarations defined once in the
-library; each tier's bodies are compiled in that tier's own unit at its own flags; and the
-dispatcher selects one on the first call from the processor's CPUID answer and caches it. A later
-call is one load, one compare and one call into the selected tier — nothing per order and nothing
-per argument. `boys::BoysActiveTier()` reports the selected tier, the tiers the image carries and
-the machine's capability, kept apart because they answer different questions; and
-`boys::BoysAvx2Available()` answers whether this program can execute the AVX2 body, which in this
-mode is the machine's capability *and* the tier being carried.
-
-The selection is the library's, not the caller's: every unit you compile is a client at the
-baseline tier, and a unit compiled with the vector flags is refused at start-up rather than run
-beside a second selection point. The archive is the program's one selection point. `boys::boys-tier`
-still hands a unit the entries inline from the headers — that unit sees the mode off — for a caller
-that wants the compile-time choice. A dispatch configure refuses `-DBUILD_CUDA=ON`, because the
-device lane is compiled at its own flags and is not part of this axis, and refuses a non-x86-64
-target, where the second tier this mode carries does not exist.
-
-**What the two tiers agree on.** At a fixed multiply-add route the Boys evaluation is element-wise
-and order-preserving, so the two tiers return identical bits. That is the cross-tier contract, and
-the suite checks it rather than trusting it: the `BoysDispatch` tests force each carried tier in
-turn and compare one digest over every default entry, which is the same digest the flag-independence
-program prints. Nothing in this library reduces in an order that could change between the tiers, so
-the contract is bit identity and needs no bound. (A consumer's own contractions, where an order can
-change, carry their documented bounds in the consumer's tree.)
-
-**Mangled names carry an internal token.** Each tier's bodies live in an inline namespace whose name
-is part of every symbol it defines — `boys::isa_baseline` or `boys::isa_avx2` — so the linker cannot
-merge the two tiers' definitions; a unit that states `BOYS_DETAIL_ISA_TOKEN` directly overrides the
-derivation, an internal hook and not part of the public interface. The public spelling is
-unchanged: you name `boys::BoysSingle`, and no installed header names a tier namespace. What
-differs is the mangled names inside the archive, so a dispatch archive is not patch-compatible
-with an archive built from another release, and a program links the headers and the archive of one release together.
-
-**The forcing hook belongs to a test build.** With the test suite on, the dispatcher also carries
-`boys::BoysForceTier()` and `boys::BoysClearForcedTier()`, which pin a carried tier so the same
-inputs can run through each in one process. A package build has the suite off, and its header does
-not declare them.
-
-**The MSVC leg does not build the flag-independence check**, because its variants are GCC and Clang
-spellings — `-O2`, `-O3`, `-O3 -march=native` and the AVX2 flag set. In a dispatch build the check
-keeps the two caller-optimizer readings and drops the two that name vector features, which a client
-unit is refused at; on a GNU or Clang host it compares one digest across `-O2` and `-O3`.
-`docs/build-facts.md` records which arithmetic the MSVC leg compiles.
 
 ## Which entry do I call?
 
@@ -301,7 +269,8 @@ By what you want, not by what the library calls things:
 | ...when you know the arguments are already sorted | `BoysAllN` with `BoysSortedArgs{}`, pointer form only | skips the internal sort when your loop already produces a non-decreasing array |
 | ...when the arguments are not known to be in domain | `BoysSingleChecked`, `BoysAllOrdersChecked`, `BoysFixedNChecked`, `BoysAllNChecked`, `BoysAllNAtOrdersChecked` | the checked twin of every double entry above; it refuses with a status rather than answering |
 | any of the above in single precision | `BoysSingleF32`, `BoysAllOrdersF32`, `BoysFixedNF32`, `BoysAllNF32`, `BoysAllNAtOrdersF32` | when the rest of your kernel is `float` |
-| half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16` | 16-bit I/O around the single-precision engine |
+| half-precision storage | `BoysSingleF16`, `BoysAllOrdersF16`, `BoysFixedNF16`, `BoysAllNF16`, `BoysAllNAtOrdersF16`, `BoysSingleBf16`, `BoysAllOrdersBf16`, `BoysFixedNBf16`, `BoysAllNBf16`, `BoysAllNAtOrdersBf16` | 16-bit I/O around the single-precision engine |
+| native half arithmetic | `BoysAllOrdersHalf2`, `BoysAllNF16Native` | region C's ladder evaluated in packed binary16, two arguments to a register; the answer is scaled by 2^15 |
 | an answer on a GPU | `boys/boys_cuda.hpp` | device arrays; uploads its tables on first use, so warm the path before measuring |
 | the same arithmetic inside your own CUDA kernel | `boys/boys_cuda_device.hpp` | when a round trip through global memory would cost more than the evaluation |
 
@@ -331,8 +300,10 @@ above `x ≈ 93`; in between, the bound costs the value accuracy, and at the wor
 format's smallest normal, 2^-1022 in double and 2^-126 in float; below that the return is subnormal
 or zero and no accuracy is claimed. The guarantee is the ladder-scaled floor, not a constant one:
 where F is small the two forms disagree. At `n = 32, x = 29`, F is 1.93e-14 and the lane returned
-6.87e-14 — an error of 4.94e-14, inside the constant `5.5e-14` floor and **2.55 times the true
-value** read relative to F. That
+6.87e-14 — an error of 4.94e-14, **2.55 times the true value** read relative to F, and inside the
+lane's measured worst of 5.5e-14. The measured figure is documentation and not the promise: the
+guarantee at a cell is `BoysAccuracyGuaranteed`'s answer there, or
+`DefaultGuarantee<Precision, Shape, Device>` for a call that names no policy. That
 argument is served by the uniform grid — `FitGranularity::kUniform`, the table whose hi-bound is
 `kFlatHi`, 31.0 in this build — and the ladder-scaled figure holds at every cell of it, at `0.288` of
 the bound at worst.

@@ -18,10 +18,13 @@ binding constraint. In production codes:
 - a density-functional grid carries 1e-6 to 1e-8;
 - coupled-perturbed convergence has thresholds of its own.
 
-All of those are larger than a 1e-14 error here. **Tightening this function past 1e-14 buys nothing
-unless those move too.** Your calculation is almost certainly limited by something else. If so, the
-double lane's accuracy is already more than enough, and the choice to make is which combination of
-fits and arithmetic is cheapest for it on your machine — not how much error to tolerate.
+All of those are larger than a 1e-14 error here, where they apply. **Whether tightening this
+function past 1e-14 buys anything is a question about the cell and the calculation, not a universal
+rule**: where the surrounding error is larger by orders of magnitude it buys nothing, and where this
+function is recomputed and its error compounds — the cases in the next section — it can. Your
+calculation is almost certainly limited by something else. If so, the double lane's accuracy is
+already more than enough, and the choice to make is which combination of fits and arithmetic is
+cheapest for it on your machine — not how much error to tolerate.
 
 ## When you do need the double lane
 
@@ -31,9 +34,10 @@ are the cases where an error here stays in the answer.
 
 ## Where reduced precision earns its place
 
-Half precision cannot serve the accurate path. That is arithmetic rather than opinion: sixteen bits
-carry about five parts in ten thousand. The accuracy these integrals are usually asked for is about
-one part in a hundred trillion.
+Half precision cannot serve the accurate path. That is arithmetic rather than opinion: fp16's last
+representable digit is 2^-11, about five parts in ten thousand, and bfloat16's is 2^-8, about four
+parts in a thousand. The accuracy these integrals are usually asked for is about one part in a
+hundred trillion.
 
 What it *can* serve is work that does not need accuracy.
 
@@ -44,9 +48,9 @@ What it *can* serve is work that does not need accuracy.
   several cycles, so an error of a part in a thousand in the integrals cannot reach the answer.
 - **Anything recomputed in double precision afterwards** — a preconditioner, a trial step, a guess.
 
-The committed half lanes convert each value to sixteen bits on the way in and back on the way out, so
-the conversion is their cost. If you are calling them one value at a time, that conversion is what
-you are paying for. The arithmetic is not the bottleneck.
+The committed half lanes convert each value to 16 bits on the way in and back on the way out, so the
+conversion is part of their cost. Which part of a call dominates its time is a property of your loop
+and your machine; measure it rather than assuming it.
 
 **If your card does sixteen-bit arithmetic on two values per instruction**, that instruction carries
 twice the values a 32-bit one does, which is a factor of two in throughput for the same number of
@@ -54,17 +58,22 @@ instructions. **That is arithmetic on an instruction's shape, not a measurement 
 no timing here supports it. Whether a real code sees it depends on the card and on what else the
 loop is doing.
 
-**These lanes do not cover every order.** The packed-half lane returns values for orders 0 to 8 only.
-At order 9 and above the function is already too small for that format to represent, and no argument
-makes it usable. The 16-bit-storage lanes cover all orders but return nothing usable once the result
-drops below their own bound. That happens at arguments that depend steeply on the order. Before
-putting a reduced-precision lane in a loop, check what it covers for the orders that loop uses.
+**These lanes do not cover every order or argument.** The native-half lane accepts orders 0 to 32,
+but it claims accuracy only where its scaled return, 2^15·F_k(x), is a normal half — that is where
+F_k(x) ≥ 2^-29. That is the whole of the argument range at orders 0 and 1, arguments up to about
+2590 at order 2, and up to 359 / 128 / 30 at orders 3 / 4 / 8; at orders 9 to 32 no argument in
+region C leaves a normal scaled return, so no accuracy is claimed there. The 16-bit-storage lanes
+cover all orders but return nothing usable once the result drops below their own bound. That happens
+at arguments that depend steeply on the order. Before putting a reduced-precision lane in a loop,
+check what it covers for the orders that loop uses.
 
 ## If your arguments are large
 
-Arguments at or above x = 28.984375 have a third option: the packed-half lane. It holds its own
-rounding to within 8 of the last representable digits of the result, for orders 0 to 8. It is the
-most accurate of the 16-bit lanes where it applies, and it is also the narrowest.
+Arguments at or above x = 28.984375 have a third option: the packed-half lane. It holds its scaled
+return, 2^15·F_k(x), to within 8 ULP — the next power of two above the measured worst of 4.243 ULP,
+a swept maximum rather than a proof bound — and only where that scaled return is normal, which at
+orders above 2 ends at the arguments the previous section gives. It is the narrowest of the 16-bit
+lanes.
 
 The region-A transform lane is the other alternative direction. It computes a batch of arguments at
 once and lets you choose the arithmetic, including a 32-bit mode for cards that have no 64-bit
@@ -94,22 +103,26 @@ of them is a decision a caller can make:
 Each is a type the policy names: `FitRoute`, `EvalScheme`, `FitGranularity`, `PackAxis`,
 `DivisionForm`. [The API reference](mainpage.md) documents each beside the argument it fills.
 
-**Every axis is a name resolved where the code is written.** The route, the scheme, the partition,
-the packing axis and the division form are written into the call site, and there is nothing left over
-to decide per call. That is deliberate: which fits to read and how to sum them is a decision made
-once, while the code is being written. A call site that resolved it on every call would pay, every
-time, to rediscover what its author already knew. So the axes are resolved where they are
-named and nowhere else: there is no combination to look up at the call, no name to match and no
-registry to consult. A call costs nothing beyond the arithmetic it asked for.
+**Every axis but one is a name resolved where the code is written.** The route, the scheme, the
+partition, the packing axis and the division form are written into the call site, and there is
+nothing left over to decide per call — except in one entry: `BoysAllOrdersWithRoute(EvalScheme, ...)`
+takes the scheme as a run-time argument, while its route stays a name resolved in the code. That is
+deliberate: which fits to read and how to sum them is a decision made once, while the code is being
+written. A call site that resolved it on every call would pay, every time, to rediscover what its
+author already knew. So the axes are resolved where they are named and nowhere else: there is no
+combination to look up at the call, no name to match and no registry to consult. A call that names
+its axes at the call site costs nothing beyond the arithmetic it asked for.
 
 **The library defaults what a caller has not decided, and the line between the two is the library's to
 draw.** Precision and the shape of the question are the caller's, because they change what
 comes back: which arithmetic is used, and whether the call answers for one order or for a ladder of
 them, at one argument or across an array of arguments. The five structural axes are the library's to
 default, and the device lane's own two — the division form its recurrence divides in and the
-region-B exponential its tables read — with them. Each precision has one setting that a call naming
-nothing receives. A caller who cares about one of them may name it; a caller who does not is not
-asked to.
+region-B exponential its tables read — with them. **A default belongs to a class — one device, one
+precision and one shape of question — and not to a precision alone**: each such class has one
+setting that a call naming nothing receives, and a call's figure is
+`DefaultGuarantee<Precision, Shape, Device>`. A caller who cares about one of them may name it; a
+caller who does not is not asked to.
 
 **Where the recommendation comes from: a measurement taken where you deploy.** Which combination is
 cheapest depends on the machine, on whether your compiler fuses a product-plus-add into one
@@ -134,9 +147,11 @@ default is. A reader told the default was a measured win would have been told so
 measurement does not say.
 
 **If you have a number to stay under rather than a ranking to read**, the library answers that
-question directly. Name a combination and the absolute error your calculation needs; you get a
-verdict beside the two figures it was made on. A combination whose guaranteed bound is at or below
-your requirement is inside it, and that guarantee is the state a calculation's safety can rest on. A
+question directly, through `QueryCombination`. Name a precision, an `(n, x)` cell, a combination and
+the absolute error your calculation needs; you get a verdict beside the two figures it was made on.
+A combination whose guaranteed bound is at or below your requirement is inside it, and that
+guarantee — `BoysAccuracyGuaranteed` at the cell, or `DefaultGuarantee<Precision, Shape, Device>` for
+a call that names no policy — is the state a calculation's safety can rest on. A
 combination whose guaranteed bound is above your requirement, but whose measured error is at or
 below it, is at your target in what it delivers and outside its guarantee. Read that state as what it
 is, not as a promise. A combination that is neither is outside. The two figures are also what to rank
