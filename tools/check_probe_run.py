@@ -14,7 +14,11 @@ This check is that half, and it reads the two cells of the stamp through `tools/
 the module that states what a digest covers:
 
   * `version <v>`, held to the version `include/boys/version.hpp` states - the release this tree
-    is, which is what a reader places a record by;
+    is, which is what a reader places a record by. A version is metadata and not an arithmetic
+    input: when the report names an older release, the report's own tag `v<v>` is read, and the
+    report is accepted with a note when the only gated input that moved since that tag is the
+    version header and the report's own digests are that tag's. A difference a tag cannot prove
+    is a finding, not a pass;
   * `inputs <group>=<digest> ...`, recomputed from this tree and compared group by group. This is
     the check that holds: the version is bumped by hand, and a source file that moved under a
     stamp nobody bumped is the record this check exists to refuse.
@@ -23,7 +27,9 @@ The stamp named a commit until it named content, and the reason for the move is 
 request is squash merged, so a commit id written into a tracked artifact is in no clone's history
 afterwards, and a checker resolving one refuses the record for a reason about the merge rather
 than about the tree. A squash carries the same bytes, so the digest is the identity that survives
-it, and this check reads no history at all - it works in a checkout one commit deep.
+it. No history is read where the report names this tree's version; the one history read is the tag
+the report's own version names, and it is read only to prove that a version difference is the
+header alone.
 
 A group whose digest moved is a finding, because the files the probe reads decide what it prints.
 `CMakeLists.txt` is the exception, reported and not gated, for a reason that is a limit of
@@ -45,10 +51,13 @@ Usage:
     python3 tools/check_probe_run.py --report build-probe-record/report.txt
     python3 tools/check_probe_run.py --control
 
-Exit status is 0 when the report names this tree's version and every group of its inputs cell
-reads the same content here, and 1 when one differs, when the stamp names no version or no
-inputs, when a cell states `unknown`, or when there is no recorded report to read at all. A run
-with `--control` exits 0 when every planted defect is caught and 1 when one is not.
+Exit status is 0 when the report describes this tree's code - it names this tree's version, or
+names an older one whose tag proves the version header is the only gated input that moved - and
+every group of its inputs cell reads the same content here, and 1 when one differs, when a version
+difference cannot be proved to be the header alone (including when the tag it names is not in the
+repository), when the stamp names no version or no inputs, when a cell states `unknown`, or when
+there is no recorded report to read at all. A run with `--control` exits 0 when every planted
+defect is caught and 1 when one is not.
 """
 
 from __future__ import annotations
@@ -184,6 +193,15 @@ def read(report_path: pathlib.Path) -> tuple[list[str], list[str]]:
     named = found.group("version").strip() if found else ""
     lines.append(f"  version: {named or 'none named'}")
 
+    found = INPUTS.search(first)
+    stated = found.group("inputs").strip() if found else ""
+    recorded = record_stamp.parse_cell(stated) if stated and stated != UNKNOWN else {}
+
+    # Whether a version difference has been proved to be the version header alone. It is what
+    # lets a metadata group's digest differ: the report has been held to the tag it names, so the
+    # difference there is the header and not arithmetic.
+    version_only = False
+
     if not named or named == UNKNOWN:
         findings.append(
             f"{display(report_path)} names no version: its first line "
@@ -209,18 +227,38 @@ def read(report_path: pathlib.Path) -> tuple[list[str], list[str]]:
         else:
             lines.append(f"  this tree: version {tree_version}")
             if named != tree_version:
-                findings.append(
-                    f"{display(report_path)} names version {named}, and this tree states "
-                    f"{tree_version}: the report is an account of another release, and the labels "
-                    f"its rows carry are the options that release served, so a document held to "
-                    f"it is held to an option surface this tree may not carry. Re-make the report "
-                    f"- build boys-option-probe in this tree, run it, and write its output to "
-                    f"{display(report_path)} - and commit the new record with the change that "
-                    f"moved the version"
-                )
-
-    found = INPUTS.search(first)
-    stated = found.group("inputs").strip() if found else ""
+                if not recorded:
+                    findings.append(
+                        f"{display(report_path)} names version {named}, and this tree states "
+                        f"{tree_version}, and it names no content to hold that difference to: a "
+                        f"version is metadata only where the record states the inputs it read, so "
+                        f"this difference cannot be shown to be the version header alone and this "
+                        f"check fails closed. Re-make the report - build boys-option-probe in "
+                        f"this tree, run it, and write its output to {display(report_path)} - and "
+                        f"commit the new record with the change that moved the version"
+                    )
+                else:
+                    only, why = record_stamp.differs_only_in_version_header(
+                        REPO, named, RECORD, recorded)
+                    if only:
+                        version_only = True
+                        lines.append(
+                            f"  note: the report names version {named}, and this tree states "
+                            f"{tree_version}: since tag {record_stamp.TAG_PREFIX}{named} the only "
+                            f"file the report's gated inputs name that moved is "
+                            f"{record_stamp.VERSION_HEADER}, which is release metadata and not an "
+                            f"arithmetic input, so the arithmetic inputs are identical and the "
+                            f"record describes the same code")
+                    else:
+                        findings.append(
+                            f"{display(report_path)} names version {named}, and this tree states "
+                            f"{tree_version}: the report is an account of another release, and the "
+                            f"labels its rows carry are the options that release served, so a "
+                            f"document held to it is held to an option surface this tree may not "
+                            f"carry. {why}. Re-make the report - build boys-option-probe in this "
+                            f"tree, run it, and write its output to {display(report_path)} - and "
+                            f"commit the new record with the change that moved the version"
+                        )
 
     if not stated or stated == UNKNOWN:
         lines.append(f"  inputs: {stated or 'none named'}")
@@ -239,6 +277,7 @@ def read(report_path: pathlib.Path) -> tuple[list[str], list[str]]:
     recorded = record_stamp.parse_cell(stated)
     expected = record_stamp.INPUTS[RECORD]
     computed = record_stamp.digests(REPO, RECORD)
+    metadata = record_stamp.metadata_groups(RECORD)
     edited = edited_here()
 
     lines.append(
@@ -255,6 +294,11 @@ def read(report_path: pathlib.Path) -> tuple[list[str], list[str]]:
                 f"leaves out is one this check cannot compare. Re-make the report from a build "
                 f"of this tree"
             )
+        elif recorded[name] != computed[name] and version_only and name in metadata:
+            lines.append(
+                f"    {name}: recorded {recorded[name]}, this tree {computed[name]} "
+                f"(the difference is {record_stamp.VERSION_HEADER} alone, the version "
+                f"metadata the note above names)")
         elif recorded[name] != computed[name]:
             lines.append(f"    {name}: recorded {recorded[name]}, this tree {computed[name]}")
             findings.append(
@@ -333,6 +377,34 @@ def moved_digest() -> tuple[str, str]:
     return name, record_stamp.digest(scratch, paths)
 
 
+def tag_layout() -> list[tuple[str, str, list[str]]]:
+    """Every tag, the version its header states, and the gated files this tree has moved in since.
+
+    The control builds its version-difference arms from real tags. A fixture that names a version
+    the tree is not must name a tag git can compare, or the arm exercises the fail-closed reading
+    and not the one it is planted for.
+    """
+    paths = tuple(path for name in record_stamp.gated(RECORD)
+                  for path in record_stamp.INPUTS[RECORD][name])
+    status, tags, _ = git("tag", "--list", "--sort=-v:refname")
+    if status != 0:
+        return []
+    layout: list[tuple[str, str, list[str]]] = []
+    for tag in (line.strip() for line in tags.splitlines() if line.strip()):
+        status, text, _ = git("show", f"{tag}:{record_stamp.VERSION_HEADER}")
+        if status != 0:
+            continue
+        stated = record_stamp.VERSION.search(text)
+        if stated is None:
+            continue
+        status, changed, _ = git("diff", "--name-only", tag, "--", *paths)
+        if status != 0:
+            continue
+        moved = sorted(line.strip() for line in changed.splitlines() if line.strip())
+        layout.append((tag, stated.group("version"), moved))
+    return layout
+
+
 def control() -> int:
     """Plant the ways a report stops describing the tree, and require each to be caught.
 
@@ -341,9 +413,11 @@ def control() -> int:
     would be a reading that cannot see the defect it exists for - which is how a report went
     stale while every check over it stayed green.
 
-    The last arm is the other direction: a fixture carrying this tree's own version and this
-    tree's own digests, which must read clean. A control whose every arm is caught has not shown
-    that the check can pass, and a check that cannot pass is one a reader stops reading.
+    The clean arms are the other direction: a fixture carrying this tree's own version and
+    digests, and - when the report names an older release and its tag proves the version header
+    is the one gated input that moved - the report as it stands, which must read clean and carry
+    the note. A control whose every arm is caught has not shown that the check can pass, and a
+    check that cannot pass is one a reader stops reading.
     """
     source = REPORT.read_text(encoding="utf-8", errors="replace") if REPORT.is_file() else ""
     header = (source.splitlines()[0] if source.splitlines()
@@ -358,36 +432,95 @@ def control() -> int:
 
     # What this tree would stamp its own report with. Every arm below differs from it in one
     # cell, so a finding is the arm's own defect and not a second one read beside it.
-    base: dict[str, str | None] = {"version": record_stamp.version(REPO),
+    tree_version = record_stamp.version(REPO)
+    base: dict[str, str | None] = {"version": tree_version,
                                    "inputs": record_stamp.cell(clean)}
 
+    # The version-header-only reading, planted from real tags. The first arm is this tree's own
+    # report when it names an older release whose tag holds the same code with only the header
+    # moved - the state a docs-only release leaves, and the one this check must accept with a
+    # note. The second names a tag whose gated code has moved since it, which must still read as
+    # another release.
+    layout = tag_layout()
+    version_arms: list[tuple[str, dict[str, str | None], str | None, str | None]] = []
+    unplantable = 0
+
+    named = VERSION.search(header)
+    stated_inputs = INPUTS.search(header)
+    record_version = named.group("version").strip() if named else ""
+    record_inputs = stated_inputs.group("inputs").strip() if stated_inputs else ""
+    if record_version and record_version != tree_version and record_inputs \
+            and record_inputs != UNKNOWN:
+        only, why = record_stamp.differs_only_in_version_header(
+            REPO, record_version, RECORD, record_stamp.parse_cell(record_inputs))
+        if only:
+            version_arms.append((
+                f"this tree's own report, taken at version {record_version} before the version "
+                f"header alone moved to {tree_version}",
+                {"version": record_version, "inputs": record_inputs},
+                None, "the record describes the same code"))
+        else:
+            unplantable += 1
+            print(f"control note: the version-header-only arm is not plantable from this tree's "
+                  f"report: {why}")
+    else:
+        unplantable += 1
+        print("control note: the version-header-only arm is not plantable: this tree's report "
+              "names this tree's version, so there is no version difference to read")
+
+    moved_beyond = [
+        (tag, version, [path for path in moved if path not in record_stamp.VERSION_METADATA])
+        for tag, version, moved in layout
+        if version != tree_version
+        and any(path not in record_stamp.VERSION_METADATA for path in moved)
+    ]
+    if moved_beyond:
+        tag, version, beyond = moved_beyond[0]
+        version_arms.append((
+            f"a report of version {version} (tag {tag}) whose code has moved since it in "
+            f"{len(beyond)} gated file(s)",
+            {"version": version}, "another release", None))
+    else:
+        unplantable += 1
+        print("control note: the moved-code arm is not plantable: no tag in this repository "
+              "names another version whose gated content has moved since it")
+
     # Each arm states the reading it is planted for: a control that failed for another reason
-    # would be a green control over a check that cannot see this defect.
-    arms: list[tuple[str, dict[str, str | None], str | None]] = [
-        ("a stamp with the version cell taken out", {"version": None}, "names no version"),
+    # would be a green control over a check that cannot see this defect. A line marker is the
+    # note a clean arm must carry, and None where the arm expects no note.
+    arms: list[tuple[str, dict[str, str | None], str | None, str | None]] = [
+        ("a stamp with the version cell taken out", {"version": None}, "names no version", None),
         (f"a build that could not name the version it linked, so its cell reads `{UNKNOWN}`",
-         {"version": UNKNOWN}, "names no version"),
+         {"version": UNKNOWN}, "names no version", None),
         ("a report of a version this tree is not", {"version": "0.0.0-planted"},
-         "another release"),
-        ("a stamp with the inputs cell taken out", {"inputs": None}, "names no inputs"),
+         "another release", None),
+        ("a stamp with the inputs cell taken out", {"inputs": None}, "names no inputs", None),
         (f"a report whose {name} digest is of content this tree does not carry",
-         {"inputs": record_stamp.cell(differing)}, "content the report was taken from differs"),
-        ("this tree's own version and this tree's own digests", {}, None),
+         {"inputs": record_stamp.cell(differing)}, "content the report was taken from differs",
+         None),
+        ("this tree's own version and this tree's own digests", {}, None, None),
+        *version_arms,
     ]
 
     failures = 0
     planted = 0
 
-    for index, (what, cells, expected) in enumerate(arms):
+    for index, (what, cells, expected, note) in enumerate(arms):
         fixture = WORK / f"control-{index}.txt"
         fixture.write_text(stamped(header, {**base, **cells}) + "\n" + body, encoding="utf-8")
-        _, findings = read(fixture)
+        lines, findings = read(fixture)
 
         print(f"control {index}: {what} - written to {display(fixture)}")
 
         if expected is None:
             caught = not findings
-            print("  clean" if caught else f"  NOT CLEAN: {findings[0][:96]}")
+            if caught and note is not None:
+                caught = any(note in line for line in lines)
+            if caught:
+                print("  noted" if note is not None else "  clean")
+            else:
+                print(f"  NOT CLEAN: {findings[0][:96]}" if findings
+                      else f"  NOT NOTED: no line reads `{note}`")
         else:
             planted += 1
             caught = any(expected in finding for finding in findings)
@@ -395,13 +528,16 @@ def control() -> int:
 
         failures += 0 if caught else 1
 
+    if unplantable:
+        print(f"\ncontrol: {unplantable} version arm(s) were not plantable in this checkout, so "
+              f"the reading they cover was not exercised here")
+
     if failures:
         print(f"\ncontrol: {failures} of {len(arms)} arm(s) did not read as planted. This check "
               f"cannot see the defect it exists for, so a green run of it says nothing")
         return 1
 
-    print(f"\ncontrol: all {planted} planted defect(s) caught, and the report this tree stamps "
-          f"reads clean")
+    print(f"\ncontrol: all {planted} planted defect(s) caught, and every clean arm reads clean")
     return 0
 
 
@@ -429,9 +565,9 @@ def main() -> int:
         return 1
 
     print(
-        "\nverdict: clean - the recorded report names this tree's version, and every group of "
-        "the content it says it read reads the same here: the labels its rows carry are this "
-        "tree's probe's"
+        "\nverdict: clean - the recorded report describes this tree's code: every group of the "
+        "content it says it read is unchanged since the release it names, and the labels its rows "
+        "carry are this tree's probe's"
     )
     return 0
 

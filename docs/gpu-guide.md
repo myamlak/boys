@@ -606,6 +606,6 @@ is turn one card's reading into a claim about yours.
 
 - `docs/getting-started.md` in this tree — the CPU half of this page, task by task.
 - [The per-lane contract](lane-contract.md) — the bound each lane guarantees, over which interval,
-  and where it stops; the default policy per precision and per device.
+  and where it stops; the default policy per device, precision and shape class.
 - [The API reference](mainpage.md) — every entry, every type, and the vocabulary this library uses.
 - [Build facts](build-facts.md) — what a build of this library is, read out of the build.

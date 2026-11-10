@@ -55,8 +55,8 @@ which is why the ratio on those lines is above one, and no verdict counts them: 
 on each line, and the run's summary line counts them in none of its verdicts.
 
 **A caller that has chosen a precision and does not want to choose an axis wants one name.** The
-section *The default policy, per precision and per device* states, for each precision and for the
-device lane, what its default selects, the bound it carries, and where those settings come from.
+section *The default policy, per device, precision and shape class* states, for each class, what its
+default selects, the bound it carries, and where those settings come from.
 
 ## How the argument affects the bound
 
@@ -1682,14 +1682,15 @@ accessor's own tables like the rest, because the query reads a table rather than
 is refused; a member the library has not derived would be asked the same question and would answer
 with no verdict, no figure and the accessor's own sentence rather than with a number.
 
-## The default policy, per precision and per device
+## The default policy, per device, precision and shape class
 
-A caller that has chosen a precision and nothing else writes one name. Every precision the library
-offers has one, and an entry that names no policy at the call site is answered by
+A caller that has chosen a precision and a shape and nothing else writes one name. **A default
+belongs to a class — one device, one precision and one shape of question — and not to a precision
+alone**, and an entry that names no policy at the call site is answered by
 `DefaultPolicy<Precision, Shape>`: the class's own row in
 `include/boys/boys_build_defaults.hpp`, which the four `DefaultPolicy*` names below coincide with on a
-class whose row is the five and not otherwise. This section states what each name
-selects and the bound it carries.
+class whose row is the five and not otherwise. The device lane's default is one name, stated at the
+end of this section. This section states what each name selects and the bound it carries.
 
 **A class's default is its own row, and the seam's seven are stated choices.** A class's row carries
 the combination its entries compile when the call site names no policy; the marker above the row

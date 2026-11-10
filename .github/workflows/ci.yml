@@ -453,6 +453,11 @@ jobs:
       - uses: actions/checkout@v7.0.1
         with:
           submodules: true
+          # The recorded-run and option-probe gates resolve the tag a record
+          # names, to prove a version-header-only change did not move the
+          # arithmetic inputs. A shallow checkout has no such tag and the gates
+          # fail closed, so this leg fetches the full history.
+          fetch-depth: 0
       # The source-integrity gates below answer questions about the SOURCES:
       # whether the committed coefficient tables are what the generator
       # produces, whether the generated pages are what their generators render,

@@ -9832,13 +9832,13 @@ int main(int argc, char** argv) {
     };
 
     static constexpr Registration kRegistrations[] = {
-        {"D01", "README.double.single", "README.md", "lines 322-324, the bound's first paragraph",
+        {"D01", "README.double.single", "README.md", "lines 291-293, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for.",
          "1e-13"},
-        {"D01", "README.double.batch", "README.md", "lines 322-324, the bound's first paragraph",
+        {"D01", "README.double.batch", "README.md", "lines 291-293, the bound's first paragraph",
          "For every `n <= 32` and every `x >= 0` the error of a returned value is at or below **`1e-13 · F_0(x)`** — the ladder's first rung scaled by `1e-13`, not the value the caller asked for.",
          "1e-13"},
-        {"F01", "README.float", "README.md", "lines 346-349, the float lane's figure",
+        {"F01", "README.float", "README.md", "lines 317-320, the float lane's figure",
          "The float lane's figure carries a floor of its own for the same reason: binary32 arithmetic on values of order one leaves about `1e-7` behind whatever the value is, so that lane states the larger of `2^-22 · F_n(x)` and the `1.5e-7` it already published, plus `1e-7` in the plain-reciprocal form.",
          "2^-22"}, // the base bound the row is judged at; 1.5e-7 is the value floor and 1e-7 the plain-reciprocal term beside it
         {"H01", "README.half", "docs/mainpage.md", "lines 219-219, the lanes table",
