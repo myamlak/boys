@@ -640,16 +640,26 @@ bound, so a caller who needs accuracy relative to their own argument should use 
 lane.
 
 **The margin is thin, and it is not the same for both formats.** Both figures below were measured
-against a 45-digit reference, over every argument either format can represent
-and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it
-is the instrument the two figures rest on. A sparser grid understates them — the committed reference
-grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are
-worse. For the 16-bit format the worst case is **0.9993 of the bound**, a margin of 0.07 per cent.
-For the 16-bit brain-float format the worst case is **0.99992 of the bound**, a margin of 0.008 per
-cent, against the 16-bit format's 0.07. At that distance the representation term is very
-nearly the whole bound, and the arithmetic term has almost nothing left to spend. One extra step of
-error anywhere in the lane therefore pushes a result over its bound. Treat this lane as inside its
-bound with nothing to spare.
+against a 45-digit reference, over every argument either format can represent and every order: a
+16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the
+instrument the two figures rest on. The fractions are of the accuracy gate's internal test slot,
+`1e-7` plus half an ULP of the returned value, and **not** of the published `1.5e-7` plus
+half-ULP contract this lane states above: the slot is the tighter bar the suite asserts, and a
+fraction of it is not a fraction of the published figure. A sparser grid understates them — the
+committed reference grid reads 0.999 of the slot for the 16-bit format and 0.9994 for the
+brain-float one, and both figures here are worse. For the 16-bit format the worst case is
+**0.9993 of the slot**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst
+case is **0.99992 of the slot**, a margin of 0.008 per cent, against the 16-bit format's 0.07. At
+that distance the representation term is very nearly the whole slot, and the arithmetic term has
+almost nothing left to spend. One extra step of error anywhere in the lane therefore pushes a
+result over its bound. Treat this lane as inside its bound with nothing to spare.
+
+**The sweep is the v5.1.1 record, and it is not a measurement of this release's default entry.**
+The record is deposited under `tests/data/half-sweep`; it measured the scalar store-half entries,
+`BoysSingleF16` and `BoysSingleBf16`, at tag `v5.1.1`. The default fp16 entry has changed since
+that record, and no exhaustive rerun at this release is deposited: the ratios above are the
+record's measurements of the entries it names, and the accuracy gate's committed grid is what
+this release re-measures.
 
 **The limit is the 16-bit format.** Sixteen bits carry
 about eleven significant bits, or five parts in ten thousand, and the bound already spends half of
@@ -1702,7 +1712,7 @@ of an axis**: their scheme and partition members are fixed in the header (`kHorn
 a class's row may differ from them. The committed transcript of the full protocol is
 `tests/data/boys_option_probe_report.txt`: it ranks the whole space, while the default rows' own
 records name the runs their figures came from. Its tables carry every member of the six axes it
-crosses, and on it the uniform partition leads the fp64 single class — 105.39 against 290.77 ns
+crosses, and on it the uniform partition leads the fp64 single class — 110.50 against 294.84 ns
 per argument for the fastest narrow row, which is on the committed Chebyshev route; the fastest
 rational-route narrow row is 437.84 (`single-batch-narrow-rational-minimax-plain-reciprocal-fp64`). The route and the packing axis
 are ranked by it too: the run's winners name the Chebyshev route in every host class and the

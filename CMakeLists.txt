@@ -982,6 +982,35 @@ if (BOYS_BUILD_TESTS)
             $<$<COMPILE_LANGUAGE:CUDA>:-Xcompiler=/utf-8>)
     endif()
 
+    # THE NO-VECTOR SCALAR FALLBACK. src/boys_simd.cpp defines its region entry points against
+    # the certified scalar lanes in the branch a target with no vector engine compiles; that
+    # branch is what a non-x86 target and an x86 one built with BOYS_ISA_AVX2=OFF carry, and the
+    # arm64 CI legs build it, but no test called it: the packed sweep runs only where the AVX2
+    # bodies exist. This target compiles the shipped source in exactly that configuration -
+    # BOYS_SIMD_X86=0 says the target carries no vector engine, BOYS_ISA_AVX2_FMA=0 keeps the
+    # scalar tier in the headers - and calls every entry over its documented region and every
+    # supported order, comparing each return bit for bit with the certified scalar lane.
+    #
+    # It links NO library: the library's own copy of the unit is compiled at the vector tier in
+    # an AVX2 configure, and a baseline unit linked beside it would be a mixed-tier program the
+    # guard refuses at start-up. The executable's two translation units are its whole program, so
+    # the fallback is what it measures in every configure; ctest runs it as
+    # boys-no-vector-fallback on every leg. The same sweep backs the accuracy gate's
+    # code.no_vector_fallback row where the build carries the fallback.
+    add_executable(boys-no-vector-fallback
+        tests/boys_no_vector_fallback_test.cpp
+        src/boys_simd.cpp)
+    target_include_directories(boys-no-vector-fallback PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include")
+    target_compile_definitions(boys-no-vector-fallback PRIVATE
+        BOYS_SIMD_X86=0
+        BOYS_ISA_AVX2_FMA=0
+        # The test suite is refused with the fp16 seam closed, so the half entries are part of
+        # the surface this target measures; both of its translation units read the same seam.
+        BoysFp16=1)
+    target_compile_features(boys-no-vector-fallback PRIVATE cxx_std_23)
+    boys_strict_warnings(boys-no-vector-fallback)
+
     # The external-row application: when ON, the gate measures Boost.Math's documented Airy
     # sentence as two rows of its own book. Requires Boost >= 1.92; OFF leaves the build unchanged.
     option(BOYS_GATE_EXTERNAL_BOOST
@@ -1739,6 +1768,9 @@ int main() {
     # The gate's own logic, without the sweep: the consistency row's four states and the exact
     # wording of its last line, which a document quotes. It reads no grid and measures nothing.
     add_test(NAME boys-accuracy-gate-selftest COMMAND boys-accuracy-gate --self-test)
+    # The no-vector scalar fallback, compiled in its own executable from the shipped source at
+    # the tier a target with no vector engine uses; it links no library and reads no grid.
+    add_test(NAME boys-no-vector-fallback COMMAND boys-no-vector-fallback)
     # The external-row reading: same binary, its own script; the run must exit non-zero with
     # both rows exceeded.
     if (BOYS_GATE_EXTERNAL_BOOST)

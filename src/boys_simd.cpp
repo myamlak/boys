@@ -371,10 +371,14 @@ struct Bf16Lane {
     }
 };
 
-// Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their
-// scalar tails call the half-lane scalar entries; the vector bodies hold the
-// same documented bound as those entries but are not bit-identical to them (the
-// bodies run the fp32 fit at full degree where the scalar lane truncates it).
+// The 8-wide half-I/O region kernels hold the published half-lane budget
+// (1.5e-7 plus one half-ULP) on the region each documents as its precondition,
+// on the x86_64 targets that carry those kernels.
+
+// Implementation note: their scalar tails call the half-lane scalar entries, the
+// vector bodies run the fp32 fit at full degree where the scalar lane truncates
+// it, and the two need not return the same bits.
+
 // The 8-wide half-I/O region kernels never drift from the certified scalar half
 // lane by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64
 // targets that carry those kernels.
@@ -628,9 +632,9 @@ void BoysRegionCSimdBf16(int n, const Bf16* x, Bf16* out, std::size_t count) noe
 #else // BOYS_SIMD_X86
 
 // A target with no vector engine compiled in: the same entry points, defined against the
-// certified scalar lanes. The region contract stays a sufficient precondition, just not a
-// required one, and the bodies mirror the scalar tails the x86 entries run for their last
-// count % 4 elements.
+// certified scalar lanes. Each returns the certified scalar lane's value bit for bit at the same
+// argument, over the region the entry documents as its precondition and every supported order;
+// the region contract stays a sufficient precondition, just not a required one.
 namespace boys {
 
 inline namespace BOYS_DETAIL_ISA_NAMESPACE {

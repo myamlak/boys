@@ -11,8 +11,29 @@ it.** The new claim, P12, states the property `src/boys_simd.cpp` carries in a c
 half-I/O region kernels never drift from the certified scalar half lane by a value the internal
 1e-7 fit budgets cannot absorb, on the x86_64 targets that carry those kernels. The registration
 binds P12 to `code.half_simd_budget`, a row that was retained and unbound until now, and the gate's
-last line reports the registration table's 37 documented claims in 38 entries. No bound, figure,
+last line reports the registration table's 38 documented claims in 39 entries. No bound, figure,
 table or returned value moves.
+
+**The half-lane margin names its slot, the half-SIMD comment states what its row measures, and the
+no-vector fallback is measured.** `docs/lane-contract.md`'s half-lane paragraph now states that its
+0.9993 and 0.99992 fractions are of the accuracy gate's internal `1e-7` plus half-ULP test slot,
+not of the published `1.5e-7` plus half-ULP contract, and that the exhaustive sweep is the
+deposited `v5.1.1` record of the scalar store-half entries: the default fp16 entry has changed
+since that record and no exhaustive rerun at this release is deposited. The comment above the
+8-wide half-I/O region kernels is narrowed to the individual bound `code.half_simd_cells`
+measures, with the implementation description moved to its own note. The no-vector scalar
+fallback's comment now states that each entry returns the certified scalar lane's value bit for
+bit, and the new `boys-no-vector-fallback` test compiles `src/boys_simd.cpp` with
+`BOYS_SIMD_X86=0` and `BOYS_ISA_AVX2_FMA=0`, calls every region entry at every supported order,
+and compares each return with the certified scalar lane. The gate's new
+`code.no_vector_fallback` row carries P10 and measures the same sweep in a build that carries the
+fallback; the committed CUDA record measures 4 of 4 device lanes, certifies 192 of 192 members of
+the option space, and names `code.no_vector_fallback` as not carried there. The registration table
+binds 38 documented claims in 39 entries. The option-probe report keeps its measured content and
+its stamp follows the current sources; the guide's quoted probe figures are 110.50 and 294.84 ns
+per argument, and the `linux-sanitizers asan+ubsan` build-facts row records
+`sanitizers=address,undefined`, which is what that leg's compiler reports. No accuracy bound,
+coefficient table or returned value moves.
 
 ## 5.3.2
 
