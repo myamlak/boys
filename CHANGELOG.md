@@ -4,6 +4,16 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `boys::VersionString()` answers it
 at run time.
 
+## 5.3.3
+
+**The accuracy gate enumerates the half-SIMD pair-sum claim and binds it to the row that measures
+it.** The new claim, P12, states the property `src/boys_simd.cpp` carries in a comment: the 8-wide
+half-I/O region kernels never drift from the certified scalar half lane by a value the internal
+1e-7 fit budgets cannot absorb, on the x86_64 targets that carry those kernels. The registration
+binds P12 to `code.half_simd_budget`, a row that was retained and unbound until now, and the gate's
+last line reports the registration table's 37 documented claims in 38 entries. No bound, figure,
+table or returned value moves.
+
 ## 5.3.2
 
 **The public documentation states the surface and the guarantee the code carries.** The README no

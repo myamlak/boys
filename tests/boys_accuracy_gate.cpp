@@ -1400,7 +1400,7 @@ std::string HalfSimdEvidenceAbsentEvidence(bool avx2Available)
 // registration table. The gate neither carries the enumeration nor decides which registered
 // claims restate their sentence; both are audit figures, named in the verdict line so a row count
 // is not read as documentation coverage.
-constexpr int kAuditClaimEnumeration = 155;
+constexpr int kAuditClaimEnumeration = 156;
 constexpr int kRegisteredClaimsMeasuredNotRestated = 1;
 
 // The last line of a passing run, in the one form both branches print: what was judged, and what
@@ -1527,20 +1527,20 @@ int RunGateSelfTest()
 
     const std::string judgedPass =
         "  PASS: every claim this gate judges is met at this revision: the claim book's 38 judged "
-        "rows of 38. The registration table binds 36 documented claims, 1 of which are bound to "
+        "rows of 38. The registration table binds 37 documented claims, 1 of which are bound to "
         "rows that measure them without restating their sentences. Whether the documents' "
-        "155-claim enumeration is covered by a gate row is audited separately and is not a "
+        "156-claim enumeration is covered by a gate row is audited separately and is not a "
         "property of this gate\n";
     const std::string partialPass =
         "  PASS: every claim this gate judges is met at this revision: the claim book's 28 judged "
         "rows of 38, beside the 10 row(s) it does not carry and the 2 this build's books record "
         "without judging (named above with their reason, and neither met nor failed here). The "
-        "registration table binds 36 documented claims, 1 of which are bound to rows that measure "
-        "them without restating their sentences. Whether the documents' 155-claim enumeration is "
+        "registration table binds 37 documented claims, 1 of which are bound to rows that measure "
+        "them without restating their sentences. Whether the documents' 156-claim enumeration is "
         "covered by a gate row is audited separately and is not a property of this gate\n";
 
-    check(GatePassLine(38, 38, 0, 0, 36) == judgedPass, "the all-judged PASS line is exact");
-    check(GatePassLine(38, 28, 10, 2, 36) == partialPass, "the partial PASS line is exact");
+    check(GatePassLine(38, 38, 0, 0, 37) == judgedPass, "the all-judged PASS line is exact");
+    check(GatePassLine(38, 28, 10, 2, 37) == partialPass, "the partial PASS line is exact");
 
     if (failures == 0)
     {
@@ -9814,9 +9814,6 @@ int main(int argc, char** argv) {
          "the coverage count is the row's own; no enumerated claim states it"},
         {"LC.evidence.ctest", "retained",
          "the ctest re-checkability sentence is the row's own; no enumerated claim states it"},
-        {"code.half_simd_budget", "retained",
-         "the row is the pairwise-consistency check on the internal 1e-7 fit budgets; P09's "
-         "individual claim is carried by code.half_simd_cells"},
         {"header.double.region_A_and_band", "supporting",
          "the lane's composed bound, which no enumerated claim states; D02's row is placed against the 1e-15 fit bar beside it"},
         {"LC.half.vacuous_floor", "supporting",
@@ -9898,6 +9895,9 @@ int main(int argc, char** argv) {
         {"P09", "code.half_simd_cells", "src/boys_simd.cpp", "lines 374-377, the comment above the region kernels",
          "Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their // scalar tails call the half-lane scalar entries; the vector bodies hold the // same documented bound as those entries but are not bit-identical to them (the // bodies run the fp32 fit at full degree where the scalar lane truncates it).",
          nullptr}, // no numeric figure: the sentence states shared bounds without a number
+        {"P12", "code.half_simd_budget", "src/boys_simd.cpp", "lines 378-380, the comment on the shared half-I/O kernels",
+         "The 8-wide half-I/O region kernels never drift from the certified scalar half // lane by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64 // targets that carry those kernels.",
+         nullptr}, // no numeric figure: the sentence states a pair-sum relation
         // P10 is the no-vector scalar fallback. No x86_64 gate row measures it: the
         // packed sweep runs only on the AVX2 vector bodies. The claim is not
         // registered here; the enumeration records it in the none class.

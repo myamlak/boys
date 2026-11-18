@@ -375,6 +375,9 @@ struct Bf16Lane {
 // scalar tails call the half-lane scalar entries; the vector bodies hold the
 // same documented bound as those entries but are not bit-identical to them (the
 // bodies run the fp32 fit at full degree where the scalar lane truncates it).
+// The 8-wide half-I/O region kernels never drift from the certified scalar half
+// lane by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64
+// targets that carry those kernels.
 template <typename Lane>
 void RegionASimdHalf(int n,
                      const typename Lane::HalfT* x,
