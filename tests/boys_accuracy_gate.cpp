@@ -65,6 +65,7 @@ constexpr const char* kNativeHalfAbsent =
 #include "boys/boys_impl.hpp" // the region kernels
 #include "boys_gate_reference.hpp" // the committed reference, the row shape
 #include "boys_gate_external_boost.hpp" // Boost.Math's Airy sentence as rows; opt-in macro
+#include "boys_no_vector_fallback_sweep.hpp" // the no-vector fallback's shared measurement
 
 #include <algorithm>
 #include <array>
@@ -1400,7 +1401,7 @@ std::string HalfSimdEvidenceAbsentEvidence(bool avx2Available)
 // registration table. The gate neither carries the enumeration nor decides which registered
 // claims restate their sentence; both are audit figures, named in the verdict line so a row count
 // is not read as documentation coverage.
-constexpr int kAuditClaimEnumeration = 155;
+constexpr int kAuditClaimEnumeration = 156;
 constexpr int kRegisteredClaimsMeasuredNotRestated = 1;
 
 // The last line of a passing run, in the one form both branches print: what was judged, and what
@@ -1527,20 +1528,20 @@ int RunGateSelfTest()
 
     const std::string judgedPass =
         "  PASS: every claim this gate judges is met at this revision: the claim book's 38 judged "
-        "rows of 38. The registration table binds 36 documented claims, 1 of which are bound to "
+        "rows of 38. The registration table binds 37 documented claims, 1 of which are bound to "
         "rows that measure them without restating their sentences. Whether the documents' "
-        "155-claim enumeration is covered by a gate row is audited separately and is not a "
+        "156-claim enumeration is covered by a gate row is audited separately and is not a "
         "property of this gate\n";
     const std::string partialPass =
         "  PASS: every claim this gate judges is met at this revision: the claim book's 28 judged "
         "rows of 38, beside the 10 row(s) it does not carry and the 2 this build's books record "
         "without judging (named above with their reason, and neither met nor failed here). The "
-        "registration table binds 36 documented claims, 1 of which are bound to rows that measure "
-        "them without restating their sentences. Whether the documents' 155-claim enumeration is "
+        "registration table binds 37 documented claims, 1 of which are bound to rows that measure "
+        "them without restating their sentences. Whether the documents' 156-claim enumeration is "
         "covered by a gate row is audited separately and is not a property of this gate\n";
 
-    check(GatePassLine(38, 38, 0, 0, 36) == judgedPass, "the all-judged PASS line is exact");
-    check(GatePassLine(38, 28, 10, 2, 36) == partialPass, "the partial PASS line is exact");
+    check(GatePassLine(38, 38, 0, 0, 37) == judgedPass, "the all-judged PASS line is exact");
+    check(GatePassLine(38, 28, 10, 2, 37) == partialPass, "the partial PASS line is exact");
 
     if (failures == 0)
     {
@@ -8236,6 +8237,8 @@ int main(int argc, char** argv) {
                     "this gate and by no deposit: %.6f at (n=%d, x=%.6g) for binary16 and "
                     "%.6f at (n=%d, x=%.6g) for bfloat16, printed beside the comparison and "
                     "not compared to the sweep, whose object was the single entries. The "
+                    "default fp16 entry has changed since that record, and no exhaustive rerun "
+                    "at this release is deposited. The "
                     "sweep and its oracle are deposited, not run here: the record was made "
                     "at v5.1.1, its sweep took 0.96 s and its 45-digit reference 308.1 s on "
                     "the toolchain the deposit records; this binary neither re-derives the "
@@ -8268,10 +8271,14 @@ int main(int argc, char** argv) {
         add("LC.half.worst_cell",
             "both formats' worst cells were measured against a 45-digit reference over every "
             "argument either format can represent and every order - a 16-bit input is a finite "
-            "set, so that sweep is exhaustive rather than dense: 0.9993 of the bound for the "
-            "16-bit format, a margin of 0.07 per cent, and 0.99992 for the 16-bit brain-float "
-            "format, a margin of 0.008 per cent; a sparser grid understates them, the "
-            "committed reference grid reading 0.999 and 0.9994",
+            "set, so that sweep is exhaustive rather than dense: 0.9993 of the gate's internal "
+            "1e-7 plus half-ULP test slot for the 16-bit format, a margin of 0.07 per cent, and "
+            "0.99992 for the 16-bit brain-float format, a margin of 0.008 per cent; a sparser "
+            "grid understates them, the committed reference grid reading 0.999 and 0.9994 of "
+            "the same slot, and the fractions are not fractions of the published 1.5e-7 plus "
+            "half-ULP contract. The deposit is the v5.1.1 record of the scalar store-half "
+            "entries; the default fp16 entry has changed since, and no exhaustive rerun at "
+            "this release is deposited",
             "docs/lane-contract.md, half; the deposited sweep tests/data/half-sweep/ "
             "(results.json, README.md, NOTE.md; the harness and oracle stay with the deposit)",
             sparserBelow ? Verdict::Verified : Verdict::Exceeded,
@@ -8292,10 +8299,14 @@ int main(int argc, char** argv) {
     add("LC.half.worst_cell",
         "both formats' worst cells were measured against a 45-digit reference over every "
         "argument either format can represent and every order - a 16-bit input is a finite "
-        "set, so that sweep is exhaustive rather than dense: 0.9993 of the bound for the "
-        "16-bit format, a margin of 0.07 per cent, and 0.99992 for the 16-bit brain-float "
-        "format, a margin of 0.008 per cent; a sparser grid understates them, the "
-        "committed reference grid reading 0.999 and 0.9994",
+        "set, so that sweep is exhaustive rather than dense: 0.9993 of the gate's internal "
+        "1e-7 plus half-ULP test slot for the 16-bit format, a margin of 0.07 per cent, and "
+        "0.99992 for the 16-bit brain-float format, a margin of 0.008 per cent; a sparser "
+        "grid understates them, the committed reference grid reading 0.999 and 0.9994 of the "
+        "same slot, and the fractions are not fractions of the published 1.5e-7 plus half-ULP "
+        "contract. The deposit is the v5.1.1 record of the scalar store-half entries; the "
+        "default fp16 entry has changed since, and no exhaustive rerun at this release is "
+        "deposited",
         "docs/lane-contract.md, half; the deposited sweep tests/data/half-sweep/",
         Verdict::NotCarried,
         "not measured: neither the published cell nor either format's sweep exists in this "
@@ -8329,16 +8340,17 @@ int main(int argc, char** argv) {
         const double shareB = bb > 0.0 ? 0.5 * UlpOf(vb, kBf16MantissaBits, kBf16MinNormalExp) / bb : 0.0;
 
         add("LC.half.representation_share",
-            "at the worst cell the representation term is very nearly the whole bound, and "
+            "at the worst cell the representation term is very nearly the whole slot, and "
             "the arithmetic term has almost nothing left to spend",
             "docs/lane-contract.md, half",
             (share16 >= 0.99 && shareB >= 0.99) ? Verdict::Verified : Verdict::Exceeded,
             Fmt("measured at the sweep's worst cell of each format: half a quantum of the "
-                "returned value is %.6f of the bound for fp16 at (n=%d, x=%.6g), and %.6f "
-                "for bf16 at (n=%d, x=%.6g), so the 1e-7 base is %.4g and %.4g of the bound "
-                "there and the arithmetic has the remainder. The older x = 721 cell the "
-                "sentence used to name reads %.6f; it is a magnitude the document no longer "
-                "states, and the row now reads the worst cell the sweep actually finds",
+                "returned value is %.6f of the 1e-7 plus half-ULP slot for fp16 at (n=%d, "
+                "x=%.6g), and %.6f for bf16 at (n=%d, x=%.6g), so the 1e-7 base is %.4g and "
+                "%.4g of that slot there and the arithmetic has the remainder. The older "
+                "x = 721 cell the sentence used to name reads %.6f; it is a magnitude the "
+                "document no longer states, and the row now reads the worst cell the sweep "
+                "actually finds",
                 share16,
                 f16W.worstN,
                 f16W.worstX,
@@ -8350,12 +8362,12 @@ int main(int argc, char** argv) {
                 cellShare),
             {},
             "the row fails if the representation term at either format's worst cell falls "
-            "below 99%% of the bound, which would mean the 1e-7 arithmetic floor is no longer "
+            "below 99%% of the slot, which would mean the 1e-7 arithmetic floor is no longer "
             "nearly spent at the place the sweep binds");
     }
 #else
     add("LC.half.representation_share",
-        "at the worst cell the representation term is very nearly the whole bound, and the "
+        "at the worst cell the representation term is very nearly the whole slot, and the "
         "arithmetic term has almost nothing left to spend",
         "docs/lane-contract.md, half",
         Verdict::NotCarried,
@@ -8711,6 +8723,61 @@ int main(int argc, char** argv) {
         "carries no half entry and no half kernel - its BoysFp16 seam is closed. The claim has "
         "no subject here rather than a cell that passed");
 #endif // BOYS_GATE_FP16
+
+    // The no-vector scalar fallback: src/boys_simd.cpp's #else branch, which a target with no
+    // vector engine compiles. The claim has a subject only in a build that compiles that branch,
+    // so this row measures it there and names the dedicated test where this build carries the
+    // vector bodies instead.
+#if !BOYS_ISA_AVX2_FMA
+    {
+        const boys_no_vector_fallback::Result fallback = boys_no_vector_fallback::Sweep();
+        std::string evidence = Fmt(
+            "the shipped src/boys_simd.cpp compiled with BOYS_SIMD_X86=0 and "
+            "BOYS_ISA_AVX2_FMA=0: %zu cells over the nine region entry points, every order "
+            "0..32 and five batch sizes, each compared bit for bit with BoysSingle or "
+            "BoysAllOrders at the same argument; %zu mismatch(es) from the certified scalar "
+            "lane",
+            fallback.cells,
+            fallback.mismatches);
+
+        if (!fallback.firstFailure.empty())
+        {
+            evidence += ". The first: " + fallback.firstFailure;
+        }
+
+        add("code.no_vector_fallback",
+            "the no-vector scalar fallback's region entry points return the certified scalar "
+            "lane's value bit for bit at the same argument, over the region each entry "
+            "documents as its precondition and every supported order",
+            "src/boys_simd.cpp, the no-vector fallback comment; measured by "
+            "tests/boys_no_vector_fallback_test.cpp",
+            fallback.mismatches != 0
+                ? Verdict::Exceeded
+                : (fallback.cells != 0 ? Verdict::Verified : Verdict::EvidenceAbsent),
+            evidence,
+            {},
+            "a single cell whose return is not the certified scalar lane's bits at the same "
+            "argument fails the row, as does a sweep that covers no cell");
+    }
+#else
+    add("code.no_vector_fallback",
+        "the no-vector scalar fallback's region entry points return the certified scalar "
+        "lane's value bit for bit at the same argument, over the region each entry documents "
+        "as its precondition and every supported order",
+        "src/boys_simd.cpp, the no-vector fallback comment; measured by "
+        "tests/boys_no_vector_fallback_test.cpp",
+        Verdict::NotCarried,
+        "not measured here: this build compiles src/boys_simd.cpp's AVX2 branch, so the "
+        "fallback definitions are not in this image and the row has no subject. The claim is "
+        "measured by the boys-no-vector-fallback test, whose executable compiles the shipped "
+        "source with BOYS_SIMD_X86=0 and BOYS_ISA_AVX2_FMA=0; ctest runs it on every leg, and "
+        "this row measures the same sweep in a build that carries the fallback",
+        {},
+        "the row becomes a check in a build that compiles src/boys_simd.cpp's no-vector branch "
+        "- a non-x86 target or an x86 one configured with BOYS_ISA_AVX2=OFF - and there a cell "
+        "whose return differs from the certified scalar lane's bits fails it; this build does "
+        "not carry the fallback, and its reason is printed with the row");
+#endif // !BOYS_ISA_AVX2_FMA
 
     {
         const Domain halfDomain = domainOf({kF16Single,
@@ -9814,9 +9881,6 @@ int main(int argc, char** argv) {
          "the coverage count is the row's own; no enumerated claim states it"},
         {"LC.evidence.ctest", "retained",
          "the ctest re-checkability sentence is the row's own; no enumerated claim states it"},
-        {"code.half_simd_budget", "retained",
-         "the row is the pairwise-consistency check on the internal 1e-7 fit budgets; P09's "
-         "individual claim is carried by code.half_simd_cells"},
         {"header.double.region_A_and_band", "supporting",
          "the lane's composed bound, which no enumerated claim states; D02's row is placed against the 1e-15 fit bar beside it"},
         {"LC.half.vacuous_floor", "supporting",
@@ -9880,70 +9944,73 @@ int main(int argc, char** argv) {
         {"H02b", "LC.half.budget", "CONTRIBUTING.md", "lines 22-23, the ground rules",
          "1e-7 plus one half-ULP for fp16 and bf16. This is the bar the suite asserts, and it is tighter than the 1.5e-7 plus one half-ULP those lanes publish;",
          "1e-7"}, // the bar the suite asserts; 1.5e-7 is the lanes' published figure the sentence contrasts it with
-        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 642-649, the half lane",
-         "Both figures below were measured against a 45-digit reference, over every argument either format can represent and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the instrument the two figures rest on. A sparser grid understates them — the committed reference grid reads 0.999 for the 16-bit format and 0.9994 for the brain-float one, and both figures here are worse. For the 16-bit format the worst case is **0.9993 of the bound**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst case is **0.99992 of the bound**, a margin of 0.008 per cent, against the 16-bit format's 0.07.",
-         nullptr}, // the sentence states fractions of the bound (0.9993, 0.99992), not the bound itself
-        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 649-650, the half lane",
-         "At that distance the representation term is very nearly the whole bound, and the arithmetic term has almost nothing left to spend.",
+        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 642-662, the half lane",
+         "Both figures below were measured against a 45-digit reference, over every argument either format can represent and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the instrument the two figures rest on. The fractions are of the accuracy gate's internal test slot, `1e-7` plus half an ULP of the returned value, and **not** of the published `1.5e-7` plus half-ULP contract this lane states above: the slot is the tighter bar the suite asserts, and a fraction of it is not a fraction of the published figure. A sparser grid understates them — the committed reference grid reads 0.999 of the slot for the 16-bit format and 0.9994 for the brain-float one, and both figures here are worse. For the 16-bit format the worst case is **0.9993 of the slot**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst case is **0.99992 of the slot**, a margin of 0.008 per cent, against the 16-bit format's 0.07. At that distance the representation term is very nearly the whole slot, and the arithmetic term has almost nothing left to spend. One extra step of error anywhere in the lane therefore pushes a result over its bound. Treat this lane as inside its bound with nothing to spare. **The sweep is the v5.1.1 record, and it is not a measurement of this release's default entry.** The record is deposited under `tests/data/half-sweep`; it measured the scalar store-half entries, `BoysSingleF16` and `BoysSingleBf16`, at tag `v5.1.1`. The default fp16 entry has changed since that record, and no exhaustive rerun at this release is deposited: the ratios above are the record's measurements of the entries it names, and the accuracy gate's committed grid is what this release re-measures.",
+         nullptr}, // the sentence states fractions of the gate's internal slot (0.9993, 0.99992), not the bound itself
+        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 652-654, the half lane",
+         "At that distance the representation term is very nearly the whole slot, and the arithmetic term has almost nothing left to spend.",
          nullptr}, // no numeric figure: the sentence states a relation, not a bound
-        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 658-661, the half lane",
+        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 668-671, the half lane",
          "**Below a certain size the lane returns nothing usable.** The bound holds only where the result is larger than `1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments and over no others.**",
          "1.5e-7"}, // the value floor, the constant the row's threshold is built from; "half a representable digit" is the other term
-        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 663-666, the half lane",
+        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 673-676, the half lane",
          "For 16-bit floats the point where the bound stops being useful is at arguments well inside the usable range, and it moves with the order. Orders 3, 4 and 5 still return usable values across the whole of the large-argument range; **the claim that every argument is past the threshold holds from order 6 upward**.",
          nullptr}, // the figures are an order threshold (3, 4, 5 and 6), not a bound
-        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 711-712, packed half",
+        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 721-722, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one.",
          nullptr}, // no numeric figure: the sentence states bit-identity, not a bound
-        {"P09", "code.half_simd_cells", "src/boys_simd.cpp", "lines 374-377, the comment above the region kernels",
-         "Region-partitioned 8-wide kernels shared by the fp16 and bf16 lanes. Their // scalar tails call the half-lane scalar entries; the vector bodies hold the // same documented bound as those entries but are not bit-identical to them (the // bodies run the fp32 fit at full degree where the scalar lane truncates it).",
-         nullptr}, // no numeric figure: the sentence states shared bounds without a number
-        // P10 is the no-vector scalar fallback. No x86_64 gate row measures it: the
-        // packed sweep runs only on the AVX2 vector bodies. The claim is not
-        // registered here; the enumeration records it in the none class.
-        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 672-673, packed half",
+        {"P09", "code.half_simd_cells", "src/boys_simd.cpp", "lines 374-376, the comment on the individual bound",
+         "// The 8-wide half-I/O region kernels hold the published half-lane budget // (1.5e-7 plus one half-ULP) on the region each documents as its precondition, // on the x86_64 targets that carry those kernels.",
+         nullptr}, // no numeric figure: the sentence states the bound's form without a number the row is judged at
+        {"P12", "code.half_simd_budget", "src/boys_simd.cpp", "lines 382-384, the comment on the shared half-I/O kernels",
+         "The 8-wide half-I/O region kernels never drift from the certified scalar half // lane by a value the internal 1e-7 fit budgets cannot absorb, on the x86_64 // targets that carry those kernels.",
+         nullptr}, // no numeric figure: the sentence states a pair-sum relation
+        {"P10", "code.no_vector_fallback", "src/boys_simd.cpp", "lines 634-637, the no-vector fallback comment",
+         "// A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. Each returns the certified scalar lane's value bit for bit at the same // argument, over the region the entry documents as its precondition and every supported order; // the region contract stays a sufficient precondition, just not a required one.",
+         nullptr}, // no numeric figure: the sentence states bit-identity with the certified scalar lane
+        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 682-683, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
         {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1992-1996, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble.",
          nullptr}, // no numeric figure: the sentence scopes the bound's domain
-        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 712-713, packed half, the exponent range",
+        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 722-723, packed half, the exponent range",
          "No rescaling reaches past that limit either, because the range the recursion spans grows like x to the power n, against a fixed exponent range.",
          nullptr}, // no numeric figure: the sentence states a growth argument, not a bound
-        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 696-696, packed half, the crossing table",
+        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 706-706, packed half, the crossing table",
          "| 0 and 1 | the whole 16-bit range, to 65504 |",
          nullptr}, // a crossing-table limit (65504), not the accuracy bound
-        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 697-697, packed half, the crossing table",
+        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 707-707, packed half, the crossing table",
          "| 2 | to about 2636 |",
          nullptr}, // a crossing-table limit (2636), not the accuracy bound
-        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 698-698, packed half, the crossing table",
+        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 708-708, packed half, the crossing table",
          "| 3 | to about 360 |",
          nullptr}, // a crossing-table limit (360), not the accuracy bound
-        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 699-699, packed half, the crossing table",
+        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 709-709, packed half, the crossing table",
          "| 4 | to about 129 |",
          nullptr}, // a crossing-table limit (129), not the accuracy bound
-        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 700-700, packed half, the crossing table",
+        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 710-710, packed half, the crossing table",
          "| 5 | to about 70 |",
          nullptr}, // a crossing-table limit (70), not the accuracy bound
-        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 701-701, packed half, the crossing table",
+        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 711-711, packed half, the crossing table",
          "| 6 | to about 47 |",
          nullptr}, // a crossing-table limit (47), not the accuracy bound
-        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 702-702, packed half, the crossing table",
+        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 712-712, packed half, the crossing table",
          "| 7 | to about 36 |",
          nullptr}, // a crossing-table limit (36), not the accuracy bound
-        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 703-703, packed half, the crossing table",
+        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 713-713, packed half, the crossing table",
          "| 8 | to about 30 |",
          nullptr}, // a crossing-table limit (30), not the accuracy bound
-        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 704-708, packed half, the crossing table and the order count",
+        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 714-718, packed half, the crossing table and the order count",
          "| **9 to 32** | **none** | **Orders 9 and above have no argument at all at which this lane claims its bound**, because the function is already below 2^-29 at the smallest argument the lane accepts. Twenty-four of the thirty-three orders the library supports are in that position.",
          nullptr}, // the crossing table's last row and the order count, not the accuracy bound
-        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 685-688, packed half, the arithmetic",
+        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 695-698, packed half, the arithmetic",
          "Each step is evaluated in double precision and rounded once to 16 bits, which gives the same correctly rounded result a native 16-bit instruction would. This library carries no native 16-bit backend, so what the lane delivers is 16-bit arithmetic's *results* rather than its *speed*. **No timing is claimed for it.**",
          nullptr}, // no numeric figure: the sentence states results and no timing
-        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 679-681, packed half",
+        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 689-691, packed half",
          "the worst cell this lane's own suite finds is 4.243 of those digits against the half-ULP the other lane budgets, which is **8.5 times** its representation allowance.",
          nullptr}, // the figures (4.243, 8.5 times) are readings against the bound, not the bound itself
-        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1420-1423, region C, the boundary",
+        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1430-1433, region C, the boundary",
          "Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**.",
          nullptr}, // the figures are the measured relative errors the row reports, not a bound it is judged at
     };
@@ -10555,12 +10622,14 @@ int main(int argc, char** argv) {
     // same reason in place of a measurement, and none of them is a pass.
     if (notCarried > 0)
     {
-        std::printf("          %d of those rows are not carried by this build: the entries "
-                    "they are about are declared behind the fp16 seam this build has closed, "
-                    "so the row has no entry to call and no cell to judge. That is a fact "
+        std::printf("          %d of those rows are not carried by this build: each names a "
+                    "subject this build does not\n          carry - an entry behind the fp16 "
+                    "seam this build has closed, or the no-vector scalar\n          fallback "
+                    "in a build that compiles the vector tier - so the row has no entry to "
+                    "call and no cell\n          to judge. That is a fact "
                     "about this build and not about the tree - no measurement is missing and "
                     "the claim is neither confirmed nor denied here. A build that carries the "
-                    "entry is where the claim is checked, and the rows there are the same "
+                    "subject is where the claim is checked, and the rows there are the same "
                     "rows, at the same count\n",
                     notCarried);
         std::printf("  NOT CARRIED by this build (named so a reader can see which claims this "

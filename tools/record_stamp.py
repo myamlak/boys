@@ -101,7 +101,11 @@ INPUTS: dict[str, dict[str, tuple[str, ...]]] = {
     "gate": {
         "src": ("src",),
         "include": ("include",),
-        "gate": ("tests/boys_accuracy_gate.cpp", "tests/boys_gate_reference.hpp"),
+        "gate": (
+            "tests/boys_accuracy_gate.cpp",
+            "tests/boys_gate_reference.hpp",
+            "tests/boys_no_vector_fallback_sweep.hpp",
+        ),
         "grid": ("tests/data/boys_accuracy_gate_reference.csv",),
         "cmake": ("CMakeLists.txt",),
     },
