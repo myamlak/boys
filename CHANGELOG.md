@@ -4,6 +4,14 @@ What changed between released versions of this library, newest first. The versio
 lives in one place, `CMakeLists.txt`'s `project(boys VERSION ...)`; `boys::VersionString()` answers it
 at run time.
 
+## 5.3.4
+
+**The lane-contract opening states the double lane's implemented bound.** `docs/lane-contract.md`
+opened by saying every bound on the page was relative to the value, |computed − true| ≤ B · F_n(x).
+The double lanes' contract is the ladder-scaled `1e-13 · F_0(x)`, as the page's own *double* entry
+and `docs/specification.md` state, so the opening now states it and points to both. No bound,
+figure, table or returned value moves.
+
 ## 5.3.3
 
 **The accuracy gate enumerates the half-SIMD pair-sum claim and binds it to the row that measures

@@ -20,14 +20,19 @@ the figure one row is judged against. A *measured* figure is what a program in t
 against the committed reference; where it belongs to one machine, the machine is named beside it. A
 figure counting instructions or retired slots is what the machine named beside it retired.
 
-Every bound here is stated in the contract's own form, **relative to the value**: |computed − true|
-≤ B · F_n(x), for every supported order and argument, and it binds above the lane format's smallest
-normal (2^-1022 double, 2^-126 float), below which the return is subnormal or zero and no accuracy
-is claimed. A lane whose figure is a term of the result rather than of the value says so in its own
-entry: the half lanes add half of the returned value's last digit to a base, and the packed-half
-lane's bound is that digit alone — neither of those two figures changed when the contract moved to
-the relative form. The per-region budgets and the bars a fit is cut against stay **absolute**
-figures and are printed as the measurements they are.
+Every bound here is stated in the contract's own form. On the double lanes that form is the
+**ladder-scaled** one, |computed − true| ≤ `1e-13 · F_0(x)` — the larger of `1e-13 · F_n(x)` and
+`1e-13 · F_0(x)`, which is the `F_0(x)` arm at every cell — as the entry under *double* below and
+[the specification's accuracy contract](specification.md#accuracy-contract) state. The other lanes
+state a figure **relative to the value**, |computed − true| ≤ B · F_n(x), for every supported order
+and argument, except where the lane's own entry adds a floor or states the figure as a term of the
+result. Every one of these figures binds above the lane format's smallest normal (2^-1022 double,
+2^-126 float), below which the return is subnormal or zero and no accuracy is claimed. A lane whose
+figure is a term of the result rather than of the value says so in its own entry: the half lanes add
+half of the returned value's last digit to a base, and the packed-half lane's bound is that digit
+alone — neither of those two figures changed when the contract moved to the relative form. The
+per-region budgets and the bars a fit is cut against stay **absolute** figures and are printed as
+the measurements they are.
 
 Every figure on this page is measured by a program in this tree, and the command below prints the
 comparison for the machine you run it on — in a `<build>` configured with `-DBOYS_BUILD_TESTS=ON`,
