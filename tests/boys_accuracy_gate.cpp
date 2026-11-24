@@ -9914,49 +9914,49 @@ int main(int argc, char** argv) {
         {"P02", "native.half.suite_worst", "docs/mainpage.md", "lines 311-312, the native half lane",
          "The native half lane is the one lane whose figure is not a fraction of the value: it is stated in ULP of the returned value, ≤ 8 ULP, measured at a worst of 4.3.",
          "8"}, // the ≤ 8 ULP bound; 4.3 is the measured worst stated beside it
-        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 135-137, the double lane",
+        {"D07", "LC.double.ceiling", "docs/lane-contract.md", "lines 140-142, the double lane",
          "The stored coefficients are rounded to double precision and hold only the sixteen or so significant digits a double can hold, so nothing below about 1e-16 is reachable however the evaluation is arranged.",
          nullptr}, // the 1e-16 is a rounding ceiling the row locates, not a bound it is judged at
-        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "lines 491-496, the float lane",
+        {"F02", "LC.float.ceiling", "docs/lane-contract.md", "lines 496-501, the float lane",
          "A 32-bit float carries about seven significant digits, which is about 6e-8 relative. The lane's relative arm is 4.0 times that digit (2^-22 / 6e-8), so the two are within a factor of a few of each other: the arm is the format's own size and not a budget with room in it. What the floor is for is small values: at F_n(x) = 1e-3 the relative arm is 2.4e-10, far below the 1.5e-7 the lane can hold there, and the plain-reciprocal form adds its 1e-7 term to the larger of the two.",
          "2^-22"}, // the relative arm the row is judged at; 6e-8 is the format's digit and 2.4e-10 the arm at 1e-3
-        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "lines 124-126, the double lane, the batch row",
+        {"D02", "LC.region_A.fit_bar", "docs/lane-contract.md", "lines 129-131, the double lane, the batch row",
          "the stored fits' 1e-15 bar bounds only the arguments below that edge, where the seed is a per-order fit read at 1e-15 under a reachable gain of at most 2.171050.",
          "1e-15"}, // the fits' bar; 2.171050 is the reachable gain stated beside it
-        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "lines 574-574, the transform table",
+        {"X01", "transform.fp64.bound", "docs/lane-contract.md", "lines 579-579, the transform table",
          "| fp64 | 64-bit | 64-bit | 1e-15 |",
          "1e-15"}, // the table's bound column; the 64-bit cells name the mode's arithmetic
-        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "lines 578-579, the transform table",
+        {"X02", "transform.fp64.delivered", "docs/lane-contract.md", "lines 583-584, the transform table",
          "The 64-bit mode delivers 1.11e-16, which is the fits' own truncation: the product adds nothing measurable to what the coefficients already cost.",
          nullptr}, // a delivered figure (1.11e-16), not a bound the row is judged at
-        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "lines 575-575, the transform table",
+        {"X03", "transform.tf32x3.bound", "docs/lane-contract.md", "lines 580-580, the transform table",
          "| 3xTF32 | 32-bit, as two 11-bit parts | 32-bit | 1e-15 + 2.5e-7 |",
          "1e-15 + 2.5e-7"},
-        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "lines 576-576, the transform table",
+        {"X05", "transform.bf16x6.bound", "docs/lane-contract.md", "lines 581-581, the transform table",
          "| bf16×6 | 32-bit, as three 8-bit parts | 32-bit | 1e-15 + 2.5e-7 |",
          "1e-15 + 2.5e-7"},
-        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "lines 579-580, the transform table",
+        {"X04", "transform.tf32x3.delivered", "docs/lane-contract.md", "lines 584-585, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor.",
          nullptr}, // delivered figures (1.92e-07 and 1.95e-07), not bounds the row is judged at
-        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "lines 579-580, the transform table",
+        {"X06", "transform.bf16x6.delivered", "docs/lane-contract.md", "lines 584-585, the transform table",
          "The other two deliver 1.92e-07 and 1.95e-07, which is their 32-bit accumulator's own floor.",
          nullptr}, // the same delivered pair; the lane's bound figure is X05's row
         {"H02b", "LC.half.budget", "CONTRIBUTING.md", "lines 22-23, the ground rules",
          "1e-7 plus one half-ULP for fp16 and bf16. This is the bar the suite asserts, and it is tighter than the 1.5e-7 plus one half-ULP those lanes publish;",
          "1e-7"}, // the bar the suite asserts; 1.5e-7 is the lanes' published figure the sentence contrasts it with
-        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 642-662, the half lane",
+        {"H04", "LC.half.worst_cell", "docs/lane-contract.md", "lines 647-667, the half lane",
          "Both figures below were measured against a 45-digit reference, over every argument either format can represent and every order: a 16-bit input is a finite set, so that sweep is exhaustive rather than dense, and it is the instrument the two figures rest on. The fractions are of the accuracy gate's internal test slot, `1e-7` plus half an ULP of the returned value, and **not** of the published `1.5e-7` plus half-ULP contract this lane states above: the slot is the tighter bar the suite asserts, and a fraction of it is not a fraction of the published figure. A sparser grid understates them — the committed reference grid reads 0.999 of the slot for the 16-bit format and 0.9994 for the brain-float one, and both figures here are worse. For the 16-bit format the worst case is **0.9993 of the slot**, a margin of 0.07 per cent. For the 16-bit brain-float format the worst case is **0.99992 of the slot**, a margin of 0.008 per cent, against the 16-bit format's 0.07. At that distance the representation term is very nearly the whole slot, and the arithmetic term has almost nothing left to spend. One extra step of error anywhere in the lane therefore pushes a result over its bound. Treat this lane as inside its bound with nothing to spare. **The sweep is the v5.1.1 record, and it is not a measurement of this release's default entry.** The record is deposited under `tests/data/half-sweep`; it measured the scalar store-half entries, `BoysSingleF16` and `BoysSingleBf16`, at tag `v5.1.1`. The default fp16 entry has changed since that record, and no exhaustive rerun at this release is deposited: the ratios above are the record's measurements of the entries it names, and the accuracy gate's committed grid is what this release re-measures.",
          nullptr}, // the sentence states fractions of the gate's internal slot (0.9993, 0.99992), not the bound itself
-        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 652-654, the half lane",
+        {"H06", "LC.half.representation_share", "docs/lane-contract.md", "lines 657-659, the half lane",
          "At that distance the representation term is very nearly the whole slot, and the arithmetic term has almost nothing left to spend.",
          nullptr}, // no numeric figure: the sentence states a relation, not a bound
-        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 668-671, the half lane",
+        {"H07", "LC.half.returned_value_floor", "docs/lane-contract.md", "lines 673-676, the half lane",
          "**Below a certain size the lane returns nothing usable.** The bound holds only where the result is larger than `1.5e-7` plus half a representable digit. Smaller than that, the returned value becomes a subnormal 16-bit number, and then exactly zero. **The bound is claimed over those larger arguments and over no others.**",
          "1.5e-7"}, // the value floor, the constant the row's threshold is built from; "half a representable digit" is the other term
-        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 673-676, the half lane",
+        {"H08", "LC.half.range_from_order3", "docs/lane-contract.md", "lines 678-681, the half lane",
          "For 16-bit floats the point where the bound stops being useful is at arguments well inside the usable range, and it moves with the order. Orders 3, 4 and 5 still return usable values across the whole of the large-argument range; **the claim that every argument is past the threshold holds from order 6 upward**.",
          nullptr}, // the figures are an order threshold (3, 4, 5 and 6), not a bound
-        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 721-722, packed half",
+        {"P06", "LC.packed.rescale_exact", "docs/lane-contract.md", "lines 726-727, packed half",
          "Rescaling each order buys range and no accuracy. The rescaling is exact, so a rescaled lane returns bit-identical results to an unscaled one.",
          nullptr}, // no numeric figure: the sentence states bit-identity, not a bound
         {"P09", "code.half_simd_cells", "src/boys_simd.cpp", "lines 374-376, the comment on the individual bound",
@@ -9968,49 +9968,49 @@ int main(int argc, char** argv) {
         {"P10", "code.no_vector_fallback", "src/boys_simd.cpp", "lines 634-637, the no-vector fallback comment",
          "// A target with no vector engine compiled in: the same entry points, defined against the // certified scalar lanes. Each returns the certified scalar lane's value bit for bit at the same // argument, over the region the entry documents as its precondition and every supported order; // the region contract stays a sufficient precondition, just not a required one.",
          nullptr}, // no numeric figure: the sentence states bit-identity with the certified scalar lane
-        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 682-683, packed half",
+        {"P01", "native.half.bound", "docs/lane-contract.md", "lines 687-688, packed half",
          "**Within 8 of the last representable digits of the returned value**, worst measured 4.243, for arguments at or above x = 28.984375.",
          "8"}, // the 8 ULP bound; 4.243 is the measured worst stated beside it
         {"P11", "code.half_domain_stop", "include/boys/boys_decl.hpp", "lines 1992-1996, the half lanes' comment",
          "The bound is /// claimed only over the arguments where |F_n(x16)| exceeds it, and no accuracy /// is claimed past that ceiling: in f16 the return there is a subnormal number, /// then exactly zero, with the bound met by the format's floor rather than by the /// lane - see the contract table in the file preamble.",
          nullptr}, // no numeric figure: the sentence scopes the bound's domain
-        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 722-723, packed half, the exponent range",
+        {"P07", "native.half.ceiling", "docs/lane-contract.md", "lines 727-728, packed half, the exponent range",
          "No rescaling reaches past that limit either, because the range the recursion spans grows like x to the power n, against a fixed exponent range.",
          nullptr}, // no numeric figure: the sentence states a growth argument, not a bound
-        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 706-706, packed half, the crossing table",
+        {"P08a", "native.half.ceiling", "docs/lane-contract.md", "lines 711-711, packed half, the crossing table",
          "| 0 and 1 | the whole 16-bit range, to 65504 |",
          nullptr}, // a crossing-table limit (65504), not the accuracy bound
-        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 707-707, packed half, the crossing table",
+        {"P08b", "native.half.ceiling", "docs/lane-contract.md", "lines 712-712, packed half, the crossing table",
          "| 2 | to about 2636 |",
          nullptr}, // a crossing-table limit (2636), not the accuracy bound
-        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 708-708, packed half, the crossing table",
+        {"P08c", "native.half.ceiling", "docs/lane-contract.md", "lines 713-713, packed half, the crossing table",
          "| 3 | to about 360 |",
          nullptr}, // a crossing-table limit (360), not the accuracy bound
-        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 709-709, packed half, the crossing table",
+        {"P08d", "native.half.ceiling", "docs/lane-contract.md", "lines 714-714, packed half, the crossing table",
          "| 4 | to about 129 |",
          nullptr}, // a crossing-table limit (129), not the accuracy bound
-        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 710-710, packed half, the crossing table",
+        {"P08e", "native.half.ceiling", "docs/lane-contract.md", "lines 715-715, packed half, the crossing table",
          "| 5 | to about 70 |",
          nullptr}, // a crossing-table limit (70), not the accuracy bound
-        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 711-711, packed half, the crossing table",
+        {"P08f", "native.half.ceiling", "docs/lane-contract.md", "lines 716-716, packed half, the crossing table",
          "| 6 | to about 47 |",
          nullptr}, // a crossing-table limit (47), not the accuracy bound
-        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 712-712, packed half, the crossing table",
+        {"P08g", "native.half.ceiling", "docs/lane-contract.md", "lines 717-717, packed half, the crossing table",
          "| 7 | to about 36 |",
          nullptr}, // a crossing-table limit (36), not the accuracy bound
-        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 713-713, packed half, the crossing table",
+        {"P08h", "native.half.ceiling", "docs/lane-contract.md", "lines 718-718, packed half, the crossing table",
          "| 8 | to about 30 |",
          nullptr}, // a crossing-table limit (30), not the accuracy bound
-        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 714-718, packed half, the crossing table and the order count",
+        {"P08i", "native.half.ceiling", "docs/lane-contract.md", "lines 719-723, packed half, the crossing table and the order count",
          "| **9 to 32** | **none** | **Orders 9 and above have no argument at all at which this lane claims its bound**, because the function is already below 2^-29 at the smallest argument the lane accepts. Twenty-four of the thirty-three orders the library supports are in that position.",
          nullptr}, // the crossing table's last row and the order count, not the accuracy bound
-        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 695-698, packed half, the arithmetic",
+        {"P03", "native.half.packed", "docs/lane-contract.md", "lines 700-703, packed half, the arithmetic",
          "Each step is evaluated in double precision and rounded once to 16 bits, which gives the same correctly rounded result a native 16-bit instruction would. This library carries no native 16-bit backend, so what the lane delivers is 16-bit arithmetic's *results* rather than its *speed*. **No timing is claimed for it.**",
          nullptr}, // no numeric figure: the sentence states results and no timing
-        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 689-691, packed half",
+        {"P04", "LC.packed.representation_cost", "docs/lane-contract.md", "lines 694-696, packed half",
          "the worst cell this lane's own suite finds is 4.243 of those digits against the half-ULP the other lane budgets, which is **8.5 times** its representation allowance.",
          nullptr}, // the figures (4.243, 8.5 times) are readings against the bound, not the bound itself
-        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1430-1433, region C, the boundary",
+        {"A03", "LC.regionC.asym_relative", "docs/lane-contract.md", "lines 1435-1438, region C, the boundary",
          "Below about x = 16 the asymptotic form is outside the range where it is valid, and the error grows smoothly there, with no sudden jump. But the size of the error is real, and below that boundary it is stated **relative to the function's own value**: the largest such error is **5.6e4**, at order 32 and x = 14.0468, and at x = 15.936 the same quantity is **5.6e3**.",
          nullptr}, // the figures are the measured relative errors the row reports, not a bound it is judged at
     };

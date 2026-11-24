@@ -126,7 +126,11 @@ stamped into a tracked artifact is in no clone's history after this repository's
 while the same bytes carry the same digest. So this check loads ``tools/record_stamp.py``,
 recomputes the gate record's digests from this tree, and refuses - with the finding
 ``tools/check_recorded_run.py`` prints for the same defect - when a gated group differs or the
-stamp names no digest. A run whose stamp names no content cannot be verified against the tree,
+stamp names no digest. A record naming an earlier version is accepted only where
+``differs_only_in_version_header`` proves the tree has moved from that record's tag in the
+version header alone - the allowance ``check_recorded_run.py`` and ``check_probe_run.py``
+make; a gated file that moved beside the header is refused as another tree. A run whose stamp
+names no content cannot be verified against the tree,
 and a tree the record cannot be held to is not read: that state is refused here as well, with the
 remedy ``check_recorded_run.py`` prints. The gate's own
 source is read from the working tree too; a gate edited since the run moves the ``gate`` group
@@ -208,9 +212,12 @@ LIBRARY = (
     "src/boys_cuda.cpp",
 )
 
-# The stamp the recorded run carries: `accuracy gate, inputs <group>=<digest>,...`. The
-# working tree is read only once these digests have been recomputed and agree, so the facts
-# this check compares against are the ones the recorded run was produced from.
+# The stamp the recorded run carries: `accuracy gate, version <v>` and
+# `accuracy gate, inputs <group>=<digest>,...`. The working tree is read only once these
+# digests have been recomputed and agree, or have been proved to differ in the version
+# header alone, so the facts this check compares against are the ones the recorded run was
+# produced from.
+VERSION = re.compile(r"^accuracy gate, version[ \t]+(?P<version>\S+)[ \t]*$", re.M)
 INPUTS = re.compile(r"^accuracy gate, inputs[ \t]+(?P<inputs>\S+)[ \t]*$", re.M)
 
 
@@ -1169,6 +1176,7 @@ class RecordedRun:
         self.rows: list[dict] = []
         self.entry_rows: list[dict] = []
         self.entry_rows_note: str | None = None
+        self.version: str | None = None
         self.inputs: str | None = None
         self.arithmetic: dict | None = None
         self.forms_per_row: int | None = None
@@ -1188,6 +1196,11 @@ class RecordedRun:
 
         if match is not None:
             self.inputs = match.group("inputs")
+
+        match = VERSION.search(self.text)
+
+        if match is not None:
+            self.version = match.group("version")
 
         forms = FORM_COVERAGE.search(self.text)
 
@@ -1501,6 +1514,46 @@ def main() -> int:
         return 1
     else:
         recorded = record_stamp.parse_cell(run.inputs)
+
+        # Whether a version difference has been proved to be the version header alone. It is
+        # what lets a metadata group's digest differ: the record has been held to the tag it
+        # names, so the difference there is the header and not arithmetic.
+        version_only = False
+
+        if run.version is not None and run.version != record_stamp.UNKNOWN:
+            try:
+                tree_version = record_stamp.version(REPO)
+            except record_stamp.StampError as error:
+                stamp_findings.append(
+                    f"the version this tree states could not be read ({error}), so the run's own "
+                    f"`version {run.version}` line is held to nothing. This is the tree and not "
+                    f"the record: `{record_stamp.VERSION_HEADER}` carries the version as "
+                    f"`kVersionString` and a configure asserts it against the project's own number")
+            else:
+                if run.version != tree_version:
+                    only, why = record_stamp.differs_only_in_version_header(
+                        REPO, run.version, "gate", recorded)
+
+                    if only:
+                        version_only = True
+                        print(f"  note: the run names version {run.version}, and this tree states "
+                              f"{tree_version}: since tag {record_stamp.TAG_PREFIX}{run.version} "
+                              f"the only file the run's gated inputs name that moved is "
+                              f"{record_stamp.VERSION_HEADER}, which is release metadata and not an "
+                              f"arithmetic input, so the arithmetic inputs are identical and the "
+                              f"record describes the same code")
+                    else:
+                        stamp_findings.append(
+                            f"the run names version {run.version}, and this tree states "
+                            f"{tree_version}: the run is an account of another release, and the "
+                            f"combinations in it are what a release this tree is not measured, so "
+                            f"this check would be answering about another tree. {why}. Re-make the "
+                            f"run - build boys-accuracy-gate in this tree, run it, and write its "
+                            f"output to {args.run} - and commit the new record with the change "
+                            f"that moved the version")
+
+        metadata = record_stamp.metadata_groups("gate")
+
         try:
             computed = record_stamp.digests(REPO, "gate")
         except record_stamp.StampError as error:
@@ -1518,6 +1571,10 @@ def main() -> int:
                     f"there is held to nothing: the line is written by the build and a group it "
                     f"leaves out is one this check cannot compare. Re-make the run from a build "
                     f"of this tree")
+            elif recorded[name] != computed[name] and version_only and name in metadata:
+                print(f"  {name}: recorded {recorded[name]}, this tree {computed[name]} "
+                      f"(the difference is {record_stamp.VERSION_HEADER} alone, the version "
+                      f"metadata the note above names)")
             elif recorded[name] != computed[name]:
                 print(f"  {name}: recorded {recorded[name]}, this tree {computed[name]}")
                 stamp_findings.append(
